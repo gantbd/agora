@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
+pub mod persistence;
 
 /// Resource ceilings for one engine profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -585,8 +586,21 @@ impl Engine {
         self.rooms.get(id).map(Room::view)
     }
 
+    /// Exact retained-message observation without copying the room history.
+    pub fn message(&self, id: &RoomId, sequence: u64) -> Option<&Message> {
+        let room = self.rooms.get(id)?;
+        let start = room
+            .next_message_sequence
+            .checked_sub(room.messages.len() as u64)?;
+        let index: usize = sequence.checked_sub(start)?.try_into().ok()?;
+        room.messages.get(index).filter(|m| m.sequence == sequence)
+    }
+
     pub fn rooms(&self) -> impl Iterator<Item = RoomView> + '_ {
         self.rooms.values().map(Room::view)
+    }
+    pub fn room_ids(&self) -> impl ExactSizeIterator<Item = &RoomId> {
+        self.rooms.keys()
     }
 
     pub fn revision(&self) -> Revision {

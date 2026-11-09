@@ -86,3 +86,17 @@ New keys backpressure before message mutation when
 `max_publication_receipts` is full. The in-memory receipt map is not durable
 evidence until a host persists it atomically with engine state.
 
+## Checkpoint profile V1
+
+The separate closed `AGORACP` V1 codec captures engine limits, participants, rooms,
+membership/invitations, retained message suffixes and sequence frontiers, complete
+publication records and their original transitions, revision/event frontiers,
+acknowledgement cursor and pending event envelopes. It does not expand `CommandV1`
+or supply actor authentication. Host byte/cardinality ceilings apply before trusting
+checkpoint-owned limits or allocating decoded collections. Invalid tags, UTF-8,
+ordering, duplicate identities, references, message suffixes and inconsistent cursor
+or receipt attribution are refused. Successful recovery has one canonical encoding.
+These are structural/semantic checks, not proof of authenticated historical origin.
+Checkpoint preparation neither advances a revision nor acknowledges event delivery.
+Storage atomicity and durability remain adapter conformance obligations.
+

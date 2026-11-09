@@ -33,7 +33,7 @@
 
 ## Explicitly open
 
-Persistence, checkpoint formats, durable event sinks, connection/session
+Durable storage adapters, durable event sinks, connection/session
 capabilities, bans, message
 editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.1 claim.

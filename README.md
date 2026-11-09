@@ -19,6 +19,8 @@ The v0.2 core provides:
 - a bounded, ordered domain-event outbox with monotone prefix acknowledgment;
 - a bounded replay-safe response-publication profile with opaque idempotency
   keys and exact-content conflict detection;
+- bounded canonical V1 semantic checkpoints preserving retention, replay receipts,
+  pending events and acknowledgement cursors, with host recovery ceilings;
 - room-scoped agent activation policies with bounded fan-out;
 - automatic activation by human messages without agent-to-agent wakeup loops.
 
@@ -43,6 +45,17 @@ message or advancing revision, even when the original expected revision is now
 stale. Reusing the key with changed semantic content is refused. This receipt
 index is bounded and volatile; durable lost-reply recovery still requires a host
 to persist it atomically with Agora state.
+
+`Engine::prepare_checkpoint` and `Engine::recover_checkpoint` now provide that
+authority-free data boundary. Recovery validates configured bounds, canonical
+ordering, room ownership/references, message/revision/event frontiers, retained
+publication attribution and the exact unacknowledged outbox suffix. Event and
+receipt validation use indexed lookups rather than repeated history scans.
+This native codec adds no runtime dependencies, I/O, clocks or authentication;
+it does not authenticate checkpoint origin or itself establish durability.
+The separate `../moira/adapters/moira-sqlite` receiver persists this checkpoint and
+stable source/room correspondence in a single-owner local SQLite profile. Its
+storage, failure-boundary and restart claims belong to that adapter.
 
 Agent activation is a request for an external connector, never proof that an agent
 ran. Rooms default to disabled activation. Owners may select explicit human
