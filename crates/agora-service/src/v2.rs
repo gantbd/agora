@@ -13,8 +13,8 @@ use agora_protocol::v2::{
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
     RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
-    RoomSummaryV2, ThreadMessagePageV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
-    ThreadedRoomChangeV1, ThreadedRoomEventV1,
+    RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
+    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -279,6 +279,7 @@ impl ServiceV2 {
                 CapabilityV2::ModeratorRedactionV1,
                 CapabilityV2::IdentifiedRoomChangesV1,
                 CapabilityV2::ThreadsV1,
+                CapabilityV2::ThreadLifecycleV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -346,6 +347,10 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.threaded_changes(client, participant, room_id, *cursor, *limit),
+            CommandV2::ThreadStatus {
+                room_id,
+                root_message_id,
+            } => self.thread_status(participant, room_id, *root_message_id),
             CommandV2::CreateRoom {
                 room_id,
                 name,
@@ -562,6 +567,30 @@ impl ServiceV2 {
                     causation: ModerationCausationV1::new(*causation),
                 },
             ),
+            CommandV2::ArchiveThread {
+                room_id,
+                expected_revision,
+                root_message_id,
+                reason,
+                causation,
+            }
+            | CommandV2::ReopenThread {
+                room_id,
+                expected_revision,
+                root_message_id,
+                reason,
+                causation,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetThreadArchived {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    root_message_id: MessageId::from_bytes(root_message_id.into_bytes()),
+                    archived: matches!(command, CommandV2::ArchiveThread { .. }),
+                    reason: ModerationReasonV1::new(reason),
+                    causation: ModerationCausationV1::new(*causation),
+                },
+            ),
         }
     }
 
@@ -674,8 +703,48 @@ impl ServiceV2 {
                 message_id: MessageIdV1::new(message_id.into_bytes()),
                 sequence,
             }),
+            EngineOutcome::ThreadLifecycleChanged {
+                root_message_id,
+                archived,
+                ..
+            } => Ok(if archived {
+                OutcomeV2::ThreadArchived {
+                    revision,
+                    root_message_id: MessageIdV1::new(root_message_id.into_bytes()),
+                }
+            } else {
+                OutcomeV2::ThreadReopened {
+                    revision,
+                    root_message_id: MessageIdV1::new(root_message_id.into_bytes()),
+                }
+            }),
             EngineOutcome::ParticipantRegistered(_) => Err(RefusalV2::Unavailable),
         }
+    }
+
+    fn thread_status(
+        &self,
+        observer: &ParticipantId,
+        room_id: &str,
+        root_message_id: MessageIdV1,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let status = self
+            .engine
+            .thread_status(
+                observer,
+                &RoomId::new(room_id),
+                MessageId::from_bytes(root_message_id.into_bytes()),
+            )
+            .map_err(map_observation_refusal)?;
+        Ok(OutcomeV2::ThreadStatus(ThreadStatusV1 {
+            revision: status.revision.0,
+            room_id: status.room_id.as_str().to_owned(),
+            root_message_id: MessageIdV1::new(status.root_message_id.into_bytes()),
+            state: match status.state {
+                agora_engine::ThreadLifecycleStateV1::Active => ThreadLifecycleStateV1::Active,
+                agora_engine::ThreadLifecycleStateV1::Archived => ThreadLifecycleStateV1::Archived,
+            },
+        }))
     }
 
     fn rooms(
@@ -1175,6 +1244,20 @@ impl ServiceV2 {
                                 reason: reason.as_str().to_owned(),
                                 causation: causation.into_bytes(),
                             },
+                            agora_engine::DomainEventV2::ThreadLifecycleChanged {
+                                actor,
+                                root_message_id,
+                                archived,
+                                reason,
+                                causation,
+                                ..
+                            } => RoomEventV2::ThreadLifecycleChanged {
+                                actor_id: actor.as_str().to_owned(),
+                                root_message_id: MessageIdV1::new(root_message_id.into_bytes()),
+                                archived,
+                                reason: reason.as_str().to_owned(),
+                                causation: causation.into_bytes(),
+                            },
                         };
                         Ok(RoomChangeV2 {
                             event_sequence: change.sequence.0,
@@ -1454,7 +1537,8 @@ impl ServiceV2 {
             }
             CommandV2::OpenChanges { room_id, .. }
             | CommandV2::OpenIdentifiedChanges { room_id, .. }
-            | CommandV2::OpenThreadedChanges { room_id, .. } => valid_room(room_id),
+            | CommandV2::OpenThreadedChanges { room_id, .. }
+            | CommandV2::ThreadStatus { room_id, .. } => valid_room(room_id),
             CommandV2::Changes { room_id, limit, .. }
             | CommandV2::IdentifiedChanges { room_id, limit, .. }
             | CommandV2::ThreadedChanges { room_id, limit, .. } => {
@@ -1501,6 +1585,12 @@ impl ServiceV2 {
             CommandV2::SetAdmissionPolicy { room_id, .. } => valid_room(room_id),
             CommandV2::WithdrawMessage { room_id, .. } => valid_room(room_id),
             CommandV2::RedactMessage {
+                room_id, reason, ..
+            }
+            | CommandV2::ArchiveThread {
+                room_id, reason, ..
+            }
+            | CommandV2::ReopenThread {
                 room_id, reason, ..
             } => valid_room(room_id) && valid_text(reason, self.limits.max_moderation_reason_bytes),
             CommandV2::Speak {
@@ -1713,6 +1803,20 @@ fn map_identified_room_event(
             reason: reason.as_str().to_owned(),
             causation: causation.into_bytes(),
         },
+        agora_engine::DomainEventV2::ThreadLifecycleChanged {
+            actor,
+            root_message_id,
+            archived,
+            reason,
+            causation,
+            ..
+        } => IdentifiedRoomEventV1::ThreadLifecycleChanged {
+            actor_id: actor.as_str().to_owned(),
+            root_message_id: MessageIdV1::new(root_message_id.into_bytes()),
+            archived,
+            reason: reason.as_str().to_owned(),
+            causation: causation.into_bytes(),
+        },
     })
 }
 
@@ -1825,6 +1929,20 @@ fn map_threaded_room_event(
             reason: reason.as_str().to_owned(),
             causation: causation.into_bytes(),
         },
+        agora_engine::DomainEventV2::ThreadLifecycleChanged {
+            actor,
+            root_message_id,
+            archived,
+            reason,
+            causation,
+            ..
+        } => ThreadedRoomEventV1::ThreadLifecycleChanged {
+            actor_id: actor.as_str().to_owned(),
+            root_message_id: MessageIdV1::new(root_message_id.into_bytes()),
+            archived,
+            reason: reason.as_str().to_owned(),
+            causation: causation.into_bytes(),
+        },
     })
 }
 
@@ -1865,6 +1983,7 @@ fn map_observation_refusal(refusal: ObservationRefusal) -> RefusalV2 {
         ObservationRefusal::NotMember => RefusalV2::NotMember,
         ObservationRefusal::NotAuthorized => RefusalV2::NotAuthorized,
         ObservationRefusal::InvalidLimit => RefusalV2::InvalidInput,
+        ObservationRefusal::InvalidTarget => RefusalV2::InvalidInput,
         ObservationRefusal::ForeignCursor => RefusalV2::InvalidCursor,
         ObservationRefusal::Stale { actual_revision } => RefusalV2::Stale {
             actual_revision: actual_revision.0,
@@ -1886,6 +2005,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvitationRequired(_)
         | EngineRefusal::OwnerCannotLeave => RefusalV2::NotAuthorized,
         EngineRefusal::ParticipantBanned(_) => RefusalV2::Banned,
+        EngineRefusal::ThreadArchived => RefusalV2::ThreadArchived,
         EngineRefusal::ParticipantLimit
         | EngineRefusal::RoomLimit
         | EngineRefusal::MemberLimit
@@ -1909,6 +2029,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidPolicyChange
         | EngineRefusal::UnknownMessage
         | EngineRefusal::InvalidReplyTarget
+        | EngineRefusal::InvalidThreadLifecycleChange
         | EngineRefusal::MessageAlreadyTombstoned
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)

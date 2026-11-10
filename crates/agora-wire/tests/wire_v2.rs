@@ -4,8 +4,8 @@ use agora_protocol::v2::{
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
     RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
-    RoomSummaryV2, ThreadMessagePageV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
-    ThreadedRoomChangeV1, ThreadedRoomEventV1,
+    RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
+    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -151,6 +151,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::ModeratorRedactionV1,
         CapabilityV2::IdentifiedRoomChangesV1,
         CapabilityV2::ThreadsV1,
+        CapabilityV2::ThreadLifecycleV1,
     ])))
 }
 
@@ -263,6 +264,36 @@ fn threaded_changes_reply() -> WireReplyV2 {
     )))
 }
 
+fn thread_lifecycle_change_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadedChanges(
+        ThreadedRoomChangePageV1 {
+            revision: 24,
+            changes: vec![ThreadedRoomChangeV1 {
+                event_sequence: 23,
+                revision: 24,
+                event: ThreadedRoomEventV1::ThreadLifecycleChanged {
+                    actor_id: "bot".to_owned(),
+                    root_message_id: MessageIdV1::new([0x90; 16]),
+                    archived: true,
+                    reason: "pause".to_owned(),
+                    causation: [0x92; 16],
+                },
+            }],
+            next: PageCursorV2(24),
+            has_more: false,
+        },
+    )))
+}
+
+fn thread_status_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadStatus(ThreadStatusV1 {
+        revision: 24,
+        room_id: "private".to_owned(),
+        root_message_id: MessageIdV1::new([0x90; 16]),
+        state: ThreadLifecycleStateV1::Archived,
+    })))
+}
+
 fn withdrawal_change_reply() -> WireReplyV2 {
     WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
         revision: 20,
@@ -366,6 +397,16 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
             encode_reply_v2(&threaded_changes_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/threaded-changes-reply-v2.hex")),
         ),
+        (
+            encode_reply_v2(&thread_lifecycle_change_reply(), limits()).unwrap(),
+            fixture(include_str!(
+                "fixtures/thread-lifecycle-change-reply-v2.hex"
+            )),
+        ),
+        (
+            encode_reply_v2(&thread_status_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/thread-status-reply-v2.hex")),
+        ),
     ];
     for (actual, expected) in cases {
         assert_eq!(actual, expected);
@@ -460,6 +501,24 @@ fn every_v2_command_round_trips() {
             room_id: "room".to_owned(),
             cursor: PageCursorV2(3),
             limit: 4,
+        },
+        CommandV2::ArchiveThread {
+            room_id: "room".to_owned(),
+            expected_revision: 4,
+            root_message_id: MessageIdV1::new([0x90; 16]),
+            reason: "pause".to_owned(),
+            causation: [0x91; 16],
+        },
+        CommandV2::ReopenThread {
+            room_id: "room".to_owned(),
+            expected_revision: 5,
+            root_message_id: MessageIdV1::new([0x90; 16]),
+            reason: "resume".to_owned(),
+            causation: [0x92; 16],
+        },
+        CommandV2::ThreadStatus {
+            room_id: "room".to_owned(),
+            root_message_id: MessageIdV1::new([0x90; 16]),
         },
         CommandV2::CreateRoom {
             room_id: "room".to_owned(),
@@ -742,6 +801,28 @@ fn every_v2_outcome_and_refusal_round_trips() {
                         causation: [0x46; 16],
                     },
                 },
+                RoomChangeV2 {
+                    event_sequence: 15,
+                    revision: 16,
+                    event: RoomEventV2::ThreadLifecycleChanged {
+                        actor_id: "bot".to_owned(),
+                        root_message_id: MessageIdV1::new([0x47; 16]),
+                        archived: true,
+                        reason: "pause".to_owned(),
+                        causation: [0x48; 16],
+                    },
+                },
+                RoomChangeV2 {
+                    event_sequence: 16,
+                    revision: 17,
+                    event: RoomEventV2::ThreadLifecycleChanged {
+                        actor_id: "bot".to_owned(),
+                        root_message_id: MessageIdV1::new([0x47; 16]),
+                        archived: false,
+                        reason: "resume".to_owned(),
+                        causation: [0x49; 16],
+                    },
+                },
             ],
             next: PageCursorV2(9),
             has_more: false,
@@ -759,6 +840,18 @@ fn every_v2_outcome_and_refusal_round_trips() {
             message_id: MessageIdV1::new([0x91; 16]),
             root_message_id: MessageIdV1::new([0x90; 16]),
             sequence: 6,
+        },
+        OutcomeV2::ThreadArchived {
+            revision: 10,
+            root_message_id: MessageIdV1::new([0x90; 16]),
+        },
+        OutcomeV2::ThreadReopened {
+            revision: 11,
+            root_message_id: MessageIdV1::new([0x90; 16]),
+        },
+        match thread_status_reply() {
+            WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
+            _ => unreachable!(),
         },
         OutcomeV2::ChangeGap {
             current_revision: 10,
@@ -798,6 +891,7 @@ fn every_v2_outcome_and_refusal_round_trips() {
         RefusalV2::Exhausted,
         RefusalV2::Unavailable,
         RefusalV2::Banned,
+        RefusalV2::ThreadArchived,
     ];
     for refusal in refusals {
         for reply in [
@@ -874,6 +968,20 @@ fn every_identified_change_event_round_trips() {
             sequence: 6,
             reason: "policy".to_owned(),
             causation: [12; 16],
+        },
+        IdentifiedRoomEventV1::ThreadLifecycleChanged {
+            actor_id: "bot".to_owned(),
+            root_message_id: MessageIdV1::new([13; 16]),
+            archived: true,
+            reason: "pause".to_owned(),
+            causation: [13; 16],
+        },
+        IdentifiedRoomEventV1::ThreadLifecycleChanged {
+            actor_id: "bot".to_owned(),
+            root_message_id: MessageIdV1::new([13; 16]),
+            archived: false,
+            reason: "resume".to_owned(),
+            causation: [14; 16],
         },
     ];
     for (index, event) in events.into_iter().enumerate() {
@@ -959,6 +1067,20 @@ fn every_threaded_change_event_round_trips() {
             reason: "policy".to_owned(),
             causation: [12; 16],
         },
+        ThreadedRoomEventV1::ThreadLifecycleChanged {
+            actor_id: "bot".to_owned(),
+            root_message_id: MessageIdV1::new([13; 16]),
+            archived: true,
+            reason: "pause".to_owned(),
+            causation: [13; 16],
+        },
+        ThreadedRoomEventV1::ThreadLifecycleChanged {
+            actor_id: "bot".to_owned(),
+            root_message_id: MessageIdV1::new([13; 16]),
+            archived: false,
+            reason: "resume".to_owned(),
+            causation: [14; 16],
+        },
     ];
     for (index, event) in events.into_iter().enumerate() {
         let reply = WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadedChanges(
@@ -991,6 +1113,8 @@ fn v2_decoding_is_closed_and_version_isolated() {
         thread_roots_reply(),
         thread_replies_reply(),
         threaded_changes_reply(),
+        thread_lifecycle_change_reply(),
+        thread_status_reply(),
     ] {
         let encoded = encode_reply_v2(&reply, limits()).unwrap();
         for end in 0..encoded.len() {
@@ -1045,6 +1169,19 @@ fn v2_decoding_is_closed_and_version_isolated() {
     unknown_threaded_change_event[36] = 0x7f;
     assert_eq!(
         decode_reply_v2(&unknown_threaded_change_event, limits()),
+        Err(WireDecodeError::UnknownTag)
+    );
+    let mut unknown_thread_lifecycle_event =
+        encode_reply_v2(&thread_lifecycle_change_reply(), limits()).unwrap();
+    unknown_thread_lifecycle_event[36] = 0x7f;
+    assert_eq!(
+        decode_reply_v2(&unknown_thread_lifecycle_event, limits()),
+        Err(WireDecodeError::UnknownTag)
+    );
+    let mut unknown_thread_state = encode_reply_v2(&thread_status_reply(), limits()).unwrap();
+    *unknown_thread_state.last_mut().unwrap() = 0x7f;
+    assert_eq!(
+        decode_reply_v2(&unknown_thread_state, limits()),
         Err(WireDecodeError::UnknownTag)
     );
     let mut unknown_thread_root_tag = encode_reply_v2(&thread_replies_reply(), limits()).unwrap();

@@ -122,6 +122,24 @@ pub enum CommandV2 {
         cursor: PageCursorV2,
         limit: u32,
     },
+    ArchiveThread {
+        room_id: String,
+        expected_revision: u64,
+        root_message_id: MessageIdV1,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ReopenThread {
+        room_id: String,
+        expected_revision: u64,
+        root_message_id: MessageIdV1,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ThreadStatus {
+        room_id: String,
+        root_message_id: MessageIdV1,
+    },
     CreateRoom {
         room_id: String,
         name: String,
@@ -483,6 +501,35 @@ impl fmt::Debug for CommandV2 {
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
                 .finish(),
+            Self::ArchiveThread {
+                room_id,
+                expected_revision,
+                root_message_id,
+                reason,
+                ..
+            }
+            | Self::ReopenThread {
+                room_id,
+                expected_revision,
+                root_message_id,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("ThreadLifecycle")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("root_message_id", root_message_id)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::ThreadStatus {
+                room_id,
+                root_message_id,
+            } => formatter
+                .debug_struct("ThreadStatus")
+                .field("room_id_bytes", &room_id.len())
+                .field("root_message_id", root_message_id)
+                .finish(),
         }
     }
 }
@@ -502,6 +549,7 @@ pub enum CapabilityV2 {
     ModeratorRedactionV1,
     IdentifiedRoomChangesV1,
     ThreadsV1,
+    ThreadLifecycleV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -725,6 +773,32 @@ impl fmt::Debug for ThreadMessagePageV1 {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ThreadLifecycleStateV1 {
+    Active,
+    Archived,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ThreadStatusV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub root_message_id: MessageIdV1,
+    pub state: ThreadLifecycleStateV1,
+}
+
+impl fmt::Debug for ThreadStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ThreadStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("root_message_id", &self.root_message_id)
+            .field("state", &self.state)
+            .finish()
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub enum RoomEventV2 {
     RoomCreated {
@@ -778,6 +852,13 @@ pub enum RoomEventV2 {
         author_id: String,
         message_id: MessageIdV1,
         sequence: u64,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ThreadLifecycleChanged {
+        actor_id: String,
+        root_message_id: MessageIdV1,
+        archived: bool,
         reason: String,
         causation: [u8; 16],
     },
@@ -868,6 +949,20 @@ impl fmt::Debug for RoomEventV2 {
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
                 .finish(),
+            Self::ThreadLifecycleChanged {
+                actor_id,
+                root_message_id,
+                archived,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("ThreadLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("root_message_id", root_message_id)
+                .field("archived", archived)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
         }
     }
 }
@@ -927,6 +1022,13 @@ pub enum IdentifiedRoomEventV1 {
         author_id: String,
         message_id: MessageIdV1,
         sequence: u64,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ThreadLifecycleChanged {
+        actor_id: String,
+        root_message_id: MessageIdV1,
+        archived: bool,
         reason: String,
         causation: [u8; 16],
     },
@@ -1017,6 +1119,20 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
                 .finish(),
+            Self::ThreadLifecycleChanged {
+                actor_id,
+                root_message_id,
+                archived,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("ThreadLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("root_message_id", root_message_id)
+                .field("archived", archived)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
         }
     }
 }
@@ -1076,6 +1192,13 @@ pub enum ThreadedRoomEventV1 {
         author_id: String,
         message_id: MessageIdV1,
         sequence: u64,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ThreadLifecycleChanged {
+        actor_id: String,
+        root_message_id: MessageIdV1,
+        archived: bool,
         reason: String,
         causation: [u8; 16],
     },
@@ -1163,6 +1286,20 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .field("author_id_bytes", &author_id.len())
                 .field("message_id", message_id)
                 .field("sequence", sequence)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::ThreadLifecycleChanged {
+                actor_id,
+                root_message_id,
+                archived,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("ThreadLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("root_message_id", root_message_id)
+                .field("archived", archived)
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
                 .finish(),
@@ -1293,6 +1430,7 @@ pub enum OutcomeV2 {
     IdentifiedMessages(IdentifiedMessagePageV1),
     ThreadRoots(ThreadMessagePageV1),
     ThreadReplies(ThreadMessagePageV1),
+    ThreadStatus(ThreadStatusV1),
     ChangesOpened {
         revision: u64,
         cursor: PageCursorV2,
@@ -1356,6 +1494,14 @@ pub enum OutcomeV2 {
         message_id: MessageIdV1,
         sequence: u64,
     },
+    ThreadArchived {
+        revision: u64,
+        root_message_id: MessageIdV1,
+    },
+    ThreadReopened {
+        revision: u64,
+        root_message_id: MessageIdV1,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1376,6 +1522,7 @@ pub enum RefusalV2 {
     Exhausted,
     Unavailable,
     Banned,
+    ThreadArchived,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

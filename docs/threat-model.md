@@ -61,6 +61,12 @@ also bind the root. Nested replies and unknown or evicted targets fail without
 state change. Withdrawal and redaction hide retained bodies but intentionally
 preserve the relationship, authorship, addressing, and order, so deployments
 must treat conversation topology as sensitive even after tombstoning.
+Archive state adds behavioral metadata and can be abused to suppress replies.
+Agora limits this to current root authors, owners, and moderators, derives the
+actor from the service binding, records bounded reason and opaque causation, and
+keeps exact replay atomic. Archive never hides existing content or grants read
+authority. Deployments still need abuse policy and external audit if privileged
+moderators must be accountable beyond the retained room feed.
 
 Author withdrawal rechecks current membership and exact authorship at the
 named message ID; participant kind, room role, and knowledge of the ID grant no

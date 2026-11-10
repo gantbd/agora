@@ -3,8 +3,9 @@ use agora_protocol::v2::{
     IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReplyV2, RoleV2,
-    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadMessagePageV1,
-    ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
+    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
+    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
+    ThreadedRoomChangeV1, ThreadedRoomEventV1,
 };
 
 #[test]
@@ -54,6 +55,24 @@ fn v2_debug_output_is_content_safe() {
             room_id: "secret-room".to_owned(),
             cursor: PageCursorV2(55),
             limit: 1,
+        },
+        CommandV2::ArchiveThread {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 2,
+            root_message_id: MessageIdV1::new([0x60; 16]),
+            reason: "secret-reason".to_owned(),
+            causation: *b"secret-cause-123",
+        },
+        CommandV2::ReopenThread {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 3,
+            root_message_id: MessageIdV1::new([0x60; 16]),
+            reason: "secret-reason".to_owned(),
+            causation: *b"secret-cause-123",
+        },
+        CommandV2::ThreadStatus {
+            room_id: "secret-room".to_owned(),
+            root_message_id: MessageIdV1::new([0x60; 16]),
         },
         CommandV2::Speak {
             room_id: "secret-room".to_owned(),
@@ -175,6 +194,16 @@ fn v2_debug_output_is_content_safe() {
             root_message_id: MessageIdV1::new([0x60; 16]),
             sequence: 1,
         }),
+        ReplyV2::Accepted(OutcomeV2::ThreadArchived {
+            revision: 3,
+            root_message_id: MessageIdV1::new([0x60; 16]),
+        }),
+        ReplyV2::Accepted(OutcomeV2::ThreadStatus(ThreadStatusV1 {
+            revision: 3,
+            room_id: "secret-room".to_owned(),
+            root_message_id: MessageIdV1::new([0x60; 16]),
+            state: ThreadLifecycleStateV1::Archived,
+        })),
         ReplyV2::Accepted(OutcomeV2::MessageWithdrawn {
             revision: 3,
             message_id: MessageIdV1::new([0x5c; 16]),

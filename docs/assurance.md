@@ -20,7 +20,7 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact ten-package workspace and twenty-one canonical fixtures. These
+closes over the exact ten-package workspace and twenty-three canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -86,7 +86,7 @@ contents. The client test fixes the independent monotone V2 request namespace.
 No V2 authenticated host, persistence, transport, or uncertainty behavior is
 claimed.
 
-Wire V2 freezes fourteen canonical frames and round-trips every V2 command,
+Wire V2 freezes sixteen canonical frames and round-trips every V2 command,
 outcome, and refusal. It independently exercises every truncation of
 representative request and reply frames, trailing data, V1/version mismatch,
 unknown command and cursor tags, text/list ceilings, and content-safe Debug
@@ -177,7 +177,13 @@ and relationship preservation through withdrawal, redaction, checkpoint, and
 exact replay. All threaded event variants and optional-root tags round-trip;
 semantic page-shape checks, nested unknown tags, every truncation, Debug safety,
 SDK construction, and two canonical wire fixtures close the public profile.
-Canonical profile-8 engine and profile-10 service/host fixtures close recovery.
+Canonical profile-9 engine and profile-11 service/host fixtures close recovery.
+
+Thread lifecycle scenarios prove root-author and owner authority, foreign-author
+refusal, archive reply fencing, reopen admission, current status, exact replay,
+all-profile feed evidence, tombstone independence, and recovery. Closed command,
+outcome, state, refusal, capability, and archive/reopen event tags are exercised
+with truncation, unknown-tag, Debug, SDK, and two new canonical frame fixtures.
 
 The gate does not establish a credential adapter, transport security,
 multi-host serialization, physical-device power-loss behavior, event delivery,

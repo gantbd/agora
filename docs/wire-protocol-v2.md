@@ -52,6 +52,9 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `1a` | SpeakReply | room, expected revision, root message ID, logical time, body, addressed-participant list |
 | `1b` | OpenThreadedChanges | room `text`, exact completed snapshot revision |
 | `1c` | ThreadedChanges | room `text`, required opaque cursor `u64`, limit |
+| `1d` | ArchiveThread | room, expected revision, root message ID, reason, 16-byte causation |
+| `1e` | ReopenThread | room, expected revision, root message ID, reason, 16-byte causation |
+| `1f` | ThreadStatus | room, root message ID |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -65,7 +68,8 @@ MessageAccepted `09`, ChangesOpened `0a`, Changes `0b`, ChangeGap `0c`, Kicked
 `0d`, Banned `0e`, Unbanned `0f`, RoomPolicyChanged `10`, Bans `11`, and
 Capabilities `12`, IdentifiedMessages `13`, IdentifiedMessageAccepted `14`, and
 MessageWithdrawn `15`, MessageRedacted `16`, IdentifiedChanges `17`, ThreadRoots
-`18`, ThreadReplies `19`, ReplyAccepted `1a`, and ThreadedChanges `1b`.
+`18`, ThreadReplies `19`, ReplyAccepted `1a`, ThreadedChanges `1b`,
+ThreadArchived `1c`, ThreadReopened `1d`, and ThreadStatus `1e`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -140,6 +144,12 @@ event `06` uses the threaded-message grammar. Cross-use with legacy or
 identified feed cursors refuses. The relationship is reference metadata, not
 authority: every operation still rechecks membership and room role rules.
 
+ThreadArchived and ThreadReopened carry revision then the 16-byte root ID.
+ThreadStatus carries revision, room text, root ID, and state Active `01` or
+Archived `02`. Room-event tags `0d` and `0e` carry actor text, root ID, bounded
+reason, and causation for archive and reopen respectively in all three change
+profiles. Archive is reply-admission state, not deletion or completion.
+
 ## Refusals
 
 | Tag | Refusal | Payload |
@@ -160,6 +170,7 @@ authority: every operation still rechecks membership and room role rules.
 | `0e` | Exhausted | — |
 | `0f` | Unavailable | — |
 | `10` | Banned | — |
+| `11` | ThreadArchived | — |
 
 ## Closure and evidence
 
@@ -177,7 +188,8 @@ page, an author-withdrawal change, a moderator-redaction change, and an
 identity-bearing accepted-message change. Round-trip tests cover every command,
 outcome, refusal, room-event kind, and gap cause. Thread reply-page and threaded
 change fixtures additionally freeze the optional relationship grammar and page
-shape. Truncation, trailing data,
+shape. Thread lifecycle-change and status fixtures freeze explicit archive state
+and evidence. Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push
 delivery, or an authenticated host.

@@ -24,7 +24,7 @@ awk '!/^package\|sdk\/client\// { print }' \
   docs/compatibility-baseline.txt > "$task_dir/baseline.txt"
 expect_refusal 'missing package'
 
-sed 's/f5d4d06f5e5f3a5b9182d331d30dbbabd01feb7472d749d9ae456e581861e51d/e5d4d06f5e5f3a5b9182d331d30dbbabd01feb7472d749d9ae456e581861e51d/' \
+sed 's/97d9ca13627b753b1a7a6b3cb6e40e08614ce667c7f44e84186f8a204757a5a1/87d9ca13627b753b1a7a6b3cb6e40e08614ce667c7f44e84186f8a204757a5a1/' \
   docs/compatibility-baseline.txt > "$task_dir/baseline.txt"
 expect_refusal 'changed fixture digest'
 

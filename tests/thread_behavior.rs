@@ -1,6 +1,7 @@
 use agora_engine::{
-    AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, MessageId, ObservationRefusal,
-    OutcomeV2, Participant, ParticipantId, ParticipantKind, Refusal, RevisionedCommandV2, RoomId,
+    AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, MessageId, ModerationCausationV1,
+    ModerationReasonV1, ObservationRefusal, OutcomeV2, Participant, ParticipantId, ParticipantKind,
+    Refusal, RevisionedCommandV2, Role, RoomId, ThreadLifecycleStateV1,
 };
 
 fn setup(max_messages_per_room: usize) -> Engine {
@@ -33,6 +34,24 @@ fn setup(max_messages_per_room: usize) -> Engine {
         })
         .unwrap();
     engine
+}
+
+fn lifecycle(
+    engine: &mut Engine,
+    actor: &str,
+    root_message_id: MessageId,
+    archived: bool,
+) -> OutcomeV2 {
+    engine
+        .apply(CommandV2::SetThreadArchived {
+            room_id: "room".into(),
+            actor: actor.into(),
+            root_message_id,
+            archived,
+            reason: ModerationReasonV1::new(if archived { "pause" } else { "resume" }),
+            causation: ModerationCausationV1::new([u8::from(archived); 16]),
+        })
+        .unwrap()
 }
 
 fn root(engine: &mut Engine, author: &str, body: &str) -> MessageId {
@@ -217,5 +236,105 @@ fn tombstones_preserve_relationship_and_retention_makes_evicted_roots_unreplyabl
         page.messages
             .iter()
             .any(|message| message.id() == first_reply)
+    );
+}
+
+#[test]
+fn thread_lifecycle_is_attributable_authorized_and_not_completion() {
+    let mut engine = setup(16);
+    let alice_root = root(&mut engine, "alice", "root");
+    let bot_root = root(&mut engine, "bot", "agent root");
+
+    let OutcomeV2::ThreadLifecycleChanged {
+        root_message_id,
+        archived,
+        ..
+    } = lifecycle(&mut engine, "bot", bot_root, true)
+    else {
+        panic!("archive acceptance expected");
+    };
+    assert_eq!(root_message_id, bot_root);
+    assert!(archived);
+    assert_eq!(
+        engine
+            .thread_status(&ParticipantId::new("alice"), &RoomId::new("room"), bot_root,)
+            .unwrap()
+            .state,
+        ThreadLifecycleStateV1::Archived
+    );
+    assert_eq!(
+        engine.apply(CommandV2::SpeakReply {
+            room_id: "room".into(),
+            author: "alice".into(),
+            root_message_id: bot_root,
+            at: LogicalTime(100),
+            body: "blocked".to_owned(),
+            addressed_to: vec![],
+        }),
+        Err(Refusal::ThreadArchived)
+    );
+
+    let revision = engine.revision();
+    assert_eq!(
+        engine.apply(CommandV2::SetThreadArchived {
+            room_id: "room".into(),
+            actor: "bot".into(),
+            root_message_id: alice_root,
+            archived: true,
+            reason: ModerationReasonV1::new("not mine"),
+            causation: ModerationCausationV1::new([2; 16]),
+        }),
+        Err(Refusal::NotAuthorized(ParticipantId::new("bot")))
+    );
+    assert_eq!(engine.revision(), revision);
+    assert_eq!(
+        engine.apply(CommandV2::SetThreadArchived {
+            room_id: "room".into(),
+            actor: "alice".into(),
+            root_message_id: bot_root,
+            archived: true,
+            reason: ModerationReasonV1::new("repeat"),
+            causation: ModerationCausationV1::new([3; 16]),
+        }),
+        Err(Refusal::InvalidThreadLifecycleChange)
+    );
+    assert_eq!(engine.revision(), revision);
+
+    lifecycle(&mut engine, "alice", bot_root, false);
+    reply(&mut engine, "alice", bot_root, "allowed again");
+    engine
+        .apply(CommandV2::SetRole {
+            room_id: "room".into(),
+            actor: "alice".into(),
+            participant: "bot".into(),
+            role: Role::Moderator,
+        })
+        .unwrap();
+    lifecycle(&mut engine, "bot", alice_root, true);
+    assert_eq!(
+        engine
+            .thread_status(
+                &ParticipantId::new("alice"),
+                &RoomId::new("room"),
+                alice_root,
+            )
+            .unwrap()
+            .state,
+        ThreadLifecycleStateV1::Archived
+    );
+    engine
+        .apply(CommandV2::WithdrawMessage {
+            room_id: "room".into(),
+            actor: "bot".into(),
+            message_id: bot_root,
+        })
+        .unwrap();
+    lifecycle(&mut engine, "bot", bot_root, true);
+    assert_eq!(
+        engine
+            .thread_status(&ParticipantId::new("bot"), &RoomId::new("room"), bot_root,)
+            .unwrap()
+            .state,
+        ThreadLifecycleStateV1::Archived
     );
 }

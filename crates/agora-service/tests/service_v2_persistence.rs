@@ -3,7 +3,7 @@ use agora_engine::{
 };
 use agora_protocol::v2::{
     ClientIdV2, CommandV2, IdentifiedRoomEventV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
-    RequestV2, ThreadedRoomEventV1,
+    RequestV2, ThreadLifecycleStateV1, ThreadedRoomEventV1,
 };
 use agora_service::v2::{
     ServiceLimitsV2, ServiceV2,
@@ -97,7 +97,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v10.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v11.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -205,7 +205,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 11;
+    future[8] = 12;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -744,6 +744,140 @@ fn thread_reply_page_feed_and_receipt_survive_recovery_exactly() {
         ThreadedRoomEventV1::MessageAccepted(message)
             if message.message_id == first_id && message.reply_to_root == Some(root_id)
     ));
+}
+
+#[test]
+fn thread_lifecycle_status_feed_and_receipt_survive_recovery_exactly() {
+    let mut engine = Engine::new();
+    for id in ["alice", "bot"] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id,
+                id,
+                ParticipantKind::Human,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        message_id: root_id,
+        ..
+    }) = service.execute(
+        bot,
+        request(
+            1,
+            CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: 4,
+                logical_time: 1,
+                body: "root".to_owned(),
+                addressed_to: vec![],
+            },
+        ),
+    )
+    else {
+        panic!("root acceptance expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::OpenThreadedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 5,
+            },
+        ),
+    ) else {
+        panic!("threaded position expected");
+    };
+    let archive = request(
+        2,
+        CommandV2::ArchiveThread {
+            room_id: "room".to_owned(),
+            expected_revision: 5,
+            root_message_id: root_id,
+            reason: "pause".to_owned(),
+            causation: [0x71; 16],
+        },
+    );
+    let archive_reply = service.execute(bot, archive.clone());
+    assert!(matches!(
+        archive_reply,
+        ReplyV2::Accepted(OutcomeV2::ThreadArchived { revision: 6, .. })
+    ));
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(bot, archive), archive_reply);
+    let ReplyV2::Accepted(OutcomeV2::ThreadStatus(status)) = recovered.execute(
+        alice,
+        request(
+            2,
+            CommandV2::ThreadStatus {
+                room_id: "room".to_owned(),
+                root_message_id: root_id,
+            },
+        ),
+    ) else {
+        panic!("recovered status expected");
+    };
+    assert_eq!(status.state, ThreadLifecycleStateV1::Archived);
+    let ReplyV2::Accepted(OutcomeV2::ThreadedChanges(page)) = recovered.execute(
+        alice,
+        request(
+            3,
+            CommandV2::ThreadedChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("recovered lifecycle change expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        ThreadedRoomEventV1::ThreadLifecycleChanged {
+            root_message_id,
+            archived: true,
+            ..
+        } if *root_message_id == root_id
+    ));
+    assert_eq!(
+        recovered.execute(
+            alice,
+            request(
+                4,
+                CommandV2::ReopenThread {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    root_message_id: root_id,
+                    reason: "resume".to_owned(),
+                    causation: [0x72; 16],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ThreadReopened {
+            revision: 7,
+            root_message_id: root_id,
+        })
+    );
 }
 
 #[test]

@@ -10,8 +10,8 @@ use agora_protocol::v2::{
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
     RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
-    RoomSummaryV2, ThreadMessagePageV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
-    ThreadedRoomChangeV1, ThreadedRoomEventV1,
+    RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
+    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
 };
 use std::fmt;
 
@@ -311,6 +311,39 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             sink.text(room_id)?;
             sink.u64(cursor.0)?;
             sink.u64(u64::from(*limit))
+        }
+        CommandV2::ArchiveThread {
+            room_id,
+            expected_revision,
+            root_message_id,
+            reason,
+            causation,
+        }
+        | CommandV2::ReopenThread {
+            room_id,
+            expected_revision,
+            root_message_id,
+            reason,
+            causation,
+        } => {
+            sink.u8(if matches!(command, CommandV2::ArchiveThread { .. }) {
+                29
+            } else {
+                30
+            })?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            encode_message_id(sink, *root_message_id)?;
+            sink.text(reason)?;
+            encode_causation(sink, causation)
+        }
+        CommandV2::ThreadStatus {
+            room_id,
+            root_message_id,
+        } => {
+            sink.u8(31)?;
+            sink.text(room_id)?;
+            encode_message_id(sink, *root_message_id)
         }
         CommandV2::CreateRoom {
             room_id,
@@ -682,6 +715,34 @@ fn decode_command(
             cursor: PageCursorV2(read_u64(decoder)?),
             limit: read_u32(decoder)?,
         }),
+        tag @ 29..=30 => {
+            let room_id = read_text(decoder)?;
+            let expected_revision = read_u64(decoder)?;
+            let root_message_id = decode_message_id(decoder)?;
+            let reason = read_text(decoder)?;
+            let causation = decode_causation(decoder)?;
+            Ok(if tag == 29 {
+                CommandV2::ArchiveThread {
+                    room_id,
+                    expected_revision,
+                    root_message_id,
+                    reason,
+                    causation,
+                }
+            } else {
+                CommandV2::ReopenThread {
+                    room_id,
+                    expected_revision,
+                    root_message_id,
+                    reason,
+                    causation,
+                }
+            })
+        }
+        31 => Ok(CommandV2::ThreadStatus {
+            room_id: read_text(decoder)?,
+            root_message_id: decode_message_id(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -789,6 +850,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::ModeratorRedactionV1 => 9,
                     CapabilityV2::IdentifiedRoomChangesV1 => 10,
                     CapabilityV2::ThreadsV1 => 11,
+                    CapabilityV2::ThreadLifecycleV1 => 12,
                 })?;
             }
             Ok(())
@@ -829,6 +891,16 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             }
             sink.u8(25)?;
             encode_thread_message_page(sink, page)
+        }
+        OutcomeV2::ThreadStatus(status) => {
+            sink.u8(30)?;
+            sink.u64(status.revision)?;
+            sink.text(&status.room_id)?;
+            encode_message_id(sink, status.root_message_id)?;
+            sink.u8(match status.state {
+                ThreadLifecycleStateV1::Active => 1,
+                ThreadLifecycleStateV1::Archived => 2,
+            })
         }
         OutcomeV2::ChangesOpened { revision, cursor } => {
             sink.u8(10)?;
@@ -914,6 +986,22 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             sink.u64(*revision)?;
             encode_message_id(sink, *message_id)?;
             sink.u64(*sequence)
+        }
+        OutcomeV2::ThreadArchived {
+            revision,
+            root_message_id,
+        }
+        | OutcomeV2::ThreadReopened {
+            revision,
+            root_message_id,
+        } => {
+            sink.u8(if matches!(outcome, OutcomeV2::ThreadArchived { .. }) {
+                28
+            } else {
+                29
+            })?;
+            sink.u64(*revision)?;
+            encode_message_id(sink, *root_message_id)
         }
         OutcomeV2::Kicked { revision } => encode_revision_outcome(sink, 13, *revision),
         OutcomeV2::Banned { revision } => encode_revision_outcome(sink, 14, *revision),
@@ -1006,6 +1094,7 @@ fn decode_outcome(
                     9 => CapabilityV2::ModeratorRedactionV1,
                     10 => CapabilityV2::IdentifiedRoomChangesV1,
                     11 => CapabilityV2::ThreadsV1,
+                    12 => CapabilityV2::ThreadLifecycleV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -1061,6 +1150,24 @@ fn decode_outcome(
         27 => Ok(OutcomeV2::ThreadedChanges(decode_threaded_change_page(
             decoder, limits,
         )?)),
+        28 => Ok(OutcomeV2::ThreadArchived {
+            revision: read_u64(decoder)?,
+            root_message_id: decode_message_id(decoder)?,
+        }),
+        29 => Ok(OutcomeV2::ThreadReopened {
+            revision: read_u64(decoder)?,
+            root_message_id: decode_message_id(decoder)?,
+        }),
+        30 => Ok(OutcomeV2::ThreadStatus(ThreadStatusV1 {
+            revision: read_u64(decoder)?,
+            room_id: read_text(decoder)?,
+            root_message_id: decode_message_id(decoder)?,
+            state: match read_u8(decoder)? {
+                1 => ThreadLifecycleStateV1::Active,
+                2 => ThreadLifecycleStateV1::Archived,
+                _ => return Err(WireDecodeError::UnknownTag),
+            },
+        })),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1525,6 +1632,20 @@ fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<()
                     sink.u8(*byte)?;
                 }
             }
+            RoomEventV2::ThreadLifecycleChanged {
+                actor_id,
+                root_message_id,
+                archived,
+                reason,
+                causation,
+            } => encode_thread_lifecycle_event(
+                sink,
+                *archived,
+                actor_id,
+                *root_message_id,
+                reason,
+                causation,
+            )?,
         }
     }
     sink.u64(page.next.0)?;
@@ -1588,6 +1709,17 @@ fn decode_change_page(
                     author_id,
                     message_id,
                     sequence,
+                    reason,
+                    causation,
+                }
+            }
+            tag @ 13..=14 => {
+                let (actor_id, root_message_id, reason, causation) =
+                    decode_thread_lifecycle_event(decoder)?;
+                RoomEventV2::ThreadLifecycleChanged {
+                    actor_id,
+                    root_message_id,
+                    archived: tag == 13,
                     reason,
                     causation,
                 }
@@ -1707,6 +1839,20 @@ fn encode_identified_change_page(
                 sink.text(reason)?;
                 encode_causation(sink, causation)?;
             }
+            IdentifiedRoomEventV1::ThreadLifecycleChanged {
+                actor_id,
+                root_message_id,
+                archived,
+                reason,
+                causation,
+            } => encode_thread_lifecycle_event(
+                sink,
+                *archived,
+                actor_id,
+                *root_message_id,
+                reason,
+                causation,
+            )?,
         }
     }
     sink.u64(page.next.0)?;
@@ -1765,6 +1911,17 @@ fn decode_identified_change_page(
                 reason: read_text(decoder)?,
                 causation: decode_causation(decoder)?,
             },
+            tag @ 13..=14 => {
+                let (actor_id, root_message_id, reason, causation) =
+                    decode_thread_lifecycle_event(decoder)?;
+                IdentifiedRoomEventV1::ThreadLifecycleChanged {
+                    actor_id,
+                    root_message_id,
+                    archived: tag == 13,
+                    reason,
+                    causation,
+                }
+            }
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(IdentifiedRoomChangeV1 {
@@ -1880,6 +2037,20 @@ fn encode_threaded_change_page(
                 sink.text(reason)?;
                 encode_causation(sink, causation)?;
             }
+            ThreadedRoomEventV1::ThreadLifecycleChanged {
+                actor_id,
+                root_message_id,
+                archived,
+                reason,
+                causation,
+            } => encode_thread_lifecycle_event(
+                sink,
+                *archived,
+                actor_id,
+                *root_message_id,
+                reason,
+                causation,
+            )?,
         }
     }
     sink.u64(page.next.0)?;
@@ -1936,6 +2107,17 @@ fn decode_threaded_change_page(
                 reason: read_text(decoder)?,
                 causation: decode_causation(decoder)?,
             },
+            tag @ 13..=14 => {
+                let (actor_id, root_message_id, reason, causation) =
+                    decode_thread_lifecycle_event(decoder)?;
+                ThreadedRoomEventV1::ThreadLifecycleChanged {
+                    actor_id,
+                    root_message_id,
+                    archived: tag == 13,
+                    reason,
+                    causation,
+                }
+            }
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(ThreadedRoomChangeV1 {
@@ -1956,6 +2138,32 @@ fn decode_threaded_change_page(
         next,
         has_more,
     })
+}
+
+fn encode_thread_lifecycle_event(
+    sink: &mut dyn Sink,
+    archived: bool,
+    actor_id: &str,
+    root_message_id: MessageIdV1,
+    reason: &str,
+    causation: &[u8; 16],
+) -> Result<(), WireEncodeError> {
+    sink.u8(if archived { 13 } else { 14 })?;
+    sink.text(actor_id)?;
+    encode_message_id(sink, root_message_id)?;
+    sink.text(reason)?;
+    encode_causation(sink, causation)
+}
+
+fn decode_thread_lifecycle_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<(String, MessageIdV1, String, [u8; 16]), WireDecodeError> {
+    Ok((
+        read_text(decoder)?,
+        decode_message_id(decoder)?,
+        read_text(decoder)?,
+        decode_causation(decoder)?,
+    ))
 }
 
 #[derive(Clone, Copy)]
@@ -2140,6 +2348,7 @@ fn encode_refusal(sink: &mut dyn Sink, refusal: RefusalV2) -> Result<(), WireEnc
         RefusalV2::Exhausted => 14,
         RefusalV2::Unavailable => 15,
         RefusalV2::Banned => 16,
+        RefusalV2::ThreadArchived => 17,
     };
     sink.u8(tag)?;
     if let RefusalV2::Stale { actual_revision } = refusal {
@@ -2168,6 +2377,7 @@ fn decode_refusal(decoder: &mut keystone_codec::Decoder<'_>) -> Result<RefusalV2
         14 => Ok(RefusalV2::Exhausted),
         15 => Ok(RefusalV2::Unavailable),
         16 => Ok(RefusalV2::Banned),
+        17 => Ok(RefusalV2::ThreadArchived),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }

@@ -128,9 +128,9 @@ before message mutation at capacity. Publication deliberately addresses nobody;
 an orchestrator must use an explicit conversation command if addressing is part
 of the response semantics.
 
-## Checkpoint profile V8
+## Checkpoint profile V9
 
-The closed `AGORACP` version-8 codec captures limits, participants, rooms,
+The closed `AGORACP` version-9 codec captures limits, participants, rooms,
 membership, invitations, bans, retained message suffixes and addressing, complete publication
 records, revision/event frontiers, acknowledgment cursor, and pending events.
 Host byte/cardinality ceilings apply before checkpoint-owned limits or allocation.
@@ -223,7 +223,7 @@ position.
 
 ## Service checkpoint profile V2
 
-The `AGORASV` version-10 record is independent of public wire versioning and is
+The `AGORASV` version-11 record is independent of public wire versioning and is
 bound to an exact caller-supplied 16-byte store scope. It contains the canonical
 engine checkpoint, configured service limits, active client-to-participant
 bindings, ordered retired tombstones, exact request/reply receipts, private
@@ -250,8 +250,8 @@ checkpoint bytes.
 `Capabilities` returns one canonical strictly increasing list from a closed
 feature vocabulary: room lifecycle V2, retained history V2, room changes V1,
 moderation V1, room policy V1, ban observation V1, identified messages V1,
-author withdrawal V1, moderator redaction V1, identified room changes V1, and
-threads V1. The request is retained
+author withdrawal V1, moderator redaction V1, identified room changes V1,
+threads V1, and thread lifecycle V1. The request is retained
 and replayed under ordinary service request identity but performs no engine
 mutation. A listed capability means that this service implements the named
 syntax and semantics; it is not authentication, authorization, room membership,
@@ -331,6 +331,22 @@ their exact bytes. Withdrawal and redaction clear bodies but never alter the
 relationship. Threads define no recursion, archive state, subscription,
 notification, unread state, workflow admission, or agent activation.
 
+### Retained thread lifecycle V1
+
+Each retained root is active unless its ID appears in the canonical archived
+set. `ArchiveThread` and `ReopenThread` derive the actor from the service client
+and accept only a current root author, owner, or moderator. Both carry a bounded
+nonempty reason and opaque causation. Archive prevents `SpeakReply`; reopen
+restores admission. Neither changes message content, topology, addressing,
+tombstones, or visibility, and neither represents task resolution.
+
+`ThreadStatus` is a current-member observation of one retained root at the
+current revision. Archive/reopen events preserve actor, root ID, state, reason,
+causation, revision, and event order in legacy, identified, and threaded feeds.
+Eviction removes current lifecycle state with the root while retained replies
+may keep their historical reference. Engine, service, and host recovery retain
+the exact state, events, and request receipts.
+
 ## Receipt-gated durable service V2
 
 `agora-durable` wraps exactly one `ServiceV2` and one Keystone checkpoint-store
@@ -370,7 +386,7 @@ requests, reconnect a host session, or prove server durability.
 
 ## Authenticated host checkpoint and durable publication V2
 
-The `AGORAHST` version-10 record is independently versioned and bound to an exact
+The `AGORAHST` version-11 record is independently versioned and bound to an exact
 16-byte store scope. It contains Host V2 limits, the next non-reused session
 frontier, every active mapping from opaque host session to verified subject,
 participant, service client and last verification time, the bounded retired

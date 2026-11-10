@@ -257,6 +257,22 @@ impl Writer {
                 self.text(reason.as_str())?;
                 self.raw(&causation.into_bytes())
             }
+            DomainEventV2::ThreadLifecycleChanged {
+                room_id,
+                actor,
+                root_message_id,
+                archived,
+                reason,
+                causation,
+            } => {
+                self.byte(13)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&root_message_id.into_bytes())?;
+                self.byte(u8::from(*archived))?;
+                self.text(reason.as_str())?;
+                self.raw(&causation.into_bytes())
+            }
         }
     }
 }
@@ -442,6 +458,18 @@ impl<'a> Reader<'a> {
                 reason: ModerationReasonV1::new(self.text(l.max_moderation_reason_bytes)?),
                 causation: ModerationCausationV1::new(self.fixed()?),
             },
+            13 => DomainEventV2::ThreadLifecycleChanged {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                root_message_id: MessageId::from_bytes(self.fixed()?),
+                archived: match self.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::Invalid),
+                },
+                reason: ModerationReasonV1::new(self.text(l.max_moderation_reason_bytes)?),
+                causation: ModerationCausationV1::new(self.fixed()?),
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -544,7 +572,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(8)?;
+        w.byte(9)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -588,6 +616,10 @@ impl Engine {
             for root in &room.thread_roots {
                 w.raw(&root.into_bytes())?;
             }
+            w.count(room.archived_threads.len())?;
+            for root in &room.archived_threads {
+                w.raw(&root.into_bytes())?;
+            }
         }
         w.count(self.publications.len())?;
         for (key, p) in &self.publications {
@@ -620,7 +652,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 8 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 9 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -692,6 +724,15 @@ impl Engine {
                 }
                 thread_roots.insert(root);
             }
+            let n = r.count(l.max_messages_per_room)?;
+            let mut archived_threads = BTreeSet::new();
+            for _ in 0..n {
+                let root = MessageId::from_bytes(r.fixed()?);
+                if archived_threads.last().is_some_and(|old| old >= &root) {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                archived_threads.insert(root);
+            }
             insert(
                 &mut e.rooms,
                 id.clone(),
@@ -704,6 +745,7 @@ impl Engine {
                     bans,
                     messages,
                     thread_roots,
+                    archived_threads,
                     message_identity_incarnation,
                     next_message_identity,
                     next_message_sequence,
@@ -1193,6 +1235,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             || room.bans.len() > l.max_bans_per_room
             || room.messages.len() > l.max_messages_per_room
             || room.thread_roots.len() > room.messages.len()
+            || room.archived_threads.len() > room.messages.len()
         {
             return Err(CheckpointError::Invalid);
         }
@@ -1254,6 +1297,15 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                     .iter()
                     .find(|message| message.id == *root)
                     .is_some_and(|message| message.reply_to_root.is_some())
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        for root in &room.archived_threads {
+            if !room
+                .messages
+                .iter()
+                .any(|message| message.id == *root && message.reply_to_root.is_none())
             {
                 return Err(CheckpointError::Invalid);
             }
@@ -1482,6 +1534,31 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
                 && (message.sequence != *sequence
                     || message.author != *author
                     || !message.is_withdrawn())
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::ThreadLifecycleChanged {
+            room_id,
+            actor,
+            root_message_id,
+            reason,
+            ..
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            bounded(reason.as_str(), e.limits.max_moderation_reason_bytes)?;
+            let mut sequence = [0_u8; 8];
+            sequence.copy_from_slice(&root_message_id.0[8..]);
+            let sequence = u64::from_be_bytes(sequence);
+            if sequence >= r.next_message_sequence
+                || *root_message_id
+                    != MessageId::allocated(r.message_identity_incarnation, sequence)
+            {
+                return Err(CheckpointError::Invalid);
+            }
+            if let Some(root) = e.message_by_id(room_id, *root_message_id)
+                && root.reply_to_root.is_some()
             {
                 return Err(CheckpointError::Invalid);
             }

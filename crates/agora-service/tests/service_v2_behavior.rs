@@ -4,7 +4,7 @@ use agora_engine::{
 use agora_protocol::v2::{
     AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, IdentifiedRoomEventV1,
     MessageIdV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomEventV2,
-    ThreadedRoomEventV1,
+    ThreadLifecycleStateV1, ThreadedRoomEventV1,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -414,6 +414,238 @@ fn v2_one_level_threads_preserve_identity_pages_and_feed_relationships() {
         .expect("redacted reply remains retained");
     assert_eq!(redacted.reply_to_root, Some(root_id));
     assert!(redacted.body.is_empty());
+}
+
+#[test]
+fn v2_thread_lifecycle_is_authorized_observable_replayable_and_feed_visible() {
+    let mut engine = participant_engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    for participant in ["bot", "carol"] {
+        engine
+            .apply(EngineCommand::Join {
+                room_id: "room".into(),
+                participant: participant.into(),
+            })
+            .unwrap();
+    }
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let carol = service.connect("carol").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        message_id: root_id,
+        ..
+    }) = service.execute(
+        bot,
+        request(
+            1,
+            CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: 7,
+                logical_time: 1,
+                body: "root".to_owned(),
+                addressed_to: vec![],
+            },
+        ),
+    )
+    else {
+        panic!("root acceptance expected");
+    };
+    let mut feed_cursors = Vec::new();
+    for (request_id, command) in [
+        (
+            1,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 8,
+            },
+        ),
+        (
+            2,
+            CommandV2::OpenIdentifiedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 8,
+            },
+        ),
+        (
+            3,
+            CommandV2::OpenThreadedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 8,
+            },
+        ),
+    ] {
+        let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) =
+            service.execute(alice, request(request_id, command))
+        else {
+            panic!("change position expected");
+        };
+        feed_cursors.push(cursor);
+    }
+
+    assert_eq!(
+        service.execute(
+            carol,
+            request(
+                1,
+                CommandV2::ArchiveThread {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                    root_message_id: root_id,
+                    reason: "not mine".to_owned(),
+                    causation: [1; 16],
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::NotAuthorized)
+    );
+    let archive = request(
+        2,
+        CommandV2::ArchiveThread {
+            room_id: "room".to_owned(),
+            expected_revision: 8,
+            root_message_id: root_id,
+            reason: "pause".to_owned(),
+            causation: [2; 16],
+        },
+    );
+    let accepted = service.execute(bot, archive.clone());
+    assert_eq!(
+        accepted,
+        ReplyV2::Accepted(OutcomeV2::ThreadArchived {
+            revision: 9,
+            root_message_id: root_id,
+        })
+    );
+    assert_eq!(service.execute(bot, archive), accepted);
+    assert_eq!(
+        service.execute(
+            carol,
+            request(
+                2,
+                CommandV2::SpeakReply {
+                    room_id: "room".to_owned(),
+                    expected_revision: 9,
+                    root_message_id: root_id,
+                    logical_time: 2,
+                    body: "blocked".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::ThreadArchived)
+    );
+    let ReplyV2::Accepted(OutcomeV2::ThreadStatus(status)) = service.execute(
+        alice,
+        request(
+            4,
+            CommandV2::ThreadStatus {
+                room_id: "room".to_owned(),
+                root_message_id: root_id,
+            },
+        ),
+    ) else {
+        panic!("thread status expected");
+    };
+    assert_eq!(status.state, ThreadLifecycleStateV1::Archived);
+    assert_eq!(status.root_message_id, root_id);
+
+    for (request_id, cursor, profile) in [
+        (5, feed_cursors[0], 0_u8),
+        (6, feed_cursors[1], 1),
+        (7, feed_cursors[2], 2),
+    ] {
+        let command = match profile {
+            0 => CommandV2::Changes {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+            1 => CommandV2::IdentifiedChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+            _ => CommandV2::ThreadedChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+        };
+        let reply = service.execute(alice, request(request_id, command));
+        let is_archive = match reply {
+            ReplyV2::Accepted(OutcomeV2::Changes(page)) => matches!(
+                &page.changes[0].event,
+                RoomEventV2::ThreadLifecycleChanged {
+                    root_message_id,
+                    archived: true,
+                    ..
+                } if *root_message_id == root_id
+            ),
+            ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(page)) => matches!(
+                &page.changes[0].event,
+                IdentifiedRoomEventV1::ThreadLifecycleChanged {
+                    root_message_id,
+                    archived: true,
+                    ..
+                } if *root_message_id == root_id
+            ),
+            ReplyV2::Accepted(OutcomeV2::ThreadedChanges(page)) => matches!(
+                &page.changes[0].event,
+                ThreadedRoomEventV1::ThreadLifecycleChanged {
+                    root_message_id,
+                    archived: true,
+                    ..
+                } if *root_message_id == root_id
+            ),
+            _ => false,
+        };
+        assert!(is_archive);
+    }
+
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                8,
+                CommandV2::ReopenThread {
+                    room_id: "room".to_owned(),
+                    expected_revision: 9,
+                    root_message_id: root_id,
+                    reason: "resume".to_owned(),
+                    causation: [3; 16],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ThreadReopened {
+            revision: 10,
+            root_message_id: root_id,
+        })
+    );
+    assert!(matches!(
+        service.execute(
+            carol,
+            request(
+                3,
+                CommandV2::SpeakReply {
+                    room_id: "room".to_owned(),
+                    expected_revision: 10,
+                    root_message_id: root_id,
+                    logical_time: 3,
+                    body: "allowed".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ReplyAccepted { .. })
+    ));
 }
 
 fn participant_engine() -> Engine {
@@ -1568,8 +1800,8 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 11);
-    assert_eq!(capabilities.last(), Some(&CapabilityV2::ThreadsV1));
+    assert_eq!(capabilities.len(), 12);
+    assert_eq!(capabilities.last(), Some(&CapabilityV2::ThreadLifecycleV1));
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

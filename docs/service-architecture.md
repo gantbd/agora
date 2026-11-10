@@ -76,6 +76,12 @@ continuations additionally bind the exact root. Substitution refuses without
 consumption. A reply names one retained non-reply root, and the immutable
 relationship survives withdrawal and redaction tombstones and exact recovery.
 This remains serialized bounded pull, not a subscription or execution trigger.
+The separately advertised lifecycle profile stores only archived retained-root
+IDs. Root authors, owners, and moderators can archive or reopen with bounded
+evidence; archive blocks reply mutation but leaves pages and topology visible.
+`ThreadStatus` is a participant-bound current-state observation, and all three
+change profiles carry the ordered lifecycle fact. No lifecycle result is a task
+or completion signal.
 
 ## Durable state and publication
 

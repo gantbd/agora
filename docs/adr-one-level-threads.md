@@ -45,9 +45,9 @@ normal accepted message without its relationship. Their assigned bytes and
 cursor kinds do not change.
 
 `ReplyAccepted` returns revision, message ID, sequence, and root ID. Knowledge of
-either ID grants no authority. Thread lifecycle state, archive/close, reactions,
-edits, quotes, forwards, read state, notification, and subscription ownership
-are not part of `ThreadsV1`.
+either ID grants no authority. Lifecycle is a separately advertised additive
+profile; reactions, edits, quotes, forwards, read state, notification, and
+subscription ownership are not part of `ThreadsV1`.
 
 Wire V2 allocates command tags `0x18` through `0x1c` to `ThreadRoots`,
 `ThreadReplies`, `SpeakReply`, `OpenThreadedChanges`, and `ThreadedChanges`.
@@ -107,7 +107,9 @@ and previously unassigned.
 
 ## Nonclaims
 
-This profile does not establish recursive threads, archive/close lifecycle,
-thread membership, subscriptions, notification, unread state, presence,
+This profile alone does not establish recursive threads or lifecycle; the
+separate retained lifecycle profile adds archive/reopen without changing these
+bytes. Neither profile establishes thread membership, subscriptions,
+notification, unread state, presence,
 delivery, attention, task or workflow admission, agent activation, reactions,
 edits, search indexing, external connector parity, or physical erasure.

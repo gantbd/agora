@@ -550,6 +550,32 @@ pub struct ThreadMessagePage {
     pub next: Option<ThreadMessagePageCursor>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ThreadLifecycleStateV1 {
+    Active,
+    Archived,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ThreadStatusV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub root_message_id: MessageId,
+    pub state: ThreadLifecycleStateV1,
+}
+
+impl fmt::Debug for ThreadStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ThreadStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("root_message_id", &self.root_message_id)
+            .field("state", &self.state)
+            .finish()
+    }
+}
+
 impl fmt::Debug for ThreadMessagePage {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -657,6 +683,7 @@ pub enum ObservationRefusal {
     NotMember,
     NotAuthorized,
     InvalidLimit,
+    InvalidTarget,
     ForeignCursor,
     Stale { actual_revision: Revision },
     Capacity,
@@ -673,6 +700,7 @@ struct Room {
     bans: BTreeMap<ParticipantId, Role>,
     messages: VecDeque<Message>,
     thread_roots: BTreeSet<MessageId>,
+    archived_threads: BTreeSet<MessageId>,
     message_identity_incarnation: u64,
     next_message_identity: u64,
     next_message_sequence: u64,
@@ -749,6 +777,7 @@ pub enum RoomActionV1 {
     Leave,
     Speak,
     Reply,
+    ManageThread,
     WithdrawOwn,
     RedactAny,
     ManageRole,
@@ -776,6 +805,7 @@ impl CommandV2 {
             Self::Unban { .. } => Some(RoomActionV1::Unban),
             Self::Speak { .. } | Self::SpeakAddressed { .. } => Some(RoomActionV1::Speak),
             Self::SpeakReply { .. } => Some(RoomActionV1::Reply),
+            Self::SetThreadArchived { .. } => Some(RoomActionV1::ManageThread),
             Self::WithdrawMessage { .. } => Some(RoomActionV1::WithdrawOwn),
             Self::RedactMessage { .. } => Some(RoomActionV1::RedactAny),
         }
@@ -872,6 +902,14 @@ pub enum CommandV2 {
         reason: ModerationReasonV1,
         causation: ModerationCausationV1,
     },
+    SetThreadArchived {
+        room_id: RoomId,
+        actor: ParticipantId,
+        root_message_id: MessageId,
+        archived: bool,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -946,6 +984,14 @@ pub enum OutcomeV2 {
         reason: ModerationReasonV1,
         causation: ModerationCausationV1,
     },
+    ThreadLifecycleChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        root_message_id: MessageId,
+        archived: bool,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
 }
 
 /// Typed refusal reasons. Every refusal preserves authoritative state.
@@ -985,6 +1031,8 @@ pub enum Refusal {
     InvalidPolicyChange,
     UnknownMessage,
     InvalidReplyTarget,
+    ThreadArchived,
+    InvalidThreadLifecycleChange,
     MessageAlreadyTombstoned,
     RevisionConflict {
         expected: Revision,
@@ -1166,6 +1214,14 @@ pub enum DomainEventV2 {
         reason: ModerationReasonV1,
         causation: ModerationCausationV1,
     },
+    ThreadLifecycleChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        root_message_id: MessageId,
+        archived: bool,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
 }
 
 impl DomainEventV2 {
@@ -1183,7 +1239,8 @@ impl DomainEventV2 {
             | Self::ParticipantUnbanned { room_id, .. }
             | Self::MessageAccepted { room_id, .. }
             | Self::MessageWithdrawn { room_id, .. }
-            | Self::MessageRedacted { room_id, .. } => Some(room_id),
+            | Self::MessageRedacted { room_id, .. }
+            | Self::ThreadLifecycleChanged { room_id, .. } => Some(room_id),
         }
     }
 }
@@ -1669,6 +1726,42 @@ impl Engine {
         )
     }
 
+    pub fn thread_status(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        root_message_id: MessageId,
+    ) -> Result<ThreadStatusV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        let root = room
+            .messages
+            .iter()
+            .find(|message| message.id == root_message_id)
+            .ok_or(ObservationRefusal::InvalidTarget)?;
+        if root.reply_to_root.is_some() {
+            return Err(ObservationRefusal::InvalidTarget);
+        }
+        Ok(ThreadStatusV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            root_message_id,
+            state: if room.archived_threads.contains(&root_message_id) {
+                ThreadLifecycleStateV1::Archived
+            } else {
+                ThreadLifecycleStateV1::Active
+            },
+        })
+    }
+
     fn thread_message_page(
         &self,
         observer: &ParticipantId,
@@ -2136,6 +2229,21 @@ impl Engine {
                 reason,
                 causation,
             } => self.redact_message(room_id, actor, message_id, reason, causation),
+            CommandV2::SetThreadArchived {
+                room_id,
+                actor,
+                root_message_id,
+                archived,
+                reason,
+                causation,
+            } => self.set_thread_archived(
+                room_id,
+                actor,
+                root_message_id,
+                archived,
+                reason,
+                causation,
+            ),
         }
     }
 
@@ -2327,6 +2435,24 @@ impl Engine {
                 reason: reason.clone(),
                 causation: *causation,
             },
+            (
+                CommandV2::SetThreadArchived { .. },
+                OutcomeV2::ThreadLifecycleChanged {
+                    room_id,
+                    actor,
+                    root_message_id,
+                    archived,
+                    reason,
+                    causation,
+                },
+            ) => DomainEventV2::ThreadLifecycleChanged {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                root_message_id: *root_message_id,
+                archived: *archived,
+                reason: reason.clone(),
+                causation: *causation,
+            },
             _ => unreachable!("command and outcome are produced by one exhaustive transition"),
         }
     }
@@ -2395,6 +2521,7 @@ impl Engine {
                 bans: BTreeMap::new(),
                 messages: VecDeque::new(),
                 thread_roots: BTreeSet::new(),
+                archived_threads: BTreeSet::new(),
                 message_identity_incarnation: self.next_event_sequence.0,
                 next_message_identity: 0,
                 next_message_sequence: 0,
@@ -2711,6 +2838,9 @@ impl Engine {
             if root.reply_to_root.is_some() {
                 return Err(Refusal::InvalidReplyTarget);
             }
+            if room.archived_threads.contains(&root_message_id) {
+                return Err(Refusal::ThreadArchived);
+            }
         }
         if addressed_to.len() > self.limits.max_addressed_participants_per_message {
             return Err(Refusal::AddressedParticipantLimit);
@@ -2742,13 +2872,16 @@ impl Engine {
             .expect("room established by validation");
         if room.messages.len() == self.limits.max_messages_per_room
             && let Some(evicted) = room.messages.pop_front()
-            && let Some(root) = evicted.reply_to_root
-            && !room
-                .messages
-                .iter()
-                .any(|message| message.reply_to_root == Some(root))
         {
-            room.thread_roots.remove(&root);
+            room.archived_threads.remove(&evicted.id);
+            if let Some(root) = evicted.reply_to_root
+                && !room
+                    .messages
+                    .iter()
+                    .any(|message| message.reply_to_root == Some(root))
+            {
+                room.thread_roots.remove(&root);
+            }
         }
         room.messages.push_back(Message {
             id: message_id,
@@ -2771,6 +2904,57 @@ impl Engine {
                 sequence,
             },
             None => OutcomeV2::MessageAccepted { room_id, sequence },
+        })
+    }
+
+    fn set_thread_archived(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        root_message_id: MessageId,
+        archived: bool,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_moderation_reason(&reason)?;
+        let room = self.room_ref(&room_id)?;
+        let Some(root) = room
+            .messages
+            .iter()
+            .find(|message| message.id == root_message_id)
+        else {
+            return Err(Refusal::UnknownMessage);
+        };
+        if root.reply_to_root.is_some() {
+            return Err(Refusal::InvalidReplyTarget);
+        }
+        let actor_role = room
+            .members
+            .get(&actor)
+            .copied()
+            .ok_or_else(|| Refusal::NotMember(actor.clone()))?;
+        if root.author != actor && !matches!(actor_role, Role::Owner | Role::Moderator) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        if room.archived_threads.contains(&root_message_id) == archived {
+            return Err(Refusal::InvalidThreadLifecycleChange);
+        }
+        let room = self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation");
+        if archived {
+            room.archived_threads.insert(root_message_id);
+        } else {
+            room.archived_threads.remove(&root_message_id);
+        }
+        Ok(OutcomeV2::ThreadLifecycleChanged {
+            room_id,
+            actor,
+            root_message_id,
+            archived,
+            reason,
+            causation,
         })
     }
 

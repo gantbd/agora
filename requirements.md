@@ -195,12 +195,20 @@
   or evicted roots and nested replies refuse atomically. Root pages, root-bound
   reply pages, and threaded changes are independently bounded, client/observer/
   room/profile bound, and additive to unchanged legacy and identified grammars.
+- **R42 — Retained thread lifecycle:** a retained root has canonical active or
+  archived state. Its current author, room owner, or moderator may archive or
+  reopen with bounded reason and opaque causation; all must be current members.
+  Archive blocks new replies but preserves root, replies, topology, visibility,
+  and tombstone laws and implies no completion. Current-member status and every
+  room-change profile expose the state transition; replay and recovery preserve
+  authority evidence and order. Unknown/evicted/reply targets, repeated state,
+  malformed evidence, and unauthorized actors refuse atomically.
 
 ## Explicitly open
 
 Additional physical durable storage adapters, durable event sinks,
 credential/Aegis verifier adapters, network transports, message revision history,
-thread archive/close, reactions, end-to-end encryption, federation, delivery
+reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
 Credential/Aegis adapters, transport, backup/restore qualification, and durable
 profiles beyond the qualified single-owner local Unix directory remain open;

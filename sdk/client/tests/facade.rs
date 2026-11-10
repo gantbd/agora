@@ -162,6 +162,24 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
             cursor: protocol::v2::PageCursorV2(14),
             limit: 2,
         },
+        protocol::v2::CommandV2::ArchiveThread {
+            room_id: "room".to_owned(),
+            expected_revision: 15,
+            root_message_id: protocol::v2::MessageIdV1::new([0x50; 16]),
+            reason: "pause".to_owned(),
+            causation: [0x51; 16],
+        },
+        protocol::v2::CommandV2::ReopenThread {
+            room_id: "room".to_owned(),
+            expected_revision: 16,
+            root_message_id: protocol::v2::MessageIdV1::new([0x50; 16]),
+            reason: "resume".to_owned(),
+            causation: [0x52; 16],
+        },
+        protocol::v2::CommandV2::ThreadStatus {
+            room_id: "room".to_owned(),
+            root_message_id: protocol::v2::MessageIdV1::new([0x50; 16]),
+        },
     ] {
         let request = wire::v2::WireRequestV2::Execute {
             client: protocol::v2::ClientIdV2(7),

@@ -7,8 +7,8 @@
    of Agora.
 3. Add model, fuzz, and mutation gates around recovery, canonical wire changes,
    filesystem crash points, and command refusal.
-4. Build on the implemented one-level reply/thread profile with explicit thread
-   archive/close lifecycle, then add reactions and immutable revision history
+4. Build on the implemented one-level reply/thread and archive/reopen lifecycle
+   profiles with reactions and immutable revision history
    without weakening identity or tombstone reference integrity.
 5. Qualify backup/restore, upgrade/rollback, and an additional physical store only
    when a deployment profile requires claims beyond the current local Unix
