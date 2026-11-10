@@ -4,6 +4,7 @@ check: check-release-contract check-baseline check-supply-chain check-boundaries
 
 check-release-contract:
 	./scripts/check-release-contract.sh
+	./scripts/check-release-contract-mutants.sh
 
 check-baseline:
 	./scripts/check-compatibility-baseline.sh

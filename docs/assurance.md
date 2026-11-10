@@ -22,6 +22,9 @@ explicit sibling-Keystone source-layout assumption. The compatibility gate
 closes over the exact eight-package workspace and four canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
+The release-contract adversarial fixture separately proves that enabling root
+publication, weakening the toolchain pin, or removing the security policy is
+refused.
 The supply gate closes over nine local locked components and exact local-path
 dependency declarations. It is not an advisory scan, legal conclusion, binary
 SBOM, remote source proof, or artifact provenance claim.

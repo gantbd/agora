@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+release_root=${AGORA_RELEASE_ROOT:-"$(dirname "$0")/.."}
+cd "$release_root"
 
 required_files=(
   CHANGELOG.md

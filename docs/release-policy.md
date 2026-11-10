@@ -21,6 +21,9 @@ authorized.
 `make check-release-contract` verifies that every current package denies
 publication, the exact Rust toolchain is pinned, required legal/security/claim
 documents are present, and the sibling Keystone assumption remains explicit.
+An isolated copied source-contract fixture must pass, then mutants enabling root
+publication, replacing the pinned toolchain with `stable`, and removing the
+security policy must all fail.
 
 `make check-baseline` closes over the exact package and canonical-fixture
 inventories. `make check-supply-chain` closes over the current nine locked local
