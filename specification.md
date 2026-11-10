@@ -461,6 +461,11 @@ file, atomically renames it to `checkpoint.bin`, and synchronizes the directory.
 Only completion of that exact sequence returns the mechanism
 `agora-private-directory-v1` with durable acknowledgement strength. A failure
 after the temporary file is created is indeterminate and fences the owner.
+Injected interruption evidence covers pending-file creation, completed write,
+pending-file synchronization, head rename, and directory synchronization. The
+three pre-rename states leave `.pending` residue and fail closed on reopen; the
+two post-rename states recover the complete candidate revision. The interrupted
+caller is always fenced and receives an indeterminate outcome.
 
 “Durable” here means the specified operating-system synchronization mechanism
 completed on the qualified local profile. It does not prove storage-controller

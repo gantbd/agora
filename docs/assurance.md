@@ -154,6 +154,13 @@ resolves the store. Weak acknowledgement and store error never publish. This is
 store-port and crash-point evidence. The local directory profile below is a
 separate, deliberately narrow physical composition qualification.
 
+The directory adapter injects interruption after pending creation, completed
+write, pending sync, head rename, and directory sync. Each injected caller is
+fenced with an indeterminate result. Reopening the first three states refuses
+the surviving `.pending` residue; reopening either post-rename state recovers
+the exact candidate revision. This closes the adapter's process-boundary state
+machine, not controller-cache or hardware power-loss behavior.
+
 Client V2 scenarios distinguish definitely-not-sent from outcome-unknown,
 retain and resend the exact request identity only for an equal command, fence a
 different command without transport access, keep uncertainty through a later

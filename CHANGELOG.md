@@ -52,6 +52,8 @@ follow Semantic Versioning once a public release contract is selected.
 - Added an exclusive private local Unix directory checkpoint adapter with a
   frozen checksummed record, synchronized atomic replace, resource pinning,
   fail-closed corruption/residue handling, and authenticated-host restart proof.
+- Added interruption injection at every directory publication boundary, proving
+  pre-rename residue refusal and post-rename candidate recovery with fencing.
 - Added a snapshot-aligned bounded room change feed with stable event identity,
   exclusive replay-safe positions, explicit retention and membership-epoch gaps,
   durable Service V2 cursors, and a closed canonical Wire V2 projection.

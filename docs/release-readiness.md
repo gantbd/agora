@@ -75,7 +75,8 @@ not ready for a network service or crates.io release.
   revocation cleanup before its external refusal;
 - exclusive private local Unix directory storage with a frozen checksummed
   record, process lock, pinned resource identities, synchronized atomic replace,
-  fail-closed residue/corruption handling, and real authenticated-host restart;
+  fail-closed residue/corruption handling, all five publication interruption
+  points, and real authenticated-host restart;
 - snapshot-aligned bounded room pull changes with stable event identity,
   exclusive continuation, explicit retention/leave-rejoin gaps, durable service
   cursors, closed Wire V2 values, and a frozen representative frame;

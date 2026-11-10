@@ -119,6 +119,10 @@ deployment. It requires mode-0700/0600 resources, an exclusive process lock,
 pinned directory/lock/head identities, CRC32C-bound canonical bytes, and a
 file-sync/atomic-rename/directory-sync commit. Symlinks, permissive modes,
 replacement, malformed records, and `.pending` crash residue fail closed. The
+five publication boundaries are interruption-injected: pre-rename states reopen
+only as crash residue, while post-rename states recover the complete candidate;
+the interrupted live owner is always fenced. This is process-state evidence,
+not a simulated power-loss device.
 parent directory and same-UID processes remain trusted; CRC32C is corruption
 detection, not authentication. Hardware power-loss behavior, controller caches,
 network filesystems, rollback by a trusted process, encryption, backup/restore,

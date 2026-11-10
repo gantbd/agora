@@ -26,6 +26,16 @@ const PENDING: &str = ".pending";
 const MAGIC: &[u8; 8] = b"AGDIRCP\x01";
 const HEADER_BYTES: usize = 32;
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TestCrashPoint {
+    PendingCreated,
+    PendingWritten,
+    PendingSynced,
+    HeadRenamed,
+    DirectorySynced,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DirectoryLimitsV1 {
     pub max_key_bytes: usize,
@@ -115,6 +125,8 @@ pub struct DirectoryCheckpointStoreV1 {
     limits: DirectoryLimitsV1,
     fenced: Cell<bool>,
     signals: RefCell<DirectorySignalsV1>,
+    #[cfg(test)]
+    crash_point: Cell<Option<TestCrashPoint>>,
 }
 
 impl std::fmt::Debug for DirectoryCheckpointStoreV1 {
@@ -171,6 +183,8 @@ impl DirectoryCheckpointStoreV1 {
             limits,
             fenced: Cell::new(false),
             signals: RefCell::new(DirectorySignalsV1::default()),
+            #[cfg(test)]
+            crash_point: Cell::new(None),
         })
     }
 
@@ -219,6 +233,8 @@ impl DirectoryCheckpointStoreV1 {
                 retained_bytes: head_stamp.map_or(0, |stamp| stamp.length as usize),
                 ..DirectorySignalsV1::default()
             }),
+            #[cfg(test)]
+            crash_point: Cell::new(None),
         })
     }
 
@@ -295,6 +311,11 @@ impl DirectoryCheckpointStoreV1 {
         signals.saturated |= saturated;
         Ok(CommitOutcome::Refused(refusal))
     }
+
+    #[cfg(test)]
+    fn crash_at(&self, point: TestCrashPoint) -> bool {
+        self.crash_point.get() == Some(point)
+    }
 }
 
 impl CheckpointStore for DirectoryCheckpointStoreV1 {
@@ -365,12 +386,36 @@ impl CheckpointStore for DirectoryCheckpointStoreV1 {
             }
             Err(error) => return Err(io(error)),
         };
-        if pending.write_all(&record).is_err() || pending.sync_all().is_err() {
+        #[cfg(test)]
+        if self.crash_at(TestCrashPoint::PendingCreated) {
             return self.indeterminate();
         }
-        if fs::rename(&pending_path, self.path.join(HEAD)).is_err()
-            || self.directory.sync_all().is_err()
-        {
+        if pending.write_all(&record).is_err() {
+            return self.indeterminate();
+        }
+        #[cfg(test)]
+        if self.crash_at(TestCrashPoint::PendingWritten) {
+            return self.indeterminate();
+        }
+        if pending.sync_all().is_err() {
+            return self.indeterminate();
+        }
+        #[cfg(test)]
+        if self.crash_at(TestCrashPoint::PendingSynced) {
+            return self.indeterminate();
+        }
+        if fs::rename(&pending_path, self.path.join(HEAD)).is_err() {
+            return self.indeterminate();
+        }
+        #[cfg(test)]
+        if self.crash_at(TestCrashPoint::HeadRenamed) {
+            return self.indeterminate();
+        }
+        if self.directory.sync_all().is_err() {
+            return self.indeterminate();
+        }
+        #[cfg(test)]
+        if self.crash_at(TestCrashPoint::DirectorySynced) {
             return self.indeterminate();
         }
         let head_metadata = match fs::symlink_metadata(self.path.join(HEAD)) {
@@ -674,6 +719,53 @@ mod tests {
         let store =
             DirectoryCheckpointStoreV1::open_existing(&path, DirectoryLimitsV1::default()).unwrap();
         assert_eq!(store.load("host").unwrap().unwrap().bytes, b"two");
+    }
+
+    #[test]
+    fn every_publication_crash_point_is_residue_or_recoverable_commit() {
+        for point in [
+            TestCrashPoint::PendingCreated,
+            TestCrashPoint::PendingWritten,
+            TestCrashPoint::PendingSynced,
+            TestCrashPoint::HeadRenamed,
+            TestCrashPoint::DirectorySynced,
+        ] {
+            let temp = TempDirectory::new();
+            let path = temp.store();
+            let mut store =
+                DirectoryCheckpointStoreV1::create_new(&path, DirectoryLimitsV1::default())
+                    .unwrap();
+            store.crash_point.set(Some(point));
+            assert_eq!(
+                store.compare_exchange("host", None, b"candidate").unwrap(),
+                CommitOutcome::Indeterminate
+            );
+            assert_eq!(store.signals().indeterminate, 1);
+            assert!(store.signals().fenced);
+            drop(store);
+
+            if matches!(
+                point,
+                TestCrashPoint::PendingCreated
+                    | TestCrashPoint::PendingWritten
+                    | TestCrashPoint::PendingSynced
+            ) {
+                assert_eq!(
+                    DirectoryCheckpointStoreV1::open_existing(&path, DirectoryLimitsV1::default(),)
+                        .unwrap_err(),
+                    DirectoryErrorV1::CrashResidue,
+                    "pre-rename crash must fail closed at {point:?}"
+                );
+            } else {
+                let recovered =
+                    DirectoryCheckpointStoreV1::open_existing(&path, DirectoryLimitsV1::default())
+                        .unwrap();
+                let checkpoint = recovered.load("host").unwrap().unwrap();
+                assert_eq!(checkpoint.revision, Revision(0));
+                assert_eq!(checkpoint.bytes, b"candidate");
+                assert_eq!(checkpoint.strength, AcknowledgementStrength::Durable);
+            }
+        }
     }
 
     #[test]
