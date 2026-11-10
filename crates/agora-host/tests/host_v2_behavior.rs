@@ -1,9 +1,13 @@
 use agora_engine::{CommandV2 as EngineCommand, Engine, Participant, ParticipantKind, Revision};
 use agora_host::v2::HostV2;
+use agora_host::v2::persistence::{
+    HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
+};
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_protocol::v2::{
     AdmissionPolicyV2, ClientIdV2, CommandV2, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
 };
+use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
 use agora_wire::{WireLimits, WireRequestV1, encode_request_v1};
@@ -151,6 +155,23 @@ fn create_frame(client: ClientIdV2, request_id: u64, revision: u64) -> Vec<u8> {
     .unwrap()
 }
 
+const CHECKPOINT_SCOPE: HostCheckpointScopeV1 = HostCheckpointScopeV1::new(*b"host-test-scope!");
+const MAX_CHECKPOINT: usize = 2 * 1_024 * 1_024;
+
+fn recovery_limits() -> HostRecoveryLimitsV2 {
+    HostRecoveryLimitsV2 {
+        max_snapshot_bytes: MAX_CHECKPOINT,
+        max_service_snapshot_bytes: MAX_CHECKPOINT,
+        maximum_host_limits: limits(8),
+        service: ServiceRecoveryLimitsV2 {
+            max_snapshot_bytes: MAX_CHECKPOINT,
+            max_engine_snapshot_bytes: MAX_CHECKPOINT,
+            maximum_service_limits: ServiceLimitsV2::default(),
+            maximum_engine_limits: agora_engine::Limits::default(),
+        },
+    }
+}
+
 #[test]
 fn v2_verified_connection_binds_actor_and_exact_replay() {
     let (mut host, _) = make_host(2);
@@ -289,4 +310,101 @@ fn v2_disconnect_and_transport_close_reclaim_service_state() {
     let (session, _, _) = open(&mut host, "bot", 2);
     assert!(host.close(session));
     assert!(!host.close(session));
+}
+
+#[test]
+fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity() {
+    let (mut host, _) = make_host(2);
+    let (session, client, context) = open(&mut host, "alice", 1);
+    let request = create_frame(client, 9, 2);
+    let first = host
+        .handle(session, &request, &context, HostTimeV1(2))
+        .unwrap();
+    let checkpoint = host
+        .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+        .unwrap();
+    let fixture = include_str!("fixtures/host-checkpoint-v1.hex").trim();
+    let actual = checkpoint
+        .bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    assert_eq!(actual, fixture);
+
+    let calls = Rc::new(Cell::new(0));
+    let mut recovered = HostV2::recover_checkpoint(
+        checkpoint.bytes(),
+        CHECKPOINT_SCOPE,
+        recovery_limits(),
+        Verifier {
+            calls: calls.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        recovered
+            .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+            .unwrap()
+            .bytes(),
+        checkpoint.bytes()
+    );
+    assert_eq!(
+        recovered
+            .handle(session, &request, &context, HostTimeV1(3))
+            .unwrap(),
+        first
+    );
+    assert_eq!(recovered.service().engine().revision(), Revision(3));
+    assert_eq!(calls.get(), 1, "recovered session must be revalidated");
+}
+
+#[test]
+fn v2_host_checkpoint_is_scope_bound_bounded_and_closed_to_partial_state() {
+    let (mut host, _) = make_host(2);
+    let _ = open(&mut host, "alice", 1);
+    let checkpoint = host
+        .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+
+    for end in 0..checkpoint.bytes().len() {
+        assert!(
+            HostV2::recover_checkpoint(
+                &checkpoint.bytes()[..end],
+                CHECKPOINT_SCOPE,
+                recovery_limits(),
+                Verifier {
+                    calls: calls.clone(),
+                },
+            )
+            .is_err()
+        );
+    }
+    assert_eq!(
+        HostV2::recover_checkpoint(
+            checkpoint.bytes(),
+            HostCheckpointScopeV1::new(*b"foreign-host-v1!"),
+            recovery_limits(),
+            Verifier { calls },
+        )
+        .unwrap_err(),
+        HostCheckpointErrorV2::Scope
+    );
+    assert_eq!(format!("{checkpoint:?}"), "HostCheckpointV2(<redacted>)");
+
+    let mut orphaned_service = ServiceV2::new(engine(), ServiceLimitsV2::default());
+    orphaned_service.connect("alice").unwrap();
+    let orphaned = HostV2::new(
+        orphaned_service,
+        Verifier {
+            calls: Rc::new(Cell::new(0)),
+        },
+        limits(2),
+    );
+    assert_eq!(
+        orphaned
+            .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+            .unwrap_err(),
+        HostCheckpointErrorV2::Invalid
+    );
 }

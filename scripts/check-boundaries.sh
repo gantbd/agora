@@ -49,10 +49,11 @@ fi
 durable_tree=$(cargo tree -p agora-durable --edges normal --depth 1 --locked --offline)
 if ! printf '%s\n' "$durable_tree" | rg -q 'agora-service' \
   || ! printf '%s\n' "$durable_tree" | rg -q 'agora-protocol' \
+  || ! printf '%s\n' "$durable_tree" | rg -q 'agora-host' \
   || ! printf '%s\n' "$durable_tree" | rg -q 'keystone-storage' \
-  || printf '%s\n' "$durable_tree" | rg -q 'agora-(client|host|wire)'; then
+  || printf '%s\n' "$durable_tree" | rg -q 'agora-(client|wire)'; then
   printf '%s\n' "$durable_tree" >&2
-  echo 'Agora durable boundary escaped its service-protocol-storage-port closure' >&2
+  echo 'Agora durable boundary escaped its host-service-protocol-storage-port closure' >&2
   exit 1
 fi
 

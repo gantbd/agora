@@ -122,6 +122,20 @@ impl ServiceV2 {
         &self.engine
     }
 
+    pub fn limits(&self) -> ServiceLimitsV2 {
+        self.limits
+    }
+
+    /// Trusted-host inspection of the participant bound to an active client.
+    /// A client handle remains a correlation value, not a credential.
+    pub fn participant_for_client(&self, client: ClientIdV2) -> Option<&ParticipantId> {
+        self.clients.get(&client)
+    }
+
+    pub fn active_client_count(&self) -> usize {
+        self.clients.len()
+    }
+
     pub fn usage(&self) -> UsageV2 {
         self.usage
     }

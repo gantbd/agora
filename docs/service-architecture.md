@@ -17,7 +17,7 @@ remain separate crates. Their normal dependency direction is:
 agora-client  -> agora-protocol <- agora-service -> agora-engine
                                 <- agora-wire -> keystone-codec
 agora-host -----> agora-wire + agora-service + trusted verifier port
-agora-durable --> agora-service + keystone-storage port
+agora-durable --> agora-host + agora-service + keystone-storage port
 ```
 
 `agora-engine` and `agora-protocol` have no normal dependencies. The protocol
@@ -76,6 +76,13 @@ port reports either definitely-not-sent or outcome-unknown. Unknown retains the
 exact request; only equal-command replay may cross the port until reply or
 explicit abandonment. Extraction returns the pending request. The client does
 not retry automatically or infer cancellation.
+
+The authenticated durable composition moves the checkpoint boundary above
+`HostV2`. Its canonical unit contains every active subject/participant/session/
+service-client binding and the entire service record. This prevents the partial
+composition in which a committed service receipt survives without the host
+session needed to replay it. A recovered verifier is runtime-owned and must
+revalidate current context before the retained session can act.
 
 ## Deliberate exclusions
 

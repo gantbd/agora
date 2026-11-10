@@ -1,8 +1,8 @@
 # Release readiness
 
 Status: source-ready for the declared v0.3 core, volatile service v0.1,
-authenticated host profile v0.1, and store-neutral durable-service boundary on
-2026-11-10; not ready for a network service or crates.io release.
+authenticated host profile v0.1, and store-neutral durable service/host boundary
+on 2026-11-10; not ready for a network service or crates.io release.
 
 ## Established
 
@@ -22,7 +22,7 @@ authenticated host profile v0.1, and store-neutral durable-service boundary on
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   nine packages;
 - conservative package and canonical-fixture inventory closure over nine
-  packages and eight fixtures;
+  packages and nine fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
 - conservative supply inventory closure over eleven locked local components with
@@ -44,6 +44,9 @@ authenticated host profile v0.1, and store-neutral durable-service boundary on
 - V2 client uncertainty fencing with exact-request replay, not-sent versus
   outcome-unknown distinction, different-command suppression, and explicit
   abandonment evidence;
+- canonical authenticated Host V2 recovery and durable combined host/service
+  publication, preserving session/client/subject/time bindings and committing
+  revocation cleanup before its external refusal;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.
@@ -56,7 +59,7 @@ authenticated host profile v0.1, and store-neutral durable-service boundary on
 - no qualified credential/Aegis verifier, network transport, or connector
   conformance package;
 - no qualified V2 credential/Aegis adapter, capability negotiation, or network
-  transport;
+  transport; the recovered verifier remains an injected trusted port;
 - no independently qualified durable Agora store;
 - no performance or fuzzing qualification, coverage-guided mutation, advisory
   lookup, legal compatibility review, binary SBOM, or artifact provenance;

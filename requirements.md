@@ -129,6 +129,15 @@
   touching the port or allocating an ID. Not-sent retry does not clear earlier
   uncertainty. Resolution by reply clears it; abandonment and port extraction
   return the unresolved request explicitly and make no cancellation claim.
+- **R30 — Atomic authenticated recovery:** a separately versioned, scope-bound
+  Host V2 checkpoint captures host limits, active authenticated session subject,
+  participant, service-client and verification-time bindings, retired session
+  tombstones, next-session frontier, and the complete Service V2 checkpoint as
+  one canonical unit. Every changed connect, frame, disconnect, revocation, or
+  cleanup result is externally publishable only after that combined unit earns
+  a matching durable receipt. Recovery restores the exact binding, requires
+  fresh verifier revalidation on the next frame, and exact request replay cannot
+  duplicate the domain transition.
 
 ## Explicitly open
 

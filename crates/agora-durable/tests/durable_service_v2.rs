@@ -1,8 +1,12 @@
 use agora_durable::{
-    DurableConfigV2, DurableEvidenceV2, DurableOwnerStateV2, DurablePublicationV2,
+    DurableConfigV2, DurableEvidenceV2, DurableHostConfigV2, DurableHostPublicationV2,
+    DurableHostSuppressionV2, DurableHostV2, DurableOwnerStateV2, DurablePublicationV2,
     DurableServiceV2, DurableStartErrorV2, DurableSuppressionV2,
 };
 use agora_engine::{CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind};
+use agora_host::v2::HostV2;
+use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
+use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_protocol::v2::{
     AdmissionPolicyV2, CommandV2, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
 };
@@ -10,6 +14,8 @@ use agora_service::v2::{
     ServiceLimitsV2, ServiceV2,
     persistence::{ServiceCheckpointScopeV1, ServiceRecoveryLimitsV2},
 };
+use agora_wire::WireLimits;
+use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
 use keystone_storage::{
     AcknowledgementStrength, Checkpoint, CheckpointStore, CommitOutcome, CommitReceipt, Revision,
     StoreRefusal,
@@ -18,6 +24,49 @@ use std::{cell::RefCell, rc::Rc};
 
 const MAX: usize = 2 * 1_024 * 1_024;
 const SCOPE: ServiceCheckpointScopeV1 = ServiceCheckpointScopeV1::new(*b"durable-test-v1!");
+const HOST_SCOPE: HostCheckpointScopeV1 = HostCheckpointScopeV1::new(*b"durable-host-v1!");
+
+#[derive(Clone)]
+struct Context {
+    active: bool,
+}
+
+struct Verifier;
+
+impl PrincipalVerifier for Verifier {
+    type Context = Context;
+    type Error = ();
+
+    fn authenticate(
+        &mut self,
+        claimed_participant: &str,
+        context: &Self::Context,
+        _now: HostTimeV1,
+    ) -> Result<VerifiedSubjectV1, Self::Error> {
+        if context.active && claimed_participant == "alice" {
+            Ok(VerifiedSubjectV1::from_verifier([7; 16]))
+        } else {
+            Err(())
+        }
+    }
+
+    fn revalidate(
+        &mut self,
+        subject: VerifiedSubjectV1,
+        participant: &str,
+        context: &Self::Context,
+        _now: HostTimeV1,
+    ) -> Result<(), Self::Error> {
+        if context.active
+            && participant == "alice"
+            && subject == VerifiedSubjectV1::from_verifier([7; 16])
+        {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum NextCommit {
@@ -118,6 +167,59 @@ fn config() -> DurableConfigV2 {
             maximum_engine_limits: Limits::default(),
         },
     )
+}
+
+fn host_limits() -> HostLimits {
+    HostLimits {
+        max_sessions: 4,
+        max_retired_sessions: 4,
+        wire: WireLimits {
+            max_frame_bytes: 8_192,
+            max_text_bytes: 256,
+            max_fields: 512,
+            max_list_items: 64,
+        },
+    }
+}
+
+fn host_config() -> DurableHostConfigV2 {
+    DurableHostConfigV2::new(
+        "agora-host",
+        HOST_SCOPE,
+        MAX,
+        HostRecoveryLimitsV2 {
+            max_snapshot_bytes: MAX,
+            max_service_snapshot_bytes: MAX,
+            maximum_host_limits: host_limits(),
+            service: ServiceRecoveryLimitsV2 {
+                max_snapshot_bytes: MAX,
+                max_engine_snapshot_bytes: MAX,
+                maximum_service_limits: ServiceLimitsV2::default(),
+                maximum_engine_limits: Limits::default(),
+            },
+        },
+    )
+}
+
+fn connect_frame() -> Vec<u8> {
+    encode_request_v2(
+        &WireRequestV2::Connect {
+            participant_id: "alice".to_owned(),
+        },
+        host_limits().wire,
+    )
+    .unwrap()
+}
+
+fn create_frame(client: agora_protocol::v2::ClientIdV2) -> Vec<u8> {
+    encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: create_request("room"),
+        },
+        host_limits().wire,
+    )
+    .unwrap()
 }
 
 fn service() -> ServiceV2 {
@@ -317,4 +419,115 @@ fn debug_output_contains_no_checkpoint_or_store_payload() {
     let debug = format!("{durable:?}");
     assert!(debug.contains("DurableServiceV2"));
     assert!(!debug.contains("Alice"));
+}
+
+#[test]
+fn authenticated_host_commits_session_service_and_reply_as_one_recoverable_unit() {
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened),
+        evidence: DurableEvidenceV2::Committed {
+            revision: Revision(1),
+        },
+    } = durable.open(&connect_frame(), &context, HostTimeV1(1))
+    else {
+        panic!("authenticated session must commit before publication");
+    };
+    let session = opened.session().unwrap();
+    let WireReplyV2::Connected(client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connect reply expected");
+    };
+
+    store.next(NextCommit::IndeterminateAfter);
+    assert_eq!(
+        durable.handle(session, &create_frame(client), &context, HostTimeV1(2)),
+        DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::OutcomeUnknown)
+    );
+    assert_eq!(durable.state(), DurableOwnerStateV2::Fenced);
+    drop(durable.into_store());
+
+    let mut recovered = DurableHostV2::recover(store.clone(), host_config(), Verifier).unwrap();
+    let DurableHostPublicationV2::Published {
+        value: Ok(frame),
+        evidence,
+    } = recovered.handle(session, &create_frame(client), &context, HostTimeV1(2))
+    else {
+        panic!("same authenticated request must resolve after recovery");
+    };
+    assert_eq!(
+        evidence,
+        DurableEvidenceV2::PreviouslyCommitted {
+            revision: Revision(2)
+        }
+    );
+    assert_eq!(
+        decode_reply_v2(&frame, host_limits().wire).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 2 }))
+    );
+    assert_eq!(store.commit_calls(), 3, "exact same-time replay is inert");
+}
+
+#[test]
+fn host_store_refusal_rolls_back_both_session_and_service_namespace() {
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    store.next(NextCommit::Refuse);
+    assert!(matches!(
+        durable.open(&connect_frame(), &context, HostTimeV1(1)),
+        DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::StoreRefused(
+            StoreRefusal::ValueLimit
+        ))
+    ));
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame(), &context, HostTimeV1(1))
+    else {
+        panic!("retry after known refusal must commit");
+    };
+    let WireReplyV2::Connected(client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connect reply expected");
+    };
+    assert_eq!(client.0, 0, "rolled back client namespace must not skip");
+}
+
+#[test]
+fn durable_revocation_cleanup_is_committed_before_unavailable_is_visible() {
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let active = Context { active: true };
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame(), &active, HostTimeV1(1))
+    else {
+        panic!("connect expected");
+    };
+    let session = opened.session().unwrap();
+    let WireReplyV2::Connected(client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connect reply expected");
+    };
+    let revoked = Context { active: false };
+    assert_eq!(
+        durable.handle(session, &create_frame(client), &revoked, HostTimeV1(2)),
+        DurableHostPublicationV2::Published {
+            value: Err(HostRefusal::Unavailable),
+            evidence: DurableEvidenceV2::Committed {
+                revision: Revision(2)
+            }
+        }
+    );
+    drop(durable.into_store());
+    let recovered = DurableHostV2::recover(store, host_config(), Verifier).unwrap();
+    assert!(recovered.host().unwrap().service().active_client_count() == 0);
 }

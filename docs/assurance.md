@@ -20,7 +20,7 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact nine-package workspace and eight canonical fixtures. These
+closes over the exact nine-package workspace and nine canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -104,7 +104,7 @@ mismatch before verifier invocation, and exercise both protocol disconnect and
 unconditional transport-close cleanup. The embedded-facade scenario constructs
 the complete V2 engine/service/host stack without direct package dependencies.
 The verifier remains a trusted test double; no credential, Aegis, network, or
-durable-session adapter is qualified.
+physical durable-store adapter is qualified.
 
 Service V2 persistence scenarios recover byte-identical engine state and pending
 outbox, active clients, retained exact replies, and live room-page continuation.
@@ -130,6 +130,16 @@ different command without transport access, keep uncertainty through a later
 not-sent retry, and return the unresolved request on explicit abandonment or
 port extraction. They establish no automatic retry, durable client state, or
 session reconnection behavior.
+
+Host checkpoint scenarios freeze the complete authenticated record, recover the
+exact session/service receipt and continue only after fresh verifier
+revalidation, compare canonical bytes, and refuse every truncated prefix plus a
+foreign scope. Durable-host fault scenarios prove authenticated Connect and
+service client allocation commit together, indeterminate-after-commit recovery
+replays the same request without a duplicate room event, known store refusal
+rolls back both namespaces, and revoked-session cleanup is durable before the
+Unavailable result is visible. The ninth canonical fixture pins the combined
+record.
 
 The gate does not establish a credential adapter, transport security,
 multi-process serialization, physical durable storage, event delivery,

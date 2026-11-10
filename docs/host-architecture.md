@@ -1,6 +1,7 @@
 # Authenticated host architecture
 
-Status: qualified transport-neutral host profiles V1 and V2.
+Status: qualified transport-neutral host profiles V1 and V2 plus canonical,
+store-neutral authenticated V2 recovery.
 
 `agora-host` is a composition boundary over exact `agora-wire` frames and one
 serialized `agora-service`. It performs no socket I/O and understands no
@@ -59,6 +60,14 @@ not publish another domain transition. A response-encoding failure after service
 acceptance is uncertain delivery, not rollback; retrying the identical request
 observes the retained reply.
 
+For the durable V2 composition, `AGORAHST` checkpoints the opaque verified
+subject, participant, host session, service client, last verification time,
+retired-session window and full service state as one scope-bound canonical unit.
+Recovery refuses orphaned or substituted bindings and receives a fresh verifier;
+the retained session cannot act until current context is revalidated again.
+`DurableHostV2` publishes any changed host result only after a durable-strength
+receipt for that combined record.
+
 ## Revocation and cleanup
 
 Failed revalidation retires the host session and disconnects its service client
@@ -76,7 +85,8 @@ opaque identities and aggregate counts.
 ## Deliberate exclusions
 
 The host is not a network server, credential verifier, authorization-policy
-engine, secret store, durable session store, rate limiter, TLS terminator, or
+engine, secret store, physical durable store, rate limiter, TLS terminator, or
 audit sink. A production composition root must supply those effects and define
-restart, transport replay, credential rotation, and operational abuse policy.
+transport replay, credential rotation, backup/restore, and operational abuse
+policy.
 

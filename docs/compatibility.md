@@ -34,6 +34,11 @@ records. A representative complete service record is pinned by
 `service-checkpoint-v1.hex`. Public wire compatibility neither implies nor migrates durable state;
 future durable schema changes require a bounded explicit migration profile.
 
+Authenticated host persistence has its own `AGORAHST` version-1 record and
+`host-checkpoint-v1.hex` fixture. It nests the service record but owns host
+session compatibility independently; neither wire nor service checkpoint
+decoding implies that a host record can be recovered.
+
 ## Conservative baseline gate
 
 `docs/compatibility-baseline.txt` records the exact sorted Cargo package

@@ -45,7 +45,9 @@ The separately typed V2 host applies the same authentication, monotone-time,
 dual-binding, non-enumeration, revocation, and cleanup treatment to V2 frames and
 clients. A V1 frame is rejected before verifier invocation. This closes no new
 credential, authorization, confidentiality, durable-session, or network threat;
-those external obligations remain unchanged.
+the base host alone leaves those obligations unchanged. The separately qualified
+store-neutral recovery profile below closes only canonical session-state
+reconstruction and pre-reply receipt gating.
 
 The service checkpoint binds one caller-selected store scope and refuses foreign
 scope, malformed structure, noncanonical ordering, invalid attribution, and host
@@ -55,6 +57,15 @@ the pre-offer state; indeterminate, erroneous, weak, or malformed store evidence
 fences access. Scope is separation evidence, not a secret or MAC. A physical
 adapter must protect record origin, exclusive ownership, rollback, crash residue,
 backup/restore, and actual acknowledgement strength.
+
+Host persistence binds the verified subject, claimed participant, opaque host
+session, service client and monotone verification time in the same record as all
+service state. Recovery refuses missing, duplicate, substituted, or orphaned
+bindings and still requires current verifier acceptance before a frame. A
+durable-strength receipt covers security cleanup before revocation or disconnect
+is reported. The stored subject is attribution evidence, not a credential;
+credential renewal, revocation source integrity, and verifier availability remain
+external obligations.
 
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.

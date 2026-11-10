@@ -230,6 +230,32 @@ port likewise returns any pending request rather than silently treating it as
 cancelled. The client fence is process-local and does not itself persist pending
 requests, reconnect a host session, or prove server durability.
 
+## Authenticated host checkpoint and durable publication V2
+
+The `AGORAHST` version-1 record is independently versioned and bound to an exact
+16-byte store scope. It contains Host V2 limits, the next non-reused session
+frontier, every active mapping from opaque host session to verified subject,
+participant, service client and last verification time, the bounded retired
+session window, and one complete nested Service V2 checkpoint under the same
+scope. Recovery requires a bijection between active host sessions and active
+service clients and exact agreement on participant binding. Session IDs must
+belong to the canonical V2 namespace below the recovered frontier.
+
+The verifier implementation and passive usage counters are runtime inputs, not
+durable bytes. Recovery receives a fresh trusted verifier, and every recovered
+session is revalidated with current context before its next frame. Scope is
+record separation rather than cryptographic authentication.
+
+`DurableHostV2` places the compare-and-exchange gate above authentication and
+service state. It checkpoints the complete host before and after Connect,
+Execute, Disconnect, transport close, time-regression cleanup, and revocation.
+Any changed result—including an external refusal whose security cleanup changed
+state—is suppressed until the combined candidate earns the exact next durable
+store revision. Known refusal restores both session and service namespaces;
+indeterminate, erroneous, weak, or malformed evidence fences the host. Recovery
+therefore cannot expose a durable service receipt whose authenticated session
+binding was lost, or a durable session whose service client was absent.
+
 ## Wire profile V2
 
 `agora-wire::v2` maps only Protocol V2 passive values to a distinct version-2
@@ -268,7 +294,8 @@ V1 frames refuse at V2 decode before authentication. Authentication failures do
 not query or reveal participant registration. V2 host sessions and clients are
 non-reused within the volatile lifetime, and bounded retirement pressure never
 blocks cleanup. The host still performs no network I/O, credential verification,
-authorization-policy evaluation, durable session recovery, or encryption.
+authorization-policy evaluation, physical persistence, or encryption. Durable
+session recovery requires the separate combined profile above.
 
 ## Wire profile V1
 

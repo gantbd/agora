@@ -36,6 +36,11 @@ The V2 client separately fences an outcome-unknown transmission: only the exact
 same command may reuse the retained request identity until a reply resolves it
 or the caller explicitly abandons and accounts for the unresolved request.
 
+For authenticated deployments, the host and service also have one combined
+checkpoint and pre-reply gate. Session subject/participant/client/time bindings
+recover with the exact service receipt and must pass current verifier
+revalidation before reuse.
+
 The repository also contains an initial transport-neutral operational profile:
 
 - `agora-protocol` owns closed request, reply, snapshot, and refusal values;

@@ -10,6 +10,8 @@ use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_request_v2, encode_reply
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
+pub mod persistence;
+
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
 pub struct HostSessionIdV2([u8; 16]);
 

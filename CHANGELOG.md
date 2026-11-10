@@ -26,6 +26,9 @@ follow Semantic Versioning once a public release contract is selected.
   replay recovery over the Keystone storage port.
 - Added a V2 client uncertainty fence that distinguishes not-sent from
   outcome-unknown, permits only exact replay, and exposes abandonment explicitly.
+- Added canonical authenticated Host V2 recovery and a durable combined
+  host/service gate so session binding, service receipt, and security cleanup
+  commit as one pre-reply unit.
 
 ### Changed
 
