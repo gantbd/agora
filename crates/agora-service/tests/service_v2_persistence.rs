@@ -1,10 +1,10 @@
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantId,
-    ParticipantKind, ReadScopeV1, RoomId,
+    ParticipantKind, ReadScopeV1 as EngineReadScopeV1, RoomId,
 };
 use agora_protocol::v2::{
     ClientIdV2, CommandV2, IdentifiedRoomEventV1, MessageIdV1, MessageRevisionAvailabilityV1,
-    OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, ThreadLifecycleStateV1,
+    OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, ThreadLifecycleStateV1,
     ThreadedRoomEventV1,
 };
 use agora_service::v2::{
@@ -77,7 +77,7 @@ fn populated() -> (
         .advance_read_position(
             &ParticipantId::new("alice"),
             &RoomId::new("alpha"),
-            ReadScopeV1::Room,
+            EngineReadScopeV1::Room,
             engine.revision(),
             marker_target,
         )
@@ -253,7 +253,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
             .read_position(
                 &ParticipantId::new("alice"),
                 &RoomId::new("alpha"),
-                &ReadScopeV1::Room,
+                &EngineReadScopeV1::Room,
             )
             .unwrap()
             .is_some()
@@ -1615,4 +1615,87 @@ fn topic_change_position_continues_after_recovery_with_topic_identity() {
             ..
         } if *event_topic == topic_id
     ));
+}
+
+#[test]
+fn private_read_position_and_exact_receipt_survive_recovery() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let agora_engine::OutcomeV2::MessageAccepted { sequence, .. } = engine
+        .apply(EngineCommand::Speak {
+            room_id: "room".into(),
+            author: "alice".into(),
+            at: agora_engine::LogicalTime(3),
+            body: "checkpoint target".to_owned(),
+        })
+        .unwrap()
+    else {
+        panic!("message expected");
+    };
+    let message_id = MessageIdV1::new(
+        engine
+            .message(&RoomId::new("room"), sequence)
+            .unwrap()
+            .id()
+            .into_bytes(),
+    );
+    let observed_revision = engine.revision().0;
+    let pending = engine.pending_events().len();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let advance = request(
+        1,
+        CommandV2::AdvanceReadPosition {
+            room_id: "room".to_owned(),
+            observed_revision,
+            scope: ReadScopeV1::Room,
+            target_message_id: message_id,
+        },
+    );
+    let accepted = service.execute(alice, advance.clone());
+    assert!(matches!(
+        accepted,
+        ReplyV2::Accepted(OutcomeV2::ReadPositionAdvanced(_))
+    ));
+    assert_eq!(service.engine().revision().0, observed_revision);
+    assert_eq!(service.engine().pending_events().len(), pending);
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(alice, advance), accepted);
+    assert_eq!(
+        recovered.execute(
+            alice,
+            request(
+                2,
+                CommandV2::ReadPosition {
+                    room_id: "room".to_owned(),
+                    scope: ReadScopeV1::Room,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ReadPosition(Some(
+            agora_protocol::v2::ReadPositionV1 {
+                room_id: "room".to_owned(),
+                scope: ReadScopeV1::Room,
+                target_message_id: message_id,
+                target_sequence: sequence,
+                observed_revision,
+            }
+        )))
+    );
 }

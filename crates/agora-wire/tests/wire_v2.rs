@@ -4,11 +4,11 @@ use agora_protocol::v2::{
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
     MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
-    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
-    RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1,
-    ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1,
-    ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1,
-    TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicV1,
+    ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
+    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
+    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
+    ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1,
+    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicV1,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -158,6 +158,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::ReactionsV1,
         CapabilityV2::MessageRevisionsV1,
         CapabilityV2::TopicsV1,
+        CapabilityV2::PrivateReadPositionsV1,
     ])))
 }
 
@@ -383,6 +384,18 @@ fn message_edited_change_reply() -> WireReplyV2 {
     )))
 }
 
+fn read_position_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ReadPositionAdvanced(
+        ReadPositionV1 {
+            room_id: "private".to_owned(),
+            scope: ReadScopeV1::Topic(TopicIdV1::new([0xa1; 16])),
+            target_message_id: MessageIdV1::new([0xa2; 16]),
+            target_sequence: 8,
+            observed_revision: 9,
+        },
+    )))
+}
+
 fn withdrawal_change_reply() -> WireReplyV2 {
     WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
         revision: 20,
@@ -512,16 +525,21 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
             encode_reply_v2(&message_edited_change_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/message-edited-change-reply-v2.hex")),
         ),
+        (
+            encode_reply_v2(&read_position_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/read-position-reply-v2.hex")),
+        ),
     ];
     for (actual, expected) in cases {
         assert_eq!(actual, expected);
     }
     let rendered = format!(
-        "{:?} {:?} {:?} {:?}",
+        "{:?} {:?} {:?} {:?} {:?}",
         create_request(),
         rooms_reply(),
         messages_reply(),
-        changes_reply()
+        changes_reply(),
+        read_position_reply()
     );
     for secret in [
         "private",
@@ -653,6 +671,24 @@ fn every_v2_command_round_trips() {
             message_id: MessageIdV1::new([0x94; 16]),
             cursor: Some(PageCursorV2(9)),
             limit: 2,
+        },
+        CommandV2::ReadPosition {
+            room_id: "room".to_owned(),
+            scope: ReadScopeV1::Room,
+        },
+        CommandV2::ReadPosition {
+            room_id: "room".to_owned(),
+            scope: ReadScopeV1::Thread(MessageIdV1::new([0xa0; 16])),
+        },
+        CommandV2::ReadPosition {
+            room_id: "room".to_owned(),
+            scope: ReadScopeV1::Topic(TopicIdV1::new([0xa1; 16])),
+        },
+        CommandV2::AdvanceReadPosition {
+            room_id: "room".to_owned(),
+            observed_revision: 9,
+            scope: ReadScopeV1::Topic(TopicIdV1::new([0xa1; 16])),
+            target_message_id: MessageIdV1::new([0xa2; 16]),
         },
         CommandV2::CreateRoom {
             room_id: "room".to_owned(),
@@ -1049,6 +1085,21 @@ fn every_v2_outcome_and_refusal_round_trips() {
         OutcomeV2::Banned { revision: 13 },
         OutcomeV2::Unbanned { revision: 14 },
         OutcomeV2::RoomPolicyChanged { revision: 15 },
+        OutcomeV2::ReadPosition(None),
+        OutcomeV2::ReadPosition(Some(ReadPositionV1 {
+            room_id: "room".to_owned(),
+            scope: ReadScopeV1::Thread(MessageIdV1::new([0xa0; 16])),
+            target_message_id: MessageIdV1::new([0xa2; 16]),
+            target_sequence: 8,
+            observed_revision: 9,
+        })),
+        OutcomeV2::ReadPositionAdvanced(ReadPositionV1 {
+            room_id: "room".to_owned(),
+            scope: ReadScopeV1::Topic(TopicIdV1::new([0xa1; 16])),
+            target_message_id: MessageIdV1::new([0xa2; 16]),
+            target_sequence: 8,
+            observed_revision: 9,
+        }),
     ];
     for outcome in outcomes {
         let reply = WireReplyV2::Executed(ReplyV2::Accepted(outcome));
@@ -1074,6 +1125,10 @@ fn every_v2_outcome_and_refusal_round_trips() {
         RefusalV2::Unavailable,
         RefusalV2::Banned,
         RefusalV2::ThreadArchived,
+        RefusalV2::UnknownTopic,
+        RefusalV2::InvalidReadScope,
+        RefusalV2::InvalidReadTarget,
+        RefusalV2::ReadPositionRegression,
     ];
     for refusal in refusals {
         for reply in [

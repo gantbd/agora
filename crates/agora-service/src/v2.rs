@@ -4,9 +4,10 @@ use agora_engine::{
     AdmissionPolicy, BanPageCursor, CommandV2 as EngineCommand, Engine, MAX_REACTION_KEY_BYTES_V1,
     MemberPageCursor, MessageId, MessagePageCursor, MessageRevisionPageCursorV1,
     ModerationCausationV1, ModerationReasonV1, ObservationRefusal, OutcomeV2 as EngineOutcome,
-    ParticipantId, ParticipantKind, Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role,
-    RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
-    ThreadMessagePageCursor, TopicId, TopicMessagePageCursorV1, TopicPageCursorV1,
+    ParticipantId, ParticipantKind, ReadPositionRefusalV1, ReadScopeV1 as EngineReadScopeV1,
+    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomChangeGap,
+    RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor, ThreadMessagePageCursor, TopicId,
+    TopicMessagePageCursorV1, TopicPageCursorV1,
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
@@ -14,11 +15,11 @@ use agora_protocol::v2::{
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
     MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
-    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
-    RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1,
-    ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1,
-    ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1,
-    TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicV1,
+    ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
+    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
+    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
+    ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1,
+    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -305,6 +306,7 @@ impl ServiceV2 {
                 CapabilityV2::ReactionsV1,
                 CapabilityV2::MessageRevisionsV1,
                 CapabilityV2::TopicsV1,
+                CapabilityV2::PrivateReadPositionsV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -406,6 +408,21 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.topic_messages(client, participant, room_id, *topic_id, *cursor, *limit),
+            CommandV2::ReadPosition { room_id, scope } => {
+                self.read_position(participant, room_id, *scope)
+            }
+            CommandV2::AdvanceReadPosition {
+                room_id,
+                observed_revision,
+                scope,
+                target_message_id,
+            } => self.advance_read_position(
+                participant,
+                room_id,
+                *observed_revision,
+                *scope,
+                *target_message_id,
+            ),
             CommandV2::CreateTopic {
                 room_id,
                 expected_revision,
@@ -1287,6 +1304,44 @@ impl ServiceV2 {
         }))
     }
 
+    fn read_position(
+        &self,
+        participant: &ParticipantId,
+        room_id: &str,
+        scope: ReadScopeV1,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let engine_scope = map_read_scope_to_engine(scope);
+        let position = self
+            .engine
+            .read_position(participant, &RoomId::new(room_id), &engine_scope)
+            .map_err(map_read_position_refusal)?
+            .map(map_read_position_from_engine);
+        Ok(OutcomeV2::ReadPosition(position))
+    }
+
+    fn advance_read_position(
+        &mut self,
+        participant: &ParticipantId,
+        room_id: &str,
+        observed_revision: u64,
+        scope: ReadScopeV1,
+        target_message_id: MessageIdV1,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let position = self
+            .engine
+            .advance_read_position(
+                participant,
+                &RoomId::new(room_id),
+                map_read_scope_to_engine(scope),
+                Revision(observed_revision),
+                MessageId::from_bytes(target_message_id.into_bytes()),
+            )
+            .map_err(map_read_position_refusal)?;
+        Ok(OutcomeV2::ReadPositionAdvanced(
+            map_read_position_from_engine(&position),
+        ))
+    }
+
     fn thread_roots(
         &mut self,
         client: ClientIdV2,
@@ -2023,7 +2078,9 @@ impl ServiceV2 {
             | CommandV2::OpenThreadedChanges { room_id, .. }
             | CommandV2::OpenTopicChanges { room_id, .. }
             | CommandV2::ThreadStatus { room_id, .. }
-            | CommandV2::ReactionStatus { room_id, .. } => valid_room(room_id),
+            | CommandV2::ReactionStatus { room_id, .. }
+            | CommandV2::ReadPosition { room_id, .. }
+            | CommandV2::AdvanceReadPosition { room_id, .. } => valid_room(room_id),
             CommandV2::Changes { room_id, limit, .. }
             | CommandV2::IdentifiedChanges { room_id, limit, .. }
             | CommandV2::ThreadedChanges { room_id, limit, .. }
@@ -2126,6 +2183,51 @@ impl ServiceV2 {
 
 fn valid_text(value: &str, maximum: usize) -> bool {
     !value.is_empty() && value.len() <= maximum
+}
+
+fn map_read_scope_to_engine(scope: ReadScopeV1) -> EngineReadScopeV1 {
+    match scope {
+        ReadScopeV1::Room => EngineReadScopeV1::Room,
+        ReadScopeV1::Thread(root) => {
+            EngineReadScopeV1::Thread(MessageId::from_bytes(root.into_bytes()))
+        }
+        ReadScopeV1::Topic(topic) => {
+            EngineReadScopeV1::Topic(TopicId::from_bytes(topic.into_bytes()))
+        }
+    }
+}
+
+fn map_read_scope_from_engine(scope: &EngineReadScopeV1) -> ReadScopeV1 {
+    match scope {
+        EngineReadScopeV1::Room => ReadScopeV1::Room,
+        EngineReadScopeV1::Thread(root) => ReadScopeV1::Thread(MessageIdV1::new(root.into_bytes())),
+        EngineReadScopeV1::Topic(topic) => ReadScopeV1::Topic(TopicIdV1::new(topic.into_bytes())),
+    }
+}
+
+fn map_read_position_from_engine(position: &agora_engine::ReadPositionV1) -> ReadPositionV1 {
+    ReadPositionV1 {
+        room_id: position.room_id().as_str().to_owned(),
+        scope: map_read_scope_from_engine(position.scope()),
+        target_message_id: MessageIdV1::new(position.target_message_id().into_bytes()),
+        target_sequence: position.target_sequence(),
+        observed_revision: position.observed_revision().0,
+    }
+}
+
+fn map_read_position_refusal(refusal: ReadPositionRefusalV1) -> RefusalV2 {
+    match refusal {
+        ReadPositionRefusalV1::UnknownParticipant => RefusalV2::UnknownParticipant,
+        ReadPositionRefusalV1::UnknownRoom => RefusalV2::UnknownRoom,
+        ReadPositionRefusalV1::NotMember => RefusalV2::NotMember,
+        ReadPositionRefusalV1::Stale { actual_revision } => RefusalV2::Stale {
+            actual_revision: actual_revision.0,
+        },
+        ReadPositionRefusalV1::InvalidScope => RefusalV2::InvalidReadScope,
+        ReadPositionRefusalV1::InvalidTarget => RefusalV2::InvalidReadTarget,
+        ReadPositionRefusalV1::Regression => RefusalV2::ReadPositionRegression,
+        ReadPositionRefusalV1::Capacity => RefusalV2::Capacity,
+    }
 }
 
 fn map_message_from_engine(message: agora_engine::Message) -> MessageV2 {

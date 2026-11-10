@@ -73,6 +73,11 @@ topic-message pages. Replies inherit their root's immutable optional topic
 relation. A parallel topic-aware change profile carries that relation without
 altering legacy, identified, or threaded message bytes. Topics grant no posting,
 subscription, notification, workflow, or agent-execution authority.
+The `PrivateReadPositionsV1` capability adds participant-private monotone room,
+thread, and topic markers. The service derives the participant from its client
+binding; an advance changes neither room revision nor room events, but its state
+and exact receipt are durably committed before success is published. Markers do
+not prove delivery, attention, presence, unread policy, or execution.
 
 An independently versioned Service V2 checkpoint preserves the engine, pending
 outbox, client namespace, exact request replies, and live cursor consequences.

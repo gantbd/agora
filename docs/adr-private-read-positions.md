@@ -1,6 +1,6 @@
 # ADR: private monotone read positions
 
-Status: accepted for implementation
+Status: implemented and qualified
 
 Date: 2026-11-10
 

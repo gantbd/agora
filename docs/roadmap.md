@@ -7,12 +7,9 @@
    of Agora.
 3. Add model, fuzz, and mutation gates around recovery, canonical wire changes,
    filesystem crash points, and command refusal.
-4. Implement the accepted private monotone read-position profile across engine,
-   persistence, service, wire, SDK, and release evidence; keep it distinct from
-   delivery, attention, presence, and unread-count policy.
-5. Extend the implemented stable-topic substrate only through separately
+4. Extend the implemented stable-topic substrate only through separately
    decided rename, move, merge, resolution, and conversation-collection laws.
-6. Qualify backup/restore, upgrade/rollback, and an additional physical store only
+5. Qualify backup/restore, upgrade/rollback, and an additional physical store only
    when a deployment profile requires claims beyond the current local Unix
    single-owner mechanism.
 

@@ -242,6 +242,16 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
             cursor: protocol::v2::PageCursorV2(23),
             limit: 2,
         },
+        protocol::v2::CommandV2::ReadPosition {
+            room_id: "room".to_owned(),
+            scope: protocol::v2::ReadScopeV1::Thread(protocol::v2::MessageIdV1::new([0x56; 16])),
+        },
+        protocol::v2::CommandV2::AdvanceReadPosition {
+            room_id: "room".to_owned(),
+            observed_revision: 23,
+            scope: protocol::v2::ReadScopeV1::Topic(protocol::v2::TopicIdV1::new([0x57; 16])),
+            target_message_id: protocol::v2::MessageIdV1::new([0x58; 16]),
+        },
     ] {
         let request = wire::v2::WireRequestV2::Execute {
             client: protocol::v2::ClientIdV2(7),

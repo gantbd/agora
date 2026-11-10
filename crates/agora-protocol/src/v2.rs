@@ -56,6 +56,37 @@ impl fmt::Debug for TopicIdV1 {
     }
 }
 
+/// Closed selector for one participant's private read position.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ReadScopeV1 {
+    Room,
+    Thread(MessageIdV1),
+    Topic(TopicIdV1),
+}
+
+/// Private marker returned only for the bound participant.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ReadPositionV1 {
+    pub room_id: String,
+    pub scope: ReadScopeV1,
+    pub target_message_id: MessageIdV1,
+    pub target_sequence: u64,
+    pub observed_revision: u64,
+}
+
+impl fmt::Debug for ReadPositionV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReadPositionV1")
+            .field("room_id_bytes", &self.room_id.len())
+            .field("scope", &self.scope)
+            .field("target_message_id", &self.target_message_id)
+            .field("target_sequence", &self.target_sequence)
+            .field("observed_revision", &self.observed_revision)
+            .finish()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdmissionPolicyV2 {
     Open,
@@ -219,6 +250,16 @@ pub enum CommandV2 {
         logical_time: u64,
         body: String,
         addressed_to: Vec<String>,
+    },
+    ReadPosition {
+        room_id: String,
+        scope: ReadScopeV1,
+    },
+    AdvanceReadPosition {
+        room_id: String,
+        observed_revision: u64,
+        scope: ReadScopeV1,
+        target_message_id: MessageIdV1,
     },
     CreateRoom {
         room_id: String,
@@ -728,6 +769,23 @@ impl fmt::Debug for CommandV2 {
                 .field("body_bytes", &body.len())
                 .field("addressed_count", &addressed_to.len())
                 .finish(),
+            Self::ReadPosition { room_id, scope } => formatter
+                .debug_struct("ReadPosition")
+                .field("room_id_bytes", &room_id.len())
+                .field("scope", scope)
+                .finish(),
+            Self::AdvanceReadPosition {
+                room_id,
+                observed_revision,
+                scope,
+                target_message_id,
+            } => formatter
+                .debug_struct("AdvanceReadPosition")
+                .field("room_id_bytes", &room_id.len())
+                .field("observed_revision", observed_revision)
+                .field("scope", scope)
+                .field("target_message_id", target_message_id)
+                .finish(),
         }
     }
 }
@@ -751,6 +809,7 @@ pub enum CapabilityV2 {
     ReactionsV1,
     MessageRevisionsV1,
     TopicsV1,
+    PrivateReadPositionsV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -2212,6 +2271,8 @@ pub enum OutcomeV2 {
     MessageRevisions(MessageRevisionPageV1),
     Topics(TopicPageV1),
     TopicMessages(TopicMessagePageV1),
+    ReadPosition(Option<ReadPositionV1>),
+    ReadPositionAdvanced(ReadPositionV1),
     ChangesOpened {
         revision: u64,
         cursor: PageCursorV2,
@@ -2329,6 +2390,9 @@ pub enum RefusalV2 {
     Banned,
     ThreadArchived,
     UnknownTopic,
+    InvalidReadScope,
+    InvalidReadTarget,
+    ReadPositionRegression,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -526,7 +526,7 @@ The topic-aware change profile uses the shared ordered outbox but carries the
 optional topic relation on accepted messages; older profiles deliberately omit
 it and keep their existing bytes. Topic IDs grant no additional authority.
 
-## Planned private read-position profile V1
+## Private read-position profile V1
 
 The accepted architecture defines private current-state markers keyed by actor,
 room, and one closed room/thread/topic scope. An advance names an exact retained
@@ -538,11 +538,13 @@ Read positions are checkpointed private projection state. They do not increment
 the authoritative domain revision, enter any room-change feed, or disclose one
 participant's marker to another. Service identity is actor-derived and durable
 publication must commit marker state plus the exact request receipt before
-reply. The engine tranche implements the bounded registry. Canonical engine
-profile 13 and enclosing service/host profile 15 records retain private markers
-through nested recovery without publishing them. R46 remains open until
-participant-bound service, protocol, wire, SDK, and assurance evidence close
-together.
+reply. The engine owns the bounded registry. Participant-bound service commands
+expose only the connected actor's marker; protocol and wire use closed scopes,
+outcomes, refusals, and capability values. Canonical engine profile 13 and
+enclosing service/host profile 15 records retain private markers and exact
+receipts through nested recovery without publishing them. Durable execution
+commits both before reply, and exact lost-reply replay performs no second store
+write.
 
 ## Wire profile V1
 

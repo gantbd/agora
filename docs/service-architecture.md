@@ -148,6 +148,17 @@ root relation; edits, reactions, lifecycle changes, and tombstones cannot move
 messages between topics. Topic identity grants no membership, subscription,
 notification, workflow, or execution authority.
 
+## Private read positions
+
+`PrivateReadPositionsV1` is private current-state projection inside the same
+serialized owner. The service derives the actor from the bound client and never
+accepts a participant selector. Room, retained-thread, and stable-topic markers
+advance monotonically to exact retained message identities at the current engine
+revision. They change neither domain revision nor room events, while service and
+host checkpoints retain the marker and exact request receipt. The durable owner
+commits that combined state before publishing success. No marker implies
+delivery, attention, unread policy, presence, activation, or task completion.
+
 ## Deliberate exclusions
 
 The semantic profiles perform no network I/O, encryption, direct physical

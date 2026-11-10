@@ -66,6 +66,8 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `28` | SpeakInTopic | room, expected revision, topic ID, logical time, body, addressed-participant list |
 | `29` | OpenTopicChanges | room, exact completed snapshot revision |
 | `2a` | TopicChanges | room, required opaque cursor, limit |
+| `2b` | ReadPosition | room, closed read scope |
+| `2c` | AdvanceReadPosition | room, observed revision, closed read scope, target message ID |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -83,7 +85,8 @@ MessageWithdrawn `15`, MessageRedacted `16`, IdentifiedChanges `17`, ThreadRoots
 ThreadArchived `1c`, ThreadReopened `1d`, ThreadStatus `1e`, ReactionStatus
 `1f`, ReactionAdded `20`, ReactionRemoved `21`, MessageRevisions `22`, and
 MessageEdited `23`, Topics `24`, TopicMessages `25`, TopicCreated `26`,
-TopicMessageAccepted `27`, and TopicChanges `28`.
+TopicMessageAccepted `27`, TopicChanges `28`, ReadPosition `29`, and
+ReadPositionAdvanced `2a`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -187,6 +190,14 @@ TopicChanges uses the normal change envelope and event tags, with event `06`
 using the topic-aware message grammar and event `11` carrying actor, topic ID,
 and name. Its service cursor cannot be substituted with any older feed profile.
 
+A read scope is Room `01`, Thread `02` plus a 16-byte root message ID, or Topic
+`03` plus a 16-byte topic ID. A read-position query carries room and scope. An
+advance additionally carries the exact observed engine revision and a 16-byte
+target message ID. ReadPosition carries optional marker `00`/`01`;
+ReadPositionAdvanced carries one marker. A marker contains room, scope, target
+message ID, room-local target sequence, and observed revision. The participant
+is derived from the client binding and is never present on the wire.
+
 ## Refusals
 
 | Tag | Refusal | Payload |
@@ -209,6 +220,9 @@ and name. Its service cursor cannot be substituted with any older feed profile.
 | `10` | Banned | — |
 | `11` | ThreadArchived | — |
 | `12` | UnknownTopic | — |
+| `13` | InvalidReadScope | — |
+| `14` | InvalidReadTarget | — |
+| `15` | ReadPositionRegression | — |
 
 ## Closure and evidence
 
@@ -231,6 +245,10 @@ and evidence. Reaction change and status fixtures freeze the relation event and
 bounded aggregate grammar. Topic commands, pages, receipts, feed messages,
 unknown-topic refusal, and mismatched page relations have closed round-trip and
 malformed-shape evidence; the expanded capability fixture freezes tag `0f`.
+Private read-position commands, optional and present outcomes, all three scope
+tags, and three specific refusals have closed round-trip evidence. The expanded
+capability fixture freezes tag `10`, and the read-position reply fixture freezes
+the complete private marker grammar.
 Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push

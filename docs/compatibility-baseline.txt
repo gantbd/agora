@@ -14,7 +14,7 @@ fixture|crates/agora-host/tests/fixtures/host-checkpoint-v15.hex|2829|a5187ee919
 fixture|crates/agora-service/tests/fixtures/service-checkpoint-v15.hex|4301|3b6ef08fba0acd9e3051981949d09056f0d63c914d3d4a2d1c73444fddb9a9f1
 fixture|crates/agora-storage-directory/tests/fixtures/directory-record-v1.hex|52|377cc1e927daa46ec954c5ad419ca762da86a18ee18b7e2d2169262aa0e70b16
 fixture|crates/agora-wire/tests/fixtures/bans-reply-v2.hex|56|1eceb89d5dd13236623b366cc25ac4d12535cdc87dec8101f2290615f819832a
-fixture|crates/agora-wire/tests/fixtures/capabilities-reply-v2.hex|27|610edb979f06965404806bc84521bc6cab96f45be9374263b36b06a51c4aad73
+fixture|crates/agora-wire/tests/fixtures/capabilities-reply-v2.hex|28|3ca1c9772b8f5556cd77f023659ed71e51ea1af477a19ad46be58f7aaa17e68d
 fixture|crates/agora-wire/tests/fixtures/changes-reply-v2.hex|101|0e62f74e8368688c28ac2b5b167d4653605b59ed951834165a4cbf5e3509662d
 fixture|crates/agora-wire/tests/fixtures/connect-request-v1.hex|11|4c13512cfcb29d053b6e56610b4693ac9ad5f6cd88650349bfb2df13c75c5fe4
 fixture|crates/agora-wire/tests/fixtures/create-room-request-v2.hex|50|3941c9e17887deddf2bf1e20c6446f3f0510390db656581cffadd0d01cdd9000
@@ -28,6 +28,7 @@ fixture|crates/agora-wire/tests/fixtures/policy-change-reply-v2.hex|57|dfbeed514
 fixture|crates/agora-wire/tests/fixtures/redaction-change-reply-v2.hex|112|ee900c30b9a789fcd67d0aae98df95432b25a9cfad9eb255b0fb4cf9cdeac441
 fixture|crates/agora-wire/tests/fixtures/reaction-change-reply-v2.hex|79|89e01f4510e548f09124732d748ce58d9d6ab323dad31203d4501c3583ecf8bf
 fixture|crates/agora-wire/tests/fixtures/reaction-status-reply-v2.hex|65|edd5b71afc68f1750fc761c83ef37b036c4840bae30976cbcad7d7717d29e933
+fixture|crates/agora-wire/tests/fixtures/read-position-reply-v2.hex|64|4863e95b916612c2d8fb531546d5f62b9a5888b008ba727f37921c1382d455da
 fixture|crates/agora-wire/tests/fixtures/rooms-reply-v2.hex|77|7628d1c11bfab1dbacee136357ee73acd0431cd90c3355b8aed478f9921b1710
 fixture|crates/agora-wire/tests/fixtures/snapshot-reply-v1.hex|137|10efdc44b693253f645c64ace2e3f458bf7d1ece9eb6d82bb8faa553702de12c
 fixture|crates/agora-wire/tests/fixtures/speak-request-v1.hex|77|9a623df28a992a3af0235bd7cfe4c31bb746397ca8d28f8b32378d7961a878ed

@@ -3,8 +3,8 @@ use agora_engine::{
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, IdentifiedRoomEventV1,
-    MessageIdV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomEventV2,
-    ThreadLifecycleStateV1, ThreadedRoomEventV1, TopicIdV1,
+    MessageIdV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
+    RoomEventV2, ThreadLifecycleStateV1, ThreadedRoomEventV1, TopicIdV1,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -13,6 +13,172 @@ fn request(id: u64, command: CommandV2) -> RequestV2 {
         request_id: RequestIdV2(id),
         command,
     }
+}
+
+#[test]
+fn v2_private_read_positions_are_actor_bound_replayable_and_nonpublishing() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        message_id: first,
+        revision,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: 4,
+                logical_time: 1,
+                body: "first".to_owned(),
+                addressed_to: vec![],
+            },
+        ),
+    )
+    else {
+        panic!("identified message expected");
+    };
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                1,
+                CommandV2::ReadPosition {
+                    room_id: "room".to_owned(),
+                    scope: ReadScopeV1::Room,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ReadPosition(None))
+    );
+    let events = service.engine().pending_events().count();
+    let advance = request(
+        2,
+        CommandV2::AdvanceReadPosition {
+            room_id: "room".to_owned(),
+            observed_revision: revision,
+            scope: ReadScopeV1::Room,
+            target_message_id: first,
+        },
+    );
+    let accepted = service.execute(alice, advance.clone());
+    assert!(matches!(
+        &accepted,
+        ReplyV2::Accepted(OutcomeV2::ReadPositionAdvanced(position))
+            if position.target_message_id == first
+                && position.observed_revision == revision
+                && position.scope == ReadScopeV1::Room
+    ));
+    assert_eq!(service.engine().revision().0, revision);
+    assert_eq!(service.engine().pending_events().count(), events);
+    assert_eq!(service.execute(alice, advance), accepted);
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                2,
+                CommandV2::ReadPosition {
+                    room_id: "room".to_owned(),
+                    scope: ReadScopeV1::Room,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ReadPosition(None))
+    );
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                3,
+                CommandV2::ReadPosition {
+                    room_id: "room".to_owned(),
+                    scope: ReadScopeV1::Room,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ReadPosition(Some(position)))
+            if position.target_message_id == first
+    ));
+
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        message_id: second,
+        revision: second_revision,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            4,
+            CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: revision,
+                logical_time: 2,
+                body: "second".to_owned(),
+                addressed_to: vec![],
+            },
+        ),
+    )
+    else {
+        panic!("second message expected");
+    };
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                5,
+                CommandV2::AdvanceReadPosition {
+                    room_id: "room".to_owned(),
+                    observed_revision: second_revision,
+                    scope: ReadScopeV1::Room,
+                    target_message_id: second,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ReadPositionAdvanced(position))
+            if position.target_message_id == second
+    ));
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                6,
+                CommandV2::AdvanceReadPosition {
+                    room_id: "room".to_owned(),
+                    observed_revision: second_revision,
+                    scope: ReadScopeV1::Room,
+                    target_message_id: first,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::ReadPositionRegression)
+    );
 }
 
 #[test]
@@ -2392,8 +2558,11 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 15);
-    assert_eq!(capabilities.last(), Some(&CapabilityV2::TopicsV1));
+    assert_eq!(capabilities.len(), 16);
+    assert_eq!(
+        capabilities.last(),
+        Some(&CapabilityV2::PrivateReadPositionsV1)
+    );
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

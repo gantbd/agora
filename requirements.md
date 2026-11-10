@@ -241,9 +241,8 @@
 
 Additional physical durable storage adapters, durable event sinks,
 credential/Aegis verifier adapters, network transports, end-to-end encryption,
-federation, delivery
-acknowledgment, durable audit, and implementation evidence for R46 are not part
-of the current v0.3 claim.
+federation, delivery acknowledgment, and durable audit are not part of the
+current v0.3 claim.
 Credential/Aegis adapters, transport, backup/restore qualification, and durable
 profiles beyond the qualified single-owner local Unix directory remain open;
 Protocol V1 bytes and semantics are unchanged.

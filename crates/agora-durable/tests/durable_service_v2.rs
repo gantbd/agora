@@ -3,12 +3,16 @@ use agora_durable::{
     DurableHostSuppressionV2, DurableHostV2, DurableOwnerStateV2, DurablePublicationV2,
     DurableServiceV2, DurableStartErrorV2, DurableSuppressionV2,
 };
-use agora_engine::{CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind};
+use agora_engine::{
+    AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, LogicalTime, Participant,
+    ParticipantId, ParticipantKind, ReadScopeV1 as EngineReadScopeV1, RoomId,
+};
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_protocol::v2::{
-    AdmissionPolicyV2, CommandV2, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
+    AdmissionPolicyV2, CommandV2, MessageIdV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2,
+    RequestIdV2, RequestV2,
 };
 use agora_service::v2::{
     ServiceLimitsV2, ServiceV2,
@@ -314,6 +318,100 @@ fn committed_lost_reply_recovers_as_exact_replay_without_duplicate_event() {
         }
     );
     assert_eq!(store.commit_calls(), 3);
+}
+
+#[test]
+fn private_read_position_commits_before_reply_and_recovers_as_exact_replay() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let agora_engine::OutcomeV2::MessageAccepted { sequence, .. } = engine
+        .apply(EngineCommand::Speak {
+            room_id: "room".into(),
+            author: "alice".into(),
+            at: LogicalTime(3),
+            body: "durable target".to_owned(),
+        })
+        .unwrap()
+    else {
+        panic!("message expected");
+    };
+    let target = engine.message(&RoomId::new("room"), sequence).unwrap().id();
+    let observed_revision = engine.revision().0;
+    let pending = engine.pending_events().len();
+    let store = TestStore::default();
+    let service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let mut durable = DurableServiceV2::initialize(service, store.clone(), config()).unwrap();
+    let DurablePublicationV2::Published {
+        value: Ok(client), ..
+    } = durable.connect("alice")
+    else {
+        panic!("connect must commit");
+    };
+    let advance = RequestV2 {
+        request_id: RequestIdV2(41),
+        command: CommandV2::AdvanceReadPosition {
+            room_id: "room".to_owned(),
+            observed_revision,
+            scope: ReadScopeV1::Room,
+            target_message_id: MessageIdV1::new(target.into_bytes()),
+        },
+    };
+    let DurablePublicationV2::Published {
+        value: accepted @ ReplyV2::Accepted(OutcomeV2::ReadPositionAdvanced(_)),
+        evidence: DurableEvidenceV2::Committed { revision },
+    } = durable.execute(client, advance.clone())
+    else {
+        panic!("private marker must commit before publication");
+    };
+    assert_eq!(store.commit_calls(), 3);
+    assert_eq!(
+        durable.service().unwrap().engine().revision().0,
+        observed_revision
+    );
+    assert_eq!(
+        durable.service().unwrap().engine().pending_events().len(),
+        pending
+    );
+    drop(durable.into_store());
+
+    let mut recovered = DurableServiceV2::recover(store.clone(), config()).unwrap();
+    assert_eq!(
+        recovered
+            .service()
+            .unwrap()
+            .engine()
+            .read_position(
+                &ParticipantId::new("alice"),
+                &RoomId::new("room"),
+                &EngineReadScopeV1::Room,
+            )
+            .unwrap()
+            .expect("private marker must recover")
+            .target_message_id(),
+        target
+    );
+    assert_eq!(
+        recovered.execute(client, advance),
+        DurablePublicationV2::Published {
+            value: accepted,
+            evidence: DurableEvidenceV2::PreviouslyCommitted { revision },
+        }
+    );
+    assert_eq!(store.commit_calls(), 3, "exact replay must not recommit");
 }
 
 #[test]

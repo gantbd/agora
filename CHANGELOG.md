@@ -15,6 +15,9 @@ follow Semantic Versioning once a public release contract is selected.
   including revision and scope validation, monotone/idempotent advancement,
   membership privacy, lifecycle retention, and canonical profile-13/15/15
   engine/service/host recovery.
+- Completed participant-bound private read-position service execution, closed
+  protocol and canonical wire values, SDK reachability, exact receipt recovery,
+  and durable commit-before-reply/lost-reply qualification.
 - Added audience-specific embedded and remote-client SDK facades.
 - Added exact package and canonical-fixture compatibility inventories with
   adversarial drift checks.

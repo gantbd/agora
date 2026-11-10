@@ -42,4 +42,9 @@ fn facade_alone_constructs_the_embedded_v2_stack() {
     let host = host::v2::HostV2::new(service, Verifier, host::HostLimits::default());
 
     assert_eq!(host.service().usage(), service::v2::UsageV2::default());
+    assert_eq!(
+        engine::ReadScopeV1::Room,
+        engine::ReadScopeV1::Room,
+        "private read-position substrate is reachable through the embedded facade"
+    );
 }

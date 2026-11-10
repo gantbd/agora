@@ -110,13 +110,16 @@ Legacy, identified, and threaded accepted-message bytes remain unchanged.
 Engine/service/host profiles advance to 12/14/14 because the topic registry,
 allocator, message relation, receipts, and cursor consequences are durable.
 
-Private read-position persistence advances engine/service/host profiles to
-13/15/15. The engine record appends one canonical participant/room/scope-keyed
-registry after room state; each marker retains exact target identity, sequence,
-and observed revision. Scope tags `01`, `02`, and `03` identify room, thread,
-and topic selectors. No public wire tag is allocated by this persistence-only
-advance, and earlier checkpoint profiles fail closed rather than dropping the
-private state.
+Private read positions are additive: command tags `2b` and `2c` query and
+advance self-scoped state; outcome tags `29` and `2a` encode optional/current
+markers; capability tag `10` advertises `PrivateReadPositionsV1`; refusal tags
+`13` through `15` distinguish invalid scope, invalid target, and regression.
+Nested scope tags `01`, `02`, and `03` identify room, thread, and topic. Existing
+frames remain byte-identical except the intentionally expanded capability list.
+Engine/service/host persistence profiles advance to 13/15/15. The engine record
+appends one canonical participant/room/scope-keyed registry after room state;
+each marker retains exact target identity, sequence, and observed revision.
+Earlier checkpoint profiles fail closed rather than dropping private state.
 
 ## Conservative baseline gate
 

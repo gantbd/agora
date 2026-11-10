@@ -4,9 +4,9 @@ use agora_protocol::v2::{
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
     MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
-    ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
-    ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
-    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
+    ReadPositionV1, ReadScopeV1, ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
+    RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1,
+    ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
 };
 
 #[test]
@@ -134,12 +134,29 @@ fn v2_debug_output_is_content_safe() {
             cursor: Some(PageCursorV2(46)),
             limit: 1,
         },
+        CommandV2::ReadPosition {
+            room_id: "secret-room".to_owned(),
+            scope: ReadScopeV1::Thread(MessageIdV1::new([0x70; 16])),
+        },
+        CommandV2::AdvanceReadPosition {
+            room_id: "secret-room".to_owned(),
+            observed_revision: 60,
+            scope: ReadScopeV1::Room,
+            target_message_id: MessageIdV1::new([0x71; 16]),
+        },
     ];
     let replies = [
         ReplyV2::Accepted(OutcomeV2::Capabilities(vec![
             CapabilityV2::RoomLifecycleV2,
             CapabilityV2::BanObservationV1,
         ])),
+        ReplyV2::Accepted(OutcomeV2::ReadPositionAdvanced(ReadPositionV1 {
+            room_id: "secret-room".to_owned(),
+            scope: ReadScopeV1::Room,
+            target_message_id: MessageIdV1::new([0x71; 16]),
+            target_sequence: 4,
+            observed_revision: 60,
+        })),
         ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(IdentifiedMessagePageV1 {
             revision: 1,
             room_id: "secret-room".to_owned(),

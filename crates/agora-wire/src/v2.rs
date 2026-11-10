@@ -10,11 +10,11 @@ use agora_protocol::v2::{
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
     MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
-    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
-    RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1,
-    ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1,
-    ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1,
-    TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicV1,
+    ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
+    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
+    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
+    ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1,
+    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicV1,
 };
 use std::fmt;
 
@@ -332,6 +332,23 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             sink.text(room_id)?;
             sink.u64(cursor.0)?;
             sink.u64(u64::from(*limit))
+        }
+        CommandV2::ReadPosition { room_id, scope } => {
+            sink.u8(43)?;
+            sink.text(room_id)?;
+            encode_read_scope(sink, *scope)
+        }
+        CommandV2::AdvanceReadPosition {
+            room_id,
+            observed_revision,
+            scope,
+            target_message_id,
+        } => {
+            sink.u8(44)?;
+            sink.text(room_id)?;
+            sink.u64(*observed_revision)?;
+            encode_read_scope(sink, *scope)?;
+            encode_message_id(sink, *target_message_id)
         }
         CommandV2::ArchiveThread {
             room_id,
@@ -955,6 +972,16 @@ fn decode_command(
             cursor: PageCursorV2(read_u64(decoder)?),
             limit: read_u32(decoder)?,
         }),
+        43 => Ok(CommandV2::ReadPosition {
+            room_id: read_text(decoder)?,
+            scope: decode_read_scope(decoder)?,
+        }),
+        44 => Ok(CommandV2::AdvanceReadPosition {
+            room_id: read_text(decoder)?,
+            observed_revision: read_u64(decoder)?,
+            scope: decode_read_scope(decoder)?,
+            target_message_id: decode_message_id(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1066,6 +1093,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::ReactionsV1 => 13,
                     CapabilityV2::MessageRevisionsV1 => 14,
                     CapabilityV2::TopicsV1 => 15,
+                    CapabilityV2::PrivateReadPositionsV1 => 16,
                 })?;
             }
             Ok(())
@@ -1347,6 +1375,20 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             encode_topic_id(sink, *topic_id)?;
             sink.u64(*sequence)
         }
+        OutcomeV2::ReadPosition(position) => {
+            sink.u8(41)?;
+            match position {
+                None => sink.u8(0),
+                Some(position) => {
+                    sink.u8(1)?;
+                    encode_read_position(sink, position)
+                }
+            }
+        }
+        OutcomeV2::ReadPositionAdvanced(position) => {
+            sink.u8(42)?;
+            encode_read_position(sink, position)
+        }
         OutcomeV2::Kicked { revision } => encode_revision_outcome(sink, 13, *revision),
         OutcomeV2::Banned { revision } => encode_revision_outcome(sink, 14, *revision),
         OutcomeV2::Unbanned { revision } => encode_revision_outcome(sink, 15, *revision),
@@ -1442,6 +1484,7 @@ fn decode_outcome(
                     13 => CapabilityV2::ReactionsV1,
                     14 => CapabilityV2::MessageRevisionsV1,
                     15 => CapabilityV2::TopicsV1,
+                    16 => CapabilityV2::PrivateReadPositionsV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -1642,6 +1685,14 @@ fn decode_outcome(
         40 => Ok(OutcomeV2::TopicChanges(decode_topic_change_page(
             decoder, limits,
         )?)),
+        41 => Ok(OutcomeV2::ReadPosition(match read_u8(decoder)? {
+            0 => None,
+            1 => Some(decode_read_position(decoder)?),
+            _ => return Err(WireDecodeError::UnknownTag),
+        })),
+        42 => Ok(OutcomeV2::ReadPositionAdvanced(decode_read_position(
+            decoder,
+        )?)),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1839,6 +1890,61 @@ fn decode_topic_id(
         *byte = read_u8(decoder)?;
     }
     Ok(TopicIdV1::new(bytes))
+}
+
+fn encode_read_scope(sink: &mut dyn Sink, scope: ReadScopeV1) -> Result<(), WireEncodeError> {
+    match scope {
+        ReadScopeV1::Room => sink.u8(1),
+        ReadScopeV1::Thread(root_message_id) => {
+            sink.u8(2)?;
+            encode_message_id(sink, root_message_id)
+        }
+        ReadScopeV1::Topic(topic_id) => {
+            sink.u8(3)?;
+            encode_topic_id(sink, topic_id)
+        }
+    }
+}
+
+fn decode_read_scope(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<ReadScopeV1, WireDecodeError> {
+    match read_u8(decoder)? {
+        1 => Ok(ReadScopeV1::Room),
+        2 => Ok(ReadScopeV1::Thread(decode_message_id(decoder)?)),
+        3 => Ok(ReadScopeV1::Topic(decode_topic_id(decoder)?)),
+        _ => Err(WireDecodeError::UnknownTag),
+    }
+}
+
+fn encode_read_position(
+    sink: &mut dyn Sink,
+    position: &ReadPositionV1,
+) -> Result<(), WireEncodeError> {
+    if position.room_id.is_empty() {
+        return Err(WireEncodeError::Invalid);
+    }
+    sink.text(&position.room_id)?;
+    encode_read_scope(sink, position.scope)?;
+    encode_message_id(sink, position.target_message_id)?;
+    sink.u64(position.target_sequence)?;
+    sink.u64(position.observed_revision)
+}
+
+fn decode_read_position(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<ReadPositionV1, WireDecodeError> {
+    let room_id = read_text(decoder)?;
+    if room_id.is_empty() {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok(ReadPositionV1 {
+        room_id,
+        scope: decode_read_scope(decoder)?,
+        target_message_id: decode_message_id(decoder)?,
+        target_sequence: read_u64(decoder)?,
+        observed_revision: read_u64(decoder)?,
+    })
 }
 
 fn encode_identified_message(
@@ -3527,6 +3633,9 @@ fn encode_refusal(sink: &mut dyn Sink, refusal: RefusalV2) -> Result<(), WireEnc
         RefusalV2::Banned => 16,
         RefusalV2::ThreadArchived => 17,
         RefusalV2::UnknownTopic => 18,
+        RefusalV2::InvalidReadScope => 19,
+        RefusalV2::InvalidReadTarget => 20,
+        RefusalV2::ReadPositionRegression => 21,
     };
     sink.u8(tag)?;
     if let RefusalV2::Stale { actual_revision } = refusal {
@@ -3557,6 +3666,9 @@ fn decode_refusal(decoder: &mut keystone_codec::Decoder<'_>) -> Result<RefusalV2
         16 => Ok(RefusalV2::Banned),
         17 => Ok(RefusalV2::ThreadArchived),
         18 => Ok(RefusalV2::UnknownTopic),
+        19 => Ok(RefusalV2::InvalidReadScope),
+        20 => Ok(RefusalV2::InvalidReadTarget),
+        21 => Ok(RefusalV2::ReadPositionRegression),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
