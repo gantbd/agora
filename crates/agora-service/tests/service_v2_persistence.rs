@@ -1,9 +1,11 @@
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind,
+    RoomId,
 };
 use agora_protocol::v2::{
-    ClientIdV2, CommandV2, IdentifiedRoomEventV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
-    RequestV2, ThreadLifecycleStateV1, ThreadedRoomEventV1,
+    ClientIdV2, CommandV2, IdentifiedRoomEventV1, MessageIdV1, MessageRevisionAvailabilityV1,
+    OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, ThreadLifecycleStateV1,
+    ThreadedRoomEventV1,
 };
 use agora_service::v2::{
     ServiceLimitsV2, ServiceV2,
@@ -68,10 +70,34 @@ fn populated() -> (
                 expected_revision: 5,
                 logical_time: 9,
                 body: "checkpoint me".to_owned(),
-                addressed_to: vec!["bot".to_owned()],
+                addressed_to: vec![],
             },
         ),
     );
+    let message_id = MessageIdV1::new(
+        service
+            .engine()
+            .message(&RoomId::new("alpha"), 0)
+            .unwrap()
+            .id()
+            .into_bytes(),
+    );
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                99,
+                CommandV2::EditMessage {
+                    room_id: "alpha".to_owned(),
+                    expected_revision: 6,
+                    message_id,
+                    logical_time: 10,
+                    body: "checkpoint revised".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::MessageEdited { revision: 7, .. })
+    ));
     let ReplyV2::Accepted(OutcomeV2::Rooms(page)) = service.execute(
         alice,
         request(
@@ -97,7 +123,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v12.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v13.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -133,7 +159,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
                     expected_revision: 5,
                     logical_time: 9,
                     body: "checkpoint me".to_owned(),
-                    addressed_to: vec!["bot".to_owned()],
+                    addressed_to: vec![],
                 },
             ),
         ),
@@ -205,7 +231,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 13;
+    future[8] = 14;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -1014,6 +1040,183 @@ fn reaction_status_event_and_receipt_survive_recovery_exactly() {
 }
 
 #[test]
+fn message_revision_cursor_event_and_receipt_survive_recovery_exactly() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted { message_id, .. }) = service
+        .execute(
+            bot,
+            request(
+                1,
+                CommandV2::SpeakIdentified {
+                    room_id: "room".to_owned(),
+                    expected_revision: 4,
+                    logical_time: 10,
+                    body: "original".to_owned(),
+                    addressed_to: vec!["alice".to_owned()],
+                },
+            ),
+        )
+    else {
+        panic!("identified message expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: feed_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::OpenIdentifiedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 5,
+            },
+        ),
+    )
+    else {
+        panic!("feed cursor expected");
+    };
+    let edit = request(
+        2,
+        CommandV2::EditMessage {
+            room_id: "room".to_owned(),
+            expected_revision: 5,
+            message_id,
+            logical_time: 20,
+            body: "revised".to_owned(),
+        },
+    );
+    let edit_reply = service.execute(bot, edit.clone());
+    assert_eq!(
+        edit_reply,
+        ReplyV2::Accepted(OutcomeV2::MessageEdited {
+            revision: 6,
+            message_id,
+            message_revision: 1,
+        })
+    );
+    let ReplyV2::Accepted(OutcomeV2::MessageRevisions(first)) = service.execute(
+        alice,
+        request(
+            3,
+            CommandV2::MessageRevisions {
+                room_id: "room".to_owned(),
+                message_id,
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("first revision page expected");
+    };
+    let revision_cursor = first.next.unwrap();
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(bot, edit), edit_reply);
+    assert_eq!(recovered.engine().revision().0, 6);
+
+    let ReplyV2::Accepted(OutcomeV2::MessageRevisions(second)) = recovered.execute(
+        alice,
+        request(
+            4,
+            CommandV2::MessageRevisions {
+                room_id: "room".to_owned(),
+                message_id,
+                cursor: Some(revision_cursor),
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("revision continuation expected");
+    };
+    assert_eq!(second.revisions[0].number, 1);
+    assert_eq!(second.revisions[0].body, "revised");
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(changes)) = recovered.execute(
+        alice,
+        request(
+            5,
+            CommandV2::IdentifiedChanges {
+                room_id: "room".to_owned(),
+                cursor: feed_cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("edit change expected");
+    };
+    assert!(matches!(&changes.changes[0].event,
+        IdentifiedRoomEventV1::MessageEdited { actor_id, message_id: id, message_revision: 1, logical_time: 20, body }
+        if actor_id == "bot" && *id == message_id && body == "revised"
+    ));
+
+    assert!(matches!(
+        recovered.execute(
+            bot,
+            request(
+                3,
+                CommandV2::WithdrawMessage {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    message_id,
+                }
+            )
+        ),
+        ReplyV2::Accepted(OutcomeV2::MessageWithdrawn { revision: 7, .. })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::MessageRevisions(tombstoned)) = recovered.execute(
+        alice,
+        request(
+            6,
+            CommandV2::MessageRevisions {
+                room_id: "room".to_owned(),
+                message_id,
+                cursor: None,
+                limit: 4,
+            },
+        ),
+    ) else {
+        panic!("tombstoned revisions expected");
+    };
+    assert_eq!(tombstoned.revisions.len(), 2);
+    assert!(
+        tombstoned
+            .revisions
+            .iter()
+            .all(
+                |revision| revision.availability == MessageRevisionAvailabilityV1::Tombstoned
+                    && revision.body.is_empty()
+            )
+    );
+}
+
+#[test]
 fn author_withdrawal_tombstone_and_exact_receipt_survive_recovery() {
     let mut engine = Engine::new();
     engine
@@ -1200,7 +1403,7 @@ fn recovered_change_position_continues_without_snapshot_gap() {
         ),
         ReplyV2::Accepted(OutcomeV2::MessageAccepted {
             revision: revision + 1,
-            sequence: 0,
+            sequence: 1,
         })
     );
     let ReplyV2::Accepted(OutcomeV2::Changes(page)) = recovered.execute(

@@ -156,6 +156,19 @@ pub enum CommandV2 {
         room_id: String,
         message_id: MessageIdV1,
     },
+    EditMessage {
+        room_id: String,
+        expected_revision: u64,
+        message_id: MessageIdV1,
+        logical_time: u64,
+        body: String,
+    },
+    MessageRevisions {
+        room_id: String,
+        message_id: MessageIdV1,
+        cursor: Option<PageCursorV2>,
+        limit: u32,
+    },
     CreateRoom {
         room_id: String,
         name: String,
@@ -572,6 +585,32 @@ impl fmt::Debug for CommandV2 {
                 .field("room_id_bytes", &room_id.len())
                 .field("message_id", message_id)
                 .finish(),
+            Self::EditMessage {
+                room_id,
+                expected_revision,
+                message_id,
+                logical_time,
+                body,
+            } => formatter
+                .debug_struct("EditMessage")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("message_id", message_id)
+                .field("logical_time", logical_time)
+                .field("body_bytes", &body.len())
+                .finish(),
+            Self::MessageRevisions {
+                room_id,
+                message_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("MessageRevisions")
+                .field("room_id_bytes", &room_id.len())
+                .field("message_id", message_id)
+                .field("has_cursor", &cursor.is_some())
+                .field("limit", limit)
+                .finish(),
         }
     }
 }
@@ -593,6 +632,7 @@ pub enum CapabilityV2 {
     ThreadsV1,
     ThreadLifecycleV1,
     ReactionsV1,
+    MessageRevisionsV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -868,6 +908,56 @@ impl fmt::Debug for ReactionStatusV1 {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MessageRevisionAvailabilityV1 {
+    Available,
+    Tombstoned,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessageRevisionV1 {
+    pub number: u32,
+    pub editor_id: String,
+    pub logical_time: u64,
+    pub availability: MessageRevisionAvailabilityV1,
+    pub body: String,
+}
+
+impl fmt::Debug for MessageRevisionV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageRevisionV1")
+            .field("number", &self.number)
+            .field("editor_id_bytes", &self.editor_id.len())
+            .field("logical_time", &self.logical_time)
+            .field("availability", &self.availability)
+            .field("body_bytes", &self.body.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessageRevisionPageV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub message_id: MessageIdV1,
+    pub revisions: Vec<MessageRevisionV1>,
+    pub next: Option<PageCursorV2>,
+}
+
+impl fmt::Debug for MessageRevisionPageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageRevisionPageV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("message_id", &self.message_id)
+            .field("revision_count", &self.revisions.len())
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
+}
+
 impl fmt::Debug for ThreadStatusV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -948,6 +1038,13 @@ pub enum RoomEventV2 {
         message_id: MessageIdV1,
         key: String,
         reacted: bool,
+    },
+    MessageEdited {
+        actor_id: String,
+        message_id: MessageIdV1,
+        message_revision: u32,
+        logical_time: u64,
+        body: String,
     },
 }
 
@@ -1062,6 +1159,20 @@ impl fmt::Debug for RoomEventV2 {
                 .field("key_bytes", &key.len())
                 .field("reacted", reacted)
                 .finish(),
+            Self::MessageEdited {
+                actor_id,
+                message_id,
+                message_revision,
+                logical_time,
+                body,
+            } => formatter
+                .debug_struct("MessageEdited")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("message_revision", message_revision)
+                .field("logical_time", logical_time)
+                .field("body_bytes", &body.len())
+                .finish(),
         }
     }
 }
@@ -1136,6 +1247,13 @@ pub enum IdentifiedRoomEventV1 {
         message_id: MessageIdV1,
         key: String,
         reacted: bool,
+    },
+    MessageEdited {
+        actor_id: String,
+        message_id: MessageIdV1,
+        message_revision: u32,
+        logical_time: u64,
+        body: String,
     },
 }
 
@@ -1250,6 +1368,20 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .field("key_bytes", &key.len())
                 .field("reacted", reacted)
                 .finish(),
+            Self::MessageEdited {
+                actor_id,
+                message_id,
+                message_revision,
+                logical_time,
+                body,
+            } => formatter
+                .debug_struct("MessageEdited")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("message_revision", message_revision)
+                .field("logical_time", logical_time)
+                .field("body_bytes", &body.len())
+                .finish(),
         }
     }
 }
@@ -1324,6 +1456,13 @@ pub enum ThreadedRoomEventV1 {
         message_id: MessageIdV1,
         key: String,
         reacted: bool,
+    },
+    MessageEdited {
+        actor_id: String,
+        message_id: MessageIdV1,
+        message_revision: u32,
+        logical_time: u64,
+        body: String,
     },
 }
 
@@ -1437,6 +1576,20 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .field("message_id", message_id)
                 .field("key_bytes", &key.len())
                 .field("reacted", reacted)
+                .finish(),
+            Self::MessageEdited {
+                actor_id,
+                message_id,
+                message_revision,
+                logical_time,
+                body,
+            } => formatter
+                .debug_struct("MessageEdited")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("message_revision", message_revision)
+                .field("logical_time", logical_time)
+                .field("body_bytes", &body.len())
                 .finish(),
         }
     }
@@ -1567,6 +1720,7 @@ pub enum OutcomeV2 {
     ThreadReplies(ThreadMessagePageV1),
     ThreadStatus(ThreadStatusV1),
     ReactionStatus(ReactionStatusV1),
+    MessageRevisions(MessageRevisionPageV1),
     ChangesOpened {
         revision: u64,
         cursor: PageCursorV2,
@@ -1645,6 +1799,11 @@ pub enum OutcomeV2 {
     ReactionRemoved {
         revision: u64,
         message_id: MessageIdV1,
+    },
+    MessageEdited {
+        revision: u64,
+        message_id: MessageIdV1,
+        message_revision: u32,
     },
 }
 

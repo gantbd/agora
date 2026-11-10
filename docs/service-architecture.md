@@ -128,6 +128,16 @@ and caller membership, and every change feed preserves attribution. Tombstones
 and thread archive retain relations; message eviction removes them. No reaction
 is a notification, acknowledgement, policy grant, or workflow signal.
 
+## Bounded message revisions
+
+`MessageRevisionsV1` remains inside the same serialized conversation owner.
+The service derives the editor from the bound client, projects only original-
+author edits, and stores revision-page handles as client-owned opaque cursors
+bound to room, message, observer, profile, and exact engine revision. Current
+message pages remain unchanged; edit events are projected into each feed.
+Checkpoint recovery preserves exact receipts, history, cursor continuation, and
+tombstone scrubbing. Rich collaborative writing remains a Vellum concern.
+
 ## Deliberate exclusions
 
 The semantic profiles perform no network I/O, encryption, direct physical

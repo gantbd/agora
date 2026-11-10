@@ -120,7 +120,19 @@ impl Writer {
         for id in &m.addressed_to {
             self.text(id.as_str())?
         }
-        self.message_id_option(m.reply_to_root)
+        self.message_id_option(m.reply_to_root)?;
+        self.count(m.revisions.len())?;
+        for revision in &m.revisions {
+            self.number(u64::from(revision.number))?;
+            self.text(revision.editor.as_str())?;
+            self.number(revision.at.0)?;
+            self.byte(match revision.availability {
+                MessageRevisionAvailabilityV1::Available => 0,
+                MessageRevisionAvailabilityV1::Tombstoned => 1,
+            })?;
+            self.text(&revision.body)?;
+        }
+        Ok(())
     }
     fn event(&mut self, e: &DomainEventV2) -> Result<(), CheckpointError> {
         match e {
@@ -287,6 +299,22 @@ impl Writer {
                 self.text(key)?;
                 self.byte(u8::from(*reacted))
             }
+            DomainEventV2::MessageEdited {
+                room_id,
+                actor,
+                message_id,
+                message_revision,
+                at,
+                body,
+            } => {
+                self.byte(15)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&message_id.into_bytes())?;
+                self.number(u64::from(*message_revision))?;
+                self.number(at.0)?;
+                self.text(body)
+            }
         }
     }
 }
@@ -378,6 +406,35 @@ impl<'a> Reader<'a> {
             addressed_to.push(self.participant(l)?)
         }
         let reply_to_root = self.message_id_option()?;
+        let revision_count = self.count(MAX_MESSAGE_REVISIONS_V1)?;
+        if revision_count == 0 {
+            return Err(CheckpointError::Invalid);
+        }
+        let mut revisions = Vec::new();
+        revisions
+            .try_reserve(revision_count)
+            .map_err(|_| CheckpointError::Capacity)?;
+        for _ in 0..revision_count {
+            let number = self
+                .number()?
+                .try_into()
+                .map_err(|_| CheckpointError::Invalid)?;
+            let editor = self.participant(l)?;
+            let at = LogicalTime(self.number()?);
+            let availability = match self.byte()? {
+                0 => MessageRevisionAvailabilityV1::Available,
+                1 => MessageRevisionAvailabilityV1::Tombstoned,
+                _ => return Err(CheckpointError::Invalid),
+            };
+            let body = self.text(l.max_message_body_bytes)?;
+            revisions.push(MessageRevisionV1 {
+                number,
+                editor,
+                at,
+                availability,
+                body,
+            });
+        }
         Ok(Message {
             id,
             sequence,
@@ -386,6 +443,7 @@ impl<'a> Reader<'a> {
             body,
             addressed_to,
             reply_to_root,
+            revisions,
         })
     }
     fn event(&mut self, l: Limits) -> Result<DomainEventV2, CheckpointError> {
@@ -495,6 +553,17 @@ impl<'a> Reader<'a> {
                     _ => return Err(CheckpointError::Invalid),
                 },
             },
+            15 => DomainEventV2::MessageEdited {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                message_id: MessageId::from_bytes(self.fixed()?),
+                message_revision: self
+                    .number()?
+                    .try_into()
+                    .map_err(|_| CheckpointError::Invalid)?,
+                at: LogicalTime(self.number()?),
+                body: self.text(l.max_message_body_bytes)?,
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -597,7 +666,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(10)?;
+        w.byte(11)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -689,7 +758,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 10 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 11 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -1111,6 +1180,49 @@ impl ThreadMessagePageCursor {
     }
 }
 
+impl MessageRevisionPageCursorV1 {
+    pub fn prepare_checkpoint(
+        &self,
+        max_snapshot_bytes: usize,
+    ) -> Result<CursorCheckpointV1, CheckpointError> {
+        let mut writer = Writer {
+            bytes: Vec::new(),
+            max: max_snapshot_bytes,
+        };
+        writer.raw(CURSOR_MAGIC)?;
+        writer.byte(1)?;
+        writer.byte(7)?;
+        writer.number(self.revision.0)?;
+        writer.text(self.observer.as_str())?;
+        writer.text(self.room_id.as_str())?;
+        writer.raw(&self.message_id.into_bytes())?;
+        writer.number(u64::from(self.after_revision))?;
+        Ok(CursorCheckpointV1(writer.bytes))
+    }
+
+    pub fn recover_checkpoint(
+        bytes: &[u8],
+        bounds: CursorRecoveryLimitsV1,
+    ) -> Result<Self, CheckpointError> {
+        let mut reader = cursor_reader(bytes, bounds, 7)?;
+        let cursor = Self {
+            revision: Revision(reader.number()?),
+            observer: ParticipantId::new(reader.text(bounds.max_participant_id_bytes)?),
+            room_id: RoomId::new(reader.text(bounds.max_room_id_bytes)?),
+            message_id: MessageId::from_bytes(reader.fixed()?),
+            after_revision: reader
+                .number()?
+                .try_into()
+                .map_err(|_| CheckpointError::Invalid)?,
+        };
+        finish_cursor(&reader)?;
+        if cursor.observer.as_str().is_empty() || cursor.room_id.as_str().is_empty() {
+            return Err(CheckpointError::Invalid);
+        }
+        Ok(cursor)
+    }
+}
+
 impl RoomChangePosition {
     pub fn prepare_checkpoint(
         &self,
@@ -1186,6 +1298,30 @@ fn valid_message(e: &Engine, room: &Room, m: &Message) -> Result<(), CheckpointE
         false,
     )?;
     validate_addressing(e, &m.addressed_to)?;
+    if m.revisions.is_empty() || m.revisions.len() > MAX_MESSAGE_REVISIONS_V1 {
+        return Err(CheckpointError::Invalid);
+    }
+    let tombstoned = m.is_withdrawn();
+    for (index, revision) in m.revisions.iter().enumerate() {
+        if revision.number as usize != index
+            || revision.editor != m.author
+            || !e.participants.contains_key(&revision.editor)
+            || revision.body.len() > e.limits.max_message_body_bytes
+            || match revision.availability {
+                MessageRevisionAvailabilityV1::Available => tombstoned || revision.body.is_empty(),
+                MessageRevisionAvailabilityV1::Tombstoned => {
+                    !tombstoned || !revision.body.is_empty()
+                }
+            }
+        {
+            return Err(CheckpointError::Invalid);
+        }
+    }
+    let first = m.revisions.first().ok_or(CheckpointError::Invalid)?;
+    let last = m.revisions.last().ok_or(CheckpointError::Invalid)?;
+    if first.at != m.at || last.body != m.body {
+        return Err(CheckpointError::Invalid);
+    }
     if let Some(root) = m.reply_to_root {
         let mut incarnation = [0_u8; 8];
         let mut sequence = [0_u8; 8];
@@ -1259,7 +1395,12 @@ fn valid_message_parts(
             || current.sequence != facts.sequence
             || &current.author != facts.author
             || current.at != facts.at
-            || (current.body != facts.body && !(allow_withdrawn_body && current.is_withdrawn()))
+            || (current.body != facts.body
+                && !current
+                    .revisions
+                    .iter()
+                    .any(|revision| revision.body == facts.body)
+                && !(allow_withdrawn_body && current.is_withdrawn()))
         {
             return Err(CheckpointError::Invalid);
         }
@@ -1674,6 +1815,38 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             let sequence = u64::from_be_bytes(sequence);
             if sequence >= r.next_message_sequence
                 || *message_id != MessageId::allocated(r.message_identity_incarnation, sequence)
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::MessageEdited {
+            room_id,
+            actor,
+            message_id,
+            message_revision,
+            body,
+            ..
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            if body.len() > e.limits.max_message_body_bytes || *message_revision == 0 {
+                return Err(CheckpointError::Invalid);
+            }
+            let mut sequence = [0_u8; 8];
+            sequence.copy_from_slice(&message_id.0[8..]);
+            let sequence = u64::from_be_bytes(sequence);
+            if sequence >= r.next_message_sequence
+                || *message_id != MessageId::allocated(r.message_identity_incarnation, sequence)
+            {
+                return Err(CheckpointError::Invalid);
+            }
+            if let Some(message) = e.message_by_id(room_id, *message_id)
+                && (message.author != *actor
+                    || message.current_revision() < *message_revision
+                    || (!message.is_withdrawn()
+                        && !message.revisions.iter().any(|revision| {
+                            revision.number == *message_revision && revision.body == *body
+                        })))
             {
                 return Err(CheckpointError::Invalid);
             }

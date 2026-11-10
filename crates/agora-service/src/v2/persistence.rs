@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 const MAGIC: &[u8; 8] = b"AGORASV\0";
-const VERSION: u8 = 12;
+const VERSION: u8 = 13;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ServiceCheckpointScopeV1([u8; 16]);
@@ -415,6 +415,19 @@ impl ServiceV2 {
                         .map_err(|error| map_engine(error, true))?;
                     writer.blob(checkpoint.bytes())?;
                 }
+                CursorPage::MessageRevisions {
+                    room_id,
+                    message_id,
+                    cursor,
+                } => {
+                    writer.byte(11)?;
+                    writer.text(room_id.as_str())?;
+                    writer.raw(&message_id.into_bytes())?;
+                    let checkpoint = cursor
+                        .prepare_checkpoint(max_snapshot_bytes)
+                        .map_err(|error| map_engine(error, true))?;
+                    writer.blob(checkpoint.bytes())?;
+                }
             }
         }
         Ok(ServiceCheckpointV2(writer.bytes))
@@ -666,6 +679,25 @@ impl ServiceV2 {
                         return Err(ServiceCheckpointErrorV2::Invalid);
                     }
                     CursorPage::ThreadedChanges { room_id, position }
+                }
+                11 => {
+                    let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
+                    let message_id = MessageId::from_bytes(reader.fixed()?);
+                    let cursor = MessageRevisionPageCursorV1::recover_checkpoint(
+                        reader.blob(bounds.max_snapshot_bytes)?,
+                        cursor_bounds,
+                    )
+                    .map_err(|error| map_engine(error, true))?;
+                    if room_id.as_str().is_empty()
+                        || !cursor.is_bound_to(participant, &room_id, message_id)
+                    {
+                        return Err(ServiceCheckpointErrorV2::Invalid);
+                    }
+                    CursorPage::MessageRevisions {
+                        room_id,
+                        message_id,
+                        cursor,
+                    }
                 }
                 _ => return Err(ServiceCheckpointErrorV2::Invalid),
             };

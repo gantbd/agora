@@ -62,12 +62,15 @@ follow Semantic Versioning once a public release contract is selected.
 - Added bounded participant-to-message reactions with explicit set transitions,
   canonical count/caller aggregates, tombstone-safe state, all-feed attribution,
   exact replay/recovery, and closed protocol, wire, SDK, and fixture evidence.
+- Added bounded immutable message revision history with original-author
+  authority, 64-record append-only numbering, client-bound observation,
+  all-feed attribution, tombstone scrubbing, and exact replay/recovery.
 
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 10, 12,
-  and 12 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 11, 13,
+  and 13 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

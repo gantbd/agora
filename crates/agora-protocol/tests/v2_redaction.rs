@@ -2,9 +2,10 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, CommandV2,
     IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
-    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1,
-    ReactionSummaryV1, ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
-    RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
+    MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
+    MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
+    ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
+    ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
     ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
 };
 
@@ -83,6 +84,19 @@ fn v2_debug_output_is_content_safe() {
         CommandV2::ReactionStatus {
             room_id: "secret-room".to_owned(),
             message_id: MessageIdV1::new([0x62; 16]),
+        },
+        CommandV2::EditMessage {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 5,
+            message_id: MessageIdV1::new([0x63; 16]),
+            logical_time: 6,
+            body: "secret-revision-body".to_owned(),
+        },
+        CommandV2::MessageRevisions {
+            room_id: "secret-room".to_owned(),
+            message_id: MessageIdV1::new([0x63; 16]),
+            cursor: Some(PageCursorV2(58)),
+            limit: 1,
         },
         CommandV2::Speak {
             room_id: "secret-room".to_owned(),
@@ -223,6 +237,35 @@ fn v2_debug_output_is_content_safe() {
                 count: 1,
                 caller_reacted: true,
             }],
+        })),
+        ReplyV2::Accepted(OutcomeV2::MessageRevisions(MessageRevisionPageV1 {
+            revision: 5,
+            room_id: "secret-room".to_owned(),
+            message_id: MessageIdV1::new([0x63; 16]),
+            revisions: vec![MessageRevisionV1 {
+                number: 1,
+                editor_id: "secret-editor".to_owned(),
+                logical_time: 6,
+                availability: MessageRevisionAvailabilityV1::Available,
+                body: "secret-revision-body".to_owned(),
+            }],
+            next: Some(PageCursorV2(59)),
+        })),
+        ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(IdentifiedRoomChangePageV1 {
+            revision: 6,
+            changes: vec![IdentifiedRoomChangeV1 {
+                event_sequence: 5,
+                revision: 6,
+                event: IdentifiedRoomEventV1::MessageEdited {
+                    actor_id: "secret-editor".to_owned(),
+                    message_id: MessageIdV1::new([0x63; 16]),
+                    message_revision: 1,
+                    logical_time: 6,
+                    body: "secret-revision-body".to_owned(),
+                },
+            }],
+            next: PageCursorV2(60),
+            has_more: false,
         })),
         ReplyV2::Accepted(OutcomeV2::MessageWithdrawn {
             revision: 3,
@@ -373,6 +416,8 @@ fn v2_debug_output_is_content_safe() {
         "secret-cause-123",
         "secret-actor",
         "secret-reaction",
+        "secret-editor",
+        "secret-revision-body",
         "42",
         "43",
         "44",

@@ -320,10 +320,67 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
     let first = host
         .handle(session, &request, &context, HostTimeV1(2))
         .unwrap();
+    let speak = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(10),
+                command: CommandV2::SpeakIdentified {
+                    room_id: "private".to_owned(),
+                    expected_revision: 3,
+                    logical_time: 10,
+                    body: "checkpoint original".to_owned(),
+                    addressed_to: vec![],
+                },
+            },
+        },
+        limits(8).wire,
+    )
+    .unwrap();
+    let speak_reply = host
+        .handle(session, &speak, &context, HostTimeV1(2))
+        .unwrap();
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        message_id,
+        ..
+    })) = decode_reply_v2(&speak_reply, limits(8).wire).unwrap()
+    else {
+        panic!("identified message expected");
+    };
+    let edit = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(11),
+                command: CommandV2::EditMessage {
+                    room_id: "private".to_owned(),
+                    expected_revision: 4,
+                    message_id,
+                    logical_time: 20,
+                    body: "checkpoint revised".to_owned(),
+                },
+            },
+        },
+        limits(8).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host
+                .handle(session, &edit, &context, HostTimeV1(2))
+                .unwrap(),
+            limits(8).wire
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::MessageEdited {
+            revision: 5,
+            ..
+        }))
+    ));
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    let fixture = include_str!("fixtures/host-checkpoint-v12.hex").trim();
+    let fixture = include_str!("fixtures/host-checkpoint-v13.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -354,7 +411,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
             .unwrap(),
         first
     );
-    assert_eq!(recovered.service().engine().revision(), Revision(3));
+    assert_eq!(recovered.service().engine().revision(), Revision(5));
     assert_eq!(calls.get(), 1, "recovered session must be revalidated");
 }
 

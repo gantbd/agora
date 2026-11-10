@@ -20,7 +20,7 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact ten-package workspace and twenty-five canonical fixtures. These
+closes over the exact ten-package workspace and twenty-seven canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -192,6 +192,15 @@ retention cleanup, exact replay, all-profile feed attribution, and checkpoint
 continuation. Closed command, outcome, capability, status, and event tags are
 round-tripped; Debug/SDK evidence and two canonical frames close the public
 surface without claiming authority, acknowledgement, delivery, or completion.
+
+Message revision scenarios prove original-author authority for humans and
+agents, append-only numbering through a fixed saturation ceiling, immutable
+identity/addressing/reply/reaction relations, atomic refusal, revision-bound
+pagination, exact receipt replay, every-feed attribution, recovery continuation,
+and tombstone scrubbing of retained revision and event bodies. Closed protocol,
+wire, Debug, SDK, two canonical frames, and profile-11/13/13 checkpoints close
+the retained short-message correction surface without claiming collaborative
+document editing or physical erasure.
 
 The gate does not establish a credential adapter, transport security,
 multi-host serialization, physical-device power-loss behavior, event delivery,

@@ -58,6 +58,8 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `20` | AddReaction | room, expected revision, message ID, reaction key |
 | `21` | RemoveReaction | room, expected revision, message ID, reaction key |
 | `22` | ReactionStatus | room, message ID |
+| `23` | EditMessage | room, expected revision, message ID, logical time, replacement body |
+| `24` | MessageRevisions | room, message ID, optional cursor, limit |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -73,7 +75,8 @@ Capabilities `12`, IdentifiedMessages `13`, IdentifiedMessageAccepted `14`, and
 MessageWithdrawn `15`, MessageRedacted `16`, IdentifiedChanges `17`, ThreadRoots
 `18`, ThreadReplies `19`, ReplyAccepted `1a`, ThreadedChanges `1b`,
 ThreadArchived `1c`, ThreadReopened `1d`, ThreadStatus `1e`, ReactionStatus
-`1f`, ReactionAdded `20`, and ReactionRemoved `21`.
+`1f`, ReactionAdded `20`, ReactionRemoved `21`, MessageRevisions `22`, and
+MessageEdited `23`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -158,6 +161,14 @@ list of reaction key, aggregate count, and caller-membership flag. Room-event
 tag `0f` carries actor text, message ID, key, and add/remove flag in all three
 change profiles. Counts do not enumerate reactors and reactions imply no
 authority, delivery, acknowledgement, or completion.
+
+MessageRevisions carries revision, room text, message ID, an ascending bounded
+list of `(revision number, editor text, logical time, availability, body)`, and
+an optional cursor. Availability is Available `01` with a nonempty body or
+Tombstoned `02` with an empty body. MessageEdited carries engine revision,
+message ID, and message-revision number. Room-event tag `10` carries actor text,
+message ID, message-revision number, logical time, and body in all three change
+profiles. Existing message pages continue to expose only the current body.
 
 ## Refusals
 

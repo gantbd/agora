@@ -70,6 +70,15 @@ fn fixture_engine() -> Engine {
             reacted: true,
         })
         .unwrap();
+    engine
+        .apply(CommandV2::EditMessage {
+            room_id: "room".into(),
+            actor: "human".into(),
+            message_id: root_message_id,
+            at: LogicalTime(19),
+            body: "hello revised".to_owned(),
+        })
+        .unwrap();
     engine.acknowledge_events(EventSequence(2)).unwrap();
     engine
         .apply(CommandV2::Ban {
@@ -117,9 +126,9 @@ fn unhex(value: &str) -> Vec<u8> {
 }
 
 #[test]
-fn canonical_v10_checkpoint_is_immutable_and_recovers() {
+fn canonical_v11_checkpoint_is_immutable_and_recovers() {
     let prepared = fixture_engine().prepare_checkpoint(65_536).unwrap();
-    let expected_hex = include_str!("fixtures/checkpoint-v10.hex").trim();
+    let expected_hex = include_str!("fixtures/checkpoint-v11.hex").trim();
     assert_eq!(hex(prepared.bytes()), expected_hex);
 
     let recovered = Engine::recover_checkpoint(

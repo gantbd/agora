@@ -402,6 +402,8 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::InvalidReaction
         | EngineRefusal::ReactionLimit
         | EngineRefusal::InvalidReactionChange
+        | EngineRefusal::MessageRevisionLimit
+        | EngineRefusal::InvalidMessageEdit
         | EngineRefusal::MessageAlreadyTombstoned
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)

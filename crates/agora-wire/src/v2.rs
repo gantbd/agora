@@ -8,11 +8,12 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
     CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
-    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1,
-    ReactionSummaryV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2,
-    RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
-    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
-    ThreadedRoomChangeV1, ThreadedRoomEventV1,
+    MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
+    MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
+    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
+    RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1,
+    ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1,
+    ThreadedRoomEventV1,
 };
 use std::fmt;
 
@@ -375,6 +376,32 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             sink.u8(34)?;
             sink.text(room_id)?;
             encode_message_id(sink, *message_id)
+        }
+        CommandV2::EditMessage {
+            room_id,
+            expected_revision,
+            message_id,
+            logical_time,
+            body,
+        } => {
+            sink.u8(35)?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            encode_message_id(sink, *message_id)?;
+            sink.u64(*logical_time)?;
+            sink.text(body)
+        }
+        CommandV2::MessageRevisions {
+            room_id,
+            message_id,
+            cursor,
+            limit,
+        } => {
+            sink.u8(36)?;
+            sink.text(room_id)?;
+            encode_message_id(sink, *message_id)?;
+            encode_optional_cursor(sink, *cursor)?;
+            sink.u64(u64::from(*limit))
         }
         CommandV2::CreateRoom {
             room_id,
@@ -799,6 +826,19 @@ fn decode_command(
             room_id: read_text(decoder)?,
             message_id: decode_message_id(decoder)?,
         }),
+        35 => Ok(CommandV2::EditMessage {
+            room_id: read_text(decoder)?,
+            expected_revision: read_u64(decoder)?,
+            message_id: decode_message_id(decoder)?,
+            logical_time: read_u64(decoder)?,
+            body: read_text(decoder)?,
+        }),
+        36 => Ok(CommandV2::MessageRevisions {
+            room_id: read_text(decoder)?,
+            message_id: decode_message_id(decoder)?,
+            cursor: decode_optional_cursor(decoder)?,
+            limit: read_u32(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -908,6 +948,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::ThreadsV1 => 11,
                     CapabilityV2::ThreadLifecycleV1 => 12,
                     CapabilityV2::ReactionsV1 => 13,
+                    CapabilityV2::MessageRevisionsV1 => 14,
                 })?;
             }
             Ok(())
@@ -982,6 +1023,38 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                 sink.u8(u8::from(reaction.caller_reacted))?;
             }
             Ok(())
+        }
+        OutcomeV2::MessageRevisions(page) => {
+            if page
+                .revisions
+                .windows(2)
+                .any(|pair| pair[0].number.checked_add(1) != Some(pair[1].number))
+                || page.revisions.iter().any(|revision| {
+                    revision.editor_id.is_empty()
+                        || (matches!(
+                            revision.availability,
+                            MessageRevisionAvailabilityV1::Available
+                        ) == revision.body.is_empty())
+                })
+            {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(34)?;
+            sink.u64(page.revision)?;
+            sink.text(&page.room_id)?;
+            encode_message_id(sink, page.message_id)?;
+            sink.list(page.revisions.len())?;
+            for revision in &page.revisions {
+                sink.u64(u64::from(revision.number))?;
+                sink.text(&revision.editor_id)?;
+                sink.u64(revision.logical_time)?;
+                sink.u8(match revision.availability {
+                    MessageRevisionAvailabilityV1::Available => 1,
+                    MessageRevisionAvailabilityV1::Tombstoned => 2,
+                })?;
+                sink.text(&revision.body)?;
+            }
+            encode_optional_cursor(sink, page.next)
         }
         OutcomeV2::ChangesOpened { revision, cursor } => {
             sink.u8(10)?;
@@ -1100,6 +1173,16 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             sink.u64(*revision)?;
             encode_message_id(sink, *message_id)
         }
+        OutcomeV2::MessageEdited {
+            revision,
+            message_id,
+            message_revision,
+        } => {
+            sink.u8(35)?;
+            sink.u64(*revision)?;
+            encode_message_id(sink, *message_id)?;
+            sink.u64(u64::from(*message_revision))
+        }
         OutcomeV2::Kicked { revision } => encode_revision_outcome(sink, 13, *revision),
         OutcomeV2::Banned { revision } => encode_revision_outcome(sink, 14, *revision),
         OutcomeV2::Unbanned { revision } => encode_revision_outcome(sink, 15, *revision),
@@ -1193,6 +1276,7 @@ fn decode_outcome(
                     11 => CapabilityV2::ThreadsV1,
                     12 => CapabilityV2::ThreadLifecycleV1,
                     13 => CapabilityV2::ReactionsV1,
+                    14 => CapabilityV2::MessageRevisionsV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -1304,6 +1388,55 @@ fn decode_outcome(
         33 => Ok(OutcomeV2::ReactionRemoved {
             revision: read_u64(decoder)?,
             message_id: decode_message_id(decoder)?,
+        }),
+        34 => {
+            let revision = read_u64(decoder)?;
+            let room_id = read_text(decoder)?;
+            let message_id = decode_message_id(decoder)?;
+            let length = read_list(decoder, limits)?;
+            let mut revisions = try_vec(length)?;
+            for _ in 0..length {
+                let number = read_u32(decoder)?;
+                let editor_id = read_text(decoder)?;
+                let logical_time = read_u64(decoder)?;
+                let availability = match read_u8(decoder)? {
+                    1 => MessageRevisionAvailabilityV1::Available,
+                    2 => MessageRevisionAvailabilityV1::Tombstoned,
+                    _ => return Err(WireDecodeError::UnknownTag),
+                };
+                let body = read_text(decoder)?;
+                if editor_id.is_empty()
+                    || matches!(availability, MessageRevisionAvailabilityV1::Available)
+                        == body.is_empty()
+                {
+                    return Err(WireDecodeError::Malformed);
+                }
+                revisions.push(MessageRevisionV1 {
+                    number,
+                    editor_id,
+                    logical_time,
+                    availability,
+                    body,
+                });
+            }
+            if revisions
+                .windows(2)
+                .any(|pair| pair[0].number.checked_add(1) != Some(pair[1].number))
+            {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(OutcomeV2::MessageRevisions(MessageRevisionPageV1 {
+                revision,
+                room_id,
+                message_id,
+                revisions,
+                next: decode_optional_cursor(decoder)?,
+            }))
+        }
+        35 => Ok(OutcomeV2::MessageEdited {
+            revision: read_u64(decoder)?,
+            message_id: decode_message_id(decoder)?,
+            message_revision: read_u32(decoder)?,
         }),
         _ => Err(WireDecodeError::UnknownTag),
     }
@@ -1789,6 +1922,20 @@ fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<()
                 key,
                 reacted,
             } => encode_reaction_event(sink, actor_id, *message_id, key, *reacted)?,
+            RoomEventV2::MessageEdited {
+                actor_id,
+                message_id,
+                message_revision,
+                logical_time,
+                body,
+            } => encode_message_edited_event(
+                sink,
+                actor_id,
+                *message_id,
+                *message_revision,
+                *logical_time,
+                body,
+            )?,
         }
     }
     sink.u64(page.next.0)?;
@@ -1876,6 +2023,7 @@ fn decode_change_page(
                     reacted,
                 }
             }
+            16 => decode_message_edited_event(decoder)?,
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(RoomChangeV2 {
@@ -2011,6 +2159,20 @@ fn encode_identified_change_page(
                 key,
                 reacted,
             } => encode_reaction_event(sink, actor_id, *message_id, key, *reacted)?,
+            IdentifiedRoomEventV1::MessageEdited {
+                actor_id,
+                message_id,
+                message_revision,
+                logical_time,
+                body,
+            } => encode_message_edited_event(
+                sink,
+                actor_id,
+                *message_id,
+                *message_revision,
+                *logical_time,
+                body,
+            )?,
         }
     }
     sink.u64(page.next.0)?;
@@ -2087,6 +2249,25 @@ fn decode_identified_change_page(
                     message_id,
                     key,
                     reacted,
+                }
+            }
+            16 => {
+                let RoomEventV2::MessageEdited {
+                    actor_id,
+                    message_id,
+                    message_revision,
+                    logical_time,
+                    body,
+                } = decode_message_edited_event(decoder)?
+                else {
+                    unreachable!()
+                };
+                IdentifiedRoomEventV1::MessageEdited {
+                    actor_id,
+                    message_id,
+                    message_revision,
+                    logical_time,
+                    body,
                 }
             }
             _ => return Err(WireDecodeError::UnknownTag),
@@ -2224,6 +2405,20 @@ fn encode_threaded_change_page(
                 key,
                 reacted,
             } => encode_reaction_event(sink, actor_id, *message_id, key, *reacted)?,
+            ThreadedRoomEventV1::MessageEdited {
+                actor_id,
+                message_id,
+                message_revision,
+                logical_time,
+                body,
+            } => encode_message_edited_event(
+                sink,
+                actor_id,
+                *message_id,
+                *message_revision,
+                *logical_time,
+                body,
+            )?,
         }
     }
     sink.u64(page.next.0)?;
@@ -2298,6 +2493,25 @@ fn decode_threaded_change_page(
                     message_id,
                     key,
                     reacted,
+                }
+            }
+            16 => {
+                let RoomEventV2::MessageEdited {
+                    actor_id,
+                    message_id,
+                    message_revision,
+                    logical_time,
+                    body,
+                } = decode_message_edited_event(decoder)?
+                else {
+                    unreachable!()
+                };
+                ThreadedRoomEventV1::MessageEdited {
+                    actor_id,
+                    message_id,
+                    message_revision,
+                    logical_time,
+                    body,
                 }
             }
             _ => return Err(WireDecodeError::UnknownTag),
@@ -2375,6 +2589,34 @@ fn decode_reaction_event(
             _ => return Err(WireDecodeError::UnknownTag),
         },
     ))
+}
+
+fn encode_message_edited_event(
+    sink: &mut dyn Sink,
+    actor_id: &str,
+    message_id: MessageIdV1,
+    message_revision: u32,
+    logical_time: u64,
+    body: &str,
+) -> Result<(), WireEncodeError> {
+    sink.u8(16)?;
+    sink.text(actor_id)?;
+    encode_message_id(sink, message_id)?;
+    sink.u64(u64::from(message_revision))?;
+    sink.u64(logical_time)?;
+    sink.text(body)
+}
+
+fn decode_message_edited_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<RoomEventV2, WireDecodeError> {
+    Ok(RoomEventV2::MessageEdited {
+        actor_id: read_text(decoder)?,
+        message_id: decode_message_id(decoder)?,
+        message_revision: read_u32(decoder)?,
+        logical_time: read_u64(decoder)?,
+        body: read_text(decoder)?,
+    })
 }
 
 #[derive(Clone, Copy)]

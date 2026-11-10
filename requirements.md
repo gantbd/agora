@@ -212,12 +212,21 @@
   preserve relations and ordered attribution; retention eviction removes them.
   Reactions grant no authority and prove no delivery, attention, admission, or
   completion.
+- **R44 — Bounded immutable message revisions:** a retained message begins with
+  revision zero and its current original author may append replacement bodies
+  up to a fixed 64-record ceiling. Stable identity, author, admission time,
+  sequence, addressing, reply topology, and reactions do not change. Current
+  members observe ascending records through client/observer/room/message/profile/
+  engine-revision-bound cursors. Edit events appear in every change profile;
+  withdrawal and redaction scrub every retained revision and edit-event body
+  while preserving attribution and order. Replay and recovery are exact, and
+  participant kind never changes authority.
 
 ## Explicitly open
 
 Additional physical durable storage adapters, durable event sinks,
-credential/Aegis verifier adapters, network transports, message revision history,
-end-to-end encryption, federation, delivery
+credential/Aegis verifier adapters, network transports, end-to-end encryption,
+federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
 Credential/Aegis adapters, transport, backup/restore qualification, and durable
 profiles beyond the qualified single-owner local Unix directory remain open;

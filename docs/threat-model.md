@@ -148,6 +148,13 @@ must not reinterpret a reaction as permission, delivery, attention, execution
 admission, approval, or completion. Fixed key and per-message aggregate ceilings
 bound amplification; message retention eviction removes current relation state.
 
+Revision bodies multiply retained sensitive content. The fixed 64-record ceiling
+bounds amplification, author-only mutation prevents foreign rewriting, and
+client/observer/room/message/revision-bound cursors prevent continuation
+substitution. Withdrawal and moderator redaction scrub every retained revision
+and edit-event body but cannot retract prior client, connector, replay-record,
+backup, or audit copies; deployments must not present this as physical erasure.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

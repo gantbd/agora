@@ -2,11 +2,12 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
     CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
-    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1,
-    ReactionSummaryV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2,
-    RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
-    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
-    ThreadedRoomChangeV1, ThreadedRoomEventV1,
+    MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
+    MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
+    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
+    RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1,
+    ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1,
+    ThreadedRoomEventV1,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -154,6 +155,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::ThreadsV1,
         CapabilityV2::ThreadLifecycleV1,
         CapabilityV2::ReactionsV1,
+        CapabilityV2::MessageRevisionsV1,
     ])))
 }
 
@@ -331,6 +333,54 @@ fn reaction_status_reply() -> WireReplyV2 {
     )))
 }
 
+fn message_revision_page_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::MessageRevisions(
+        MessageRevisionPageV1 {
+            revision: 26,
+            room_id: "private".to_owned(),
+            message_id: MessageIdV1::new([0x94; 16]),
+            revisions: vec![
+                MessageRevisionV1 {
+                    number: 0,
+                    editor_id: "bot".to_owned(),
+                    logical_time: 10,
+                    availability: MessageRevisionAvailabilityV1::Available,
+                    body: "original".to_owned(),
+                },
+                MessageRevisionV1 {
+                    number: 1,
+                    editor_id: "bot".to_owned(),
+                    logical_time: 20,
+                    availability: MessageRevisionAvailabilityV1::Available,
+                    body: "revised".to_owned(),
+                },
+            ],
+            next: Some(PageCursorV2(26)),
+        },
+    )))
+}
+
+fn message_edited_change_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(
+        IdentifiedRoomChangePageV1 {
+            revision: 26,
+            changes: vec![IdentifiedRoomChangeV1 {
+                event_sequence: 25,
+                revision: 26,
+                event: IdentifiedRoomEventV1::MessageEdited {
+                    actor_id: "bot".to_owned(),
+                    message_id: MessageIdV1::new([0x94; 16]),
+                    message_revision: 1,
+                    logical_time: 20,
+                    body: "revised".to_owned(),
+                },
+            }],
+            next: PageCursorV2(26),
+            has_more: false,
+        },
+    )))
+}
+
 fn withdrawal_change_reply() -> WireReplyV2 {
     WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
         revision: 20,
@@ -451,6 +501,14 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
         (
             encode_reply_v2(&reaction_status_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/reaction-status-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&message_revision_page_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/message-revision-page-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&message_edited_change_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/message-edited-change-reply-v2.hex")),
         ),
     ];
     for (actual, expected) in cases {
@@ -580,6 +638,19 @@ fn every_v2_command_round_trips() {
         CommandV2::ReactionStatus {
             room_id: "room".to_owned(),
             message_id: MessageIdV1::new([0x93; 16]),
+        },
+        CommandV2::EditMessage {
+            room_id: "room".to_owned(),
+            expected_revision: 8,
+            message_id: MessageIdV1::new([0x94; 16]),
+            logical_time: 20,
+            body: "revised".to_owned(),
+        },
+        CommandV2::MessageRevisions {
+            room_id: "room".to_owned(),
+            message_id: MessageIdV1::new([0x94; 16]),
+            cursor: Some(PageCursorV2(9)),
+            limit: 2,
         },
         CommandV2::CreateRoom {
             room_id: "room".to_owned(),
@@ -773,6 +844,17 @@ fn every_v2_outcome_and_refusal_round_trips() {
                     },
                 },
                 RoomChangeV2 {
+                    event_sequence: 18,
+                    revision: 19,
+                    event: RoomEventV2::MessageEdited {
+                        actor_id: "bot".to_owned(),
+                        message_id: MessageIdV1::new([0x51; 16]),
+                        message_revision: 1,
+                        logical_time: 20,
+                        body: "revised".to_owned(),
+                    },
+                },
+                RoomChangeV2 {
                     event_sequence: 4,
                     revision: 5,
                     event: RoomEventV2::InvitationRecorded {
@@ -942,6 +1024,15 @@ fn every_v2_outcome_and_refusal_round_trips() {
             revision: 14,
             message_id: MessageIdV1::new([0x93; 16]),
         },
+        match message_revision_page_reply() {
+            WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
+            _ => unreachable!(),
+        },
+        OutcomeV2::MessageEdited {
+            revision: 15,
+            message_id: MessageIdV1::new([0x94; 16]),
+            message_revision: 1,
+        },
         OutcomeV2::ChangeGap {
             current_revision: 10,
             cause: ChangeGapV2::Retention {
@@ -1078,6 +1169,13 @@ fn every_identified_change_event_round_trips() {
             key: "spark".to_owned(),
             reacted: true,
         },
+        IdentifiedRoomEventV1::MessageEdited {
+            actor_id: "bot".to_owned(),
+            message_id: MessageIdV1::new([16; 16]),
+            message_revision: 1,
+            logical_time: 20,
+            body: "revised".to_owned(),
+        },
     ];
     for (index, event) in events.into_iter().enumerate() {
         let reply = WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(
@@ -1182,6 +1280,13 @@ fn every_threaded_change_event_round_trips() {
             key: "spark".to_owned(),
             reacted: false,
         },
+        ThreadedRoomEventV1::MessageEdited {
+            actor_id: "bot".to_owned(),
+            message_id: MessageIdV1::new([16; 16]),
+            message_revision: 1,
+            logical_time: 20,
+            body: "revised".to_owned(),
+        },
     ];
     for (index, event) in events.into_iter().enumerate() {
         let reply = WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadedChanges(
@@ -1216,6 +1321,8 @@ fn v2_decoding_is_closed_and_version_isolated() {
         threaded_changes_reply(),
         thread_lifecycle_change_reply(),
         thread_status_reply(),
+        message_revision_page_reply(),
+        message_edited_change_reply(),
     ] {
         let encoded = encode_reply_v2(&reply, limits()).unwrap();
         for end in 0..encoded.len() {
@@ -1285,6 +1392,13 @@ fn v2_decoding_is_closed_and_version_isolated() {
         decode_reply_v2(&unknown_thread_state, limits()),
         Err(WireDecodeError::UnknownTag)
     );
+    let mut unknown_revision_availability =
+        encode_reply_v2(&message_revision_page_reply(), limits()).unwrap();
+    unknown_revision_availability[70] = 0x7f;
+    assert_eq!(
+        decode_reply_v2(&unknown_revision_availability, limits()),
+        Err(WireDecodeError::UnknownTag)
+    );
     let mut unknown_thread_root_tag = encode_reply_v2(&thread_replies_reply(), limits()).unwrap();
     unknown_thread_root_tag[23] = 0x7f;
     assert_eq!(
@@ -1314,6 +1428,17 @@ fn v2_decoding_is_closed_and_version_isolated() {
     ])));
     assert_eq!(
         encode_reply_v2(&noncanonical, limits()),
+        Err(WireEncodeError::Invalid)
+    );
+    let mut invalid_revision_page = message_revision_page_reply();
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::MessageRevisions(page))) =
+        &mut invalid_revision_page
+    else {
+        unreachable!();
+    };
+    page.revisions[0].availability = MessageRevisionAvailabilityV1::Tombstoned;
+    assert_eq!(
+        encode_reply_v2(&invalid_revision_page, limits()),
         Err(WireEncodeError::Invalid)
     );
 

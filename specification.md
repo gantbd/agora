@@ -130,7 +130,7 @@ of the response semantics.
 
 ## Checkpoint profile V9
 
-The closed `AGORACP` version-10 codec captures limits, participants, rooms,
+The closed `AGORACP` version-11 codec captures limits, participants, rooms,
 membership, invitations, bans, retained message suffixes and addressing, complete publication
 records, revision/event frontiers, acknowledgment cursor, and pending events.
 Host byte/cardinality ceilings apply before checkpoint-owned limits or allocation.
@@ -223,7 +223,7 @@ position.
 
 ## Service checkpoint profile V2
 
-The `AGORASV` version-12 record is independent of public wire versioning and is
+The `AGORASV` version-13 record is independent of public wire versioning and is
 bound to an exact caller-supplied 16-byte store scope. It contains the canonical
 engine checkpoint, configured service limits, active client-to-participant
 bindings, ordered retired tombstones, exact request/reply receipts, private
@@ -363,6 +363,24 @@ thread archive, exact replay, and checkpoint recovery. Message eviction removes
 current reaction state. A reaction is not permission, acknowledgement, delivery,
 attention, execution admission, or completion evidence.
 
+### Bounded message revisions V1
+
+Every admitted message owns revision zero. `EditMessage` derives the actor from
+the service binding and permits only the current original author of a retained,
+non-tombstoned message to append a different nonempty bounded body and logical
+time. Human and agent authors use the same path. A message retains at most 64
+revision records; saturation and every invalid edit refuse before mutation.
+
+An edit changes only the current body projection. Message identity, original
+author and admission time, room-local sequence, addressing, reply root, thread
+lifecycle, and reactions remain unchanged. `MessageRevisions` returns ascending
+immutable records containing number, editor, logical time, availability, and
+body through a cursor bound to client, observer, room, message, profile, and
+exact engine revision. The edit event appears in legacy, identified, and
+threaded feeds. Withdrawal or redaction changes every retained record to
+`Tombstoned`, clears all revision and retained edit-event bodies, and preserves
+metadata and order. Eviction removes the message and its revision state.
+
 ## Receipt-gated durable service V2
 
 `agora-durable` wraps exactly one `ServiceV2` and one Keystone checkpoint-store
@@ -402,7 +420,7 @@ requests, reconnect a host session, or prove server durability.
 
 ## Authenticated host checkpoint and durable publication V2
 
-The `AGORAHST` version-12 record is independently versioned and bound to an exact
+The `AGORAHST` version-13 record is independently versioned and bound to an exact
 16-byte store scope. It contains Host V2 limits, the next non-reused session
 frontier, every active mapping from opaque host session to verified subject,
 participant, service client and last verification time, the bounded retired

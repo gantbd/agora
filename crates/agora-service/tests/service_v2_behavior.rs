@@ -1953,6 +1953,258 @@ fn v2_reactions_are_actor_bound_replayable_aggregated_and_feed_visible() {
 }
 
 #[test]
+fn v2_message_revisions_are_author_bound_paged_and_visible_in_every_feed() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted { message_id, .. }) = service
+        .execute(
+            bot,
+            request(
+                1,
+                CommandV2::SpeakIdentified {
+                    room_id: "room".to_owned(),
+                    expected_revision: 4,
+                    logical_time: 10,
+                    body: "original".to_owned(),
+                    addressed_to: vec!["alice".to_owned()],
+                },
+            ),
+        )
+    else {
+        panic!("identified message expected");
+    };
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                1,
+                CommandV2::AddReaction {
+                    room_id: "room".to_owned(),
+                    expected_revision: 5,
+                    message_id,
+                    key: "spark".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ReactionAdded { revision: 6, .. })
+    ));
+
+    let mut cursors = Vec::new();
+    for (id, command) in [
+        (
+            2,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 6,
+            },
+        ),
+        (
+            3,
+            CommandV2::OpenIdentifiedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 6,
+            },
+        ),
+        (
+            4,
+            CommandV2::OpenThreadedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 6,
+            },
+        ),
+    ] {
+        let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) =
+            service.execute(alice, request(id, command))
+        else {
+            panic!("change cursor expected");
+        };
+        cursors.push(cursor);
+    }
+
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                5,
+                CommandV2::EditMessage {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    message_id,
+                    logical_time: 20,
+                    body: "foreign edit".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::NotAuthorized)
+    );
+    let edit = request(
+        2,
+        CommandV2::EditMessage {
+            room_id: "room".to_owned(),
+            expected_revision: 6,
+            message_id,
+            logical_time: 20,
+            body: "revised".to_owned(),
+        },
+    );
+    let edited = service.execute(bot, edit.clone());
+    assert_eq!(
+        edited,
+        ReplyV2::Accepted(OutcomeV2::MessageEdited {
+            revision: 7,
+            message_id,
+            message_revision: 1,
+        })
+    );
+    assert_eq!(service.execute(bot, edit), edited);
+
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(messages)) = service.execute(
+        alice,
+        request(
+            6,
+            CommandV2::IdentifiedMessages {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 4,
+            },
+        ),
+    ) else {
+        panic!("message page expected");
+    };
+    assert_eq!(messages.messages[0].body, "revised");
+    assert_eq!(messages.messages[0].addressed_to, ["alice"]);
+
+    let ReplyV2::Accepted(OutcomeV2::MessageRevisions(first)) = service.execute(
+        alice,
+        request(
+            7,
+            CommandV2::MessageRevisions {
+                room_id: "room".to_owned(),
+                message_id,
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("revision page expected");
+    };
+    assert_eq!(first.revisions.len(), 1);
+    assert_eq!(first.revisions[0].number, 0);
+    assert_eq!(first.revisions[0].body, "original");
+    let next = first.next.unwrap();
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                3,
+                CommandV2::MessageRevisions {
+                    room_id: "room".to_owned(),
+                    message_id,
+                    cursor: Some(next),
+                    limit: 1
+                }
+            )
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidCursor)
+    );
+    let ReplyV2::Accepted(OutcomeV2::MessageRevisions(second)) = service.execute(
+        alice,
+        request(
+            8,
+            CommandV2::MessageRevisions {
+                room_id: "room".to_owned(),
+                message_id,
+                cursor: Some(next),
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("revision continuation expected");
+    };
+    assert_eq!(second.revisions[0].number, 1);
+    assert_eq!(second.revisions[0].editor_id, "bot");
+    assert_eq!(second.revisions[0].body, "revised");
+    assert!(second.next.is_none());
+
+    let ReplyV2::Accepted(OutcomeV2::ReactionStatus(status)) = service.execute(
+        alice,
+        request(
+            9,
+            CommandV2::ReactionStatus {
+                room_id: "room".to_owned(),
+                message_id,
+            },
+        ),
+    ) else {
+        panic!("reaction status expected");
+    };
+    assert_eq!(status.reactions[0].key, "spark");
+
+    for (id, cursor, profile) in [
+        (10, cursors[0], 0_u8),
+        (11, cursors[1], 1),
+        (12, cursors[2], 2),
+    ] {
+        let command = match profile {
+            0 => CommandV2::Changes {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+            1 => CommandV2::IdentifiedChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+            _ => CommandV2::ThreadedChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+        };
+        let visible = match service.execute(alice, request(id, command)) {
+            ReplyV2::Accepted(OutcomeV2::Changes(page)) => {
+                matches!(&page.changes[0].event, RoomEventV2::MessageEdited { actor_id, message_id: id, message_revision: 1, logical_time: 20, body } if actor_id == "bot" && *id == message_id && body == "revised")
+            }
+            ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(page)) => {
+                matches!(&page.changes[0].event, IdentifiedRoomEventV1::MessageEdited { actor_id, message_id: id, message_revision: 1, logical_time: 20, body } if actor_id == "bot" && *id == message_id && body == "revised")
+            }
+            ReplyV2::Accepted(OutcomeV2::ThreadedChanges(page)) => {
+                matches!(&page.changes[0].event, ThreadedRoomEventV1::MessageEdited { actor_id, message_id: id, message_revision: 1, logical_time: 20, body } if actor_id == "bot" && *id == message_id && body == "revised")
+            }
+            _ => false,
+        };
+        assert!(visible);
+    }
+}
+
+#[test]
 fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let mut engine = Engine::new();
     engine
@@ -1969,8 +2221,8 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 13);
-    assert_eq!(capabilities.last(), Some(&CapabilityV2::ReactionsV1));
+    assert_eq!(capabilities.len(), 14);
+    assert_eq!(capabilities.last(), Some(&CapabilityV2::MessageRevisionsV1));
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

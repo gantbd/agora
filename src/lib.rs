@@ -140,6 +140,35 @@ pub struct MessageId([u8; 16]);
 
 pub const MAX_REACTION_KEY_BYTES_V1: usize = 64;
 pub const MAX_REACTION_KEYS_PER_MESSAGE_V1: usize = 64;
+pub const MAX_MESSAGE_REVISIONS_V1: usize = 64;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MessageRevisionAvailabilityV1 {
+    Available,
+    Tombstoned,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessageRevisionV1 {
+    pub number: u32,
+    pub editor: ParticipantId,
+    pub at: LogicalTime,
+    pub availability: MessageRevisionAvailabilityV1,
+    pub body: String,
+}
+
+impl fmt::Debug for MessageRevisionV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageRevisionV1")
+            .field("number", &self.number)
+            .field("editor_id_bytes", &self.editor.as_str().len())
+            .field("at", &self.at)
+            .field("availability", &self.availability)
+            .field("body_bytes", &self.body.len())
+            .finish()
+    }
+}
 
 impl MessageId {
     pub const fn from_bytes(bytes: [u8; 16]) -> Self {
@@ -174,6 +203,7 @@ pub struct Message {
     body: String,
     addressed_to: Vec<ParticipantId>,
     reply_to_root: Option<MessageId>,
+    revisions: Vec<MessageRevisionV1>,
 }
 
 impl Message {
@@ -213,6 +243,17 @@ impl Message {
     pub fn reply_to_root(&self) -> Option<MessageId> {
         self.reply_to_root
     }
+
+    pub fn current_revision(&self) -> u32 {
+        self.revisions
+            .last()
+            .expect("admitted messages have one revision")
+            .number
+    }
+
+    pub fn revisions(&self) -> &[MessageRevisionV1] {
+        &self.revisions
+    }
 }
 
 impl fmt::Debug for Message {
@@ -225,6 +266,7 @@ impl fmt::Debug for Message {
             .field("body_bytes", &self.body.len())
             .field("addressed_count", &self.addressed_to.len())
             .field("is_reply", &self.reply_to_root.is_some())
+            .field("revision_count", &self.revisions.len())
             .finish()
     }
 }
@@ -486,6 +528,61 @@ pub struct MessagePage {
     pub oldest_retained_sequence: u64,
     pub next_message_sequence: u64,
     pub next: Option<MessagePageCursor>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessageRevisionPageCursorV1 {
+    revision: Revision,
+    observer: ParticipantId,
+    room_id: RoomId,
+    message_id: MessageId,
+    after_revision: u32,
+}
+
+impl MessageRevisionPageCursorV1 {
+    pub fn is_bound_to(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        message_id: MessageId,
+    ) -> bool {
+        &self.observer == observer && &self.room_id == room_id && self.message_id == message_id
+    }
+}
+
+impl fmt::Debug for MessageRevisionPageCursorV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageRevisionPageCursorV1")
+            .field("revision", &self.revision)
+            .field("observer_id_bytes", &self.observer.as_str().len())
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("message_id", &self.message_id)
+            .field("after_revision", &self.after_revision)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessageRevisionPageV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub message_id: MessageId,
+    pub revisions: Vec<MessageRevisionV1>,
+    pub next: Option<MessageRevisionPageCursorV1>,
+}
+
+impl fmt::Debug for MessageRevisionPageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageRevisionPageV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("message_id", &self.message_id)
+            .field("revision_count", &self.revisions.len())
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -822,6 +919,7 @@ pub enum RoomActionV1 {
     Speak,
     Reply,
     React,
+    EditOwn,
     ManageThread,
     WithdrawOwn,
     RedactAny,
@@ -851,6 +949,7 @@ impl CommandV2 {
             Self::Speak { .. } | Self::SpeakAddressed { .. } => Some(RoomActionV1::Speak),
             Self::SpeakReply { .. } => Some(RoomActionV1::Reply),
             Self::SetReaction { .. } => Some(RoomActionV1::React),
+            Self::EditMessage { .. } => Some(RoomActionV1::EditOwn),
             Self::SetThreadArchived { .. } => Some(RoomActionV1::ManageThread),
             Self::WithdrawMessage { .. } => Some(RoomActionV1::WithdrawOwn),
             Self::RedactMessage { .. } => Some(RoomActionV1::RedactAny),
@@ -963,6 +1062,13 @@ pub enum CommandV2 {
         key: String,
         reacted: bool,
     },
+    EditMessage {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        at: LogicalTime,
+        body: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1052,6 +1158,14 @@ pub enum OutcomeV2 {
         key: String,
         reacted: bool,
     },
+    MessageEdited {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        message_revision: u32,
+        at: LogicalTime,
+        body: String,
+    },
 }
 
 /// Typed refusal reasons. Every refusal preserves authoritative state.
@@ -1096,6 +1210,8 @@ pub enum Refusal {
     InvalidReaction,
     ReactionLimit,
     InvalidReactionChange,
+    MessageRevisionLimit,
+    InvalidMessageEdit,
     MessageAlreadyTombstoned,
     RevisionConflict {
         expected: Revision,
@@ -1292,6 +1408,14 @@ pub enum DomainEventV2 {
         key: String,
         reacted: bool,
     },
+    MessageEdited {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        message_revision: u32,
+        at: LogicalTime,
+        body: String,
+    },
 }
 
 impl DomainEventV2 {
@@ -1311,7 +1435,8 @@ impl DomainEventV2 {
             | Self::MessageWithdrawn { room_id, .. }
             | Self::MessageRedacted { room_id, .. }
             | Self::ThreadLifecycleChanged { room_id, .. }
-            | Self::ReactionChanged { room_id, .. } => Some(room_id),
+            | Self::ReactionChanged { room_id, .. }
+            | Self::MessageEdited { room_id, .. } => Some(room_id),
         }
     }
 }
@@ -1758,6 +1883,74 @@ impl Engine {
                 .checked_sub(room.messages.len() as u64)
                 .ok_or(ObservationRefusal::InconsistentState)?,
             next_message_sequence: room.next_message_sequence,
+            next,
+        })
+    }
+
+    pub fn message_revision_page(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        message_id: MessageId,
+        cursor: Option<&MessageRevisionPageCursorV1>,
+        limit: usize,
+    ) -> Result<MessageRevisionPageV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        if limit == 0 || limit > MAX_MESSAGE_REVISIONS_V1 {
+            return Err(ObservationRefusal::InvalidLimit);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        let message = room
+            .messages
+            .iter()
+            .find(|message| message.id == message_id)
+            .ok_or(ObservationRefusal::InvalidTarget)?;
+        let after = if let Some(cursor) = cursor {
+            if !cursor.is_bound_to(observer, room_id, message_id) {
+                return Err(ObservationRefusal::ForeignCursor);
+            }
+            if cursor.revision != self.revision {
+                return Err(ObservationRefusal::Stale {
+                    actual_revision: self.revision,
+                });
+            }
+            Some(cursor.after_revision)
+        } else {
+            None
+        };
+        let start = after.map_or(0, |number| number as usize + 1);
+        if start > message.revisions.len() {
+            return Err(ObservationRefusal::InconsistentState);
+        }
+        let end = start.saturating_add(limit).min(message.revisions.len());
+        let revisions = message.revisions[start..end].to_vec();
+        let next = if end < message.revisions.len() {
+            Some(MessageRevisionPageCursorV1 {
+                revision: self.revision,
+                observer: observer.clone(),
+                room_id: room_id.clone(),
+                message_id,
+                after_revision: revisions
+                    .last()
+                    .ok_or(ObservationRefusal::InconsistentState)?
+                    .number,
+            })
+        } else {
+            None
+        };
+        Ok(MessageRevisionPageV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            message_id,
+            revisions,
             next,
         })
     }
@@ -2365,6 +2558,13 @@ impl Engine {
                 key,
                 reacted,
             } => self.set_reaction(room_id, actor, message_id, key, reacted),
+            CommandV2::EditMessage {
+                room_id,
+                actor,
+                message_id,
+                at,
+                body,
+            } => self.edit_message(room_id, actor, message_id, at, body),
         }
     }
 
@@ -2589,6 +2789,24 @@ impl Engine {
                 message_id: *message_id,
                 key: key.clone(),
                 reacted: *reacted,
+            },
+            (
+                CommandV2::EditMessage { .. },
+                OutcomeV2::MessageEdited {
+                    room_id,
+                    actor,
+                    message_id,
+                    message_revision,
+                    at,
+                    body,
+                },
+            ) => DomainEventV2::MessageEdited {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                message_id: *message_id,
+                message_revision: *message_revision,
+                at: *at,
+                body: body.clone(),
             },
             _ => unreachable!("command and outcome are produced by one exhaustive transition"),
         }
@@ -3025,11 +3243,18 @@ impl Engine {
         room.messages.push_back(Message {
             id: message_id,
             sequence,
-            author,
+            author: author.clone(),
             at,
-            body,
+            body: body.clone(),
             addressed_to,
             reply_to_root,
+            revisions: vec![MessageRevisionV1 {
+                number: 0,
+                editor: author,
+                at,
+                availability: MessageRevisionAvailabilityV1::Available,
+                body,
+            }],
         });
         room.next_message_identity = next_message_identity;
         room.next_message_sequence = next;
@@ -3163,6 +3388,68 @@ impl Engine {
         })
     }
 
+    fn edit_message(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        at: LogicalTime,
+        body: String,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_nonempty_bounded(
+            &body,
+            self.limits.max_message_body_bytes,
+            Refusal::InvalidMessageBody,
+        )?;
+        let room = self.room_ref(&room_id)?;
+        if !room.members.contains_key(&actor) {
+            return Err(Refusal::NotMember(actor));
+        }
+        let message = room
+            .messages
+            .iter()
+            .find(|message| message.id == message_id)
+            .ok_or(Refusal::UnknownMessage)?;
+        if message.author != actor {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        if message.is_withdrawn() || message.body == body {
+            return Err(Refusal::InvalidMessageEdit);
+        }
+        if message.revisions.len() == MAX_MESSAGE_REVISIONS_V1 {
+            return Err(Refusal::MessageRevisionLimit);
+        }
+        let message_revision: u32 = message
+            .revisions
+            .len()
+            .try_into()
+            .map_err(|_| Refusal::MessageRevisionLimit)?;
+        let message = self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation")
+            .messages
+            .iter_mut()
+            .find(|message| message.id == message_id)
+            .expect("message established by validation");
+        message.body.clone_from(&body);
+        message.revisions.push(MessageRevisionV1 {
+            number: message_revision,
+            editor: actor.clone(),
+            at,
+            availability: MessageRevisionAvailabilityV1::Available,
+            body: body.clone(),
+        });
+        Ok(OutcomeV2::MessageEdited {
+            room_id,
+            actor,
+            message_id,
+            message_revision,
+            at,
+            body,
+        })
+    }
+
     fn withdraw_message(
         &mut self,
         room_id: RoomId,
@@ -3236,21 +3523,35 @@ impl Engine {
             .rooms
             .get_mut(room_id)
             .expect("room established by validation");
-        room.messages
+        let message = room
+            .messages
             .iter_mut()
             .find(|message| message.id == message_id)
-            .expect("message established by validation")
-            .body
-            .clear();
+            .expect("message established by validation");
+        message.body.clear();
+        for revision in &mut message.revisions {
+            revision.body.clear();
+            revision.availability = MessageRevisionAvailabilityV1::Tombstoned;
+        }
         for envelope in &mut self.pending_events {
-            if let DomainEventV2::MessageAccepted {
-                room_id: event_room,
-                message,
-            } = &mut envelope.event
-                && event_room == room_id
-                && message.id == message_id
-            {
-                message.body.clear();
+            match &mut envelope.event {
+                DomainEventV2::MessageAccepted {
+                    room_id: event_room,
+                    message,
+                } if event_room == room_id && message.id == message_id => {
+                    message.body.clear();
+                    for revision in &mut message.revisions {
+                        revision.body.clear();
+                        revision.availability = MessageRevisionAvailabilityV1::Tombstoned;
+                    }
+                }
+                DomainEventV2::MessageEdited {
+                    room_id: event_room,
+                    message_id: event_message,
+                    body,
+                    ..
+                } if event_room == room_id && *event_message == message_id => body.clear(),
+                _ => {}
             }
         }
     }

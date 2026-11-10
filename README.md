@@ -39,6 +39,11 @@ The `ReactionsV1` capability adds explicit bounded participant-to-message set
 relations. Current members may add or remove their own relation and observe
 canonical aggregate counts plus caller membership; reactions remain metadata,
 not authority, delivery, acknowledgement, or work-completion evidence.
+The `MessageRevisionsV1` capability adds author-only bounded corrections over a
+stable message identity. Current members can page the immutable 64-record
+history; edits preserve addressing, reply topology, and reactions, while later
+withdrawal or redaction scrubs every retained revision body without erasing its
+metadata or ordered event.
 The `IdentifiedMessagesV1` capability adds opaque restart-stable message
 references through parallel speak and history operations while preserving every
 legacy V2 message frame byte-for-byte.
@@ -138,7 +143,7 @@ key. Matching replay returns the original transition without another message or
 revision. Changed content conflicts. The bounded volatile receipt index becomes
 durable only when a host persists it atomically with Agora state.
 
-The `AGORACP` version-10 codec validates bounds, canonical order, ownership/references,
+The `AGORACP` version-11 codec validates bounds, canonical order, ownership/references,
 message and event frontiers, addressed membership, bans, moderation evidence, publication attribution, and
 the exact unacknowledged outbox suffix. V1 bytes are refused because their agent
 activation state has no neutral interpretation. The codec proves neither origin

@@ -1,6 +1,6 @@
 # ADR: bounded immutable message revision history
 
-Status: accepted for implementation
+Status: implemented and qualified
 
 ## Context
 
@@ -65,10 +65,10 @@ recovery state.
 
 ## Required evidence
 
-- [ ] Core authority, append-only numbering, bounds, topology/addressing/reaction preservation, and atomic refusal.
-- [ ] Withdrawal/redaction content scrubbing with metadata preservation.
-- [ ] Revision-bound pagination and cursor/profile isolation.
-- [ ] Service actor binding, replay, all-feed projection, and recovery continuation.
-- [ ] Closed protocol Debug, SDK, wire, fixture, and adversarial decoder evidence.
-- [ ] Requirements, specification, compatibility, threat, assurance, and traceability closure.
-- [ ] Full `make check` qualification.
+- [x] Core authority, append-only numbering, bounds, topology/addressing/reaction preservation, and atomic refusal.
+- [x] Withdrawal/redaction content scrubbing with metadata preservation.
+- [x] Revision-bound pagination and cursor/profile isolation.
+- [x] Service actor binding, replay, all-feed projection, and recovery continuation.
+- [x] Closed protocol Debug, SDK, wire, fixture, and adversarial decoder evidence.
+- [x] Requirements, specification, compatibility, threat, assurance, and traceability closure.
+- [x] Full `make check` qualification.

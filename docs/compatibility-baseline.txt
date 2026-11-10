@@ -10,16 +10,18 @@ package|crates/agora-storage-directory/Cargo.toml|agora-storage-directory|0.1.0
 package|crates/agora-wire/Cargo.toml|agora-wire|0.1.0
 package|sdk/client/Cargo.toml|agora-sdk-client|0.1.0
 package|sdk/embedded/Cargo.toml|agora-sdk-embedded|0.1.0
-fixture|crates/agora-host/tests/fixtures/host-checkpoint-v12.hex|874|fa38b15a55cc57ba76de0e189577898122147f8888b92a28fac9e02a94f0ca63
-fixture|crates/agora-service/tests/fixtures/service-checkpoint-v12.hex|1261|dc009b465adaf47dadb77ddf328d6754617d2ff28877dc0a84f7fcdf2276adac
+fixture|crates/agora-host/tests/fixtures/host-checkpoint-v13.hex|1597|1469e61d1a5fc3e23fbaf5dc3399e6f4e7baaecd0155270da948b05d4947d2c0
+fixture|crates/agora-service/tests/fixtures/service-checkpoint-v13.hex|1824|9c10ff9412b12be3104fd9092426e0fca368f41b825d9697d73a4ed36733a779
 fixture|crates/agora-storage-directory/tests/fixtures/directory-record-v1.hex|52|377cc1e927daa46ec954c5ad419ca762da86a18ee18b7e2d2169262aa0e70b16
 fixture|crates/agora-wire/tests/fixtures/bans-reply-v2.hex|56|1eceb89d5dd13236623b366cc25ac4d12535cdc87dec8101f2290615f819832a
-fixture|crates/agora-wire/tests/fixtures/capabilities-reply-v2.hex|25|c8e6b278439cd3a0fe91cfe0542a0d659fddfaf18b2cce98b51054aa5091c9a1
+fixture|crates/agora-wire/tests/fixtures/capabilities-reply-v2.hex|26|73b442bf73b3e64e3da6f37e18ad922a0a35a20f29919f8791fcc610cd774d92
 fixture|crates/agora-wire/tests/fixtures/changes-reply-v2.hex|101|0e62f74e8368688c28ac2b5b167d4653605b59ed951834165a4cbf5e3509662d
 fixture|crates/agora-wire/tests/fixtures/connect-request-v1.hex|11|4c13512cfcb29d053b6e56610b4693ac9ad5f6cd88650349bfb2df13c75c5fe4
 fixture|crates/agora-wire/tests/fixtures/create-room-request-v2.hex|50|3941c9e17887deddf2bf1e20c6446f3f0510390db656581cffadd0d01cdd9000
 fixture|crates/agora-wire/tests/fixtures/identified-changes-reply-v2.hex|123|23aa4c0cc49057fea07926b9e6e337abc38eadfd1bddba9d9ca22d797b6392a3
 fixture|crates/agora-wire/tests/fixtures/identified-messages-reply-v2.hex|123|3b69a08eba773bc77f5b840f8da0acef68f753c7c957be10c4623ba1ad5cfa4d
+fixture|crates/agora-wire/tests/fixtures/message-edited-change-reply-v2.hex|96|d5cd5a7ef862e469ae674b59c215ffa5761dcc68d7c90d7b903f3dc98b61c04e
+fixture|crates/agora-wire/tests/fixtures/message-revision-page-reply-v2.hex|127|d9972f4eaf78a713e44ee927e8480f830148217a78dfa9ac533cd9a2b01b7b23
 fixture|crates/agora-wire/tests/fixtures/messages-reply-v2.hex|104|ef10c0a4aacca3be9317207eec8bc9fd5f2403a1a64379fbfee961331cfcbb79
 fixture|crates/agora-wire/tests/fixtures/moderation-change-reply-v2.hex|88|92d23511ef2797a1b5cda3b902ce4aa3a3d5b122fdd65d3e2ccd6a1257697817
 fixture|crates/agora-wire/tests/fixtures/policy-change-reply-v2.hex|57|dfbeed5148328bee4e31e288a6f082ae89de76deafd9880f48a5f861075d39a4
@@ -34,4 +36,4 @@ fixture|crates/agora-wire/tests/fixtures/thread-replies-reply-v2.hex|154|243da6c
 fixture|crates/agora-wire/tests/fixtures/thread-status-reply-v2.hex|40|1cc8624dae2c3b4ee7f566bcb225345fdd288e238b9fcf466a462b6c5d0020fb
 fixture|crates/agora-wire/tests/fixtures/threaded-changes-reply-v2.hex|135|a3285bd414f7e3789c3fea38d2e1187e613ca3e97345f977de8786e34c86f315
 fixture|crates/agora-wire/tests/fixtures/withdrawal-change-reply-v2.hex|79|c41479e1282e31d5aa6ba8dc836aa4b745648085d96bd47585eb4e8b2fd276de
-fixture|tests/fixtures/checkpoint-v10.hex|1077|116365599ed823f30b254b72c03306749a614ed5392cc2490f1caee2f7cff617
+fixture|tests/fixtures/checkpoint-v11.hex|1383|4242b5296a66aa7ffdf6be031aa74ba35394659893da1e5e26606d4f898edbb9
