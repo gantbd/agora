@@ -33,6 +33,8 @@ The event records prior and new policy without rewriting earlier invitations or
 admissions; current members observe it through the bounded room-change feed.
 Owners and moderators can inspect the ban set through a bounded, revision-bound
 page; ordinary members and former participants cannot enumerate it.
+Connected participants can also discover a closed, versioned capability list.
+Discovery is descriptive only and never grants room or action authority.
 
 An independently versioned Service V2 checkpoint preserves the engine, pending
 outbox, client namespace, exact request replies, and live cursor consequences.

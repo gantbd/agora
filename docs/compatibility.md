@@ -28,19 +28,19 @@ fixtures freeze representative bytes. The codec defines complete message frames,
 not stream boundaries; transport framing remains separate.
 
 Protocol, Service, Client, and Wire V2 form an additive profile with a separate
-version byte, closed grammar, and seven canonical fixtures. Their separately
+version byte, closed grammar, and eight canonical fixtures. Their separately
 typed values and V2 bytes do not alter V1 tags or bytes. Authenticated Host V2
 uses the same canonical frames without reinterpreting V1.
 
-Service persistence is versioned independently. `AGORASV` version 4 captures
+Service persistence is versioned independently. `AGORASV` version 5 captures
 the complete V2 service owner and embeds private `AGORACUR` version-1 cursor
 records. Cursor kind 4 is the snapshot-aligned room change position and kind 5
 is the authority-scoped ban page; neither reinterprets kinds 1–3. A representative complete service record is pinned by
-`service-checkpoint-v4.hex`. Public wire compatibility neither implies nor migrates durable state;
+`service-checkpoint-v5.hex`. Public wire compatibility neither implies nor migrates durable state;
 future durable schema changes require a bounded explicit migration profile.
 
-Authenticated host persistence has its own `AGORAHST` version-4 record and
-`host-checkpoint-v4.hex` fixture. It nests the service record but owns host
+Authenticated host persistence has its own `AGORAHST` version-5 record and
+`host-checkpoint-v5.hex` fixture. It nests the service record but owns host
 session compatibility independently; neither wire nor service checkpoint
 decoding implies that a host record can be recovered.
 

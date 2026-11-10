@@ -1,12 +1,13 @@
 use agora_protocol::v2::{
-    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CommandV2, MemberPageV2, MemberV2,
-    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReplyV2, RoleV2,
-    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
+    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, CommandV2, MemberPageV2,
+    MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReplyV2,
+    RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
 
 #[test]
 fn v2_debug_output_is_content_safe() {
     let commands = [
+        CommandV2::Capabilities,
         CommandV2::Speak {
             room_id: "secret-room".to_owned(),
             expected_revision: 1,
@@ -33,6 +34,10 @@ fn v2_debug_output_is_content_safe() {
         },
     ];
     let replies = [
+        ReplyV2::Accepted(OutcomeV2::Capabilities(vec![
+            CapabilityV2::RoomLifecycleV2,
+            CapabilityV2::BanObservationV1,
+        ])),
         ReplyV2::Accepted(OutcomeV2::Rooms(RoomPageV2 {
             revision: 1,
             rooms: vec![RoomSummaryV2 {

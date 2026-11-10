@@ -38,6 +38,12 @@ authenticate frames, hide metadata/content, prevent replay, establish stream
 boundaries, or protect transport availability. In particular, Connect's
 participant ID remains attacker-controlled until the host verifies it.
 
+Capability discovery is a closed descriptive inventory. Its canonical ordering
+and tags prevent extension-bag ambiguity, but its presence grants no authority
+and reveals the service profile to an already connected participant. Deployments
+that consider profile fingerprinting sensitive must constrain connection access;
+they must not falsify the advertised list after admitting the request.
+
 The authenticated host prevents a wire client ID from becoming ambient authority:
 each frame is coupled to an opaque transport-bound host session, a retained
 verified subject/participant, current verifier acceptance, and the exact service

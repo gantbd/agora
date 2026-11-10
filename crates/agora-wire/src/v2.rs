@@ -5,10 +5,10 @@ use super::{
     read_text, read_u8, read_u64, try_vec,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, ChangeGapV2, ClientIdV2, CommandV2,
-    MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2,
-    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
-    RoomEventV2, RoomPageV2, RoomSummaryV2,
+    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
+    CommandV2, MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2,
+    ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2,
+    RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
 use std::fmt;
 
@@ -187,6 +187,7 @@ fn decode_optional_cursor(
 
 fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEncodeError> {
     match command {
+        CommandV2::Capabilities => sink.u8(17),
         CommandV2::Rooms { cursor, limit } => {
             sink.u8(1)?;
             encode_optional_cursor(sink, *cursor)?;
@@ -450,6 +451,7 @@ fn decode_command(
             cursor: decode_optional_cursor(decoder)?,
             limit: read_u32(decoder)?,
         }),
+        17 => Ok(CommandV2::Capabilities),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -538,6 +540,24 @@ fn decode_protocol_reply(
 
 fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEncodeError> {
     match outcome {
+        OutcomeV2::Capabilities(capabilities) => {
+            if capabilities.windows(2).any(|pair| pair[0] >= pair[1]) {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(18)?;
+            sink.list(capabilities.len())?;
+            for capability in capabilities {
+                sink.u8(match capability {
+                    CapabilityV2::RoomLifecycleV2 => 1,
+                    CapabilityV2::RetainedHistoryV2 => 2,
+                    CapabilityV2::RoomChangesV1 => 3,
+                    CapabilityV2::ModerationV1 => 4,
+                    CapabilityV2::RoomPolicyV1 => 5,
+                    CapabilityV2::BanObservationV1 => 6,
+                })?;
+            }
+            Ok(())
+        }
         OutcomeV2::Rooms(page) => {
             sink.u8(1)?;
             encode_room_page(sink, page)
@@ -664,6 +684,25 @@ fn decode_outcome(
             revision: read_u64(decoder)?,
         }),
         17 => Ok(OutcomeV2::Bans(decode_ban_page(decoder, limits)?)),
+        18 => {
+            let length = read_list(decoder, limits)?;
+            let mut capabilities = try_vec(length)?;
+            for _ in 0..length {
+                capabilities.push(match read_u8(decoder)? {
+                    1 => CapabilityV2::RoomLifecycleV2,
+                    2 => CapabilityV2::RetainedHistoryV2,
+                    3 => CapabilityV2::RoomChangesV1,
+                    4 => CapabilityV2::ModerationV1,
+                    5 => CapabilityV2::RoomPolicyV1,
+                    6 => CapabilityV2::BanObservationV1,
+                    _ => return Err(WireDecodeError::UnknownTag),
+                });
+            }
+            if capabilities.windows(2).any(|pair| pair[0] >= pair[1]) {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(OutcomeV2::Capabilities(capabilities))
+        }
         _ => Err(WireDecodeError::UnknownTag),
     }
 }

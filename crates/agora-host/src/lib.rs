@@ -344,8 +344,9 @@ fn identity_bytes(tag: u8, value: u64) -> [u8; 16] {
 
 fn map_encode(error: WireEncodeError) -> HostRefusal {
     match error {
-        WireEncodeError::Limit | WireEncodeError::Capacity | WireEncodeError::LengthOverflow => {
-            HostRefusal::Capacity
-        }
+        WireEncodeError::Limit
+        | WireEncodeError::Capacity
+        | WireEncodeError::LengthOverflow
+        | WireEncodeError::Invalid => HostRefusal::Capacity,
     }
 }

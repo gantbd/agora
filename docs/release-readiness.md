@@ -23,7 +23,7 @@ not ready for a network service or crates.io release.
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   ten packages;
 - conservative package and canonical-fixture inventory closure over ten
-  packages and fourteen fixtures;
+  packages and fifteen fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
 - conservative supply inventory closure over twelve locked local components with

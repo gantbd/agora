@@ -42,12 +42,14 @@ follow Semantic Versioning once a public release contract is selected.
   prior/current policy, participant-bound service projection, and frozen wire evidence.
 - Added authority-scoped bounded ban-list pages with opaque revision-bound,
   client-owned cursors and durable continuation recovery.
+- Added replayable closed capability discovery with canonical wire evidence;
+  advertised support is explicitly non-authorizing.
 
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 4, 4,
-  and 4 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 4, 5,
+  and 5 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

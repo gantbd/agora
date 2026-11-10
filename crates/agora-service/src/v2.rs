@@ -8,10 +8,10 @@ use agora_engine::{
     RoomPageCursor,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, ChangeGapV2, ClientIdV2, CommandV2,
-    MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2,
-    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
-    RoomEventV2, RoomPageV2, RoomSummaryV2,
+    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
+    CommandV2, MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2,
+    ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2,
+    RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -243,6 +243,14 @@ impl ServiceV2 {
         command: &CommandV2,
     ) -> Result<OutcomeV2, RefusalV2> {
         match command {
+            CommandV2::Capabilities => Ok(OutcomeV2::Capabilities(vec![
+                CapabilityV2::RoomLifecycleV2,
+                CapabilityV2::RetainedHistoryV2,
+                CapabilityV2::RoomChangesV1,
+                CapabilityV2::ModerationV1,
+                CapabilityV2::RoomPolicyV1,
+                CapabilityV2::BanObservationV1,
+            ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
                 room_id,
@@ -883,6 +891,7 @@ impl ServiceV2 {
         let valid_participant =
             |participant: &str| valid_text(participant, self.limits.max_participant_id_bytes);
         match command {
+            CommandV2::Capabilities => true,
             CommandV2::Rooms { limit, .. } => valid_page(*limit),
             CommandV2::Members { room_id, limit, .. }
             | CommandV2::Bans { room_id, limit, .. }

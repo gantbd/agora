@@ -845,6 +845,28 @@ fn v2_moderation_is_actor_bound_replayable_and_distinguishes_kick_from_ban() {
 }
 
 #[test]
+fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let request = request(1, CommandV2::Capabilities);
+    let first = service.execute(alice, request.clone());
+    let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
+        panic!("capabilities expected");
+    };
+    assert_eq!(capabilities.len(), 6);
+    assert_eq!(service.execute(alice, request), first);
+    assert_eq!(service.engine().revision().0, 1);
+}
+
+#[test]
 fn v2_room_policy_change_is_owner_bound_and_feed_visible() {
     let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
     let alice = service.connect("alice").unwrap();

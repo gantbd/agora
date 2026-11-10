@@ -223,7 +223,7 @@ position.
 
 ## Service checkpoint profile V2
 
-The `AGORASV` version-4 record is independent of public wire versioning and is
+The `AGORASV` version-5 record is independent of public wire versioning and is
 bound to an exact caller-supplied 16-byte store scope. It contains the canonical
 engine checkpoint, configured service limits, active client-to-participant
 bindings, ordered retired tombstones, exact request/reply receipts, private
@@ -240,6 +240,16 @@ requires byte-identical re-encoding. Opaque engine cursors have their own privat
 5 is the authority-scoped ban page. Process-local
 usage counters reset on recovery and are intentionally absent from semantic
 checkpoint bytes.
+
+### Capability discovery
+
+`Capabilities` returns one canonical strictly increasing list from a closed
+feature vocabulary: room lifecycle V2, retained history V2, room changes V1,
+moderation V1, room policy V1, and ban observation V1. The request is retained
+and replayed under ordinary service request identity but performs no engine
+mutation. A listed capability means that this service implements the named
+syntax and semantics; it is not authentication, authorization, room membership,
+or evidence that any particular request will be admitted.
 
 ## Receipt-gated durable service V2
 
@@ -280,7 +290,7 @@ requests, reconnect a host session, or prove server durability.
 
 ## Authenticated host checkpoint and durable publication V2
 
-The `AGORAHST` version-4 record is independently versioned and bound to an exact
+The `AGORAHST` version-5 record is independently versioned and bound to an exact
 16-byte store scope. It contains Host V2 limits, the next non-reused session
 frontier, every active mapping from opaque host session to verified subject,
 participant, service client and last verification time, the bounded retired

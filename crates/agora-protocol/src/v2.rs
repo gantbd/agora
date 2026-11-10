@@ -40,6 +40,7 @@ pub enum RoleV2 {
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum CommandV2 {
+    Capabilities,
     Rooms {
         cursor: Option<PageCursorV2>,
         limit: u32,
@@ -131,6 +132,7 @@ pub enum CommandV2 {
 impl fmt::Debug for CommandV2 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Capabilities => formatter.write_str("Capabilities"),
             Self::Rooms { cursor, limit } => formatter
                 .debug_struct("Rooms")
                 .field("has_cursor", &cursor.is_some())
@@ -288,6 +290,18 @@ impl fmt::Debug for CommandV2 {
                 .finish(),
         }
     }
+}
+
+/// Closed feature profiles supported by this exact service implementation.
+/// Discovery reports syntax and semantics, never participant authority.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CapabilityV2 {
+    RoomLifecycleV2,
+    RetainedHistoryV2,
+    RoomChangesV1,
+    ModerationV1,
+    RoomPolicyV1,
+    BanObservationV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -590,6 +604,7 @@ page_debug!(MessagePageV2, "MessagePageV2", messages, "message_count");
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OutcomeV2 {
+    Capabilities(Vec<CapabilityV2>),
     Rooms(RoomPageV2),
     Members(MemberPageV2),
     Bans(BanPageV2),

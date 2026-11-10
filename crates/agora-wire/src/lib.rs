@@ -46,6 +46,7 @@ pub enum WireEncodeError {
     Limit,
     Capacity,
     LengthOverflow,
+    Invalid,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
