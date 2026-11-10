@@ -158,6 +158,11 @@ pub enum CommandV2 {
         body: String,
         addressed_to: Vec<String>,
     },
+    WithdrawMessage {
+        room_id: String,
+        expected_revision: u64,
+        message_id: MessageIdV1,
+    },
 }
 
 impl fmt::Debug for CommandV2 {
@@ -336,6 +341,16 @@ impl fmt::Debug for CommandV2 {
                 .field("body_bytes", &body.len())
                 .field("addressed_count", &addressed_to.len())
                 .finish(),
+            Self::WithdrawMessage {
+                room_id,
+                expected_revision,
+                message_id,
+            } => formatter
+                .debug_struct("WithdrawMessage")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("message_id", message_id)
+                .finish(),
         }
     }
 }
@@ -351,6 +366,7 @@ pub enum CapabilityV2 {
     RoomPolicyV1,
     BanObservationV1,
     IdentifiedMessagesV1,
+    AuthorWithdrawalV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -567,6 +583,11 @@ pub enum RoomEventV2 {
         causation: [u8; 16],
     },
     MessageAccepted(MessageV2),
+    MessageWithdrawn {
+        actor_id: String,
+        message_id: MessageIdV1,
+        sequence: u64,
+    },
 }
 
 impl fmt::Debug for RoomEventV2 {
@@ -627,6 +648,16 @@ impl fmt::Debug for RoomEventV2 {
             Self::MessageAccepted(message) => formatter
                 .debug_tuple("MessageAccepted")
                 .field(message)
+                .finish(),
+            Self::MessageWithdrawn {
+                actor_id,
+                message_id,
+                sequence,
+            } => formatter
+                .debug_struct("MessageWithdrawn")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("sequence", sequence)
                 .finish(),
         }
     }
@@ -740,6 +771,11 @@ pub enum OutcomeV2 {
         sequence: u64,
     },
     IdentifiedMessageAccepted {
+        revision: u64,
+        message_id: MessageIdV1,
+        sequence: u64,
+    },
+    MessageWithdrawn {
         revision: u64,
         message_id: MessageIdV1,
         sequence: u64,

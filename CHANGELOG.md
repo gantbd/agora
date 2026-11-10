@@ -46,12 +46,14 @@ follow Semantic Versioning once a public release contract is selected.
   advertised support is explicitly non-authorizing.
 - Added a parallel identified-message profile with opaque 128-bit room-local
   references, identified acceptance/history, isolated cursors, and recovery.
+- Added replay-safe author withdrawal for retained messages, with stable
+  tombstones, scrubbed retained feed content, and an attributable room event.
 
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 5, 6,
-  and 6 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 6, 7,
+  and 7 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

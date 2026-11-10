@@ -50,6 +50,16 @@ chronology. Identified history still rechecks current membership; legacy and
 identified cursor kinds are isolated so a handle cannot silently change the
 shape or disclosure contract of its continuation.
 
+Author withdrawal rechecks current membership and exact authorship at the
+named message ID; participant kind, room role, and knowledge of the ID grant no
+substitute authority. A retained tombstone and retained acceptance event expose
+no body, but preserve author, time, addressing, ID, and sequence as linkable
+metadata. Withdrawal is not erasure: exact replay records, prior recipients,
+client caches, notifications, connectors, indexes, backups, logs outside this
+boundary, and model context may retain the submitted body. Repeated and unknown
+references share no accepted effect, and service mapping avoids exposing engine
+identifier detail beyond the caller's existing room visibility.
+
 The authenticated host prevents a wire client ID from becoming ambient authority:
 each frame is coupled to an opaque transport-bound host session, a retained
 verified subject/participant, current verifier acceptance, and the exact service

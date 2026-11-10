@@ -128,9 +128,9 @@ before message mutation at capacity. Publication deliberately addresses nobody;
 an orchestrator must use an explicit conversation command if addressing is part
 of the response semantics.
 
-## Checkpoint profile V5
+## Checkpoint profile V6
 
-The closed `AGORACP` version-5 codec captures limits, participants, rooms,
+The closed `AGORACP` version-6 codec captures limits, participants, rooms,
 membership, invitations, bans, retained message suffixes and addressing, complete publication
 records, revision/event frontiers, acknowledgment cursor, and pending events.
 Host byte/cardinality ceilings apply before checkpoint-owned limits or allocation.
@@ -223,7 +223,7 @@ position.
 
 ## Service checkpoint profile V2
 
-The `AGORASV` version-6 record is independent of public wire versioning and is
+The `AGORASV` version-7 record is independent of public wire versioning and is
 bound to an exact caller-supplied 16-byte store scope. It contains the canonical
 engine checkpoint, configured service limits, active client-to-participant
 bindings, ordered retired tombstones, exact request/reply receipts, private
@@ -247,7 +247,8 @@ checkpoint bytes.
 
 `Capabilities` returns one canonical strictly increasing list from a closed
 feature vocabulary: room lifecycle V2, retained history V2, room changes V1,
-moderation V1, room policy V1, ban observation V1, and identified messages V1. The request is retained
+moderation V1, room policy V1, ban observation V1, identified messages V1, and
+author withdrawal V1. The request is retained
 and replayed under ordinary service request identity but performs no engine
 mutation. A listed capability means that this service implements the named
 syntax and semantics; it is not authentication, authorization, room membership,
@@ -268,6 +269,27 @@ Protocol V2 exposes this fact only through additive parallel operations:
 `MessageV2` retain their exact prior grammar. Identified and legacy page cursors
 are different service cursor kinds and cannot be substituted. Neither profile
 changes membership, authority, addressing, retention, or delivery semantics.
+
+### Author withdrawal V1
+
+`WithdrawMessage` names one retained message by opaque ID. The serialized
+service derives the actor from the connected participant; the engine accepts
+only when that actor is both a current room member and the original author.
+Unknown, evicted, foreign-author, repeated, stale-revision, and malformed
+requests refuse atomically. Participant kind has no effect.
+
+Acceptance clears the retained body to the engine-reserved empty value while
+preserving message ID, sequence, author, logical time, and addressing. User
+message admission remains nonempty, so the empty body is an unambiguous
+tombstone even through legacy message pages whose grammar remains unchanged.
+Any still-retained `MessageAccepted` outbox copy is scrubbed, and a new ordered
+`MessageWithdrawn` event carries actor, message ID, and sequence. Matching
+service request replay returns the exact accepted receipt without another event.
+
+Withdrawal is semantic suppression, not guaranteed erasure. Previously
+delivered copies, client caches, connectors, backups, indexes, and model context
+may retain content. Bounded request/publication replay records may also retain
+the submitted body until their owning retention policy removes them.
 
 ## Receipt-gated durable service V2
 
@@ -308,7 +330,7 @@ requests, reconnect a host session, or prove server durability.
 
 ## Authenticated host checkpoint and durable publication V2
 
-The `AGORAHST` version-6 record is independently versioned and bound to an exact
+The `AGORAHST` version-7 record is independently versioned and bound to an exact
 16-byte store scope. It contains Host V2 limits, the next non-reused session
 frontier, every active mapping from opaque host session to verified subject,
 participant, service client and last verification time, the bounded retired

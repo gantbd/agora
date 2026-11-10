@@ -193,6 +193,12 @@ impl Message {
         &self.body
     }
 
+    /// True when the author has withdrawn the body. Identity, order, author,
+    /// logical time, and addressing remain as the reference-preserving tombstone.
+    pub fn is_withdrawn(&self) -> bool {
+        self.body.is_empty()
+    }
+
     /// Explicit room members addressed by this message in canonical ID order.
     /// Addressing is conversation data, not permission or proof of execution.
     pub fn addressed_to(&self) -> &[ParticipantId] {
@@ -656,6 +662,7 @@ pub enum RoomActionV1 {
     Join,
     Leave,
     Speak,
+    WithdrawOwn,
     ManageRole,
     ManageRoomPolicy,
     Kick,
@@ -680,6 +687,7 @@ impl CommandV2 {
             Self::Ban { .. } => Some(RoomActionV1::Ban),
             Self::Unban { .. } => Some(RoomActionV1::Unban),
             Self::Speak { .. } | Self::SpeakAddressed { .. } => Some(RoomActionV1::Speak),
+            Self::WithdrawMessage { .. } => Some(RoomActionV1::WithdrawOwn),
         }
     }
 }
@@ -754,6 +762,11 @@ pub enum CommandV2 {
         body: String,
         addressed_to: Vec<ParticipantId>,
     },
+    WithdrawMessage {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -808,6 +821,12 @@ pub enum OutcomeV2 {
         room_id: RoomId,
         sequence: u64,
     },
+    MessageWithdrawn {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        sequence: u64,
+    },
 }
 
 /// Typed refusal reasons. Every refusal preserves authoritative state.
@@ -845,6 +864,8 @@ pub enum Refusal {
     OwnerCannotLeave,
     InvalidRoleChange,
     InvalidPolicyChange,
+    UnknownMessage,
+    MessageAlreadyWithdrawn,
     RevisionConflict {
         expected: Revision,
         actual: Revision,
@@ -1010,6 +1031,12 @@ pub enum DomainEventV2 {
         room_id: RoomId,
         message: Message,
     },
+    MessageWithdrawn {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        sequence: u64,
+    },
 }
 
 impl DomainEventV2 {
@@ -1025,7 +1052,8 @@ impl DomainEventV2 {
             | Self::ParticipantKicked { room_id, .. }
             | Self::ParticipantBanned { room_id, .. }
             | Self::ParticipantUnbanned { room_id, .. }
-            | Self::MessageAccepted { room_id, .. } => Some(room_id),
+            | Self::MessageAccepted { room_id, .. }
+            | Self::MessageWithdrawn { room_id, .. } => Some(room_id),
         }
     }
 }
@@ -1828,6 +1856,11 @@ impl Engine {
                 body,
                 addressed_to,
             } => self.speak(room_id, author, at, body, addressed_to),
+            CommandV2::WithdrawMessage {
+                room_id,
+                actor,
+                message_id,
+            } => self.withdraw_message(room_id, actor, message_id),
         }
     }
 
@@ -1998,6 +2031,20 @@ impl Engine {
                     body: body.clone(),
                     addressed_to: addressed_to.clone(),
                 },
+            },
+            (
+                CommandV2::WithdrawMessage { .. },
+                OutcomeV2::MessageWithdrawn {
+                    room_id,
+                    actor,
+                    message_id,
+                    sequence,
+                },
+            ) => DomainEventV2::MessageWithdrawn {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                message_id: *message_id,
+                sequence: *sequence,
             },
             _ => unreachable!("command and outcome are produced by one exhaustive transition"),
         }
@@ -2414,6 +2461,58 @@ impl Engine {
         room.next_message_identity = next_message_identity;
         room.next_message_sequence = next;
         Ok(OutcomeV2::MessageAccepted { room_id, sequence })
+    }
+
+    fn withdraw_message(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+    ) -> Result<OutcomeV2, Refusal> {
+        let room = self.room_ref(&room_id)?;
+        if !room.members.contains_key(&actor) {
+            return Err(Refusal::NotMember(actor));
+        }
+        let message = room
+            .messages
+            .iter()
+            .find(|message| message.id == message_id)
+            .ok_or(Refusal::UnknownMessage)?;
+        if message.author != actor {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        if message.is_withdrawn() {
+            return Err(Refusal::MessageAlreadyWithdrawn);
+        }
+        let sequence = message.sequence;
+
+        let room = self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation");
+        room.messages
+            .iter_mut()
+            .find(|message| message.id == message_id)
+            .expect("message established by validation")
+            .body
+            .clear();
+        for envelope in &mut self.pending_events {
+            if let DomainEventV2::MessageAccepted {
+                room_id: event_room,
+                message,
+            } = &mut envelope.event
+                && event_room == &room_id
+                && message.id == message_id
+            {
+                message.body.clear();
+            }
+        }
+        Ok(OutcomeV2::MessageWithdrawn {
+            room_id,
+            actor,
+            message_id,
+            sequence,
+        })
     }
 
     fn room_ref(&self, room_id: &RoomId) -> Result<&Room, Refusal> {

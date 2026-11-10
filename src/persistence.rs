@@ -220,6 +220,18 @@ impl Writer {
                 self.byte(admission_tag(*previous))?;
                 self.byte(admission_tag(*admission))
             }
+            DomainEventV2::MessageWithdrawn {
+                room_id,
+                actor,
+                message_id,
+                sequence,
+            } => {
+                self.byte(11)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&message_id.into_bytes())?;
+                self.number(*sequence)
+            }
         }
     }
 }
@@ -381,6 +393,12 @@ impl<'a> Reader<'a> {
                 previous: read_admission(self.byte()?)?,
                 admission: read_admission(self.byte()?)?,
             },
+            11 => DomainEventV2::MessageWithdrawn {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                message_id: MessageId::from_bytes(self.fixed()?),
+                sequence: self.number()?,
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -483,7 +501,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(5)?;
+        w.byte(6)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -555,7 +573,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 5 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 6 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -927,7 +945,18 @@ fn owner(room: &Room) -> Result<&ParticipantId, CheckpointError> {
     Ok(id)
 }
 fn valid_message(e: &Engine, room: &Room, m: &Message) -> Result<(), CheckpointError> {
-    valid_message_parts(e, room, m.id, m.sequence, &m.author, m.at, &m.body)?;
+    valid_message_parts(
+        e,
+        room,
+        MessageFacts {
+            id: m.id,
+            sequence: m.sequence,
+            author: &m.author,
+            at: m.at,
+            body: &m.body,
+        },
+        false,
+    )?;
     validate_addressing(e, &m.addressed_to)
 }
 fn validate_addressing(e: &Engine, addressed_to: &[ParticipantId]) -> Result<(), CheckpointError> {
@@ -941,19 +970,27 @@ fn validate_addressing(e: &Engine, addressed_to: &[ParticipantId]) -> Result<(),
     }
     Ok(())
 }
+struct MessageFacts<'a> {
+    id: MessageId,
+    sequence: u64,
+    author: &'a ParticipantId,
+    at: LogicalTime,
+    body: &'a str,
+}
 fn valid_message_parts(
     e: &Engine,
     room: &Room,
-    message_id: MessageId,
-    sequence: u64,
-    author: &ParticipantId,
-    at: LogicalTime,
-    body: &str,
+    facts: MessageFacts<'_>,
+    allow_withdrawn_body: bool,
 ) -> Result<(), CheckpointError> {
-    bounded(body, e.limits.max_message_body_bytes)?;
-    if !e.participants.contains_key(author)
-        || sequence >= room.next_message_sequence
-        || message_id != MessageId::allocated(room.message_identity_incarnation, sequence)
+    if facts.body.len() > e.limits.max_message_body_bytes
+        || (allow_withdrawn_body && facts.body.is_empty())
+    {
+        return Err(CheckpointError::Invalid);
+    }
+    if !e.participants.contains_key(facts.author)
+        || facts.sequence >= room.next_message_sequence
+        || facts.id != MessageId::allocated(room.message_identity_incarnation, facts.sequence)
     {
         return Err(CheckpointError::Invalid);
     }
@@ -961,16 +998,16 @@ fn valid_message_parts(
         .next_message_sequence
         .checked_sub(room.messages.len() as u64)
         .ok_or(CheckpointError::Invalid)?;
-    if sequence >= start {
-        let index: usize = (sequence - start)
+    if facts.sequence >= start {
+        let index: usize = (facts.sequence - start)
             .try_into()
             .map_err(|_| CheckpointError::Invalid)?;
         let current = room.messages.get(index).ok_or(CheckpointError::Invalid)?;
-        if current.id != message_id
-            || current.sequence != sequence
-            || &current.author != author
-            || current.at != at
-            || current.body != body
+        if current.id != facts.id
+            || current.sequence != facts.sequence
+            || &current.author != facts.author
+            || current.at != facts.at
+            || (current.body != facts.body && !(allow_withdrawn_body && current.is_withdrawn()))
         {
             return Err(CheckpointError::Invalid);
         }
@@ -1098,7 +1135,18 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         {
             return Err(CheckpointError::Invalid);
         }
-        valid_message_parts(e, room, message_id, *sequence, &p.author, p.at, &p.body)?;
+        valid_message_parts(
+            e,
+            room,
+            MessageFacts {
+                id: message_id,
+                sequence: *sequence,
+                author: &p.author,
+                at: p.at,
+                body: &p.body,
+            },
+            true,
+        )?;
         if e.message(room_id, *sequence)
             .is_some_and(|message| !message.addressed_to.is_empty())
         {
@@ -1133,7 +1181,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                 || message.sequence != *sequence
                 || message.author != p.author
                 || message.at != p.at
-                || message.body != p.body
+                || (!message.is_withdrawn() && message.body != p.body)
                 || !message.addressed_to.is_empty()
             {
                 return Err(CheckpointError::Invalid);
@@ -1239,6 +1287,27 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
         DomainEventV2::MessageAccepted { room_id, message } => {
             let r = room(room_id)?;
             valid_message(e, r, message)?;
+        }
+        DomainEventV2::MessageWithdrawn {
+            room_id,
+            actor,
+            message_id,
+            sequence,
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            if *sequence >= r.next_message_sequence
+                || *message_id != MessageId::allocated(r.message_identity_incarnation, *sequence)
+            {
+                return Err(CheckpointError::Invalid);
+            }
+            if let Some(message) = e.message_by_id(room_id, *message_id)
+                && (message.sequence != *sequence
+                    || message.author != *actor
+                    || !message.is_withdrawn())
+            {
+                return Err(CheckpointError::Invalid);
+            }
         }
     }
     Ok(())

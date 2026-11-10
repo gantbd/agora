@@ -23,7 +23,7 @@ not ready for a network service or crates.io release.
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   ten packages;
 - conservative package and canonical-fixture inventory closure over ten
-  packages and sixteen fixtures;
+  packages and seventeen fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
 - conservative supply inventory closure over twelve locked local components with
@@ -54,6 +54,8 @@ not ready for a network service or crates.io release.
 - snapshot-aligned bounded room pull changes with stable event identity,
   exclusive continuation, explicit retention/leave-rejoin gaps, durable service
   cursors, closed Wire V2 values, and a frozen representative frame;
+- stable message references and author-only retained-message withdrawal with
+  attributable reference-preserving tombstones and exact recovery;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.

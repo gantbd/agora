@@ -4,8 +4,8 @@ Agora is pre-1.0 and currently source-distributed. Public schemas still change
 only through an explicit profile revision.
 
 The v0.3 command, event, publication, and checkpoint values use the `V2` suffix.
-The `AGORACP` header version is 5. Earlier checkpoint bytes are refused with
-`CheckpointError::Profile`; they are never interpreted as V5. V1 agent activation
+The `AGORACP` header version is 6. Earlier checkpoint bytes are refused with
+`CheckpointError::Profile`; they are never interpreted as V6. V1 agent activation
 has no migration because activation is orchestration behavior, not conversation
 state. A host retaining V1 state must export conversation facts through a
 purpose-built migration tool before adopting V2.
@@ -16,8 +16,8 @@ fail closed on the new value. Reinterpreting an assigned tag or changing any
 existing field grammar requires a new frame version. Unknown tags, fields, or
 trailing bytes remain refusals.
 
-The immutable `tests/fixtures/checkpoint-v5.hex` artifact pins a representative
-V5 state containing both participant kinds, stable message identity, neutral addressing, replay-safe
+The immutable `tests/fixtures/checkpoint-v6.hex` artifact pins a representative
+V6 state containing both participant kinds, stable message identity, neutral addressing, replay-safe
 publication, ban and policy-change evidence, acknowledgment, and the exact pending
 outbox suffix.
 
@@ -28,23 +28,30 @@ fixtures freeze representative bytes. The codec defines complete message frames,
 not stream boundaries; transport framing remains separate.
 
 Protocol, Service, Client, and Wire V2 form an additive profile with a separate
-version byte, closed grammar, and nine canonical fixtures. Their separately
+version byte, closed grammar, and ten canonical fixtures. Their separately
 typed values and V2 bytes do not alter V1 tags or bytes. Authenticated Host V2
 uses the same canonical frames without reinterpreting V1.
 
-Service persistence is versioned independently. `AGORASV` version 6 captures
+Service persistence is versioned independently. `AGORASV` version 7 captures
 the complete V2 service owner and embeds private `AGORACUR` version-1 cursor
 records. Cursor kind 4 is the snapshot-aligned room change position and kind 5
 is the authority-scoped ban page; neither reinterprets kinds 1–3. Service page
 discriminator 6 isolates identified-message continuations while nesting the
 unchanged message cursor kind 3. A representative complete service record is pinned by
-`service-checkpoint-v6.hex`. Public wire compatibility neither implies nor migrates durable state;
+`service-checkpoint-v7.hex`. Public wire compatibility neither implies nor migrates durable state;
 future durable schema changes require a bounded explicit migration profile.
 
-Authenticated host persistence has its own `AGORAHST` version-6 record and
-`host-checkpoint-v6.hex` fixture. It nests the service record but owns host
+Authenticated host persistence has its own `AGORAHST` version-7 record and
+`host-checkpoint-v7.hex` fixture. It nests the service record but owns host
 session compatibility independently; neither wire nor service checkpoint
 decoding implies that a host record can be recovered.
+
+Author withdrawal is additive: command tag `14`, outcome tag `15`, capability
+tag `08`, and room-event tag `0b` were previously unassigned. Existing message
+page and acceptance grammars remain unchanged. Because admitted message bodies
+are nonempty, an empty body in retained history is the V1 downgrade projection
+of a withdrawal tombstone; aware clients correlate the new event by ID and
+sequence.
 
 ## Conservative baseline gate
 

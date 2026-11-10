@@ -28,6 +28,11 @@ fn v2_debug_output_is_content_safe() {
             body: "secret-body".to_owned(),
             addressed_to: vec!["secret-recipient".to_owned()],
         },
+        CommandV2::WithdrawMessage {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 2,
+            message_id: MessageIdV1::new([0x5c; 16]),
+        },
         CommandV2::Ban {
             room_id: "secret-room".to_owned(),
             participant_id: "secret-participant".to_owned(),
@@ -69,6 +74,11 @@ fn v2_debug_output_is_content_safe() {
         ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
             revision: 2,
             message_id: MessageIdV1::new([0x5b; 16]),
+            sequence: 0,
+        }),
+        ReplyV2::Accepted(OutcomeV2::MessageWithdrawn {
+            revision: 3,
+            message_id: MessageIdV1::new([0x5c; 16]),
             sequence: 0,
         }),
         ReplyV2::Accepted(OutcomeV2::Rooms(RoomPageV2 {
@@ -137,6 +147,20 @@ fn v2_debug_output_is_content_safe() {
             has_more: false,
         })),
         ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 5,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 4,
+                revision: 5,
+                event: RoomEventV2::MessageWithdrawn {
+                    actor_id: "secret-actor".to_owned(),
+                    message_id: MessageIdV1::new([0x5c; 16]),
+                    sequence: 0,
+                },
+            }],
+            next: PageCursorV2(50),
+            has_more: false,
+        })),
+        ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
             revision: 4,
             changes: vec![RoomChangeV2 {
                 event_sequence: 3,
@@ -186,6 +210,7 @@ fn v2_debug_output_is_content_safe() {
         "47",
         "48",
         "49",
+        "50",
     ] {
         assert!(!rendered.contains(secret));
     }

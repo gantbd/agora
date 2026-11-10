@@ -2,8 +2,8 @@ use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Participant, ParticipantKind,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, ChangeGapV2, ClientIdV2, CommandV2, OutcomeV2, RefusalV2, ReplyV2,
-    RequestIdV2, RequestV2, RoleV2, RoomEventV2,
+    AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, MessageIdV1, OutcomeV2,
+    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomEventV2,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -561,6 +561,146 @@ fn v2_change_feed_opens_at_snapshot_and_advances_exclusively() {
 }
 
 #[test]
+fn v2_author_withdrawal_tombstones_history_and_retained_change_content() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                0,
+                CommandV2::CreateRoom {
+                    room_id: "room".to_owned(),
+                    name: "Room".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 5 })
+    ));
+    assert!(matches!(
+        service.execute(
+            bot,
+            request(
+                0,
+                CommandV2::Join {
+                    room_id: "room".to_owned(),
+                    expected_revision: 5,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Joined { revision: 6 })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 6,
+            },
+        ),
+    ) else {
+        panic!("change position expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        message_id,
+        sequence: 0,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: 6,
+                logical_time: 9,
+                body: "withdraw me".to_owned(),
+                addressed_to: vec!["bot".to_owned()],
+            },
+        ),
+    )
+    else {
+        panic!("identified acceptance expected");
+    };
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                1,
+                CommandV2::WithdrawMessage {
+                    room_id: "room".to_owned(),
+                    expected_revision: 7,
+                    message_id,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::NotAuthorized)
+    );
+    let withdrawal = request(
+        3,
+        CommandV2::WithdrawMessage {
+            room_id: "room".to_owned(),
+            expected_revision: 7,
+            message_id,
+        },
+    );
+    let reply = ReplyV2::Accepted(OutcomeV2::MessageWithdrawn {
+        revision: 8,
+        message_id,
+        sequence: 0,
+    });
+    assert_eq!(service.execute(alice, withdrawal.clone()), reply);
+    assert_eq!(service.execute(alice, withdrawal), reply);
+
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(history)) = service.execute(
+        alice,
+        request(
+            4,
+            CommandV2::IdentifiedMessages {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 4,
+            },
+        ),
+    ) else {
+        panic!("identified history expected");
+    };
+    assert_eq!(history.messages[0].message_id, message_id);
+    assert_eq!(history.messages[0].body, "");
+
+    let ReplyV2::Accepted(OutcomeV2::Changes(changes)) = service.execute(
+        alice,
+        request(
+            5,
+            CommandV2::Changes {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 4,
+            },
+        ),
+    ) else {
+        panic!("change page expected");
+    };
+    assert!(matches!(
+        &changes.changes[0].event,
+        RoomEventV2::MessageAccepted(message) if message.body.is_empty()
+    ));
+    assert!(matches!(
+        &changes.changes[1].event,
+        RoomEventV2::MessageWithdrawn {
+            actor_id,
+            message_id: id,
+            sequence: 0,
+        } if actor_id == "alice" && id == &message_id
+    ));
+
+    let _opaque_type_check: MessageIdV1 = message_id;
+}
+
+#[test]
 fn v2_change_feed_requires_resnapshot_after_leave_and_rejoin() {
     let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
     let alice = service.connect("alice").unwrap();
@@ -861,7 +1001,8 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 7);
+    assert_eq!(capabilities.len(), 8);
+    assert_eq!(capabilities.last(), Some(&CapabilityV2::AuthorWithdrawalV1));
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

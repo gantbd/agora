@@ -1,6 +1,6 @@
 use agora_engine::{
-    AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, MessageId, OutcomeV2, Participant,
-    ParticipantId, ParticipantKind, Refusal, Role, RoomId,
+    AdmissionPolicy, CommandV2, DomainEventV2, Engine, Limits, LogicalTime, MessageId, OutcomeV2,
+    Participant, ParticipantId, ParticipantKind, Refusal, Role, RoomId,
 };
 
 fn register(engine: &mut Engine, id: &str, kind: ParticipantKind) {
@@ -83,6 +83,135 @@ fn human_and_agent_join_and_speak_under_the_same_rules() {
         engine
             .message_by_id(&RoomId::from("commons"), MessageId::from_bytes([0xff; 16]))
             .is_none()
+    );
+}
+
+#[test]
+fn author_withdrawal_is_atomic_attributable_and_reference_preserving() {
+    let mut engine = Engine::new();
+    register(&mut engine, "alice", ParticipantKind::Human);
+    register(&mut engine, "bob", ParticipantKind::Human);
+    create_room(&mut engine, AdmissionPolicy::Open);
+    engine
+        .apply(CommandV2::Join {
+            room_id: "commons".into(),
+            participant: "bob".into(),
+        })
+        .unwrap();
+    engine
+        .apply(CommandV2::SpeakAddressed {
+            room_id: "commons".into(),
+            author: "alice".into(),
+            at: LogicalTime(9),
+            body: "sensitive body".to_owned(),
+            addressed_to: vec!["bob".into()],
+        })
+        .unwrap();
+    let message_id = engine.message(&"commons".into(), 0).unwrap().id();
+    let before_revision = engine.revision();
+    let before_events = engine.pending_events().len();
+
+    assert_eq!(
+        engine.apply(CommandV2::WithdrawMessage {
+            room_id: "commons".into(),
+            actor: "bob".into(),
+            message_id,
+        }),
+        Err(Refusal::NotAuthorized("bob".into()))
+    );
+    assert_eq!(engine.revision(), before_revision);
+    assert_eq!(engine.pending_events().len(), before_events);
+    assert_eq!(
+        engine
+            .message_by_id(&"commons".into(), message_id)
+            .unwrap()
+            .body(),
+        "sensitive body"
+    );
+
+    assert_eq!(
+        engine
+            .apply(CommandV2::WithdrawMessage {
+                room_id: "commons".into(),
+                actor: "alice".into(),
+                message_id,
+            })
+            .unwrap(),
+        OutcomeV2::MessageWithdrawn {
+            room_id: "commons".into(),
+            actor: "alice".into(),
+            message_id,
+            sequence: 0,
+        }
+    );
+    let tombstone = engine.message_by_id(&"commons".into(), message_id).unwrap();
+    assert!(tombstone.is_withdrawn());
+    assert_eq!(tombstone.body(), "");
+    assert_eq!(tombstone.author().as_str(), "alice");
+    assert_eq!(tombstone.addressed_to()[0].as_str(), "bob");
+
+    let events = engine.pending_events().collect::<Vec<_>>();
+    assert!(events.iter().any(|envelope| matches!(
+        &envelope.event,
+        DomainEventV2::MessageAccepted { message, .. }
+            if message.id() == message_id && message.is_withdrawn()
+    )));
+    assert!(matches!(
+        &events.last().unwrap().event,
+        DomainEventV2::MessageWithdrawn {
+            actor,
+            message_id: id,
+            sequence: 0,
+            ..
+        } if actor.as_str() == "alice" && id == &message_id
+    ));
+
+    assert_eq!(
+        engine.apply(CommandV2::WithdrawMessage {
+            room_id: "commons".into(),
+            actor: "alice".into(),
+            message_id,
+        }),
+        Err(Refusal::MessageAlreadyWithdrawn)
+    );
+    assert_eq!(
+        engine.apply(CommandV2::WithdrawMessage {
+            room_id: "commons".into(),
+            actor: "alice".into(),
+            message_id: MessageId::from_bytes([0xff; 16]),
+        }),
+        Err(Refusal::UnknownMessage)
+    );
+
+    engine
+        .apply(CommandV2::Speak {
+            room_id: "commons".into(),
+            author: "bob".into(),
+            at: LogicalTime(10),
+            body: "departing author".to_owned(),
+        })
+        .unwrap();
+    let departed_message = engine.message(&"commons".into(), 1).unwrap().id();
+    engine
+        .apply(CommandV2::Leave {
+            room_id: "commons".into(),
+            participant: "bob".into(),
+        })
+        .unwrap();
+    assert_eq!(
+        engine.apply(CommandV2::WithdrawMessage {
+            room_id: "commons".into(),
+            actor: "bob".into(),
+            message_id: departed_message,
+        }),
+        Err(Refusal::NotMember("bob".into()))
+    );
+    assert_eq!(
+        engine
+            .message_by_id(&"commons".into(), departed_message)
+            .unwrap()
+            .body(),
+        "departing author"
     );
 }
 

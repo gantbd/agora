@@ -145,6 +145,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::RoomPolicyV1,
         CapabilityV2::BanObservationV1,
         CapabilityV2::IdentifiedMessagesV1,
+        CapabilityV2::AuthorWithdrawalV1,
     ])))
 }
 
@@ -166,6 +167,23 @@ fn identified_messages_reply() -> WireReplyV2 {
             next: None,
         },
     )))
+}
+
+fn withdrawal_change_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+        revision: 20,
+        changes: vec![RoomChangeV2 {
+            event_sequence: 19,
+            revision: 20,
+            event: RoomEventV2::MessageWithdrawn {
+                actor_id: "alice".to_owned(),
+                message_id: MessageIdV1::new([0x6b; 16]),
+                sequence: 4,
+            },
+        }],
+        next: PageCursorV2(20),
+        has_more: false,
+    })))
 }
 
 fn fixture(source: &str) -> Vec<u8> {
@@ -213,6 +231,10 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
         (
             encode_reply_v2(&identified_messages_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/identified-messages-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&withdrawal_change_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/withdrawal-change-reply-v2.hex")),
         ),
     ];
     for (actual, expected) in cases {
@@ -345,6 +367,11 @@ fn every_v2_command_round_trips() {
             body: "identified".to_owned(),
             addressed_to: vec!["alice".to_owned()],
         },
+        CommandV2::WithdrawMessage {
+            room_id: "room".to_owned(),
+            expected_revision: 8,
+            message_id: MessageIdV1::new([0x44; 16]),
+        },
     ];
     for (index, command) in commands.into_iter().enumerate() {
         let request = WireRequestV2::Execute {
@@ -407,6 +434,11 @@ fn every_v2_outcome_and_refusal_round_trips() {
             revision: 6,
             message_id: MessageIdV1::new([0x33; 16]),
             sequence: 7,
+        },
+        OutcomeV2::MessageWithdrawn {
+            revision: 7,
+            message_id: MessageIdV1::new([0x44; 16]),
+            sequence: 8,
         },
         OutcomeV2::ChangesOpened {
             revision: 7,
@@ -500,6 +532,15 @@ fn every_v2_outcome_and_refusal_round_trips() {
                         actor_id: "alice".to_owned(),
                         previous: AdmissionPolicyV2::Open,
                         admission: AdmissionPolicyV2::InviteOnly,
+                    },
+                },
+                RoomChangeV2 {
+                    event_sequence: 13,
+                    revision: 14,
+                    event: RoomEventV2::MessageWithdrawn {
+                        actor_id: "bot".to_owned(),
+                        message_id: MessageIdV1::new([0x44; 16]),
+                        sequence: 1,
                     },
                 },
             ],

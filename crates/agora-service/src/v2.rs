@@ -2,7 +2,7 @@
 
 use agora_engine::{
     AdmissionPolicy, BanPageCursor, CommandV2 as EngineCommand, Engine, MemberPageCursor,
-    MessagePageCursor, ModerationCausationV1, ModerationReasonV1, ObservationRefusal,
+    MessageId, MessagePageCursor, ModerationCausationV1, ModerationReasonV1, ObservationRefusal,
     OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind, Refusal as EngineRefusal, Revision,
     RevisionedCommandV2, Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId,
     RoomPageCursor,
@@ -256,6 +256,7 @@ impl ServiceV2 {
                 CapabilityV2::RoomPolicyV1,
                 CapabilityV2::BanObservationV1,
                 CapabilityV2::IdentifiedMessagesV1,
+                CapabilityV2::AuthorWithdrawalV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -457,6 +458,18 @@ impl ServiceV2 {
                 };
                 self.mutate_identified(*expected_revision, command)
             }
+            CommandV2::WithdrawMessage {
+                room_id,
+                expected_revision,
+                message_id,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::WithdrawMessage {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    message_id: MessageId::from_bytes(message_id.into_bytes()),
+                },
+            ),
         }
     }
 
@@ -517,6 +530,15 @@ impl ServiceV2 {
             EngineOutcome::MessageAccepted { sequence, .. } => {
                 Ok(OutcomeV2::MessageAccepted { revision, sequence })
             }
+            EngineOutcome::MessageWithdrawn {
+                message_id,
+                sequence,
+                ..
+            } => Ok(OutcomeV2::MessageWithdrawn {
+                revision,
+                message_id: MessageIdV1::new(message_id.into_bytes()),
+                sequence,
+            }),
             EngineOutcome::ParticipantRegistered(_) => Err(RefusalV2::Unavailable),
         }
     }
@@ -926,6 +948,16 @@ impl ServiceV2 {
                             agora_engine::DomainEventV2::MessageAccepted { message, .. } => {
                                 RoomEventV2::MessageAccepted(map_message_from_engine(message))
                             }
+                            agora_engine::DomainEventV2::MessageWithdrawn {
+                                actor,
+                                message_id,
+                                sequence,
+                                ..
+                            } => RoomEventV2::MessageWithdrawn {
+                                actor_id: actor.as_str().to_owned(),
+                                message_id: MessageIdV1::new(message_id.into_bytes()),
+                                sequence,
+                            },
                         };
                         Ok(RoomChangeV2 {
                             event_sequence: change.sequence.0,
@@ -1046,6 +1078,7 @@ impl ServiceV2 {
                 valid_room(room_id)
             }
             CommandV2::SetAdmissionPolicy { room_id, .. } => valid_room(room_id),
+            CommandV2::WithdrawMessage { room_id, .. } => valid_room(room_id),
             CommandV2::Speak {
                 room_id,
                 body,
@@ -1181,6 +1214,8 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidModerationReason
         | EngineRefusal::InvalidRoleChange
         | EngineRefusal::InvalidPolicyChange
+        | EngineRefusal::UnknownMessage
+        | EngineRefusal::MessageAlreadyWithdrawn
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)
         | EngineRefusal::AlreadyMember(_)

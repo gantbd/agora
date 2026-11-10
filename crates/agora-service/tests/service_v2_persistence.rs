@@ -96,7 +96,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v6.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v7.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -204,7 +204,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 7;
+    future[8] = 8;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -509,6 +509,77 @@ fn identified_message_receipt_and_cursor_survive_recovery_exactly() {
     assert_ne!(second_page.messages[0].message_id, first_id);
     assert_eq!(second_page.messages[0].sequence, 1);
     assert!(second_page.next.is_none());
+}
+
+#[test]
+fn author_withdrawal_tombstone_and_exact_receipt_survive_recovery() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted { message_id, .. }) = service
+        .execute(
+            alice,
+            request(
+                1,
+                CommandV2::SpeakIdentified {
+                    room_id: "room".to_owned(),
+                    expected_revision: 2,
+                    logical_time: 1,
+                    body: "withdrawn after recovery".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        )
+    else {
+        panic!("identified acceptance expected");
+    };
+    let withdrawal = request(
+        2,
+        CommandV2::WithdrawMessage {
+            room_id: "room".to_owned(),
+            expected_revision: 3,
+            message_id,
+        },
+    );
+    let reply = service.execute(alice, withdrawal.clone());
+    assert!(matches!(
+        reply,
+        ReplyV2::Accepted(OutcomeV2::MessageWithdrawn { revision: 4, .. })
+    ));
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(alice, withdrawal), reply);
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(page)) = recovered.execute(
+        alice,
+        request(
+            3,
+            CommandV2::IdentifiedMessages {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("identified page expected");
+    };
+    assert_eq!(page.messages[0].message_id, message_id);
+    assert!(page.messages[0].body.is_empty());
 }
 
 #[test]
