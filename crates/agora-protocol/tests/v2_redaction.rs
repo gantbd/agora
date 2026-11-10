@@ -2,10 +2,10 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, CommandV2,
     IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
-    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReplyV2, RoleV2,
-    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
-    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
-    ThreadedRoomChangeV1, ThreadedRoomEventV1,
+    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1,
+    ReactionSummaryV1, ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
+    RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
+    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
 };
 
 #[test]
@@ -73,6 +73,16 @@ fn v2_debug_output_is_content_safe() {
         CommandV2::ThreadStatus {
             room_id: "secret-room".to_owned(),
             root_message_id: MessageIdV1::new([0x60; 16]),
+        },
+        CommandV2::AddReaction {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 4,
+            message_id: MessageIdV1::new([0x62; 16]),
+            key: "secret-reaction".to_owned(),
+        },
+        CommandV2::ReactionStatus {
+            room_id: "secret-room".to_owned(),
+            message_id: MessageIdV1::new([0x62; 16]),
         },
         CommandV2::Speak {
             room_id: "secret-room".to_owned(),
@@ -203,6 +213,16 @@ fn v2_debug_output_is_content_safe() {
             room_id: "secret-room".to_owned(),
             root_message_id: MessageIdV1::new([0x60; 16]),
             state: ThreadLifecycleStateV1::Archived,
+        })),
+        ReplyV2::Accepted(OutcomeV2::ReactionStatus(ReactionStatusV1 {
+            revision: 4,
+            room_id: "secret-room".to_owned(),
+            message_id: MessageIdV1::new([0x62; 16]),
+            reactions: vec![ReactionSummaryV1 {
+                key: "secret-reaction".to_owned(),
+                count: 1,
+                caller_reacted: true,
+            }],
         })),
         ReplyV2::Accepted(OutcomeV2::MessageWithdrawn {
             revision: 3,
@@ -352,6 +372,7 @@ fn v2_debug_output_is_content_safe() {
         "secret-reason",
         "secret-cause-123",
         "secret-actor",
+        "secret-reaction",
         "42",
         "43",
         "44",

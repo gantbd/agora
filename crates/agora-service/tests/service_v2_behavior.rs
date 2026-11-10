@@ -1784,6 +1784,175 @@ fn v2_moderation_is_actor_bound_replayable_and_distinguishes_kick_from_ban() {
 }
 
 #[test]
+fn v2_reactions_are_actor_bound_replayable_aggregated_and_feed_visible() {
+    let mut engine = participant_engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted { message_id, .. }) = service
+        .execute(
+            alice,
+            request(
+                1,
+                CommandV2::SpeakIdentified {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    logical_time: 1,
+                    body: "message".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        )
+    else {
+        panic!("identified message expected");
+    };
+    let mut cursors = Vec::new();
+    for (id, command) in [
+        (
+            2,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 7,
+            },
+        ),
+        (
+            3,
+            CommandV2::OpenIdentifiedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 7,
+            },
+        ),
+        (
+            4,
+            CommandV2::OpenThreadedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 7,
+            },
+        ),
+    ] {
+        let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) =
+            service.execute(alice, request(id, command))
+        else {
+            panic!("change position expected");
+        };
+        cursors.push(cursor);
+    }
+
+    let add = request(
+        1,
+        CommandV2::AddReaction {
+            room_id: "room".to_owned(),
+            expected_revision: 7,
+            message_id,
+            key: "spark".to_owned(),
+        },
+    );
+    let accepted = service.execute(bot, add.clone());
+    assert_eq!(
+        accepted,
+        ReplyV2::Accepted(OutcomeV2::ReactionAdded {
+            revision: 8,
+            message_id,
+        })
+    );
+    assert_eq!(service.execute(bot, add), accepted);
+
+    let ReplyV2::Accepted(OutcomeV2::ReactionStatus(status)) = service.execute(
+        bot,
+        request(
+            2,
+            CommandV2::ReactionStatus {
+                room_id: "room".to_owned(),
+                message_id,
+            },
+        ),
+    ) else {
+        panic!("reaction status expected");
+    };
+    assert_eq!(status.reactions.len(), 1);
+    assert_eq!(status.reactions[0].key, "spark");
+    assert_eq!(status.reactions[0].count, 1);
+    assert!(status.reactions[0].caller_reacted);
+
+    for (id, cursor, profile) in [
+        (5, cursors[0], 0_u8),
+        (6, cursors[1], 1),
+        (7, cursors[2], 2),
+    ] {
+        let command = match profile {
+            0 => CommandV2::Changes {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+            1 => CommandV2::IdentifiedChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+            _ => CommandV2::ThreadedChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+        };
+        let reply = service.execute(alice, request(id, command));
+        let is_reaction = match reply {
+            ReplyV2::Accepted(OutcomeV2::Changes(page)) => matches!(
+                &page.changes[0].event,
+                RoomEventV2::ReactionChanged { actor_id, message_id: id, key, reacted: true }
+                    if actor_id == "bot" && *id == message_id && key == "spark"
+            ),
+            ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(page)) => matches!(
+                &page.changes[0].event,
+                IdentifiedRoomEventV1::ReactionChanged { actor_id, message_id: id, key, reacted: true }
+                    if actor_id == "bot" && *id == message_id && key == "spark"
+            ),
+            ReplyV2::Accepted(OutcomeV2::ThreadedChanges(page)) => matches!(
+                &page.changes[0].event,
+                ThreadedRoomEventV1::ReactionChanged { actor_id, message_id: id, key, reacted: true }
+                    if actor_id == "bot" && *id == message_id && key == "spark"
+            ),
+            _ => false,
+        };
+        assert!(is_reaction);
+    }
+
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                3,
+                CommandV2::RemoveReaction {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                    message_id,
+                    key: "spark".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ReactionRemoved {
+            revision: 9,
+            message_id,
+        })
+    );
+}
+
+#[test]
 fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let mut engine = Engine::new();
     engine
@@ -1800,8 +1969,8 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 12);
-    assert_eq!(capabilities.last(), Some(&CapabilityV2::ThreadLifecycleV1));
+    assert_eq!(capabilities.len(), 13);
+    assert_eq!(capabilities.last(), Some(&CapabilityV2::ReactionsV1));
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

@@ -203,12 +203,21 @@
   room-change profile expose the state transition; replay and recovery preserve
   authority evidence and order. Unknown/evicted/reply targets, repeated state,
   malformed evidence, and unauthorized actors refuse atomically.
+- **R43 — Bounded message reactions:** a reaction is a canonical retained
+  `(message, key, participant)` set relation. Only a current member may add or
+  remove their own relation; repeat add and absent remove refuse atomically.
+  Keys and per-message distinct aggregates are profile bounded. Current members
+  observe canonical counts and caller membership without enumerating reactors.
+  Withdrawal, moderator redaction, thread lifecycle, replay, and recovery
+  preserve relations and ordered attribution; retention eviction removes them.
+  Reactions grant no authority and prove no delivery, attention, admission, or
+  completion.
 
 ## Explicitly open
 
 Additional physical durable storage adapters, durable event sinks,
 credential/Aegis verifier adapters, network transports, message revision history,
-reactions, end-to-end encryption, federation, delivery
+end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
 Credential/Aegis adapters, transport, backup/restore qualification, and durable
 profiles beyond the qualified single-owner local Unix directory remain open;

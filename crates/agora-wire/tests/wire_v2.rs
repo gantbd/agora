@@ -2,10 +2,11 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
     CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
-    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
-    RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
-    RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
-    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
+    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1,
+    ReactionSummaryV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2,
+    RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
+    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
+    ThreadedRoomChangeV1, ThreadedRoomEventV1,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -152,6 +153,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::IdentifiedRoomChangesV1,
         CapabilityV2::ThreadsV1,
         CapabilityV2::ThreadLifecycleV1,
+        CapabilityV2::ReactionsV1,
     ])))
 }
 
@@ -294,6 +296,41 @@ fn thread_status_reply() -> WireReplyV2 {
     })))
 }
 
+fn reaction_change_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(
+        IdentifiedRoomChangePageV1 {
+            revision: 25,
+            changes: vec![IdentifiedRoomChangeV1 {
+                event_sequence: 24,
+                revision: 25,
+                event: IdentifiedRoomEventV1::ReactionChanged {
+                    actor_id: "bot".to_owned(),
+                    message_id: MessageIdV1::new([0x93; 16]),
+                    key: "spark".to_owned(),
+                    reacted: true,
+                },
+            }],
+            next: PageCursorV2(25),
+            has_more: false,
+        },
+    )))
+}
+
+fn reaction_status_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ReactionStatus(
+        ReactionStatusV1 {
+            revision: 25,
+            room_id: "private".to_owned(),
+            message_id: MessageIdV1::new([0x93; 16]),
+            reactions: vec![ReactionSummaryV1 {
+                key: "spark".to_owned(),
+                count: 2,
+                caller_reacted: true,
+            }],
+        },
+    )))
+}
+
 fn withdrawal_change_reply() -> WireReplyV2 {
     WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
         revision: 20,
@@ -407,6 +444,14 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
             encode_reply_v2(&thread_status_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/thread-status-reply-v2.hex")),
         ),
+        (
+            encode_reply_v2(&reaction_change_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/reaction-change-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&reaction_status_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/reaction-status-reply-v2.hex")),
+        ),
     ];
     for (actual, expected) in cases {
         assert_eq!(actual, expected);
@@ -519,6 +564,22 @@ fn every_v2_command_round_trips() {
         CommandV2::ThreadStatus {
             room_id: "room".to_owned(),
             root_message_id: MessageIdV1::new([0x90; 16]),
+        },
+        CommandV2::AddReaction {
+            room_id: "room".to_owned(),
+            expected_revision: 6,
+            message_id: MessageIdV1::new([0x93; 16]),
+            key: "spark".to_owned(),
+        },
+        CommandV2::RemoveReaction {
+            room_id: "room".to_owned(),
+            expected_revision: 7,
+            message_id: MessageIdV1::new([0x93; 16]),
+            key: "spark".to_owned(),
+        },
+        CommandV2::ReactionStatus {
+            room_id: "room".to_owned(),
+            message_id: MessageIdV1::new([0x93; 16]),
         },
         CommandV2::CreateRoom {
             room_id: "room".to_owned(),
@@ -702,6 +763,16 @@ fn every_v2_outcome_and_refusal_round_trips() {
                     },
                 },
                 RoomChangeV2 {
+                    event_sequence: 17,
+                    revision: 18,
+                    event: RoomEventV2::ReactionChanged {
+                        actor_id: "bot".to_owned(),
+                        message_id: MessageIdV1::new([0x50; 16]),
+                        key: "spark".to_owned(),
+                        reacted: true,
+                    },
+                },
+                RoomChangeV2 {
                     event_sequence: 4,
                     revision: 5,
                     event: RoomEventV2::InvitationRecorded {
@@ -853,6 +924,24 @@ fn every_v2_outcome_and_refusal_round_trips() {
             WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
             _ => unreachable!(),
         },
+        OutcomeV2::ReactionStatus(ReactionStatusV1 {
+            revision: 12,
+            room_id: "room".to_owned(),
+            message_id: MessageIdV1::new([0x93; 16]),
+            reactions: vec![ReactionSummaryV1 {
+                key: "spark".to_owned(),
+                count: 2,
+                caller_reacted: true,
+            }],
+        }),
+        OutcomeV2::ReactionAdded {
+            revision: 13,
+            message_id: MessageIdV1::new([0x93; 16]),
+        },
+        OutcomeV2::ReactionRemoved {
+            revision: 14,
+            message_id: MessageIdV1::new([0x93; 16]),
+        },
         OutcomeV2::ChangeGap {
             current_revision: 10,
             cause: ChangeGapV2::Retention {
@@ -983,6 +1072,12 @@ fn every_identified_change_event_round_trips() {
             reason: "resume".to_owned(),
             causation: [14; 16],
         },
+        IdentifiedRoomEventV1::ReactionChanged {
+            actor_id: "bot".to_owned(),
+            message_id: MessageIdV1::new([15; 16]),
+            key: "spark".to_owned(),
+            reacted: true,
+        },
     ];
     for (index, event) in events.into_iter().enumerate() {
         let reply = WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(
@@ -1080,6 +1175,12 @@ fn every_threaded_change_event_round_trips() {
             archived: false,
             reason: "resume".to_owned(),
             causation: [14; 16],
+        },
+        ThreadedRoomEventV1::ReactionChanged {
+            actor_id: "bot".to_owned(),
+            message_id: MessageIdV1::new([15; 16]),
+            key: "spark".to_owned(),
+            reacted: false,
         },
     ];
     for (index, event) in events.into_iter().enumerate() {

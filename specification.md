@@ -130,7 +130,7 @@ of the response semantics.
 
 ## Checkpoint profile V9
 
-The closed `AGORACP` version-9 codec captures limits, participants, rooms,
+The closed `AGORACP` version-10 codec captures limits, participants, rooms,
 membership, invitations, bans, retained message suffixes and addressing, complete publication
 records, revision/event frontiers, acknowledgment cursor, and pending events.
 Host byte/cardinality ceilings apply before checkpoint-owned limits or allocation.
@@ -223,7 +223,7 @@ position.
 
 ## Service checkpoint profile V2
 
-The `AGORASV` version-11 record is independent of public wire versioning and is
+The `AGORASV` version-12 record is independent of public wire versioning and is
 bound to an exact caller-supplied 16-byte store scope. It contains the canonical
 engine checkpoint, configured service limits, active client-to-participant
 bindings, ordered retired tombstones, exact request/reply receipts, private
@@ -347,6 +347,22 @@ Eviction removes current lifecycle state with the root while retained replies
 may keep their historical reference. Engine, service, and host recovery retain
 the exact state, events, and request receipts.
 
+### Bounded reactions V1
+
+`AddReaction` and `RemoveReaction` derive the actor from the service binding and
+change only that current member's relation to one retained message and one
+nonempty reaction key. Keys are limited to 64 UTF-8 bytes and each retained
+message to 64 distinct keys. Repeat add, absent remove, unknown/evicted message,
+invalid key, nonmember actor, and aggregate saturation refuse before mutation.
+
+`ReactionStatus` returns the current revision, message identity, and the complete
+canonical key-ordered bounded aggregate. Each entry contains the count and
+whether the observing caller belongs to the set, never the reactor identities.
+Relations and attributable events survive withdrawal, moderator redaction,
+thread archive, exact replay, and checkpoint recovery. Message eviction removes
+current reaction state. A reaction is not permission, acknowledgement, delivery,
+attention, execution admission, or completion evidence.
+
 ## Receipt-gated durable service V2
 
 `agora-durable` wraps exactly one `ServiceV2` and one Keystone checkpoint-store
@@ -386,7 +402,7 @@ requests, reconnect a host session, or prove server durability.
 
 ## Authenticated host checkpoint and durable publication V2
 
-The `AGORAHST` version-11 record is independently versioned and bound to an exact
+The `AGORAHST` version-12 record is independently versioned and bound to an exact
 16-byte store scope. It contains Host V2 limits, the next non-reused session
 frontier, every active mapping from opaque host session to verified subject,
 participant, service client and last verification time, the bounded retired

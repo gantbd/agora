@@ -119,6 +119,15 @@ composition in which a committed service receipt survives without the host
 session needed to replay it. A recovered verifier is runtime-owned and must
 revalidate current context before the retained session can act.
 
+## Bounded reactions
+
+`ReactionsV1` remains conversation state inside the serialized owner: commands
+derive the actor from the bound client, engine set semantics enforce one
+participant/message/key relation, status returns only bounded canonical counts
+and caller membership, and every change feed preserves attribution. Tombstones
+and thread archive retain relations; message eviction removes them. No reaction
+is a notification, acknowledgement, policy grant, or workflow signal.
+
 ## Deliberate exclusions
 
 The semantic profiles perform no network I/O, encryption, direct physical

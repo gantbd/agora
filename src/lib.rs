@@ -138,6 +138,9 @@ pub struct LogicalTime(pub u64);
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MessageId([u8; 16]);
 
+pub const MAX_REACTION_KEY_BYTES_V1: usize = 64;
+pub const MAX_REACTION_KEYS_PER_MESSAGE_V1: usize = 64;
+
 impl MessageId {
     pub const fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(bytes)
@@ -564,6 +567,46 @@ pub struct ThreadStatusV1 {
     pub state: ThreadLifecycleStateV1,
 }
 
+/// One canonical aggregate in a participant-bound reaction observation.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ReactionSummaryV1 {
+    pub key: String,
+    pub count: u32,
+    pub caller_reacted: bool,
+}
+
+impl fmt::Debug for ReactionSummaryV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReactionSummaryV1")
+            .field("key_bytes", &self.key.len())
+            .field("count", &self.count)
+            .field("caller_reacted", &self.caller_reacted)
+            .finish()
+    }
+}
+
+/// Complete bounded reaction state for one retained message.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ReactionStatusV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub message_id: MessageId,
+    pub reactions: Vec<ReactionSummaryV1>,
+}
+
+impl fmt::Debug for ReactionStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReactionStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("message_id", &self.message_id)
+            .field("reaction_count", &self.reactions.len())
+            .finish()
+    }
+}
+
 impl fmt::Debug for ThreadStatusV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -701,6 +744,7 @@ struct Room {
     messages: VecDeque<Message>,
     thread_roots: BTreeSet<MessageId>,
     archived_threads: BTreeSet<MessageId>,
+    reactions: BTreeMap<MessageId, BTreeMap<String, BTreeSet<ParticipantId>>>,
     message_identity_incarnation: u64,
     next_message_identity: u64,
     next_message_sequence: u64,
@@ -777,6 +821,7 @@ pub enum RoomActionV1 {
     Leave,
     Speak,
     Reply,
+    React,
     ManageThread,
     WithdrawOwn,
     RedactAny,
@@ -805,6 +850,7 @@ impl CommandV2 {
             Self::Unban { .. } => Some(RoomActionV1::Unban),
             Self::Speak { .. } | Self::SpeakAddressed { .. } => Some(RoomActionV1::Speak),
             Self::SpeakReply { .. } => Some(RoomActionV1::Reply),
+            Self::SetReaction { .. } => Some(RoomActionV1::React),
             Self::SetThreadArchived { .. } => Some(RoomActionV1::ManageThread),
             Self::WithdrawMessage { .. } => Some(RoomActionV1::WithdrawOwn),
             Self::RedactMessage { .. } => Some(RoomActionV1::RedactAny),
@@ -910,6 +956,13 @@ pub enum CommandV2 {
         reason: ModerationReasonV1,
         causation: ModerationCausationV1,
     },
+    SetReaction {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        key: String,
+        reacted: bool,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -992,6 +1045,13 @@ pub enum OutcomeV2 {
         reason: ModerationReasonV1,
         causation: ModerationCausationV1,
     },
+    ReactionChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        key: String,
+        reacted: bool,
+    },
 }
 
 /// Typed refusal reasons. Every refusal preserves authoritative state.
@@ -1033,6 +1093,9 @@ pub enum Refusal {
     InvalidReplyTarget,
     ThreadArchived,
     InvalidThreadLifecycleChange,
+    InvalidReaction,
+    ReactionLimit,
+    InvalidReactionChange,
     MessageAlreadyTombstoned,
     RevisionConflict {
         expected: Revision,
@@ -1222,6 +1285,13 @@ pub enum DomainEventV2 {
         reason: ModerationReasonV1,
         causation: ModerationCausationV1,
     },
+    ReactionChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        key: String,
+        reacted: bool,
+    },
 }
 
 impl DomainEventV2 {
@@ -1240,7 +1310,8 @@ impl DomainEventV2 {
             | Self::MessageAccepted { room_id, .. }
             | Self::MessageWithdrawn { room_id, .. }
             | Self::MessageRedacted { room_id, .. }
-            | Self::ThreadLifecycleChanged { room_id, .. } => Some(room_id),
+            | Self::ThreadLifecycleChanged { room_id, .. }
+            | Self::ReactionChanged { room_id, .. } => Some(room_id),
         }
     }
 }
@@ -1762,6 +1833,49 @@ impl Engine {
         })
     }
 
+    pub fn reaction_status(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        message_id: MessageId,
+    ) -> Result<ReactionStatusV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        if !room.messages.iter().any(|message| message.id == message_id) {
+            return Err(ObservationRefusal::InvalidTarget);
+        }
+        let reactions = room
+            .reactions
+            .get(&message_id)
+            .into_iter()
+            .flat_map(|by_key| by_key.iter())
+            .map(|(key, participants)| {
+                Ok(ReactionSummaryV1 {
+                    key: key.clone(),
+                    count: participants
+                        .len()
+                        .try_into()
+                        .map_err(|_| ObservationRefusal::InconsistentState)?,
+                    caller_reacted: participants.contains(observer),
+                })
+            })
+            .collect::<Result<Vec<_>, ObservationRefusal>>()?;
+        Ok(ReactionStatusV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            message_id,
+            reactions,
+        })
+    }
+
     fn thread_message_page(
         &self,
         observer: &ParticipantId,
@@ -2244,6 +2358,13 @@ impl Engine {
                 reason,
                 causation,
             ),
+            CommandV2::SetReaction {
+                room_id,
+                actor,
+                message_id,
+                key,
+                reacted,
+            } => self.set_reaction(room_id, actor, message_id, key, reacted),
         }
     }
 
@@ -2453,6 +2574,22 @@ impl Engine {
                 reason: reason.clone(),
                 causation: *causation,
             },
+            (
+                CommandV2::SetReaction { .. },
+                OutcomeV2::ReactionChanged {
+                    room_id,
+                    actor,
+                    message_id,
+                    key,
+                    reacted,
+                },
+            ) => DomainEventV2::ReactionChanged {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                message_id: *message_id,
+                key: key.clone(),
+                reacted: *reacted,
+            },
             _ => unreachable!("command and outcome are produced by one exhaustive transition"),
         }
     }
@@ -2522,6 +2659,7 @@ impl Engine {
                 messages: VecDeque::new(),
                 thread_roots: BTreeSet::new(),
                 archived_threads: BTreeSet::new(),
+                reactions: BTreeMap::new(),
                 message_identity_incarnation: self.next_event_sequence.0,
                 next_message_identity: 0,
                 next_message_sequence: 0,
@@ -2874,6 +3012,7 @@ impl Engine {
             && let Some(evicted) = room.messages.pop_front()
         {
             room.archived_threads.remove(&evicted.id);
+            room.reactions.remove(&evicted.id);
             if let Some(root) = evicted.reply_to_root
                 && !room
                     .messages
@@ -2955,6 +3094,72 @@ impl Engine {
             archived,
             reason,
             causation,
+        })
+    }
+
+    fn set_reaction(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        key: String,
+        reacted: bool,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_nonempty_bounded(&key, MAX_REACTION_KEY_BYTES_V1, Refusal::InvalidReaction)?;
+        let room = self.room_ref(&room_id)?;
+        if !room.members.contains_key(&actor) {
+            return Err(Refusal::NotMember(actor));
+        }
+        if !room.messages.iter().any(|message| message.id == message_id) {
+            return Err(Refusal::UnknownMessage);
+        }
+        let by_key = room.reactions.get(&message_id);
+        let exists = by_key
+            .and_then(|values| values.get(&key))
+            .is_some_and(|participants| participants.contains(&actor));
+        if exists == reacted {
+            return Err(Refusal::InvalidReactionChange);
+        }
+        if reacted
+            && by_key.is_none_or(|values| !values.contains_key(&key))
+            && by_key.is_some_and(|values| values.len() == MAX_REACTION_KEYS_PER_MESSAGE_V1)
+        {
+            return Err(Refusal::ReactionLimit);
+        }
+
+        let room = self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation");
+        if reacted {
+            room.reactions
+                .entry(message_id)
+                .or_default()
+                .entry(key.clone())
+                .or_default()
+                .insert(actor.clone());
+        } else {
+            let by_key = room
+                .reactions
+                .get_mut(&message_id)
+                .expect("existing relation established by validation");
+            let participants = by_key
+                .get_mut(&key)
+                .expect("existing relation established by validation");
+            participants.remove(&actor);
+            if participants.is_empty() {
+                by_key.remove(&key);
+            }
+            if by_key.is_empty() {
+                room.reactions.remove(&message_id);
+            }
+        }
+        Ok(OutcomeV2::ReactionChanged {
+            room_id,
+            actor,
+            message_id,
+            key,
+            reacted,
         })
     }
 

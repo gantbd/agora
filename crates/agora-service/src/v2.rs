@@ -1,20 +1,21 @@
 //! Serialized volatile implementation of Agora Protocol V2.
 
 use agora_engine::{
-    AdmissionPolicy, BanPageCursor, CommandV2 as EngineCommand, Engine, MemberPageCursor,
-    MessageId, MessagePageCursor, ModerationCausationV1, ModerationReasonV1, ObservationRefusal,
-    OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind, Refusal as EngineRefusal, Revision,
-    RevisionedCommandV2, Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId,
-    RoomPageCursor, ThreadMessagePageCursor,
+    AdmissionPolicy, BanPageCursor, CommandV2 as EngineCommand, Engine, MAX_REACTION_KEY_BYTES_V1,
+    MemberPageCursor, MessageId, MessagePageCursor, ModerationCausationV1, ModerationReasonV1,
+    ObservationRefusal, OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind,
+    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomChangeGap,
+    RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor, ThreadMessagePageCursor,
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
     CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
-    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
-    RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
-    RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
-    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
+    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1,
+    ReactionSummaryV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2,
+    RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
+    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
+    ThreadedRoomChangeV1, ThreadedRoomEventV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -280,6 +281,7 @@ impl ServiceV2 {
                 CapabilityV2::IdentifiedRoomChangesV1,
                 CapabilityV2::ThreadsV1,
                 CapabilityV2::ThreadLifecycleV1,
+                CapabilityV2::ReactionsV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -351,6 +353,10 @@ impl ServiceV2 {
                 room_id,
                 root_message_id,
             } => self.thread_status(participant, room_id, *root_message_id),
+            CommandV2::ReactionStatus {
+                room_id,
+                message_id,
+            } => self.reaction_status(participant, room_id, *message_id),
             CommandV2::CreateRoom {
                 room_id,
                 name,
@@ -363,6 +369,27 @@ impl ServiceV2 {
                     name: name.clone(),
                     owner: participant.clone(),
                     admission: map_admission_to_engine(*admission),
+                },
+            ),
+            CommandV2::AddReaction {
+                room_id,
+                expected_revision,
+                message_id,
+                key,
+            }
+            | CommandV2::RemoveReaction {
+                room_id,
+                expected_revision,
+                message_id,
+                key,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetReaction {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    message_id: MessageId::from_bytes(message_id.into_bytes()),
+                    key: key.clone(),
+                    reacted: matches!(command, CommandV2::AddReaction { .. }),
                 },
             ),
             CommandV2::Invite {
@@ -718,6 +745,21 @@ impl ServiceV2 {
                     root_message_id: MessageIdV1::new(root_message_id.into_bytes()),
                 }
             }),
+            EngineOutcome::ReactionChanged {
+                message_id,
+                reacted,
+                ..
+            } => Ok(if reacted {
+                OutcomeV2::ReactionAdded {
+                    revision,
+                    message_id: MessageIdV1::new(message_id.into_bytes()),
+                }
+            } else {
+                OutcomeV2::ReactionRemoved {
+                    revision,
+                    message_id: MessageIdV1::new(message_id.into_bytes()),
+                }
+            }),
             EngineOutcome::ParticipantRegistered(_) => Err(RefusalV2::Unavailable),
         }
     }
@@ -744,6 +786,36 @@ impl ServiceV2 {
                 agora_engine::ThreadLifecycleStateV1::Active => ThreadLifecycleStateV1::Active,
                 agora_engine::ThreadLifecycleStateV1::Archived => ThreadLifecycleStateV1::Archived,
             },
+        }))
+    }
+
+    fn reaction_status(
+        &self,
+        observer: &ParticipantId,
+        room_id: &str,
+        message_id: MessageIdV1,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let status = self
+            .engine
+            .reaction_status(
+                observer,
+                &RoomId::new(room_id),
+                MessageId::from_bytes(message_id.into_bytes()),
+            )
+            .map_err(map_observation_refusal)?;
+        Ok(OutcomeV2::ReactionStatus(ReactionStatusV1 {
+            revision: status.revision.0,
+            room_id: status.room_id.as_str().to_owned(),
+            message_id: MessageIdV1::new(status.message_id.into_bytes()),
+            reactions: status
+                .reactions
+                .into_iter()
+                .map(|reaction| ReactionSummaryV1 {
+                    key: reaction.key,
+                    count: reaction.count,
+                    caller_reacted: reaction.caller_reacted,
+                })
+                .collect(),
         }))
     }
 
@@ -1258,6 +1330,18 @@ impl ServiceV2 {
                                 reason: reason.as_str().to_owned(),
                                 causation: causation.into_bytes(),
                             },
+                            agora_engine::DomainEventV2::ReactionChanged {
+                                actor,
+                                message_id,
+                                key,
+                                reacted,
+                                ..
+                            } => RoomEventV2::ReactionChanged {
+                                actor_id: actor.as_str().to_owned(),
+                                message_id: MessageIdV1::new(message_id.into_bytes()),
+                                key,
+                                reacted,
+                            },
                         };
                         Ok(RoomChangeV2 {
                             event_sequence: change.sequence.0,
@@ -1538,7 +1622,8 @@ impl ServiceV2 {
             CommandV2::OpenChanges { room_id, .. }
             | CommandV2::OpenIdentifiedChanges { room_id, .. }
             | CommandV2::OpenThreadedChanges { room_id, .. }
-            | CommandV2::ThreadStatus { room_id, .. } => valid_room(room_id),
+            | CommandV2::ThreadStatus { room_id, .. }
+            | CommandV2::ReactionStatus { room_id, .. } => valid_room(room_id),
             CommandV2::Changes { room_id, limit, .. }
             | CommandV2::IdentifiedChanges { room_id, limit, .. }
             | CommandV2::ThreadedChanges { room_id, limit, .. } => {
@@ -1593,6 +1678,10 @@ impl ServiceV2 {
             | CommandV2::ReopenThread {
                 room_id, reason, ..
             } => valid_room(room_id) && valid_text(reason, self.limits.max_moderation_reason_bytes),
+            CommandV2::AddReaction { room_id, key, .. }
+            | CommandV2::RemoveReaction { room_id, key, .. } => {
+                valid_room(room_id) && valid_text(key, MAX_REACTION_KEY_BYTES_V1)
+            }
             CommandV2::Speak {
                 room_id,
                 body,
@@ -1817,6 +1906,18 @@ fn map_identified_room_event(
             reason: reason.as_str().to_owned(),
             causation: causation.into_bytes(),
         },
+        agora_engine::DomainEventV2::ReactionChanged {
+            actor,
+            message_id,
+            key,
+            reacted,
+            ..
+        } => IdentifiedRoomEventV1::ReactionChanged {
+            actor_id: actor.as_str().to_owned(),
+            message_id: MessageIdV1::new(message_id.into_bytes()),
+            key,
+            reacted,
+        },
     })
 }
 
@@ -1943,6 +2044,18 @@ fn map_threaded_room_event(
             reason: reason.as_str().to_owned(),
             causation: causation.into_bytes(),
         },
+        agora_engine::DomainEventV2::ReactionChanged {
+            actor,
+            message_id,
+            key,
+            reacted,
+            ..
+        } => ThreadedRoomEventV1::ReactionChanged {
+            actor_id: actor.as_str().to_owned(),
+            message_id: MessageIdV1::new(message_id.into_bytes()),
+            key,
+            reacted,
+        },
     })
 }
 
@@ -2011,6 +2124,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::MemberLimit
         | EngineRefusal::InvitationLimit
         | EngineRefusal::BanLimit
+        | EngineRefusal::ReactionLimit
         | EngineRefusal::MessageRetentionDisabled
         | EngineRefusal::AddressedParticipantLimit
         | EngineRefusal::EventOutboxFull => RefusalV2::Capacity,
@@ -2030,6 +2144,8 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::UnknownMessage
         | EngineRefusal::InvalidReplyTarget
         | EngineRefusal::InvalidThreadLifecycleChange
+        | EngineRefusal::InvalidReaction
+        | EngineRefusal::InvalidReactionChange
         | EngineRefusal::MessageAlreadyTombstoned
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)

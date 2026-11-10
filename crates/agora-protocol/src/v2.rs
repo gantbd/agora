@@ -140,6 +140,22 @@ pub enum CommandV2 {
         room_id: String,
         root_message_id: MessageIdV1,
     },
+    AddReaction {
+        room_id: String,
+        expected_revision: u64,
+        message_id: MessageIdV1,
+        key: String,
+    },
+    RemoveReaction {
+        room_id: String,
+        expected_revision: u64,
+        message_id: MessageIdV1,
+        key: String,
+    },
+    ReactionStatus {
+        room_id: String,
+        message_id: MessageIdV1,
+    },
     CreateRoom {
         room_id: String,
         name: String,
@@ -530,6 +546,32 @@ impl fmt::Debug for CommandV2 {
                 .field("room_id_bytes", &room_id.len())
                 .field("root_message_id", root_message_id)
                 .finish(),
+            Self::AddReaction {
+                room_id,
+                expected_revision,
+                message_id,
+                key,
+            }
+            | Self::RemoveReaction {
+                room_id,
+                expected_revision,
+                message_id,
+                key,
+            } => formatter
+                .debug_struct("ReactionChange")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("message_id", message_id)
+                .field("key_bytes", &key.len())
+                .finish(),
+            Self::ReactionStatus {
+                room_id,
+                message_id,
+            } => formatter
+                .debug_struct("ReactionStatus")
+                .field("room_id_bytes", &room_id.len())
+                .field("message_id", message_id)
+                .finish(),
         }
     }
 }
@@ -550,6 +592,7 @@ pub enum CapabilityV2 {
     IdentifiedRoomChangesV1,
     ThreadsV1,
     ThreadLifecycleV1,
+    ReactionsV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -787,6 +830,44 @@ pub struct ThreadStatusV1 {
     pub state: ThreadLifecycleStateV1,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub struct ReactionSummaryV1 {
+    pub key: String,
+    pub count: u32,
+    pub caller_reacted: bool,
+}
+
+impl fmt::Debug for ReactionSummaryV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReactionSummaryV1")
+            .field("key_bytes", &self.key.len())
+            .field("count", &self.count)
+            .field("caller_reacted", &self.caller_reacted)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ReactionStatusV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub message_id: MessageIdV1,
+    pub reactions: Vec<ReactionSummaryV1>,
+}
+
+impl fmt::Debug for ReactionStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReactionStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("message_id", &self.message_id)
+            .field("reaction_count", &self.reactions.len())
+            .finish()
+    }
+}
+
 impl fmt::Debug for ThreadStatusV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -861,6 +942,12 @@ pub enum RoomEventV2 {
         archived: bool,
         reason: String,
         causation: [u8; 16],
+    },
+    ReactionChanged {
+        actor_id: String,
+        message_id: MessageIdV1,
+        key: String,
+        reacted: bool,
     },
 }
 
@@ -963,6 +1050,18 @@ impl fmt::Debug for RoomEventV2 {
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
                 .finish(),
+            Self::ReactionChanged {
+                actor_id,
+                message_id,
+                key,
+                reacted,
+            } => formatter
+                .debug_struct("ReactionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("key_bytes", &key.len())
+                .field("reacted", reacted)
+                .finish(),
         }
     }
 }
@@ -1031,6 +1130,12 @@ pub enum IdentifiedRoomEventV1 {
         archived: bool,
         reason: String,
         causation: [u8; 16],
+    },
+    ReactionChanged {
+        actor_id: String,
+        message_id: MessageIdV1,
+        key: String,
+        reacted: bool,
     },
 }
 
@@ -1133,6 +1238,18 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
                 .finish(),
+            Self::ReactionChanged {
+                actor_id,
+                message_id,
+                key,
+                reacted,
+            } => formatter
+                .debug_struct("ReactionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("key_bytes", &key.len())
+                .field("reacted", reacted)
+                .finish(),
         }
     }
 }
@@ -1201,6 +1318,12 @@ pub enum ThreadedRoomEventV1 {
         archived: bool,
         reason: String,
         causation: [u8; 16],
+    },
+    ReactionChanged {
+        actor_id: String,
+        message_id: MessageIdV1,
+        key: String,
+        reacted: bool,
     },
 }
 
@@ -1302,6 +1425,18 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .field("archived", archived)
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
+                .finish(),
+            Self::ReactionChanged {
+                actor_id,
+                message_id,
+                key,
+                reacted,
+            } => formatter
+                .debug_struct("ReactionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("key_bytes", &key.len())
+                .field("reacted", reacted)
                 .finish(),
         }
     }
@@ -1431,6 +1566,7 @@ pub enum OutcomeV2 {
     ThreadRoots(ThreadMessagePageV1),
     ThreadReplies(ThreadMessagePageV1),
     ThreadStatus(ThreadStatusV1),
+    ReactionStatus(ReactionStatusV1),
     ChangesOpened {
         revision: u64,
         cursor: PageCursorV2,
@@ -1501,6 +1637,14 @@ pub enum OutcomeV2 {
     ThreadReopened {
         revision: u64,
         root_message_id: MessageIdV1,
+    },
+    ReactionAdded {
+        revision: u64,
+        message_id: MessageIdV1,
+    },
+    ReactionRemoved {
+        revision: u64,
+        message_id: MessageIdV1,
     },
 }
 

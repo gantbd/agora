@@ -4,8 +4,8 @@ Agora is pre-1.0 and currently source-distributed. Public schemas still change
 only through an explicit profile revision.
 
 The v0.3 command, event, publication, and checkpoint values use the `V2` suffix.
-The `AGORACP` header version is 9. Earlier checkpoint bytes are refused with
-`CheckpointError::Profile`; they are never interpreted as V9. V1 agent activation
+The `AGORACP` header version is 10. Earlier checkpoint bytes are refused with
+`CheckpointError::Profile`; they are never interpreted as V10. V1 agent activation
 has no migration because activation is orchestration behavior, not conversation
 state. A host retaining V1 state must export conversation facts through a
 purpose-built migration tool before adopting V2.
@@ -16,8 +16,8 @@ fail closed on the new value. Reinterpreting an assigned tag or changing any
 existing field grammar requires a new frame version. Unknown tags, fields, or
 trailing bytes remain refusals.
 
-The immutable `tests/fixtures/checkpoint-v9.hex` artifact pins a representative
-V9 state containing both participant kinds, stable message identity, thread lifecycle, neutral addressing, replay-safe
+The immutable `tests/fixtures/checkpoint-v10.hex` artifact pins a representative
+V10 state containing both participant kinds, stable message identity, thread lifecycle, reactions, neutral addressing, replay-safe
 publication, ban and policy-change evidence, acknowledgment, and the exact pending
 outbox suffix.
 
@@ -28,11 +28,11 @@ fixtures freeze representative bytes. The codec defines complete message frames,
 not stream boundaries; transport framing remains separate.
 
 Protocol, Service, Client, and Wire V2 form an additive profile with a separate
-version byte, closed grammar, and sixteen canonical fixtures. Their separately
+version byte, closed grammar, and eighteen canonical fixtures. Their separately
 typed values and V2 bytes do not alter V1 tags or bytes. Authenticated Host V2
 uses the same canonical frames without reinterpreting V1.
 
-Service persistence is versioned independently. `AGORASV` version 11 captures
+Service persistence is versioned independently. `AGORASV` version 12 captures
 the complete V2 service owner and embeds private `AGORACUR` version-1 cursor
 records. Cursor kind 4 is the snapshot-aligned room change position and kind 5
 is the authority-scoped ban page; neither reinterprets kinds 1–3. Service page
@@ -41,12 +41,12 @@ unchanged message cursor kind 3. Discriminator 7 isolates identity-bearing
 room-change positions from legacy kind 4. Discriminators 8 and 9 isolate root
 and root-bound reply continuations, and discriminator 10 isolates threaded
 room-change positions. A representative
-complete service record is pinned by `service-checkpoint-v11.hex`. Public wire
+complete service record is pinned by `service-checkpoint-v12.hex`. Public wire
 compatibility neither implies nor migrates durable state;
 future durable schema changes require a bounded explicit migration profile.
 
-Authenticated host persistence has its own `AGORAHST` version-11 record and
-`host-checkpoint-v11.hex` fixture. It nests the service record but owns host
+Authenticated host persistence has its own `AGORAHST` version-12 record and
+`host-checkpoint-v12.hex` fixture. It nests the service record but owns host
 session compatibility independently; neither wire nor service checkpoint
 decoding implies that a host record can be recovered.
 
@@ -61,6 +61,13 @@ Moderator redaction is likewise additive: command tag `15`, outcome tag `16`,
 capability tag `09`, and room-event tag `0c` were previously unassigned. Its
 reason and causation evidence are new fields only within those new variants;
 legacy frames are not reinterpreted.
+
+Bounded reactions are additive: command tags `20`, `21`, and `22` encode add,
+remove, and status; outcome tags `1f`, `20`, and `21` encode status, added, and
+removed; capability tag `0d` advertises `ReactionsV1`; room-event tag `0f`
+encodes an attributable set transition. Existing message, tombstone, thread,
+and feed variants retain their prior bytes. The reaction-change and
+reaction-status fixtures freeze the new grammar.
 
 Identity-bearing room changes are additive: command tags `16` and `17`, outcome
 tag `17`, and capability tag `0a` were previously unassigned. Only the new

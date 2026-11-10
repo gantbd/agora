@@ -55,6 +55,9 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `1d` | ArchiveThread | room, expected revision, root message ID, reason, 16-byte causation |
 | `1e` | ReopenThread | room, expected revision, root message ID, reason, 16-byte causation |
 | `1f` | ThreadStatus | room, root message ID |
+| `20` | AddReaction | room, expected revision, message ID, reaction key |
+| `21` | RemoveReaction | room, expected revision, message ID, reaction key |
+| `22` | ReactionStatus | room, message ID |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -69,7 +72,8 @@ MessageAccepted `09`, ChangesOpened `0a`, Changes `0b`, ChangeGap `0c`, Kicked
 Capabilities `12`, IdentifiedMessages `13`, IdentifiedMessageAccepted `14`, and
 MessageWithdrawn `15`, MessageRedacted `16`, IdentifiedChanges `17`, ThreadRoots
 `18`, ThreadReplies `19`, ReplyAccepted `1a`, ThreadedChanges `1b`,
-ThreadArchived `1c`, ThreadReopened `1d`, and ThreadStatus `1e`.
+ThreadArchived `1c`, ThreadReopened `1d`, ThreadStatus `1e`, ReactionStatus
+`1f`, ReactionAdded `20`, and ReactionRemoved `21`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -149,6 +153,11 @@ ThreadStatus carries revision, room text, root ID, and state Active `01` or
 Archived `02`. Room-event tags `0d` and `0e` carry actor text, root ID, bounded
 reason, and causation for archive and reopen respectively in all three change
 profiles. Archive is reply-admission state, not deletion or completion.
+ReactionStatus carries revision, room text, message ID, and a canonical bounded
+list of reaction key, aggregate count, and caller-membership flag. Room-event
+tag `0f` carries actor text, message ID, key, and add/remove flag in all three
+change profiles. Counts do not enumerate reactors and reactions imply no
+authority, delivery, acknowledgement, or completion.
 
 ## Refusals
 
@@ -189,7 +198,8 @@ identity-bearing accepted-message change. Round-trip tests cover every command,
 outcome, refusal, room-event kind, and gap cause. Thread reply-page and threaded
 change fixtures additionally freeze the optional relationship grammar and page
 shape. Thread lifecycle-change and status fixtures freeze explicit archive state
-and evidence. Truncation, trailing data,
+and evidence. Reaction change and status fixtures freeze the relation event and
+bounded aggregate grammar. Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push
 delivery, or an authenticated host.

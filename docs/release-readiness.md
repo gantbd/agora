@@ -23,7 +23,7 @@ not ready for a network service or crates.io release.
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   ten packages;
 - conservative package and canonical-fixture inventory closure over ten
-  packages and twenty-three fixtures;
+  packages and twenty-five fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
 - conservative supply inventory closure over twelve locked local components with
@@ -34,6 +34,9 @@ not ready for a network service or crates.io release.
   participant-bound room lifecycle commands and bounded cursor projection;
 - canonical bounded Wire V2 complete-frame grammar with four additional golden
   fixtures and closed nested vocabularies;
+- bounded reaction set transitions and aggregates with participant-bound
+  authority, tombstone/archive preservation, retention cleanup, exact recovery,
+  all-feed attribution, and two canonical wire fixtures;
 - authenticated transport-neutral Host V2 with distinct session/client binding,
   per-frame revalidation, substitution fencing, and cleanup;
 - independently versioned, scope-bound Service V2 checkpoints preserving engine,

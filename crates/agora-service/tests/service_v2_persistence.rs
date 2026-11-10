@@ -97,7 +97,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v11.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v12.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -205,7 +205,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 12;
+    future[8] = 13;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -876,6 +876,139 @@ fn thread_lifecycle_status_feed_and_receipt_survive_recovery_exactly() {
         ReplyV2::Accepted(OutcomeV2::ThreadReopened {
             revision: 7,
             root_message_id: root_id,
+        })
+    );
+}
+
+#[test]
+fn reaction_status_event_and_receipt_survive_recovery_exactly() {
+    let mut engine = Engine::new();
+    for id in ["alice", "bot"] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id,
+                id,
+                ParticipantKind::Human,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted { message_id, .. }) = service
+        .execute(
+            alice,
+            request(
+                1,
+                CommandV2::SpeakIdentified {
+                    room_id: "room".to_owned(),
+                    expected_revision: 4,
+                    logical_time: 1,
+                    body: "message".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        )
+    else {
+        panic!("identified message expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::OpenIdentifiedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 5,
+            },
+        ),
+    ) else {
+        panic!("change position expected");
+    };
+    let add = request(
+        1,
+        CommandV2::AddReaction {
+            room_id: "room".to_owned(),
+            expected_revision: 5,
+            message_id,
+            key: "spark".to_owned(),
+        },
+    );
+    let reply = service.execute(bot, add.clone());
+    assert!(matches!(
+        reply,
+        ReplyV2::Accepted(OutcomeV2::ReactionAdded { revision: 6, .. })
+    ));
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(bot, add), reply);
+    let ReplyV2::Accepted(OutcomeV2::ReactionStatus(status)) = recovered.execute(
+        bot,
+        request(
+            2,
+            CommandV2::ReactionStatus {
+                room_id: "room".to_owned(),
+                message_id,
+            },
+        ),
+    ) else {
+        panic!("reaction status expected");
+    };
+    assert_eq!(status.reactions.len(), 1);
+    assert_eq!(status.reactions[0].key, "spark");
+    assert!(status.reactions[0].caller_reacted);
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(page)) = recovered.execute(
+        alice,
+        request(
+            3,
+            CommandV2::IdentifiedChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("reaction change expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        IdentifiedRoomEventV1::ReactionChanged {
+            actor_id,
+            message_id: id,
+            key,
+            reacted: true,
+        } if actor_id == "bot" && *id == message_id && key == "spark"
+    ));
+    assert_eq!(
+        recovered.execute(
+            bot,
+            request(
+                3,
+                CommandV2::RemoveReaction {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    message_id,
+                    key: "spark".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ReactionRemoved {
+            revision: 7,
+            message_id,
         })
     );
 }

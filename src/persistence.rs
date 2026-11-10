@@ -273,6 +273,20 @@ impl Writer {
                 self.text(reason.as_str())?;
                 self.raw(&causation.into_bytes())
             }
+            DomainEventV2::ReactionChanged {
+                room_id,
+                actor,
+                message_id,
+                key,
+                reacted,
+            } => {
+                self.byte(14)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&message_id.into_bytes())?;
+                self.text(key)?;
+                self.byte(u8::from(*reacted))
+            }
         }
     }
 }
@@ -470,6 +484,17 @@ impl<'a> Reader<'a> {
                 reason: ModerationReasonV1::new(self.text(l.max_moderation_reason_bytes)?),
                 causation: ModerationCausationV1::new(self.fixed()?),
             },
+            14 => DomainEventV2::ReactionChanged {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                message_id: MessageId::from_bytes(self.fixed()?),
+                key: self.text(MAX_REACTION_KEY_BYTES_V1)?,
+                reacted: match self.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::Invalid),
+                },
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -572,7 +597,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(9)?;
+        w.byte(10)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -620,6 +645,18 @@ impl Engine {
             for root in &room.archived_threads {
                 w.raw(&root.into_bytes())?;
             }
+            w.count(room.reactions.len())?;
+            for (message_id, by_key) in &room.reactions {
+                w.raw(&message_id.into_bytes())?;
+                w.count(by_key.len())?;
+                for (key, participants) in by_key {
+                    w.text(key)?;
+                    w.count(participants.len())?;
+                    for participant in participants {
+                        w.text(participant.as_str())?;
+                    }
+                }
+            }
         }
         w.count(self.publications.len())?;
         for (key, p) in &self.publications {
@@ -652,7 +689,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 9 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 10 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -733,6 +770,43 @@ impl Engine {
                 }
                 archived_threads.insert(root);
             }
+            let n = r.count(l.max_messages_per_room)?;
+            let mut reactions = BTreeMap::new();
+            for _ in 0..n {
+                let message_id = MessageId::from_bytes(r.fixed()?);
+                if reactions
+                    .last_key_value()
+                    .is_some_and(|(old, _)| old >= &message_id)
+                {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                let mut by_key = BTreeMap::new();
+                let keys = r.count(MAX_REACTION_KEYS_PER_MESSAGE_V1)?;
+                for _ in 0..keys {
+                    let key = r.text(MAX_REACTION_KEY_BYTES_V1)?;
+                    if key.is_empty() || by_key.last_key_value().is_some_and(|(old, _)| old >= &key)
+                    {
+                        return Err(CheckpointError::NonCanonical);
+                    }
+                    let mut participants = BTreeSet::new();
+                    let count = r.count(l.max_participants)?;
+                    if count == 0 {
+                        return Err(CheckpointError::NonCanonical);
+                    }
+                    for _ in 0..count {
+                        let participant = r.participant(l)?;
+                        if participants.last().is_some_and(|old| old >= &participant) {
+                            return Err(CheckpointError::NonCanonical);
+                        }
+                        participants.insert(participant);
+                    }
+                    by_key.insert(key, participants);
+                }
+                if by_key.is_empty() {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                reactions.insert(message_id, by_key);
+            }
             insert(
                 &mut e.rooms,
                 id.clone(),
@@ -746,6 +820,7 @@ impl Engine {
                     messages,
                     thread_roots,
                     archived_threads,
+                    reactions,
                     message_identity_incarnation,
                     next_message_identity,
                     next_message_sequence,
@@ -1310,6 +1385,27 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                 return Err(CheckpointError::Invalid);
             }
         }
+        for (message_id, by_key) in &room.reactions {
+            if !room
+                .messages
+                .iter()
+                .any(|message| message.id == *message_id)
+                || by_key.is_empty()
+                || by_key.len() > MAX_REACTION_KEYS_PER_MESSAGE_V1
+            {
+                return Err(CheckpointError::Invalid);
+            }
+            for (key, participants) in by_key {
+                bounded(key, MAX_REACTION_KEY_BYTES_V1)?;
+                if participants.is_empty()
+                    || participants
+                        .iter()
+                        .any(|id| !e.participants.contains_key(id))
+                {
+                    return Err(CheckpointError::Invalid);
+                }
+            }
+        }
         minimum = minimum
             .checked_add(room.next_message_sequence)
             .and_then(|n| n.checked_add((room.members.len() - 1) as u64))
@@ -1559,6 +1655,25 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             }
             if let Some(root) = e.message_by_id(room_id, *root_message_id)
                 && root.reply_to_root.is_some()
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::ReactionChanged {
+            room_id,
+            actor,
+            message_id,
+            key,
+            ..
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            bounded(key, MAX_REACTION_KEY_BYTES_V1)?;
+            let mut sequence = [0_u8; 8];
+            sequence.copy_from_slice(&message_id.0[8..]);
+            let sequence = u64::from_be_bytes(sequence);
+            if sequence >= r.next_message_sequence
+                || *message_id != MessageId::allocated(r.message_identity_incarnation, sequence)
             {
                 return Err(CheckpointError::Invalid);
             }

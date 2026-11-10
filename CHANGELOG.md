@@ -59,12 +59,15 @@ follow Semantic Versioning once a public release contract is selected.
 - Added explicit retained-thread archive/reopen lifecycle with root-author and
   moderator authority, current status observation, reply admission fencing,
   attributable events across all change profiles, and exact recovery.
+- Added bounded participant-to-message reactions with explicit set transitions,
+  canonical count/caller aggregates, tombstone-safe state, all-feed attribution,
+  exact replay/recovery, and closed protocol, wire, SDK, and fixture evidence.
 
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 9, 11,
-  and 11 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 10, 12,
+  and 12 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

@@ -140,6 +140,14 @@ message fact. Host policy must separately map an Agora participant to an opaque
 Moira participant reference and explicitly admit the message before workflow
 state exists. Acknowledgment follows durable accounting for that decision.
 
+Reaction keys, counts, timing, actor attribution in retained events, and caller
+membership are sensitive conversation metadata even when message bodies are
+tombstoned. The bounded aggregate API does not enumerate reactor identities, but
+feed access may reveal the acting participant to current room members. Hosts
+must not reinterpret a reaction as permission, delivery, attention, execution
+admission, approval, or completion. Fixed key and per-message aggregate ceilings
+bound amplification; message retention eviction removes current relation state.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A
