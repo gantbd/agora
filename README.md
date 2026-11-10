@@ -8,7 +8,7 @@ behavior, or wall-clock access.
 
 The v0.3 core provides bounded deterministic transitions, typed atomic refusal,
 room-local message ordering and retention, optimistic revisions, an ordered
-bounded outbox, replay-safe response publication, and canonical profile-3 checkpoints.
+bounded outbox, replay-safe response publication, and canonical profile-4 checkpoints.
 Messages may explicitly address a canonical bounded list of current room members.
 Participant kind never changes admission, role, speaking, or addressing behavior.
 
@@ -27,6 +27,10 @@ opaque cursors and exact volatile request replay. It deliberately has no V2
 credential adapter or network transport yet. Its separately typed authenticated
 host applies current-context revalidation and exact session/client binding. V1
 remains unchanged.
+
+Room owners can also change Open/InviteOnly admission as an ordered room fact.
+The event records prior and new policy without rewriting earlier invitations or
+admissions; current members observe it through the bounded room-change feed.
 
 An independently versioned Service V2 checkpoint preserves the engine, pending
 outbox, client namespace, exact request replies, and live cursor consequences.
@@ -104,7 +108,7 @@ key. Matching replay returns the original transition without another message or
 revision. Changed content conflicts. The bounded volatile receipt index becomes
 durable only when a host persists it atomically with Agora state.
 
-The `AGORACP` version-3 codec validates bounds, canonical order, ownership/references,
+The `AGORACP` version-4 codec validates bounds, canonical order, ownership/references,
 message and event frontiers, addressed membership, bans, moderation evidence, publication attribution, and
 the exact unacknowledged outbox suffix. V1 bytes are refused because their agent
 activation state has no neutral interpretation. The codec proves neither origin

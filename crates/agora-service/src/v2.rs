@@ -317,6 +317,18 @@ impl ServiceV2 {
                     role: map_role_to_engine(*role),
                 },
             ),
+            CommandV2::SetAdmissionPolicy {
+                room_id,
+                admission,
+                expected_revision,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetAdmissionPolicy {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    admission: map_admission_to_engine(*admission),
+                },
+            ),
             CommandV2::Kick {
                 room_id,
                 participant_id,
@@ -414,6 +426,9 @@ impl ServiceV2 {
             EngineOutcome::Joined { .. } => Ok(OutcomeV2::Joined { revision }),
             EngineOutcome::Left { .. } => Ok(OutcomeV2::Left { revision }),
             EngineOutcome::RoleChanged { .. } => Ok(OutcomeV2::RoleChanged { revision }),
+            EngineOutcome::RoomPolicyChanged { .. } => {
+                Ok(OutcomeV2::RoomPolicyChanged { revision })
+            }
             EngineOutcome::Kicked { .. } => Ok(OutcomeV2::Kicked { revision }),
             EngineOutcome::Banned { .. } => Ok(OutcomeV2::Banned { revision }),
             EngineOutcome::Unbanned { .. } => Ok(OutcomeV2::Unbanned { revision }),
@@ -688,6 +703,16 @@ impl ServiceV2 {
                                 participant_id: participant.as_str().to_owned(),
                                 role: map_role_from_engine(role),
                             },
+                            agora_engine::DomainEventV2::RoomPolicyChanged {
+                                actor,
+                                previous,
+                                admission,
+                                ..
+                            } => RoomEventV2::RoomPolicyChanged {
+                                actor_id: actor.as_str().to_owned(),
+                                previous: map_admission_from_engine(previous),
+                                admission: map_admission_from_engine(admission),
+                            },
                             agora_engine::DomainEventV2::ParticipantKicked {
                                 actor,
                                 participant,
@@ -843,6 +868,7 @@ impl ServiceV2 {
             CommandV2::Join { room_id, .. } | CommandV2::Leave { room_id, .. } => {
                 valid_room(room_id)
             }
+            CommandV2::SetAdmissionPolicy { room_id, .. } => valid_room(room_id),
             CommandV2::Speak {
                 room_id,
                 body,
@@ -954,6 +980,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::NonCanonicalAddressing
         | EngineRefusal::InvalidModerationReason
         | EngineRefusal::InvalidRoleChange
+        | EngineRefusal::InvalidPolicyChange
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)
         | EngineRefusal::AlreadyMember(_)

@@ -8,7 +8,7 @@
 3. Add model, fuzz, and mutation gates around recovery, canonical wire changes,
    filesystem crash points, and command refusal.
 4. Extend the now-qualified kick/ban/unban membership slice with author
-   withdrawal, moderator redaction, and room-policy changes as separately bounded
+   withdrawal and moderator redaction as separately bounded
    profiles with explicit authority, evidence, visibility, and retention laws;
    add message revision and threads only under the same discipline.
 5. Qualify backup/restore, upgrade/rollback, and an additional physical store only

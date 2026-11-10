@@ -279,6 +279,16 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             sink.u8(encode_role(*role))?;
             sink.u64(*expected_revision)
         }
+        CommandV2::SetAdmissionPolicy {
+            room_id,
+            admission,
+            expected_revision,
+        } => {
+            sink.u8(15)?;
+            sink.text(room_id)?;
+            sink.u8(encode_admission(*admission))?;
+            sink.u64(*expected_revision)
+        }
         CommandV2::Kick {
             room_id,
             participant_id,
@@ -419,6 +429,11 @@ fn decode_command(
         12 => decode_moderation_command(decoder, ModerationCommand::Kick),
         13 => decode_moderation_command(decoder, ModerationCommand::Ban),
         14 => decode_moderation_command(decoder, ModerationCommand::Unban),
+        15 => Ok(CommandV2::SetAdmissionPolicy {
+            room_id: read_text(decoder)?,
+            admission: decode_admission(decoder)?,
+            expected_revision: read_u64(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -557,6 +572,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
         OutcomeV2::Kicked { revision } => encode_revision_outcome(sink, 13, *revision),
         OutcomeV2::Banned { revision } => encode_revision_outcome(sink, 14, *revision),
         OutcomeV2::Unbanned { revision } => encode_revision_outcome(sink, 15, *revision),
+        OutcomeV2::RoomPolicyChanged { revision } => encode_revision_outcome(sink, 16, *revision),
     }
 }
 
@@ -622,6 +638,9 @@ fn decode_outcome(
             revision: read_u64(decoder)?,
         }),
         15 => Ok(OutcomeV2::Unbanned {
+            revision: read_u64(decoder)?,
+        }),
+        16 => Ok(OutcomeV2::RoomPolicyChanged {
             revision: read_u64(decoder)?,
         }),
         _ => Err(WireDecodeError::UnknownTag),
@@ -799,6 +818,16 @@ fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<()
                 reason,
                 causation,
             } => encode_moderation_event(sink, 9, actor_id, participant_id, reason, causation)?,
+            RoomEventV2::RoomPolicyChanged {
+                actor_id,
+                previous,
+                admission,
+            } => {
+                sink.u8(10)?;
+                sink.text(actor_id)?;
+                sink.u8(encode_admission(*previous))?;
+                sink.u8(encode_admission(*admission))?;
+            }
         }
     }
     sink.u64(page.next.0)?;
@@ -837,6 +866,11 @@ fn decode_change_page(
             7 => decode_moderation_event(decoder, ModerationEvent::Kicked)?,
             8 => decode_moderation_event(decoder, ModerationEvent::Banned)?,
             9 => decode_moderation_event(decoder, ModerationEvent::Unbanned)?,
+            10 => RoomEventV2::RoomPolicyChanged {
+                actor_id: read_text(decoder)?,
+                previous: decode_admission(decoder)?,
+                admission: decode_admission(decoder)?,
+            },
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(RoomChangeV2 {

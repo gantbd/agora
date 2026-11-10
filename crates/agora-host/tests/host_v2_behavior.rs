@@ -323,7 +323,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    let fixture = include_str!("fixtures/host-checkpoint-v2.hex").trim();
+    let fixture = include_str!("fixtures/host-checkpoint-v3.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()

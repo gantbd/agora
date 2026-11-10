@@ -88,6 +88,11 @@ pub enum CommandV2 {
         role: RoleV2,
         expected_revision: u64,
     },
+    SetAdmissionPolicy {
+        room_id: String,
+        admission: AdmissionPolicyV2,
+        expected_revision: u64,
+    },
     Kick {
         room_id: String,
         participant_id: String,
@@ -212,6 +217,16 @@ impl fmt::Debug for CommandV2 {
                 .field("room_id_bytes", &room_id.len())
                 .field("participant_id_bytes", &participant_id.len())
                 .field("role", role)
+                .field("expected_revision", expected_revision)
+                .finish(),
+            Self::SetAdmissionPolicy {
+                room_id,
+                admission,
+                expected_revision,
+            } => formatter
+                .debug_struct("SetAdmissionPolicy")
+                .field("room_id_bytes", &room_id.len())
+                .field("admission", admission)
                 .field("expected_revision", expected_revision)
                 .finish(),
             Self::Kick {
@@ -388,6 +403,11 @@ pub enum RoomEventV2 {
         participant_id: String,
         role: RoleV2,
     },
+    RoomPolicyChanged {
+        actor_id: String,
+        previous: AdmissionPolicyV2,
+        admission: AdmissionPolicyV2,
+    },
     ParticipantKicked {
         actor_id: String,
         participant_id: String,
@@ -429,6 +449,16 @@ impl fmt::Debug for RoomEventV2 {
                 .debug_struct("RoleChanged")
                 .field("participant_id_bytes", &participant_id.len())
                 .field("role", role)
+                .finish(),
+            Self::RoomPolicyChanged {
+                actor_id,
+                previous,
+                admission,
+            } => formatter
+                .debug_struct("RoomPolicyChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("previous", previous)
+                .field("admission", admission)
                 .finish(),
             Self::ParticipantKicked {
                 actor_id,
@@ -541,6 +571,9 @@ pub enum OutcomeV2 {
         revision: u64,
     },
     RoleChanged {
+        revision: u64,
+    },
+    RoomPolicyChanged {
         revision: u64,
     },
     Kicked {

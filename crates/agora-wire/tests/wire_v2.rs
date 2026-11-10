@@ -103,6 +103,23 @@ fn moderation_reply() -> WireReplyV2 {
     })))
 }
 
+fn policy_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+        revision: 17,
+        changes: vec![RoomChangeV2 {
+            event_sequence: 16,
+            revision: 17,
+            event: RoomEventV2::RoomPolicyChanged {
+                actor_id: "alice".to_owned(),
+                previous: AdmissionPolicyV2::InviteOnly,
+                admission: AdmissionPolicyV2::Open,
+            },
+        }],
+        next: PageCursorV2(17),
+        has_more: false,
+    })))
+}
+
 fn fixture(source: &str) -> Vec<u8> {
     source
         .split_ascii_whitespace()
@@ -132,6 +149,10 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
         (
             encode_reply_v2(&moderation_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/moderation-change-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&policy_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/policy-change-reply-v2.hex")),
         ),
     ];
     for (actual, expected) in cases {
@@ -212,6 +233,11 @@ fn every_v2_command_round_trips() {
             participant_id: "bot".to_owned(),
             role: RoleV2::Moderator,
             expected_revision: 5,
+        },
+        CommandV2::SetAdmissionPolicy {
+            room_id: "room".to_owned(),
+            admission: AdmissionPolicyV2::InviteOnly,
+            expected_revision: 6,
         },
         CommandV2::Kick {
             room_id: "room".to_owned(),
@@ -372,6 +398,15 @@ fn every_v2_outcome_and_refusal_round_trips() {
                         causation: [3; 16],
                     },
                 },
+                RoomChangeV2 {
+                    event_sequence: 12,
+                    revision: 13,
+                    event: RoomEventV2::RoomPolicyChanged {
+                        actor_id: "alice".to_owned(),
+                        previous: AdmissionPolicyV2::Open,
+                        admission: AdmissionPolicyV2::InviteOnly,
+                    },
+                },
             ],
             next: PageCursorV2(9),
             has_more: false,
@@ -389,6 +424,7 @@ fn every_v2_outcome_and_refusal_round_trips() {
         OutcomeV2::Kicked { revision: 12 },
         OutcomeV2::Banned { revision: 13 },
         OutcomeV2::Unbanned { revision: 14 },
+        OutcomeV2::RoomPolicyChanged { revision: 15 },
     ];
     for outcome in outcomes {
         let reply = WireReplyV2::Executed(ReplyV2::Accepted(outcome));

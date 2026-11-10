@@ -393,6 +393,7 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::InvalidModerationReason
         | EngineRefusal::NonCanonicalAddressing
         | EngineRefusal::InvalidRoleChange
+        | EngineRefusal::InvalidPolicyChange
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)
         | EngineRefusal::UnknownParticipant(_)

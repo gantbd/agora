@@ -824,3 +824,83 @@ fn v2_moderation_is_actor_bound_replayable_and_distinguishes_kick_from_ban() {
             if actor_id == "alice" && participant_id == "bot" && reason == "appeal" && causation == &[3; 16]
     )));
 }
+
+#[test]
+fn v2_room_policy_change_is_owner_bound_and_feed_visible() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                0,
+                CommandV2::CreateRoom {
+                    room_id: "room".to_owned(),
+                    name: "Room".to_owned(),
+                    admission: AdmissionPolicyV2::InviteOnly,
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 5 })
+    );
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 5,
+            },
+        ),
+    ) else {
+        panic!("change position expected");
+    };
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                0,
+                CommandV2::SetAdmissionPolicy {
+                    room_id: "room".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 5,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::NotAuthorized)
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                2,
+                CommandV2::SetAdmissionPolicy {
+                    room_id: "room".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 5,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoomPolicyChanged { revision: 6 })
+    );
+    let ReplyV2::Accepted(OutcomeV2::Changes(page)) = service.execute(
+        alice,
+        request(
+            3,
+            CommandV2::Changes {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("change page expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        RoomEventV2::RoomPolicyChanged { actor_id, previous: AdmissionPolicyV2::InviteOnly, admission: AdmissionPolicyV2::Open }
+            if actor_id == "alice"
+    ));
+}

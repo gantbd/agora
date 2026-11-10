@@ -60,6 +60,13 @@ fn fixture_engine() -> Engine {
         })
         .unwrap();
     engine
+        .apply(CommandV2::SetAdmissionPolicy {
+            room_id: "room".into(),
+            actor: "human".into(),
+            admission: AdmissionPolicy::InviteOnly,
+        })
+        .unwrap();
+    engine
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -89,9 +96,9 @@ fn unhex(value: &str) -> Vec<u8> {
 }
 
 #[test]
-fn canonical_v3_checkpoint_is_immutable_and_recovers() {
+fn canonical_v4_checkpoint_is_immutable_and_recovers() {
     let prepared = fixture_engine().prepare_checkpoint(65_536).unwrap();
-    let expected_hex = include_str!("fixtures/checkpoint-v3.hex").trim();
+    let expected_hex = include_str!("fixtures/checkpoint-v4.hex").trim();
     assert_eq!(hex(prepared.bytes()), expected_hex);
 
     let recovered = Engine::recover_checkpoint(

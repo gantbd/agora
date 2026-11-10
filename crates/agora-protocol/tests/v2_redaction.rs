@@ -21,6 +21,11 @@ fn v2_debug_output_is_content_safe() {
             causation: *b"secret-cause-123",
             expected_revision: 2,
         },
+        CommandV2::SetAdmissionPolicy {
+            room_id: "secret-room".to_owned(),
+            admission: AdmissionPolicyV2::Open,
+            expected_revision: 3,
+        },
     ];
     let replies = [
         ReplyV2::Accepted(OutcomeV2::Rooms(RoomPageV2 {
@@ -78,6 +83,20 @@ fn v2_debug_output_is_content_safe() {
             has_more: false,
         })),
         ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 4,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 3,
+                revision: 4,
+                event: RoomEventV2::RoomPolicyChanged {
+                    actor_id: "secret-actor".to_owned(),
+                    previous: AdmissionPolicyV2::InviteOnly,
+                    admission: AdmissionPolicyV2::Open,
+                },
+            }],
+            next: PageCursorV2(45),
+            has_more: false,
+        })),
+        ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
             revision: 3,
             changes: vec![RoomChangeV2 {
                 event_sequence: 2,
@@ -108,6 +127,7 @@ fn v2_debug_output_is_content_safe() {
         "42",
         "43",
         "44",
+        "45",
     ] {
         assert!(!rendered.contains(secret));
     }

@@ -38,12 +38,14 @@ follow Semantic Versioning once a public release contract is selected.
 - Added participant-neutral kick, ban, and unban with role-scoped authority,
   bounded reason and causation evidence, current-member feed projection, durable
   recovery, and canonical moderation wire/checkpoint fixtures.
+- Added owner-bound room admission-policy changes as ordered room facts with
+  prior/current policy, participant-bound service projection, and frozen wire evidence.
 
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 3, 2,
-  and 2 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 4, 3,
+  and 3 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

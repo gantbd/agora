@@ -207,6 +207,18 @@ impl Writer {
                 self.text(reason.as_str())?;
                 self.raw(&causation.into_bytes())
             }
+            DomainEventV2::RoomPolicyChanged {
+                room_id,
+                actor,
+                previous,
+                admission,
+            } => {
+                self.byte(10)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.byte(admission_tag(*previous))?;
+                self.byte(admission_tag(*admission))
+            }
         }
     }
 }
@@ -360,6 +372,12 @@ impl<'a> Reader<'a> {
                     _ => unreachable!(),
                 }
             }
+            10 => DomainEventV2::RoomPolicyChanged {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                previous: read_admission(self.byte()?)?,
+                admission: read_admission(self.byte()?)?,
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -462,7 +480,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(3)?;
+        w.byte(4)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -532,7 +550,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 3 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 4 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -1075,10 +1093,10 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
         DomainEventV2::RoomCreated {
             room_id,
             owner: id,
-            admission,
+            admission: _,
         } => {
             let r = room(room_id)?;
-            if owner(r)? != id || r.admission != *admission {
+            if owner(r)? != id {
                 return Err(CheckpointError::Invalid);
             }
         }
@@ -1110,6 +1128,18 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             room(room_id)?;
             participant(id)?;
             if *role == Role::Owner {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::RoomPolicyChanged {
+            room_id,
+            actor,
+            previous,
+            admission,
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            if owner(r)? != actor || previous == admission {
                 return Err(CheckpointError::Invalid);
             }
         }

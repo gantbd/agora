@@ -552,6 +552,7 @@ pub enum RoomActionV1 {
     Leave,
     Speak,
     ManageRole,
+    ManageRoomPolicy,
     Kick,
     Ban,
     Unban,
@@ -569,6 +570,7 @@ impl CommandV2 {
             Self::Join { .. } => Some(RoomActionV1::Join),
             Self::Leave { .. } => Some(RoomActionV1::Leave),
             Self::SetRole { .. } => Some(RoomActionV1::ManageRole),
+            Self::SetAdmissionPolicy { .. } => Some(RoomActionV1::ManageRoomPolicy),
             Self::Kick { .. } => Some(RoomActionV1::Kick),
             Self::Ban { .. } => Some(RoomActionV1::Ban),
             Self::Unban { .. } => Some(RoomActionV1::Unban),
@@ -605,6 +607,11 @@ pub enum CommandV2 {
         actor: ParticipantId,
         participant: ParticipantId,
         role: Role,
+    },
+    SetAdmissionPolicy {
+        room_id: RoomId,
+        actor: ParticipantId,
+        admission: AdmissionPolicy,
     },
     Kick {
         room_id: RoomId,
@@ -664,6 +671,12 @@ pub enum OutcomeV2 {
         room_id: RoomId,
         participant: ParticipantId,
         role: Role,
+    },
+    RoomPolicyChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        previous: AdmissionPolicy,
+        admission: AdmissionPolicy,
     },
     Kicked {
         room_id: RoomId,
@@ -725,6 +738,7 @@ pub enum Refusal {
     NotAuthorized(ParticipantId),
     OwnerCannotLeave,
     InvalidRoleChange,
+    InvalidPolicyChange,
     RevisionConflict {
         expected: Revision,
         actual: Revision,
@@ -859,6 +873,12 @@ pub enum DomainEventV2 {
         participant: ParticipantId,
         role: Role,
     },
+    RoomPolicyChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        previous: AdmissionPolicy,
+        admission: AdmissionPolicy,
+    },
     ParticipantKicked {
         room_id: RoomId,
         actor: ParticipantId,
@@ -895,6 +915,7 @@ impl DomainEventV2 {
             | Self::ParticipantJoined { room_id, .. }
             | Self::ParticipantLeft { room_id, .. }
             | Self::RoleChanged { room_id, .. }
+            | Self::RoomPolicyChanged { room_id, .. }
             | Self::ParticipantKicked { room_id, .. }
             | Self::ParticipantBanned { room_id, .. }
             | Self::ParticipantUnbanned { room_id, .. }
@@ -1564,6 +1585,11 @@ impl Engine {
                 participant,
                 role,
             } => self.set_role(room_id, actor, participant, role),
+            CommandV2::SetAdmissionPolicy {
+                room_id,
+                actor,
+                admission,
+            } => self.set_admission_policy(room_id, actor, admission),
             CommandV2::Kick {
                 room_id,
                 actor,
@@ -1661,6 +1687,20 @@ impl Engine {
                 room_id: room_id.clone(),
                 participant: participant.clone(),
                 role: *role,
+            },
+            (
+                CommandV2::SetAdmissionPolicy { .. },
+                OutcomeV2::RoomPolicyChanged {
+                    room_id,
+                    actor,
+                    previous,
+                    admission,
+                },
+            ) => DomainEventV2::RoomPolicyChanged {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                previous: *previous,
+                admission: *admission,
             },
             (
                 CommandV2::Kick { .. },
@@ -1933,6 +1973,32 @@ impl Engine {
             room_id,
             participant,
             role,
+        })
+    }
+
+    fn set_admission_policy(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        admission: AdmissionPolicy,
+    ) -> Result<OutcomeV2, Refusal> {
+        let room = self.room_ref(&room_id)?;
+        if room.members.get(&actor) != Some(&Role::Owner) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        let previous = room.admission;
+        if previous == admission {
+            return Err(Refusal::InvalidPolicyChange);
+        }
+        self.rooms
+            .get_mut(&room_id)
+            .expect("room established by validation")
+            .admission = admission;
+        Ok(OutcomeV2::RoomPolicyChanged {
+            room_id,
+            actor,
+            previous,
+            admission,
         })
     }
 
