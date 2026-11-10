@@ -149,6 +149,68 @@ pub struct TopicId([u8; 16]);
 pub const MAX_REACTION_KEY_BYTES_V1: usize = 64;
 pub const MAX_REACTION_KEYS_PER_MESSAGE_V1: usize = 64;
 pub const MAX_MESSAGE_REVISIONS_V1: usize = 64;
+pub const MAX_READ_POSITIONS_V1: usize = 4_096;
+
+/// Closed selector for one participant's private read position.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ReadScopeV1 {
+    Room,
+    Thread(MessageId),
+    Topic(TopicId),
+}
+
+/// One private, monotone marker. This is not a delivery or attention receipt.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ReadPositionV1 {
+    room_id: RoomId,
+    scope: ReadScopeV1,
+    target_message_id: MessageId,
+    target_sequence: u64,
+    observed_revision: Revision,
+}
+
+impl ReadPositionV1 {
+    pub fn room_id(&self) -> &RoomId {
+        &self.room_id
+    }
+    pub fn scope(&self) -> &ReadScopeV1 {
+        &self.scope
+    }
+    pub fn target_message_id(&self) -> MessageId {
+        self.target_message_id
+    }
+    pub fn target_sequence(&self) -> u64 {
+        self.target_sequence
+    }
+    pub fn observed_revision(&self) -> Revision {
+        self.observed_revision
+    }
+}
+
+impl fmt::Debug for ReadPositionV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReadPositionV1")
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("scope", &self.scope)
+            .field("target_message_id", &self.target_message_id)
+            .field("target_sequence", &self.target_sequence)
+            .field("observed_revision", &self.observed_revision)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReadPositionRefusalV1 {
+    UnknownParticipant,
+    UnknownRoom,
+    NotMember,
+    Stale { actual_revision: Revision },
+    InvalidScope,
+    InvalidTarget,
+    Regression,
+    Capacity,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MessageRevisionAvailabilityV1 {
@@ -1716,6 +1778,7 @@ pub struct Engine {
     acknowledged_through: Option<EventSequence>,
     pending_events: VecDeque<EventEnvelopeV2>,
     publications: BTreeMap<PublicationKeyV2, PublicationRecordV2>,
+    read_positions: BTreeMap<(ParticipantId, RoomId, ReadScopeV1), ReadPositionV1>,
 }
 
 impl Default for Engine {
@@ -1740,6 +1803,7 @@ impl Engine {
             acknowledged_through: None,
             pending_events: VecDeque::new(),
             publications: BTreeMap::new(),
+            read_positions: BTreeMap::new(),
         }
     }
 
@@ -1781,6 +1845,107 @@ impl Engine {
             .messages
             .iter()
             .find(|message| message.id == message_id)
+    }
+
+    /// Returns only the caller's private marker. Membership is checked on every
+    /// observation even when retained marker state survives a leave or ban.
+    pub fn read_position(
+        &self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+        scope: &ReadScopeV1,
+    ) -> Result<Option<&ReadPositionV1>, ReadPositionRefusalV1> {
+        if !self.participants.contains_key(actor) {
+            return Err(ReadPositionRefusalV1::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ReadPositionRefusalV1::UnknownRoom)?;
+        if !room.members.contains_key(actor) {
+            return Err(ReadPositionRefusalV1::NotMember);
+        }
+        Ok(self
+            .read_positions
+            .get(&(actor.clone(), room_id.clone(), *scope)))
+    }
+
+    /// Advances one caller-owned marker without changing domain revision or
+    /// publishing an event. The exact retained target anchors the claim.
+    pub fn advance_read_position(
+        &mut self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+        scope: ReadScopeV1,
+        observed_revision: Revision,
+        target_message_id: MessageId,
+    ) -> Result<ReadPositionV1, ReadPositionRefusalV1> {
+        if !self.participants.contains_key(actor) {
+            return Err(ReadPositionRefusalV1::UnknownParticipant);
+        }
+        if observed_revision != self.revision {
+            return Err(ReadPositionRefusalV1::Stale {
+                actual_revision: self.revision,
+            });
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ReadPositionRefusalV1::UnknownRoom)?;
+        if !room.members.contains_key(actor) {
+            return Err(ReadPositionRefusalV1::NotMember);
+        }
+        match scope {
+            ReadScopeV1::Room => {}
+            ReadScopeV1::Thread(root) => {
+                let root = room
+                    .messages
+                    .iter()
+                    .find(|message| message.id == root)
+                    .ok_or(ReadPositionRefusalV1::InvalidScope)?;
+                if root.reply_to_root.is_some() {
+                    return Err(ReadPositionRefusalV1::InvalidScope);
+                }
+            }
+            ReadScopeV1::Topic(topic) => {
+                if !room.topics.contains_key(&topic) {
+                    return Err(ReadPositionRefusalV1::InvalidScope);
+                }
+            }
+        }
+        let target = room
+            .messages
+            .iter()
+            .find(|message| message.id == target_message_id)
+            .ok_or(ReadPositionRefusalV1::InvalidTarget)?;
+        let in_scope = match scope {
+            ReadScopeV1::Room => true,
+            ReadScopeV1::Thread(root) => target.id == root || target.reply_to_root == Some(root),
+            ReadScopeV1::Topic(topic) => target.topic_id == Some(topic),
+        };
+        if !in_scope {
+            return Err(ReadPositionRefusalV1::InvalidTarget);
+        }
+        let key = (actor.clone(), room_id.clone(), scope);
+        if let Some(current) = self.read_positions.get(&key) {
+            if current.target_message_id == target_message_id {
+                return Ok(current.clone());
+            }
+            if target.sequence <= current.target_sequence {
+                return Err(ReadPositionRefusalV1::Regression);
+            }
+        } else if self.read_positions.len() == MAX_READ_POSITIONS_V1 {
+            return Err(ReadPositionRefusalV1::Capacity);
+        }
+        let position = ReadPositionV1 {
+            room_id: room_id.clone(),
+            scope,
+            target_message_id,
+            target_sequence: target.sequence,
+            observed_revision,
+        };
+        self.read_positions.insert(key, position.clone());
+        Ok(position)
     }
 
     pub fn rooms(&self) -> impl Iterator<Item = RoomView> + '_ {

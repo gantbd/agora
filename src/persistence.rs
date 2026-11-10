@@ -15,6 +15,7 @@ pub enum CheckpointError {
     Invalid,
     NonCanonical,
     Trailing,
+    UnsupportedState,
 }
 impl fmt::Display for CheckpointError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -695,6 +696,9 @@ impl Engine {
         &self,
         max_snapshot_bytes: usize,
     ) -> Result<CheckpointV2, CheckpointError> {
+        if !self.read_positions.is_empty() {
+            return Err(CheckpointError::UnsupportedState);
+        }
         validate(self)?;
         let mut w = Writer {
             bytes: Vec::new(),
