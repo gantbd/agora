@@ -44,11 +44,14 @@
 - **R16 — Layered dependencies:** protocol values do not depend on engine or
   service internals, client interpretation depends only on protocol, and the
   serialized service is the only operational layer that owns an engine.
+- **R17 — Canonical bounded wire:** protocol V1 has one closed binary encoding
+  with explicit version and tag refusal, strict UTF-8, checked preflight sizing,
+  independent frame/text/field/list ceilings, and complete-input decoding.
 
 ## Explicitly open
 
 Durable storage adapters, durable event sinks, authenticated connection/session
-capabilities, wire codecs, bans, message
+capabilities, network transports, bans, message
 editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
 

@@ -25,6 +25,11 @@ conflict, disconnect tombstones, and receipt saturation before engine mutation.
 The canonical V2 fixture detects accidental checkpoint drift and is recovered
 and re-encoded during the gate.
 
+Wire scenarios freeze representative request/reply bytes, round-trip every
+closed protocol variant, refuse every truncation and trailing byte, and exercise
+frame/text/field/list ceilings, strict UTF-8, unsupported versions, and unknown
+root and nested tags. This establishes codec behavior, not transport security.
+
 The gate does not establish authentication, transport security, multi-process
 serialization, durable storage, event delivery, distributed availability, or
 orchestrator correctness. Those claims require separate adapters and evidence.

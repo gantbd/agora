@@ -8,12 +8,13 @@ remain separate crates. Their normal dependency direction is:
 
 ```text
 agora-client  -> agora-protocol <- agora-service -> agora-engine
+                                <- agora-wire -> keystone-codec
 ```
 
 `agora-engine` and `agora-protocol` have no normal dependencies. The protocol
 does not import engine internals, and the client does not import the service.
-This permits a later wire codec or in-process adapter without making transport
-types authoritative domain state.
+The wire crate depends only on passive protocol values and the shared bounded
+Keystone codec primitive. Transport types never become authoritative domain state.
 
 ## Connection and identity
 
@@ -47,7 +48,7 @@ client's volatile receipts. The profile makes no cross-restart replay claim.
 
 The profile performs no network I/O, authentication, encryption, durable
 storage, orchestration, task creation, model invocation, or agent lifecycle
-work. A later wire crate may encode `agora-protocol` values. A later authenticated
-host may connect them to a transport. Moira, Chronos, and execution harnesses
-remain separate systems.
+work. `agora-wire` only maps passive values to canonical bytes. A later
+authenticated host may connect those bytes to a transport. Moira, Chronos, and
+execution harnesses remain separate systems.
 

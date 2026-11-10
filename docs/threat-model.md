@@ -23,6 +23,13 @@ must never expose it as a bearer credential or accept it without a separately
 authenticated connection binding. Retained request replies may contain message
 content and therefore inherit the deployment's memory-protection obligations.
 
+The wire decoder treats every byte as hostile: total bytes, field bytes, field
+count, and list counts are bounded before owned reconstruction; unknown grammar
+and trailing data refuse. This limits parser resource amplification but does not
+authenticate frames, hide metadata/content, prevent replay, establish stream
+boundaries, or protect transport availability. In particular, Connect's
+participant ID remains attacker-controlled until the host verifies it.
+
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.
 

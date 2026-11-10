@@ -15,12 +15,17 @@ Participant kind never changes admission, role, speaking, or addressing behavior
 The repository also contains an initial transport-neutral operational profile:
 
 - `agora-protocol` owns closed request, reply, snapshot, and refusal values;
+- `agora-wire` owns their canonical bounded V1 binary representation;
 - `agora-service` serially owns one engine, binds each connected client to one
   registered participant, and provides bounded replay-safe requests;
 - `agora-client` owns a monotone request namespace over an abstract service port.
 
 These crates add no authentication, network transport, durable execution, or
 agent behavior. See the [service architecture](docs/service-architecture.md).
+
+The wire grammar and tag assignments are frozen in the
+[wire protocol](docs/wire-protocol.md) and executable golden fixtures. A connect
+frame's participant ID remains an unauthenticated claim until a host verifies it.
 
 ## Boundary
 

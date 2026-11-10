@@ -26,3 +26,15 @@ dependencies = [
  "agora-engine",
  "agora-protocol",
 ]
+
+[[package]]
+name = "agora-wire"
+version = "0.1.0"
+dependencies = [
+ "agora-protocol",
+ "keystone-codec",
+]
+
+[[package]]
+name = "keystone-codec"
+version = "0.0.1"

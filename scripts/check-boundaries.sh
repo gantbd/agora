@@ -34,4 +34,10 @@ if printf '%s\n' "$protocol_tree" | rg 'agora-(engine|service|client)'; then
   exit 1
 fi
 
+wire_tree=$(cargo tree -p agora-wire --edges normal --depth 2 --locked --offline)
+if printf '%s\n' "$wire_tree" | rg 'agora-(engine|service|client)'; then
+  echo 'Agora wire crossed into engine, service, or client internals' >&2
+  exit 1
+fi
+
 echo 'Agora dependency direction closed; no effects or activation semantics'

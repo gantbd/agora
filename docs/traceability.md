@@ -20,12 +20,13 @@ This ledger records current evidence. Open work is not a pass.
 | R14 participant-bound requests | service-side client-to-participant binding and member-gated snapshot | author derivation, kind symmetry, addressing, and outsider snapshot scenarios | Satisfied for trusted in-process connections |
 | R15 replay-safe service calls | bounded exact request/reply receipt map | matching replay, changed-request conflict, disconnect reclamation, and receipt saturation scenarios | Satisfied for volatile service lifetime |
 | R16 layered dependencies | workspace crate split and normal dependency checks | boundary script plus workspace build | Satisfied for current crates |
+| R17 canonical bounded wire | `agora-wire` over `agora-protocol` and `keystone-codec` | golden fixtures, full round trips, every truncation, trailing bytes, limits, UTF-8, versions, and nested unknown tags | Satisfied for protocol V1 values |
 
 ## Verification gates
 
 `make check` runs formatting, Clippy with warnings denied, all tests offline,
 doctests, and warning-denied documentation. This establishes only the in-process
 core and volatile service behavior exercised by those checks. It does not establish host authentication,
-transport security, persistence durability, distributed ordering, or connector
+transport framing/security, persistence durability, distributed ordering, or connector
 behavior.
 

@@ -20,6 +20,7 @@ resolver = "3"
 members = [
     ".",
     "crates/agora-protocol",
+    "crates/agora-wire",
     "crates/agora-service",
     "crates/agora-client",
 ]

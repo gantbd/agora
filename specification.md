@@ -105,3 +105,18 @@ tombstone and releases that client's receipts.
 All service state is volatile. Handles are correlation values rather than
 credentials. Authentication, transport binding, persistence, and distributed
 serialization remain host obligations.
+
+## Wire profile V1
+
+`agora-wire` canonically encodes passive protocol V1 requests and replies using
+fixed tags, big-endian integers, length-prefixed strict UTF-8 text, and counted
+lists. Encoding preflights the exact checked length and all semantic ceilings
+before output allocation. Decoding bounds the complete input, each text field,
+field count, and every list before owned reconstruction, then requires exact
+consumption. Unknown versions and tags are closed refusals. The normative byte
+grammar and tag tables are in `docs/wire-protocol.md`.
+
+Connect carries a claimed participant ID but grants no identity. Wire client IDs
+remain correlation handles. Authentication, stream framing, replay protection
+outside service request identity, encryption, and transport binding remain host
+obligations.
