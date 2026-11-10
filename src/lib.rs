@@ -16,6 +16,7 @@ pub struct Limits {
     pub max_invitations_per_room: usize,
     pub max_bans_per_room: usize,
     pub max_messages_per_room: usize,
+    pub max_topics_per_room: usize,
     pub max_pending_events: usize,
     pub max_publication_receipts: usize,
     pub max_addressed_participants_per_message: usize,
@@ -23,6 +24,7 @@ pub struct Limits {
     pub max_room_id_bytes: usize,
     pub max_display_name_bytes: usize,
     pub max_room_name_bytes: usize,
+    pub max_topic_name_bytes: usize,
     pub max_message_body_bytes: usize,
     pub max_moderation_reason_bytes: usize,
 }
@@ -36,6 +38,7 @@ impl Default for Limits {
             max_invitations_per_room: 256,
             max_bans_per_room: 256,
             max_messages_per_room: 1_024,
+            max_topics_per_room: 256,
             max_pending_events: 4_096,
             max_publication_receipts: 4_096,
             max_addressed_participants_per_message: 64,
@@ -43,6 +46,7 @@ impl Default for Limits {
             max_room_id_bytes: 128,
             max_display_name_bytes: 256,
             max_room_name_bytes: 256,
+            max_topic_name_bytes: 256,
             max_message_body_bytes: 16 * 1_024,
             max_moderation_reason_bytes: 1_024,
         }
@@ -138,6 +142,10 @@ pub struct LogicalTime(pub u64);
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MessageId([u8; 16]);
 
+/// Stable room-local topic reference. Its bytes are opaque and grant no authority.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TopicId([u8; 16]);
+
 pub const MAX_REACTION_KEY_BYTES_V1: usize = 64;
 pub const MAX_REACTION_KEYS_PER_MESSAGE_V1: usize = 64;
 pub const MAX_MESSAGE_REVISIONS_V1: usize = 64;
@@ -187,6 +195,59 @@ impl MessageId {
     }
 }
 
+impl TopicId {
+    pub const fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn into_bytes(self) -> [u8; 16] {
+        self.0
+    }
+
+    fn allocated(room_incarnation: u64, room_counter: u64) -> Self {
+        let mut bytes = [0; 16];
+        bytes[..8].copy_from_slice(&room_incarnation.to_be_bytes());
+        bytes[8..].copy_from_slice(&room_counter.to_be_bytes());
+        Self(bytes)
+    }
+}
+
+impl fmt::Debug for TopicId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("TopicId(<opaque>)")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicV1 {
+    id: TopicId,
+    name: String,
+    creator: ParticipantId,
+}
+
+impl TopicV1 {
+    pub fn id(&self) -> TopicId {
+        self.id
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn creator(&self) -> &ParticipantId {
+        &self.creator
+    }
+}
+
+impl fmt::Debug for TopicV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicV1")
+            .field("id", &self.id)
+            .field("name_bytes", &self.name.len())
+            .field("creator_id_bytes", &self.creator.as_str().len())
+            .finish()
+    }
+}
+
 impl fmt::Debug for MessageId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("MessageId(<opaque>)")
@@ -203,6 +264,7 @@ pub struct Message {
     body: String,
     addressed_to: Vec<ParticipantId>,
     reply_to_root: Option<MessageId>,
+    topic_id: Option<TopicId>,
     revisions: Vec<MessageRevisionV1>,
 }
 
@@ -244,6 +306,10 @@ impl Message {
         self.reply_to_root
     }
 
+    pub fn topic_id(&self) -> Option<TopicId> {
+        self.topic_id
+    }
+
     pub fn current_revision(&self) -> u32 {
         self.revisions
             .last()
@@ -266,6 +332,7 @@ impl fmt::Debug for Message {
             .field("body_bytes", &self.body.len())
             .field("addressed_count", &self.addressed_to.len())
             .field("is_reply", &self.reply_to_root.is_some())
+            .field("has_topic", &self.topic_id.is_some())
             .field("revision_count", &self.revisions.len())
             .finish()
     }
@@ -572,6 +639,111 @@ pub struct MessageRevisionPageV1 {
     pub next: Option<MessageRevisionPageCursorV1>,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicPageCursorV1 {
+    revision: Revision,
+    observer: ParticipantId,
+    room_id: RoomId,
+    after: TopicId,
+}
+
+impl TopicPageCursorV1 {
+    pub fn is_bound_to(&self, observer: &ParticipantId, room_id: &RoomId) -> bool {
+        &self.observer == observer && &self.room_id == room_id
+    }
+}
+
+impl fmt::Debug for TopicPageCursorV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicPageCursorV1")
+            .field("revision", &self.revision)
+            .field("observer_id_bytes", &self.observer.as_str().len())
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("after", &self.after)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicPageV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub topics: Vec<TopicV1>,
+    pub next: Option<TopicPageCursorV1>,
+}
+
+impl fmt::Debug for TopicPageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicPageV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("topic_count", &self.topics.len())
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicMessagePageCursorV1 {
+    revision: Revision,
+    observer: ParticipantId,
+    room_id: RoomId,
+    topic_id: TopicId,
+    after_sequence: u64,
+}
+
+impl TopicMessagePageCursorV1 {
+    pub fn is_bound_to(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        topic_id: TopicId,
+    ) -> bool {
+        &self.observer == observer && &self.room_id == room_id && self.topic_id == topic_id
+    }
+}
+
+impl fmt::Debug for TopicMessagePageCursorV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicMessagePageCursorV1")
+            .field("revision", &self.revision)
+            .field("observer_id_bytes", &self.observer.as_str().len())
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("topic_id", &self.topic_id)
+            .field("after_sequence", &self.after_sequence)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicMessagePageV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub topic_id: TopicId,
+    pub messages: Vec<Message>,
+    pub oldest_retained_sequence: u64,
+    pub next_message_sequence: u64,
+    pub next: Option<TopicMessagePageCursorV1>,
+}
+
+impl fmt::Debug for TopicMessagePageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicMessagePageV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("topic_id", &self.topic_id)
+            .field("message_count", &self.messages.len())
+            .field("oldest_retained_sequence", &self.oldest_retained_sequence)
+            .field("next_message_sequence", &self.next_message_sequence)
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
+}
+
 impl fmt::Debug for MessageRevisionPageV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -842,6 +1014,9 @@ struct Room {
     thread_roots: BTreeSet<MessageId>,
     archived_threads: BTreeSet<MessageId>,
     reactions: BTreeMap<MessageId, BTreeMap<String, BTreeSet<ParticipantId>>>,
+    topics: BTreeMap<TopicId, TopicV1>,
+    topic_identity_incarnation: u64,
+    next_topic_identity: u64,
     message_identity_incarnation: u64,
     next_message_identity: u64,
     next_message_sequence: u64,
@@ -929,6 +1104,14 @@ pub enum RoomActionV1 {
     Ban,
     Unban,
     InspectHistory,
+    ManageTopics,
+}
+
+#[derive(Clone, Copy)]
+enum MessagePlacement {
+    Unscoped,
+    Reply(MessageId),
+    Topic(TopicId),
 }
 
 impl CommandV2 {
@@ -946,13 +1129,16 @@ impl CommandV2 {
             Self::Kick { .. } => Some(RoomActionV1::Kick),
             Self::Ban { .. } => Some(RoomActionV1::Ban),
             Self::Unban { .. } => Some(RoomActionV1::Unban),
-            Self::Speak { .. } | Self::SpeakAddressed { .. } => Some(RoomActionV1::Speak),
+            Self::Speak { .. } | Self::SpeakAddressed { .. } | Self::SpeakInTopic { .. } => {
+                Some(RoomActionV1::Speak)
+            }
             Self::SpeakReply { .. } => Some(RoomActionV1::Reply),
             Self::SetReaction { .. } => Some(RoomActionV1::React),
             Self::EditMessage { .. } => Some(RoomActionV1::EditOwn),
             Self::SetThreadArchived { .. } => Some(RoomActionV1::ManageThread),
             Self::WithdrawMessage { .. } => Some(RoomActionV1::WithdrawOwn),
             Self::RedactMessage { .. } => Some(RoomActionV1::RedactAny),
+            Self::CreateTopic { .. } => Some(RoomActionV1::ManageTopics),
         }
     }
 }
@@ -1031,6 +1217,19 @@ pub enum CommandV2 {
         room_id: RoomId,
         author: ParticipantId,
         root_message_id: MessageId,
+        at: LogicalTime,
+        body: String,
+        addressed_to: Vec<ParticipantId>,
+    },
+    CreateTopic {
+        room_id: RoomId,
+        actor: ParticipantId,
+        name: String,
+    },
+    SpeakInTopic {
+        room_id: RoomId,
+        author: ParticipantId,
+        topic_id: TopicId,
         at: LogicalTime,
         body: String,
         addressed_to: Vec<ParticipantId>,
@@ -1123,6 +1322,17 @@ pub enum OutcomeV2 {
         room_id: RoomId,
         sequence: u64,
     },
+    TopicCreated {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        name: String,
+    },
+    TopicMessageAccepted {
+        room_id: RoomId,
+        topic_id: TopicId,
+        sequence: u64,
+    },
     ReplyAccepted {
         room_id: RoomId,
         root_message_id: MessageId,
@@ -1212,6 +1422,11 @@ pub enum Refusal {
     InvalidReactionChange,
     MessageRevisionLimit,
     InvalidMessageEdit,
+    InvalidTopicName,
+    TopicLimit,
+    TopicIdentityExhausted,
+    DuplicateTopicName,
+    UnknownTopic,
     MessageAlreadyTombstoned,
     RevisionConflict {
         expected: Revision,
@@ -1330,6 +1545,12 @@ pub enum DomainEventV2 {
         owner: ParticipantId,
         admission: AdmissionPolicy,
     },
+    TopicCreated {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        name: String,
+    },
     InvitationRecorded {
         room_id: RoomId,
         participant: ParticipantId,
@@ -1423,6 +1644,7 @@ impl DomainEventV2 {
         match self {
             Self::ParticipantRegistered { .. } => None,
             Self::RoomCreated { room_id, .. }
+            | Self::TopicCreated { room_id, .. }
             | Self::InvitationRecorded { room_id, .. }
             | Self::ParticipantJoined { room_id, .. }
             | Self::ParticipantLeft { room_id, .. }
@@ -1535,6 +1757,10 @@ impl Engine {
 
     pub fn room(&self, id: &RoomId) -> Option<RoomView> {
         self.rooms.get(id).map(Room::view)
+    }
+
+    pub fn topic(&self, room_id: &RoomId, topic_id: TopicId) -> Option<&TopicV1> {
+        self.rooms.get(room_id)?.topics.get(&topic_id)
     }
 
     /// Exact retained-message observation without copying the room history.
@@ -1882,6 +2108,161 @@ impl Engine {
                 .next_message_sequence
                 .checked_sub(room.messages.len() as u64)
                 .ok_or(ObservationRefusal::InconsistentState)?,
+            next_message_sequence: room.next_message_sequence,
+            next,
+        })
+    }
+
+    pub fn topic_page(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        cursor: Option<&TopicPageCursorV1>,
+        limit: usize,
+    ) -> Result<TopicPageV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        if limit == 0 || limit > self.limits.max_topics_per_room {
+            return Err(ObservationRefusal::InvalidLimit);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        let after = if let Some(cursor) = cursor {
+            if &cursor.observer != observer || &cursor.room_id != room_id {
+                return Err(ObservationRefusal::ForeignCursor);
+            }
+            if cursor.revision != self.revision {
+                return Err(ObservationRefusal::Stale {
+                    actual_revision: self.revision,
+                });
+            }
+            Some(cursor.after)
+        } else {
+            None
+        };
+        let mut topics = Vec::new();
+        topics
+            .try_reserve_exact(limit)
+            .map_err(|_| ObservationRefusal::Capacity)?;
+        let mut has_more = false;
+        for (id, topic) in &room.topics {
+            if after.is_some_and(|after| *id <= after) {
+                continue;
+            }
+            if topics.len() == limit {
+                has_more = true;
+                break;
+            }
+            topics.push(topic.clone());
+        }
+        let next = if has_more {
+            Some(TopicPageCursorV1 {
+                revision: self.revision,
+                observer: observer.clone(),
+                room_id: room_id.clone(),
+                after: topics
+                    .last()
+                    .ok_or(ObservationRefusal::InconsistentState)?
+                    .id,
+            })
+        } else {
+            None
+        };
+        Ok(TopicPageV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            topics,
+            next,
+        })
+    }
+
+    pub fn topic_message_page(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        topic_id: TopicId,
+        cursor: Option<&TopicMessagePageCursorV1>,
+        limit: usize,
+    ) -> Result<TopicMessagePageV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        if limit == 0 || limit > self.limits.max_messages_per_room {
+            return Err(ObservationRefusal::InvalidLimit);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        if !room.topics.contains_key(&topic_id) {
+            return Err(ObservationRefusal::InvalidTarget);
+        }
+        let after = if let Some(cursor) = cursor {
+            if &cursor.observer != observer
+                || &cursor.room_id != room_id
+                || cursor.topic_id != topic_id
+            {
+                return Err(ObservationRefusal::ForeignCursor);
+            }
+            if cursor.revision != self.revision {
+                return Err(ObservationRefusal::Stale {
+                    actual_revision: self.revision,
+                });
+            }
+            Some(cursor.after_sequence)
+        } else {
+            None
+        };
+        let mut messages = Vec::new();
+        messages
+            .try_reserve_exact(limit)
+            .map_err(|_| ObservationRefusal::Capacity)?;
+        let mut has_more = false;
+        for message in &room.messages {
+            if message.topic_id != Some(topic_id)
+                || after.is_some_and(|after| message.sequence <= after)
+            {
+                continue;
+            }
+            if messages.len() == limit {
+                has_more = true;
+                break;
+            }
+            messages.push(message.clone());
+        }
+        let next = if has_more {
+            Some(TopicMessagePageCursorV1 {
+                revision: self.revision,
+                observer: observer.clone(),
+                room_id: room_id.clone(),
+                topic_id,
+                after_sequence: messages
+                    .last()
+                    .ok_or(ObservationRefusal::InconsistentState)?
+                    .sequence,
+            })
+        } else {
+            None
+        };
+        let oldest_retained_sequence = room
+            .next_message_sequence
+            .checked_sub(room.messages.len() as u64)
+            .ok_or(ObservationRefusal::InconsistentState)?;
+        Ok(TopicMessagePageV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            topic_id,
+            messages,
+            oldest_retained_sequence,
             next_message_sequence: room.next_message_sequence,
             next,
         })
@@ -2501,14 +2882,28 @@ impl Engine {
                 author,
                 at,
                 body,
-            } => self.speak(room_id, author, at, body, Vec::new(), None),
+            } => self.speak(
+                room_id,
+                author,
+                at,
+                body,
+                Vec::new(),
+                MessagePlacement::Unscoped,
+            ),
             CommandV2::SpeakAddressed {
                 room_id,
                 author,
                 at,
                 body,
                 addressed_to,
-            } => self.speak(room_id, author, at, body, addressed_to, None),
+            } => self.speak(
+                room_id,
+                author,
+                at,
+                body,
+                addressed_to,
+                MessagePlacement::Unscoped,
+            ),
             CommandV2::SpeakReply {
                 room_id,
                 author,
@@ -2522,7 +2917,27 @@ impl Engine {
                 at,
                 body,
                 addressed_to,
-                Some(root_message_id),
+                MessagePlacement::Reply(root_message_id),
+            ),
+            CommandV2::CreateTopic {
+                room_id,
+                actor,
+                name,
+            } => self.create_topic(room_id, actor, name),
+            CommandV2::SpeakInTopic {
+                room_id,
+                author,
+                topic_id,
+                at,
+                body,
+                addressed_to,
+            } => self.speak(
+                room_id,
+                author,
+                at,
+                body,
+                addressed_to,
+                MessagePlacement::Topic(topic_id),
             ),
             CommandV2::WithdrawMessage {
                 room_id,
@@ -2596,6 +3011,20 @@ impl Engine {
             ) => DomainEventV2::InvitationRecorded {
                 room_id: room_id.clone(),
                 participant: participant.clone(),
+            },
+            (
+                CommandV2::CreateTopic { .. },
+                OutcomeV2::TopicCreated {
+                    room_id,
+                    actor,
+                    topic_id,
+                    name,
+                },
+            ) => DomainEventV2::TopicCreated {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                topic_id: *topic_id,
+                name: name.clone(),
             },
             (
                 CommandV2::Join { .. },
@@ -2708,6 +3137,16 @@ impl Engine {
                 message: self
                     .message(room_id, *sequence)
                     .expect("accepted message remains retained")
+                    .clone(),
+            },
+            (
+                CommandV2::SpeakInTopic { room_id, .. },
+                OutcomeV2::TopicMessageAccepted { sequence, .. },
+            ) => DomainEventV2::MessageAccepted {
+                room_id: room_id.clone(),
+                message: self
+                    .message(room_id, *sequence)
+                    .expect("accepted topic message remains retained")
                     .clone(),
             },
             (
@@ -2878,6 +3317,9 @@ impl Engine {
                 thread_roots: BTreeSet::new(),
                 archived_threads: BTreeSet::new(),
                 reactions: BTreeMap::new(),
+                topics: BTreeMap::new(),
+                topic_identity_incarnation: self.next_event_sequence.0,
+                next_topic_identity: 0,
                 message_identity_incarnation: self.next_event_sequence.0,
                 next_message_identity: 0,
                 next_message_sequence: 0,
@@ -3164,6 +3606,57 @@ impl Engine {
         })
     }
 
+    fn create_topic(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        name: String,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_nonempty_bounded(
+            &name,
+            self.limits.max_topic_name_bytes,
+            Refusal::InvalidTopicName,
+        )?;
+        let room = self.room_ref(&room_id)?;
+        if !matches!(
+            room.members.get(&actor),
+            Some(Role::Owner | Role::Moderator)
+        ) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        if room.topics.values().any(|topic| topic.name == name) {
+            return Err(Refusal::DuplicateTopicName);
+        }
+        if room.topics.len() >= self.limits.max_topics_per_room {
+            return Err(Refusal::TopicLimit);
+        }
+        let topic_id =
+            TopicId::allocated(room.topic_identity_incarnation, room.next_topic_identity);
+        let next_topic_identity = room
+            .next_topic_identity
+            .checked_add(1)
+            .ok_or(Refusal::TopicIdentityExhausted)?;
+        let room = self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation");
+        room.topics.insert(
+            topic_id,
+            TopicV1 {
+                id: topic_id,
+                name: name.clone(),
+                creator: actor.clone(),
+            },
+        );
+        room.next_topic_identity = next_topic_identity;
+        Ok(OutcomeV2::TopicCreated {
+            room_id,
+            actor,
+            topic_id,
+            name,
+        })
+    }
+
     fn speak(
         &mut self,
         room_id: RoomId,
@@ -3171,7 +3664,7 @@ impl Engine {
         at: LogicalTime,
         body: String,
         addressed_to: Vec<ParticipantId>,
-        reply_to_root: Option<MessageId>,
+        placement: MessagePlacement,
     ) -> Result<OutcomeV2, Refusal> {
         self.validate_nonempty_bounded(
             &body,
@@ -3185,7 +3678,11 @@ impl Engine {
         if !room.members.contains_key(&author) {
             return Err(Refusal::NotMember(author));
         }
-        if let Some(root_message_id) = reply_to_root {
+        let reply_to_root = match placement {
+            MessagePlacement::Reply(root) => Some(root),
+            MessagePlacement::Unscoped | MessagePlacement::Topic(_) => None,
+        };
+        let topic_id = if let Some(root_message_id) = reply_to_root {
             let root = room
                 .messages
                 .iter()
@@ -3197,7 +3694,19 @@ impl Engine {
             if room.archived_threads.contains(&root_message_id) {
                 return Err(Refusal::ThreadArchived);
             }
-        }
+            root.topic_id
+        } else {
+            let requested_topic = match placement {
+                MessagePlacement::Topic(topic) => Some(topic),
+                MessagePlacement::Unscoped | MessagePlacement::Reply(_) => None,
+            };
+            if let Some(topic_id) = requested_topic
+                && !room.topics.contains_key(&topic_id)
+            {
+                return Err(Refusal::UnknownTopic);
+            }
+            requested_topic
+        };
         if addressed_to.len() > self.limits.max_addressed_participants_per_message {
             return Err(Refusal::AddressedParticipantLimit);
         }
@@ -3248,6 +3757,7 @@ impl Engine {
             body: body.clone(),
             addressed_to,
             reply_to_root,
+            topic_id,
             revisions: vec![MessageRevisionV1 {
                 number: 0,
                 editor: author,
@@ -3267,7 +3777,14 @@ impl Engine {
                 root_message_id,
                 sequence,
             },
-            None => OutcomeV2::MessageAccepted { room_id, sequence },
+            None => match topic_id {
+                Some(topic_id) => OutcomeV2::TopicMessageAccepted {
+                    room_id,
+                    topic_id,
+                    sequence,
+                },
+                None => OutcomeV2::MessageAccepted { room_id, sequence },
+            },
         })
     }
 

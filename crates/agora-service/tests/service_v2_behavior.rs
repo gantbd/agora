@@ -4,7 +4,7 @@ use agora_engine::{
 use agora_protocol::v2::{
     AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, IdentifiedRoomEventV1,
     MessageIdV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomEventV2,
-    ThreadLifecycleStateV1, ThreadedRoomEventV1,
+    ThreadLifecycleStateV1, ThreadedRoomEventV1, TopicIdV1,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -13,6 +13,177 @@ fn request(id: u64, command: CommandV2) -> RequestV2 {
         request_id: RequestIdV2(id),
         command,
     }
+}
+
+#[test]
+fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: topic_change_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            0,
+            CommandV2::OpenTopicChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 4,
+            },
+        ),
+    )
+    else {
+        panic!("topic-aware change position expected");
+    };
+    let create = request(
+        1,
+        CommandV2::CreateTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 4,
+            name: "incidents".to_owned(),
+        },
+    );
+    let accepted = service.execute(alice, create.clone());
+    let ReplyV2::Accepted(OutcomeV2::TopicCreated {
+        revision: 5,
+        topic_id,
+    }) = accepted
+    else {
+        panic!("topic creation expected");
+    };
+    assert_eq!(service.execute(alice, create), accepted);
+
+    let ReplyV2::Accepted(OutcomeV2::TopicMessageAccepted {
+        revision: 6,
+        message_id,
+        topic_id: accepted_topic,
+        sequence: 0,
+    }) = service.execute(
+        bot,
+        request(
+            1,
+            CommandV2::SpeakInTopic {
+                room_id: "room".to_owned(),
+                expected_revision: 5,
+                topic_id,
+                logical_time: 7,
+                body: "agent evidence".to_owned(),
+                addressed_to: vec!["alice".to_owned()],
+            },
+        ),
+    )
+    else {
+        panic!("topic message acceptance expected");
+    };
+    assert_eq!(accepted_topic, topic_id);
+
+    let ReplyV2::Accepted(OutcomeV2::TopicChanges(changes)) = service.execute(
+        alice,
+        request(
+            3,
+            CommandV2::TopicChanges {
+                room_id: "room".to_owned(),
+                cursor: topic_change_cursor,
+                limit: 2,
+            },
+        ),
+    ) else {
+        panic!("topic-aware changes expected");
+    };
+    assert!(matches!(
+        &changes.changes[0].event,
+        agora_protocol::v2::TopicRoomEventV1::TopicCreated {
+            topic_id: event_topic,
+            ..
+        } if *event_topic == topic_id
+    ));
+    assert!(matches!(
+        &changes.changes[1].event,
+        agora_protocol::v2::TopicRoomEventV1::MessageAccepted(message)
+            if message.topic_id == Some(topic_id) && message.message_id == message_id
+    ));
+
+    let ReplyV2::Accepted(OutcomeV2::Topics(topics)) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::Topics {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("topic page expected");
+    };
+    assert_eq!(topics.topics.len(), 1);
+    assert_eq!(topics.topics[0].topic_id, topic_id);
+    assert_eq!(topics.topics[0].creator_id, "alice");
+
+    let ReplyV2::Accepted(OutcomeV2::TopicMessages(messages)) = service.execute(
+        bot,
+        request(
+            2,
+            CommandV2::TopicMessages {
+                room_id: "room".to_owned(),
+                topic_id,
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("topic messages expected");
+    };
+    assert_eq!(messages.messages.len(), 1);
+    assert_eq!(messages.messages[0].message_id, message_id);
+    assert_eq!(messages.messages[0].topic_id, Some(topic_id));
+    assert_eq!(messages.messages[0].addressed_to, ["alice"]);
+
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                3,
+                CommandV2::SpeakInTopic {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    topic_id: TopicIdV1::new([0xff; 16]),
+                    logical_time: 8,
+                    body: "missing".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::UnknownTopic)
+    );
+    assert_eq!(service.engine().revision().0, 6);
 }
 
 #[test]
@@ -2221,8 +2392,8 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 14);
-    assert_eq!(capabilities.last(), Some(&CapabilityV2::MessageRevisionsV1));
+    assert_eq!(capabilities.len(), 15);
+    assert_eq!(capabilities.last(), Some(&CapabilityV2::TopicsV1));
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

@@ -4,8 +4,8 @@ Agora is pre-1.0 and currently source-distributed. Public schemas still change
 only through an explicit profile revision.
 
 The v0.3 command, event, publication, and checkpoint values use the `V2` suffix.
-The `AGORACP` header version is 11. Earlier checkpoint bytes are refused with
-`CheckpointError::Profile`; they are never interpreted as V11. V1 agent activation
+The `AGORACP` header version is 12. Earlier checkpoint bytes are refused with
+`CheckpointError::Profile`; they are never interpreted as V12. V1 agent activation
 has no migration because activation is orchestration behavior, not conversation
 state. A host retaining V1 state must export conversation facts through a
 purpose-built migration tool before adopting V2.
@@ -16,8 +16,9 @@ fail closed on the new value. Reinterpreting an assigned tag or changing any
 existing field grammar requires a new frame version. Unknown tags, fields, or
 trailing bytes remain refusals.
 
-The immutable `tests/fixtures/checkpoint-v11.hex` artifact pins a representative
-V11 state containing both participant kinds, stable message identity, thread lifecycle, reactions, message revisions, neutral addressing, replay-safe
+The immutable `tests/fixtures/checkpoint-v12.hex` artifact pins a representative
+V12 state containing both participant kinds, stable message and topic identity,
+topic-scoped messages, thread lifecycle, reactions, message revisions, neutral addressing, replay-safe
 publication, ban and policy-change evidence, acknowledgment, and the exact pending
 outbox suffix.
 
@@ -32,7 +33,7 @@ version byte, closed grammar, and twenty canonical fixtures. Their separately
 typed values and V2 bytes do not alter V1 tags or bytes. Authenticated Host V2
 uses the same canonical frames without reinterpreting V1.
 
-Service persistence is versioned independently. `AGORASV` version 13 captures
+Service persistence is versioned independently. `AGORASV` version 14 captures
 the complete V2 service owner and embeds private `AGORACUR` version-1 cursor
 records. Cursor kind 4 is the snapshot-aligned room change position and kind 5
 is the authority-scoped ban page; neither reinterprets kinds 1–3. Service page
@@ -41,13 +42,16 @@ unchanged message cursor kind 3. Discriminator 7 isolates identity-bearing
 room-change positions from legacy kind 4. Discriminators 8 and 9 isolate root
 and root-bound reply continuations, and discriminator 10 isolates threaded
 room-change positions. Discriminator 11 isolates one message's revision
-continuation and binds the message identity in addition to room and observer. A representative
-complete service record is pinned by `service-checkpoint-v13.hex`. Public wire
+continuation and binds the message identity in addition to room and observer.
+Discriminators 12 and 13 isolate topic and topic-message continuations; the
+latter binds the exact topic. Discriminator 14 isolates topic-aware room-change
+positions. A representative complete service record is pinned by
+`service-checkpoint-v14.hex`. Public wire
 compatibility neither implies nor migrates durable state;
 future durable schema changes require a bounded explicit migration profile.
 
-Authenticated host persistence has its own `AGORAHST` version-13 record and
-`host-checkpoint-v13.hex` fixture. It nests the service record but owns host
+Authenticated host persistence has its own `AGORAHST` version-14 record and
+`host-checkpoint-v14.hex` fixture. It nests the service record but owns host
 session compatibility independently; neither wire nor service checkpoint
 decoding implies that a host record can be recovered.
 
@@ -95,6 +99,16 @@ tags `1c` through `1e`, capability tag `0c`, refusal tag `11`, and room-event
 tags `0d`/`0e` were previously unassigned. Existing thread page and accepted-
 message grammars remain unchanged. The new event variants use the same fields in
 legacy, identified, and threaded change envelopes.
+
+Stable topics are additive: command tags `25` through `2a` encode topic pages,
+topic-message pages, creation, topic-scoped speaking, and topic-aware feed open/
+pull; outcome tags `24` through `28` encode their pages, receipts, and feed;
+capability tag `0f` advertises `TopicsV1`; refusal tag `12` identifies an unknown
+topic; and room-event tag `11` records topic creation. The topic-aware accepted-
+message grammar appends a closed optional topic ID to the threaded grammar.
+Legacy, identified, and threaded accepted-message bytes remain unchanged.
+Engine/service/host profiles advance to 12/14/14 because the topic registry,
+allocator, message relation, receipts, and cursor consequences are durable.
 
 ## Conservative baseline gate
 

@@ -155,6 +155,16 @@ substitution. Withdrawal and moderator redaction scrub every retained revision
 and edit-event body but cannot retract prior client, connector, replay-record,
 backup, or audit copies; deployments must not present this as physical erasure.
 
+Topic names, creator attribution, stable IDs, and message-topic relations are
+sensitive conversation metadata. Knowledge of an ID grants no membership,
+posting, subscription, notification, or execution authority; every observation
+and mutation rechecks current room membership and role. Fixed room topic/name
+ceilings bound namespace amplification, topic-specific cursors bind the exact
+room/observer/topic/revision/profile, and cross-profile substitution fails
+closed. Retention may remove every topic message while leaving the topic and its
+ordered creation fact; deployments must not infer completeness or resolution
+from an empty page.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

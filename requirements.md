@@ -221,6 +221,15 @@
   withdrawal and redaction scrub every retained revision and edit-event body
   while preserving attribution and order. Replay and recovery are exact, and
   participant kind never changes authority.
+- **R45 — Stable room-local topics:** a topic has opaque deterministic identity,
+  a bounded current name, and an attributable creator. Current owners and
+  moderators create topics under identical human/agent rules. Topic-scoped
+  messages retain an immutable optional topic relation; replies inherit their
+  root relation, and edits, reactions, lifecycle, withdrawal, and redaction do
+  not change it. Current members receive bounded topic and exact-topic message
+  pages plus a profile-isolated topic-aware feed. Legacy, identified, and
+  threaded message grammars remain unchanged. Topic knowledge grants no
+  authority, subscription, notification, workflow, or execution meaning.
 
 ## Explicitly open
 

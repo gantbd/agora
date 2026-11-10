@@ -1,8 +1,8 @@
 use agora_engine::persistence::RecoveryLimits;
 use agora_engine::{
     AdmissionPolicy, CommandV2, Engine, EventSequence, LogicalTime, ModerationCausationV1,
-    ModerationReasonV1, Participant, ParticipantKind, PublicationCommandV2, PublicationKeyV2,
-    RoomId,
+    ModerationReasonV1, OutcomeV2, Participant, ParticipantKind, PublicationCommandV2,
+    PublicationKeyV2, RoomId,
 };
 
 fn fixture_engine() -> Engine {
@@ -31,10 +31,21 @@ fn fixture_engine() -> Engine {
             participant: "agent".into(),
         })
         .unwrap();
+    let OutcomeV2::TopicCreated { topic_id, .. } = engine
+        .apply(CommandV2::CreateTopic {
+            room_id: "room".into(),
+            actor: "human".into(),
+            name: "General".to_owned(),
+        })
+        .unwrap()
+    else {
+        panic!("topic creation expected");
+    };
     engine
-        .apply(CommandV2::SpeakAddressed {
+        .apply(CommandV2::SpeakInTopic {
             room_id: "room".into(),
             author: "human".into(),
+            topic_id,
             at: LogicalTime(17),
             body: "hello".to_owned(),
             addressed_to: vec!["agent".into()],
@@ -126,9 +137,9 @@ fn unhex(value: &str) -> Vec<u8> {
 }
 
 #[test]
-fn canonical_v11_checkpoint_is_immutable_and_recovers() {
+fn canonical_v12_checkpoint_is_immutable_and_recovers() {
     let prepared = fixture_engine().prepare_checkpoint(65_536).unwrap();
-    let expected_hex = include_str!("fixtures/checkpoint-v11.hex").trim();
+    let expected_hex = include_str!("fixtures/checkpoint-v12.hex").trim();
     assert_eq!(hex(prepared.bytes()), expected_hex);
 
     let recovered = Engine::recover_checkpoint(

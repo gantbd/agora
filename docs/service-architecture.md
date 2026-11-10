@@ -138,6 +138,16 @@ message pages remain unchanged; edit events are projected into each feed.
 Checkpoint recovery preserves exact receipts, history, cursor continuation, and
 tombstone scrubbing. Rich collaborative writing remains a Vellum concern.
 
+## Stable topics
+
+`TopicsV1` remains conversation state inside the same serialized owner. The
+service derives topic creators and message authors from bound clients, keeps
+topic and topic-message cursors isolated by profile and exact topic identity,
+and exposes a parallel topic-aware room-change projection. Replies inherit the
+root relation; edits, reactions, lifecycle changes, and tombstones cannot move
+messages between topics. Topic identity grants no membership, subscription,
+notification, workflow, or execution authority.
+
 ## Deliberate exclusions
 
 The semantic profiles perform no network I/O, encryption, direct physical

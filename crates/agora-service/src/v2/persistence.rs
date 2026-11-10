@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 const MAGIC: &[u8; 8] = b"AGORASV\0";
-const VERSION: u8 = 13;
+const VERSION: u8 = 14;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ServiceCheckpointScopeV1([u8; 16]);
@@ -428,6 +428,35 @@ impl ServiceV2 {
                         .map_err(|error| map_engine(error, true))?;
                     writer.blob(checkpoint.bytes())?;
                 }
+                CursorPage::Topics { room_id, cursor } => {
+                    writer.byte(12)?;
+                    writer.text(room_id.as_str())?;
+                    let checkpoint = cursor
+                        .prepare_checkpoint(max_snapshot_bytes)
+                        .map_err(|error| map_engine(error, true))?;
+                    writer.blob(checkpoint.bytes())?;
+                }
+                CursorPage::TopicMessages {
+                    room_id,
+                    topic_id,
+                    cursor,
+                } => {
+                    writer.byte(13)?;
+                    writer.text(room_id.as_str())?;
+                    writer.raw(&topic_id.into_bytes())?;
+                    let checkpoint = cursor
+                        .prepare_checkpoint(max_snapshot_bytes)
+                        .map_err(|error| map_engine(error, true))?;
+                    writer.blob(checkpoint.bytes())?;
+                }
+                CursorPage::TopicChanges { room_id, position } => {
+                    writer.byte(14)?;
+                    writer.text(room_id.as_str())?;
+                    let checkpoint = position
+                        .prepare_checkpoint(max_snapshot_bytes)
+                        .map_err(|error| map_engine(error, true))?;
+                    writer.blob(checkpoint.bytes())?;
+                }
             }
         }
         Ok(ServiceCheckpointV2(writer.bytes))
@@ -698,6 +727,52 @@ impl ServiceV2 {
                         message_id,
                         cursor,
                     }
+                }
+                12 => {
+                    let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
+                    let cursor = TopicPageCursorV1::recover_checkpoint(
+                        reader.blob(bounds.max_snapshot_bytes)?,
+                        cursor_bounds,
+                    )
+                    .map_err(|error| map_engine(error, true))?;
+                    if room_id.as_str().is_empty() || !cursor.is_bound_to(participant, &room_id) {
+                        return Err(ServiceCheckpointErrorV2::Invalid);
+                    }
+                    CursorPage::Topics { room_id, cursor }
+                }
+                13 => {
+                    let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
+                    let topic_id = TopicId::from_bytes(reader.fixed()?);
+                    let cursor = TopicMessagePageCursorV1::recover_checkpoint(
+                        reader.blob(bounds.max_snapshot_bytes)?,
+                        cursor_bounds,
+                    )
+                    .map_err(|error| map_engine(error, true))?;
+                    if room_id.as_str().is_empty()
+                        || !cursor.is_bound_to(participant, &room_id, topic_id)
+                    {
+                        return Err(ServiceCheckpointErrorV2::Invalid);
+                    }
+                    CursorPage::TopicMessages {
+                        room_id,
+                        topic_id,
+                        cursor,
+                    }
+                }
+                14 => {
+                    let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
+                    let position = RoomChangePosition::recover_checkpoint(
+                        reader.blob(bounds.max_snapshot_bytes)?,
+                        cursor_bounds,
+                    )
+                    .map_err(|error| map_engine(error, true))?;
+                    if room_id.as_str().is_empty()
+                        || !position.is_bound_to(participant, &room_id)
+                        || position.revision() > engine.revision()
+                    {
+                        return Err(ServiceCheckpointErrorV2::Invalid);
+                    }
+                    CursorPage::TopicChanges { room_id, position }
                 }
                 _ => return Err(ServiceCheckpointErrorV2::Invalid),
             };

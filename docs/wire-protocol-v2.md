@@ -60,6 +60,12 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `22` | ReactionStatus | room, message ID |
 | `23` | EditMessage | room, expected revision, message ID, logical time, replacement body |
 | `24` | MessageRevisions | room, message ID, optional cursor, limit |
+| `25` | Topics | room, optional cursor, limit |
+| `26` | TopicMessages | room, topic ID, optional cursor, limit |
+| `27` | CreateTopic | room, expected revision, bounded name |
+| `28` | SpeakInTopic | room, expected revision, topic ID, logical time, body, addressed-participant list |
+| `29` | OpenTopicChanges | room, exact completed snapshot revision |
+| `2a` | TopicChanges | room, required opaque cursor, limit |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -76,7 +82,8 @@ MessageWithdrawn `15`, MessageRedacted `16`, IdentifiedChanges `17`, ThreadRoots
 `18`, ThreadReplies `19`, ReplyAccepted `1a`, ThreadedChanges `1b`,
 ThreadArchived `1c`, ThreadReopened `1d`, ThreadStatus `1e`, ReactionStatus
 `1f`, ReactionAdded `20`, ReactionRemoved `21`, MessageRevisions `22`, and
-MessageEdited `23`.
+MessageEdited `23`, Topics `24`, TopicMessages `25`, TopicCreated `26`,
+TopicMessageAccepted `27`, and TopicChanges `28`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -170,6 +177,16 @@ message ID, and message-revision number. Room-event tag `10` carries actor text,
 message ID, message-revision number, logical time, and body in all three change
 profiles. Existing message pages continue to expose only the current body.
 
+A topic page contains revision, room text, a canonical topic-ID-ordered list of
+`(16-byte topic ID, bounded name, creator text)`, and an optional cursor. A
+topic-message page adds the exact topic selector and carries identified/threaded
+message fields plus a closed optional topic ID; every returned message must
+match the page topic. TopicCreated carries revision and topic ID.
+TopicMessageAccepted carries revision, message ID, topic ID, and sequence.
+TopicChanges uses the normal change envelope and event tags, with event `06`
+using the topic-aware message grammar and event `11` carrying actor, topic ID,
+and name. Its service cursor cannot be substituted with any older feed profile.
+
 ## Refusals
 
 | Tag | Refusal | Payload |
@@ -191,6 +208,7 @@ profiles. Existing message pages continue to expose only the current body.
 | `0f` | Unavailable | — |
 | `10` | Banned | — |
 | `11` | ThreadArchived | — |
+| `12` | UnknownTopic | — |
 
 ## Closure and evidence
 
@@ -210,7 +228,10 @@ outcome, refusal, room-event kind, and gap cause. Thread reply-page and threaded
 change fixtures additionally freeze the optional relationship grammar and page
 shape. Thread lifecycle-change and status fixtures freeze explicit archive state
 and evidence. Reaction change and status fixtures freeze the relation event and
-bounded aggregate grammar. Truncation, trailing data,
+bounded aggregate grammar. Topic commands, pages, receipts, feed messages,
+unknown-topic refusal, and mismatched page relations have closed round-trip and
+malformed-shape evidence; the expanded capability fixture freezes tag `0f`.
+Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push
 delivery, or an authenticated host.

@@ -6,7 +6,7 @@ use agora_engine::{
     ModerationCausationV1, ModerationReasonV1, ObservationRefusal, OutcomeV2 as EngineOutcome,
     ParticipantId, ParticipantKind, Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role,
     RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
-    ThreadMessagePageCursor,
+    ThreadMessagePageCursor, TopicId, TopicMessagePageCursorV1, TopicPageCursorV1,
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
@@ -17,7 +17,8 @@ use agora_protocol::v2::{
     RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
     RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1,
     ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1,
-    ThreadedRoomEventV1,
+    ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1,
+    TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -121,10 +122,23 @@ enum CursorPage {
         room_id: RoomId,
         position: RoomChangePosition,
     },
+    TopicChanges {
+        room_id: RoomId,
+        position: RoomChangePosition,
+    },
     MessageRevisions {
         room_id: RoomId,
         message_id: MessageId,
         cursor: MessageRevisionPageCursorV1,
+    },
+    Topics {
+        room_id: RoomId,
+        cursor: TopicPageCursorV1,
+    },
+    TopicMessages {
+        room_id: RoomId,
+        topic_id: TopicId,
+        cursor: TopicMessagePageCursorV1,
     },
 }
 
@@ -290,6 +304,7 @@ impl ServiceV2 {
                 CapabilityV2::ThreadLifecycleV1,
                 CapabilityV2::ReactionsV1,
                 CapabilityV2::MessageRevisionsV1,
+                CapabilityV2::TopicsV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -357,6 +372,15 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.threaded_changes(client, participant, room_id, *cursor, *limit),
+            CommandV2::OpenTopicChanges {
+                room_id,
+                observed_revision,
+            } => self.open_topic_changes(client, participant, room_id, *observed_revision),
+            CommandV2::TopicChanges {
+                room_id,
+                cursor,
+                limit,
+            } => self.topic_changes(client, participant, room_id, *cursor, *limit),
             CommandV2::ThreadStatus {
                 room_id,
                 root_message_id,
@@ -371,6 +395,47 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.message_revisions(client, participant, room_id, *message_id, *cursor, *limit),
+            CommandV2::Topics {
+                room_id,
+                cursor,
+                limit,
+            } => self.topics(client, participant, room_id, *cursor, *limit),
+            CommandV2::TopicMessages {
+                room_id,
+                topic_id,
+                cursor,
+                limit,
+            } => self.topic_messages(client, participant, room_id, *topic_id, *cursor, *limit),
+            CommandV2::CreateTopic {
+                room_id,
+                expected_revision,
+                name,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::CreateTopic {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    name: name.clone(),
+                },
+            ),
+            CommandV2::SpeakInTopic {
+                room_id,
+                expected_revision,
+                topic_id,
+                logical_time,
+                body,
+                addressed_to,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SpeakInTopic {
+                    room_id: RoomId::new(room_id),
+                    author: participant.clone(),
+                    topic_id: TopicId::from_bytes(topic_id.into_bytes()),
+                    at: agora_engine::LogicalTime(*logical_time),
+                    body: body.clone(),
+                    addressed_to: addressed_to.iter().map(ParticipantId::new).collect(),
+                },
+            ),
             CommandV2::CreateRoom {
                 room_id,
                 name,
@@ -741,6 +806,27 @@ impl ServiceV2 {
             EngineOutcome::MessageAccepted { sequence, .. } => {
                 Ok(OutcomeV2::MessageAccepted { revision, sequence })
             }
+            EngineOutcome::TopicMessageAccepted {
+                room_id,
+                topic_id,
+                sequence,
+            } => {
+                let message_id = self
+                    .engine
+                    .message(&room_id, sequence)
+                    .ok_or(RefusalV2::Unavailable)?
+                    .id();
+                Ok(OutcomeV2::TopicMessageAccepted {
+                    revision,
+                    message_id: MessageIdV1::new(message_id.into_bytes()),
+                    topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                    sequence,
+                })
+            }
+            EngineOutcome::TopicCreated { topic_id, .. } => Ok(OutcomeV2::TopicCreated {
+                revision,
+                topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            }),
             EngineOutcome::ReplyAccepted { .. } => Err(RefusalV2::Unavailable),
             EngineOutcome::MessageWithdrawn {
                 message_id,
@@ -1110,6 +1196,97 @@ impl ServiceV2 {
         }))
     }
 
+    fn topics(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        cursor_id: Option<PageCursorV2>,
+        limit: u32,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let cursor = match cursor_id {
+            Some(id) => match self.cursor_for(client, id)? {
+                CursorPage::Topics {
+                    room_id: bound_room,
+                    cursor,
+                } if bound_room == room => Some(cursor),
+                _ => return Err(RefusalV2::InvalidCursor),
+            },
+            None => None,
+        };
+        let page = self
+            .engine
+            .topic_page(observer, &room, cursor.as_ref(), limit as usize)
+            .map_err(map_observation_refusal)?;
+        let next_page = page.next.map(|cursor| CursorPage::Topics {
+            room_id: room.clone(),
+            cursor,
+        });
+        let next = self.replace_cursor(client, cursor_id, next_page)?;
+        Ok(OutcomeV2::Topics(TopicPageV1 {
+            revision: page.revision.0,
+            room_id: page.room_id.as_str().to_owned(),
+            topics: page
+                .topics
+                .into_iter()
+                .map(|topic| TopicV1 {
+                    topic_id: TopicIdV1::new(topic.id().into_bytes()),
+                    name: topic.name().to_owned(),
+                    creator_id: topic.creator().as_str().to_owned(),
+                })
+                .collect(),
+            next,
+        }))
+    }
+
+    fn topic_messages(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        topic_id: TopicIdV1,
+        cursor_id: Option<PageCursorV2>,
+        limit: u32,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let topic = TopicId::from_bytes(topic_id.into_bytes());
+        let cursor = match cursor_id {
+            Some(id) => match self.cursor_for(client, id)? {
+                CursorPage::TopicMessages {
+                    room_id: bound_room,
+                    topic_id: bound_topic,
+                    cursor,
+                } if bound_room == room && bound_topic == topic => Some(cursor),
+                _ => return Err(RefusalV2::InvalidCursor),
+            },
+            None => None,
+        };
+        let page = self
+            .engine
+            .topic_message_page(observer, &room, topic, cursor.as_ref(), limit as usize)
+            .map_err(map_observation_refusal)?;
+        let next_page = page.next.map(|cursor| CursorPage::TopicMessages {
+            room_id: room.clone(),
+            topic_id: topic,
+            cursor,
+        });
+        let next = self.replace_cursor(client, cursor_id, next_page)?;
+        Ok(OutcomeV2::TopicMessages(TopicMessagePageV1 {
+            revision: page.revision.0,
+            room_id: page.room_id.as_str().to_owned(),
+            topic_id: TopicIdV1::new(page.topic_id.into_bytes()),
+            messages: page
+                .messages
+                .into_iter()
+                .map(map_topic_message_from_engine)
+                .collect(),
+            oldest_retained_sequence: page.oldest_retained_sequence,
+            next_message_sequence: page.next_message_sequence,
+            next,
+        }))
+    }
+
     fn thread_roots(
         &mut self,
         client: ClientIdV2,
@@ -1316,6 +1493,16 @@ impl ServiceV2 {
                             } => RoomEventV2::RoomCreated {
                                 owner: owner.as_str().to_owned(),
                                 admission: map_admission_from_engine(admission),
+                            },
+                            agora_engine::DomainEventV2::TopicCreated {
+                                actor,
+                                topic_id,
+                                name,
+                                ..
+                            } => RoomEventV2::TopicCreated {
+                                actor_id: actor.as_str().to_owned(),
+                                topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                                name,
                             },
                             agora_engine::DomainEventV2::InvitationRecorded {
                                 participant, ..
@@ -1667,6 +1854,104 @@ impl ServiceV2 {
         }
     }
 
+    fn open_topic_changes(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        observed_revision: u64,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let position = self
+            .engine
+            .room_change_position(observer, &room, Revision(observed_revision))
+            .map_err(map_observation_refusal)?;
+        let cursor = self
+            .replace_cursor(
+                client,
+                None,
+                Some(CursorPage::TopicChanges {
+                    room_id: room,
+                    position,
+                }),
+            )?
+            .ok_or(RefusalV2::Unavailable)?;
+        Ok(OutcomeV2::ChangesOpened {
+            revision: observed_revision,
+            cursor,
+        })
+    }
+
+    fn topic_changes(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        cursor_id: PageCursorV2,
+        limit: u32,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let position = match self.cursor_for(client, cursor_id)? {
+            CursorPage::TopicChanges {
+                room_id: bound_room,
+                position,
+            } if bound_room == room => position,
+            _ => return Err(RefusalV2::InvalidCursor),
+        };
+        match self
+            .engine
+            .room_change_page(observer, &room, &position, limit as usize)
+            .map_err(map_observation_refusal)?
+        {
+            RoomChangeResult::Gap {
+                cause,
+                current_revision,
+            } => {
+                self.replace_cursor(client, Some(cursor_id), None)?;
+                Ok(OutcomeV2::ChangeGap {
+                    current_revision: current_revision.0,
+                    cause: match cause {
+                        RoomChangeGap::Retention {
+                            acknowledged_through,
+                        } => ChangeGapV2::Retention {
+                            acknowledged_through: acknowledged_through.0,
+                        },
+                        RoomChangeGap::MembershipChanged => ChangeGapV2::MembershipChanged,
+                    },
+                })
+            }
+            RoomChangeResult::Page(page) => {
+                let next = self
+                    .replace_cursor(
+                        client,
+                        Some(cursor_id),
+                        Some(CursorPage::TopicChanges {
+                            room_id: room,
+                            position: page.next,
+                        }),
+                    )?
+                    .ok_or(RefusalV2::Unavailable)?;
+                let changes = page
+                    .changes
+                    .into_iter()
+                    .map(|change| {
+                        Ok(TopicRoomChangeV1 {
+                            event_sequence: change.sequence.0,
+                            revision: change.revision.0,
+                            event: map_topic_room_event(change.event)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, RefusalV2>>()?;
+                Ok(OutcomeV2::TopicChanges(TopicRoomChangePageV1 {
+                    revision: page.revision.0,
+                    changes,
+                    next,
+                    has_more: page.has_more,
+                }))
+            }
+        }
+    }
+
     fn cursor_for(
         &self,
         client: ClientIdV2,
@@ -1728,20 +2013,27 @@ impl ServiceV2 {
             | CommandV2::IdentifiedMessages { room_id, limit, .. }
             | CommandV2::ThreadRoots { room_id, limit, .. }
             | CommandV2::ThreadReplies { room_id, limit, .. }
-            | CommandV2::MessageRevisions { room_id, limit, .. } => {
+            | CommandV2::MessageRevisions { room_id, limit, .. }
+            | CommandV2::Topics { room_id, limit, .. }
+            | CommandV2::TopicMessages { room_id, limit, .. } => {
                 valid_room(room_id) && valid_page(*limit)
             }
             CommandV2::OpenChanges { room_id, .. }
             | CommandV2::OpenIdentifiedChanges { room_id, .. }
             | CommandV2::OpenThreadedChanges { room_id, .. }
+            | CommandV2::OpenTopicChanges { room_id, .. }
             | CommandV2::ThreadStatus { room_id, .. }
             | CommandV2::ReactionStatus { room_id, .. } => valid_room(room_id),
             CommandV2::Changes { room_id, limit, .. }
             | CommandV2::IdentifiedChanges { room_id, limit, .. }
-            | CommandV2::ThreadedChanges { room_id, limit, .. } => {
+            | CommandV2::ThreadedChanges { room_id, limit, .. }
+            | CommandV2::TopicChanges { room_id, limit, .. } => {
                 valid_room(room_id) && valid_page(*limit)
             }
             CommandV2::CreateRoom { room_id, name, .. } => {
+                valid_room(room_id) && valid_text(name, self.limits.max_room_name_bytes)
+            }
+            CommandV2::CreateTopic { room_id, name, .. } => {
                 valid_room(room_id) && valid_text(name, self.limits.max_room_name_bytes)
             }
             CommandV2::Invite {
@@ -1814,6 +2106,12 @@ impl ServiceV2 {
                 body,
                 addressed_to,
                 ..
+            }
+            | CommandV2::SpeakInTopic {
+                room_id,
+                body,
+                addressed_to,
+                ..
             } => {
                 valid_room(room_id)
                     && valid_text(body, self.limits.max_message_body_bytes)
@@ -1877,6 +2175,27 @@ fn map_threaded_message_from_engine(message: agora_engine::Message) -> ThreadedM
     }
 }
 
+fn map_topic_message_from_engine(message: agora_engine::Message) -> TopicMessageV1 {
+    TopicMessageV1 {
+        message_id: MessageIdV1::new(message.id().into_bytes()),
+        sequence: message.sequence(),
+        author: message.author().as_str().to_owned(),
+        logical_time: message.at().0,
+        body: message.body().to_owned(),
+        addressed_to: message
+            .addressed_to()
+            .iter()
+            .map(|participant| participant.as_str().to_owned())
+            .collect(),
+        reply_to_root: message
+            .reply_to_root()
+            .map(|root| MessageIdV1::new(root.into_bytes())),
+        topic_id: message
+            .topic_id()
+            .map(|topic| TopicIdV1::new(topic.into_bytes())),
+    }
+}
+
 fn map_thread_page(
     page: agora_engine::ThreadMessagePage,
     next: Option<PageCursorV2>,
@@ -1910,6 +2229,16 @@ fn map_identified_room_event(
         } => IdentifiedRoomEventV1::RoomCreated {
             owner: owner.as_str().to_owned(),
             admission: map_admission_from_engine(admission),
+        },
+        agora_engine::DomainEventV2::TopicCreated {
+            actor,
+            topic_id,
+            name,
+            ..
+        } => IdentifiedRoomEventV1::TopicCreated {
+            actor_id: actor.as_str().to_owned(),
+            topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            name,
         },
         agora_engine::DomainEventV2::InvitationRecorded { participant, .. } => {
             IdentifiedRoomEventV1::InvitationRecorded {
@@ -2063,6 +2392,16 @@ fn map_threaded_room_event(
             owner: owner.as_str().to_owned(),
             admission: map_admission_from_engine(admission),
         },
+        agora_engine::DomainEventV2::TopicCreated {
+            actor,
+            topic_id,
+            name,
+            ..
+        } => ThreadedRoomEventV1::TopicCreated {
+            actor_id: actor.as_str().to_owned(),
+            topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            name,
+        },
         agora_engine::DomainEventV2::InvitationRecorded { participant, .. } => {
             ThreadedRoomEventV1::InvitationRecorded {
                 participant_id: participant.as_str().to_owned(),
@@ -2202,6 +2541,159 @@ fn map_threaded_room_event(
     })
 }
 
+fn map_topic_room_event(event: agora_engine::DomainEventV2) -> Result<TopicRoomEventV1, RefusalV2> {
+    if let agora_engine::DomainEventV2::MessageAccepted { message, .. } = event {
+        return Ok(TopicRoomEventV1::MessageAccepted(
+            map_topic_message_from_engine(message),
+        ));
+    }
+    Ok(match map_threaded_room_event(event)? {
+        ThreadedRoomEventV1::RoomCreated { owner, admission } => {
+            TopicRoomEventV1::RoomCreated { owner, admission }
+        }
+        ThreadedRoomEventV1::TopicCreated {
+            actor_id,
+            topic_id,
+            name,
+        } => TopicRoomEventV1::TopicCreated {
+            actor_id,
+            topic_id,
+            name,
+        },
+        ThreadedRoomEventV1::InvitationRecorded { participant_id } => {
+            TopicRoomEventV1::InvitationRecorded { participant_id }
+        }
+        ThreadedRoomEventV1::ParticipantJoined { participant_id } => {
+            TopicRoomEventV1::ParticipantJoined { participant_id }
+        }
+        ThreadedRoomEventV1::ParticipantLeft { participant_id } => {
+            TopicRoomEventV1::ParticipantLeft { participant_id }
+        }
+        ThreadedRoomEventV1::RoleChanged {
+            participant_id,
+            role,
+        } => TopicRoomEventV1::RoleChanged {
+            participant_id,
+            role,
+        },
+        ThreadedRoomEventV1::RoomPolicyChanged {
+            actor_id,
+            previous,
+            admission,
+        } => TopicRoomEventV1::RoomPolicyChanged {
+            actor_id,
+            previous,
+            admission,
+        },
+        ThreadedRoomEventV1::ParticipantKicked {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        } => TopicRoomEventV1::ParticipantKicked {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        },
+        ThreadedRoomEventV1::ParticipantBanned {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        } => TopicRoomEventV1::ParticipantBanned {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        },
+        ThreadedRoomEventV1::ParticipantUnbanned {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        } => TopicRoomEventV1::ParticipantUnbanned {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        },
+        ThreadedRoomEventV1::MessageAccepted(message) => {
+            TopicRoomEventV1::MessageAccepted(TopicMessageV1 {
+                message_id: message.message_id,
+                sequence: message.sequence,
+                author: message.author,
+                logical_time: message.logical_time,
+                body: message.body,
+                addressed_to: message.addressed_to,
+                reply_to_root: message.reply_to_root,
+                topic_id: None,
+            })
+        }
+        ThreadedRoomEventV1::MessageWithdrawn {
+            actor_id,
+            message_id,
+            sequence,
+        } => TopicRoomEventV1::MessageWithdrawn {
+            actor_id,
+            message_id,
+            sequence,
+        },
+        ThreadedRoomEventV1::MessageRedacted {
+            actor_id,
+            author_id,
+            message_id,
+            sequence,
+            reason,
+            causation,
+        } => TopicRoomEventV1::MessageRedacted {
+            actor_id,
+            author_id,
+            message_id,
+            sequence,
+            reason,
+            causation,
+        },
+        ThreadedRoomEventV1::ThreadLifecycleChanged {
+            actor_id,
+            root_message_id,
+            archived,
+            reason,
+            causation,
+        } => TopicRoomEventV1::ThreadLifecycleChanged {
+            actor_id,
+            root_message_id,
+            archived,
+            reason,
+            causation,
+        },
+        ThreadedRoomEventV1::ReactionChanged {
+            actor_id,
+            message_id,
+            key,
+            reacted,
+        } => TopicRoomEventV1::ReactionChanged {
+            actor_id,
+            message_id,
+            key,
+            reacted,
+        },
+        ThreadedRoomEventV1::MessageEdited {
+            actor_id,
+            message_id,
+            message_revision,
+            logical_time,
+            body,
+        } => TopicRoomEventV1::MessageEdited {
+            actor_id,
+            message_id,
+            message_revision,
+            logical_time,
+            body,
+        },
+    })
+}
+
 fn map_admission_to_engine(value: AdmissionPolicyV2) -> AdmissionPolicy {
     match value {
         AdmissionPolicyV2::Open => AdmissionPolicy::Open,
@@ -2269,6 +2761,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::BanLimit
         | EngineRefusal::ReactionLimit
         | EngineRefusal::MessageRevisionLimit
+        | EngineRefusal::TopicLimit
         | EngineRefusal::MessageRetentionDisabled
         | EngineRefusal::AddressedParticipantLimit
         | EngineRefusal::EventOutboxFull => RefusalV2::Capacity,
@@ -2276,6 +2769,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::MessageSequenceExhausted
         | EngineRefusal::RevisionExhausted
         | EngineRefusal::EventSequenceExhausted => RefusalV2::Exhausted,
+        EngineRefusal::TopicIdentityExhausted => RefusalV2::Exhausted,
         EngineRefusal::InvalidParticipantId
         | EngineRefusal::InvalidRoomId
         | EngineRefusal::InvalidDisplayName
@@ -2291,10 +2785,13 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidReaction
         | EngineRefusal::InvalidReactionChange
         | EngineRefusal::InvalidMessageEdit
+        | EngineRefusal::InvalidTopicName
+        | EngineRefusal::DuplicateTopicName
         | EngineRefusal::MessageAlreadyTombstoned
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)
         | EngineRefusal::AlreadyMember(_)
         | EngineRefusal::NotBanned(_) => RefusalV2::InvalidInput,
+        EngineRefusal::UnknownTopic => RefusalV2::UnknownTopic,
     }
 }

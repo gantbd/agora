@@ -379,6 +379,7 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::MemberLimit
         | EngineRefusal::InvitationLimit
         | EngineRefusal::BanLimit
+        | EngineRefusal::TopicLimit
         | EngineRefusal::MessageRetentionDisabled
         | EngineRefusal::AddressedParticipantLimit
         | EngineRefusal::EventOutboxFull => RefusalV1::Capacity,
@@ -386,6 +387,7 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::MessageSequenceExhausted
         | EngineRefusal::RevisionExhausted
         | EngineRefusal::EventSequenceExhausted => RefusalV1::Exhausted,
+        EngineRefusal::TopicIdentityExhausted => RefusalV1::Exhausted,
         EngineRefusal::InvalidParticipantId
         | EngineRefusal::InvalidRoomId
         | EngineRefusal::InvalidDisplayName
@@ -404,6 +406,9 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::InvalidReactionChange
         | EngineRefusal::MessageRevisionLimit
         | EngineRefusal::InvalidMessageEdit
+        | EngineRefusal::InvalidTopicName
+        | EngineRefusal::DuplicateTopicName
+        | EngineRefusal::UnknownTopic
         | EngineRefusal::MessageAlreadyTombstoned
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)

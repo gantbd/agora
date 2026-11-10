@@ -209,6 +209,39 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
             cursor: Some(protocol::v2::PageCursorV2(20)),
             limit: 2,
         },
+        protocol::v2::CommandV2::CreateTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 20,
+            name: "incidents".to_owned(),
+        },
+        protocol::v2::CommandV2::SpeakInTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 21,
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+            logical_time: 22,
+            body: "evidence".to_owned(),
+            addressed_to: vec!["participant".to_owned()],
+        },
+        protocol::v2::CommandV2::Topics {
+            room_id: "room".to_owned(),
+            cursor: Some(protocol::v2::PageCursorV2(21)),
+            limit: 2,
+        },
+        protocol::v2::CommandV2::TopicMessages {
+            room_id: "room".to_owned(),
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+            cursor: Some(protocol::v2::PageCursorV2(22)),
+            limit: 2,
+        },
+        protocol::v2::CommandV2::OpenTopicChanges {
+            room_id: "room".to_owned(),
+            observed_revision: 22,
+        },
+        protocol::v2::CommandV2::TopicChanges {
+            room_id: "room".to_owned(),
+            cursor: protocol::v2::PageCursorV2(23),
+            limit: 2,
+        },
     ] {
         let request = wire::v2::WireRequestV2::Execute {
             client: protocol::v2::ClientIdV2(7),

@@ -377,10 +377,67 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
             ..
         }))
     ));
+    let create_topic = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(12),
+                command: CommandV2::CreateTopic {
+                    room_id: "private".to_owned(),
+                    expected_revision: 5,
+                    name: "incidents".to_owned(),
+                },
+            },
+        },
+        limits(8).wire,
+    )
+    .unwrap();
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicCreated { topic_id, .. })) =
+        decode_reply_v2(
+            &host
+                .handle(session, &create_topic, &context, HostTimeV1(2))
+                .unwrap(),
+            limits(8).wire,
+        )
+        .unwrap()
+    else {
+        panic!("topic creation expected");
+    };
+    let topic_message = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(13),
+                command: CommandV2::SpeakInTopic {
+                    room_id: "private".to_owned(),
+                    expected_revision: 6,
+                    topic_id,
+                    logical_time: 21,
+                    body: "checkpoint topic".to_owned(),
+                    addressed_to: vec![],
+                },
+            },
+        },
+        limits(8).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host
+                .handle(session, &topic_message, &context, HostTimeV1(2))
+                .unwrap(),
+            limits(8).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicMessageAccepted {
+            revision: 7,
+            ..
+        }))
+    ));
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    let fixture = include_str!("fixtures/host-checkpoint-v13.hex").trim();
+    let fixture = include_str!("fixtures/host-checkpoint-v14.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -411,7 +468,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
             .unwrap(),
         first
     );
-    assert_eq!(recovered.service().engine().revision(), Revision(5));
+    assert_eq!(recovered.service().engine().revision(), Revision(7));
     assert_eq!(calls.get(), 1, "recovered session must be revalidated");
 }
 

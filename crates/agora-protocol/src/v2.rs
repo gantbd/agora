@@ -38,6 +38,24 @@ impl fmt::Debug for MessageIdV1 {
     }
 }
 
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TopicIdV1([u8; 16]);
+
+impl TopicIdV1 {
+    pub const fn new(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+    pub const fn into_bytes(self) -> [u8; 16] {
+        self.0
+    }
+}
+
+impl fmt::Debug for TopicIdV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("TopicIdV1(<opaque>)")
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdmissionPolicyV2 {
     Open,
@@ -122,6 +140,15 @@ pub enum CommandV2 {
         cursor: PageCursorV2,
         limit: u32,
     },
+    OpenTopicChanges {
+        room_id: String,
+        observed_revision: u64,
+    },
+    TopicChanges {
+        room_id: String,
+        cursor: PageCursorV2,
+        limit: u32,
+    },
     ArchiveThread {
         room_id: String,
         expected_revision: u64,
@@ -168,6 +195,30 @@ pub enum CommandV2 {
         message_id: MessageIdV1,
         cursor: Option<PageCursorV2>,
         limit: u32,
+    },
+    Topics {
+        room_id: String,
+        cursor: Option<PageCursorV2>,
+        limit: u32,
+    },
+    TopicMessages {
+        room_id: String,
+        topic_id: TopicIdV1,
+        cursor: Option<PageCursorV2>,
+        limit: u32,
+    },
+    CreateTopic {
+        room_id: String,
+        expected_revision: u64,
+        name: String,
+    },
+    SpeakInTopic {
+        room_id: String,
+        expected_revision: u64,
+        topic_id: TopicIdV1,
+        logical_time: u64,
+        body: String,
+        addressed_to: Vec<String>,
     },
     CreateRoom {
         room_id: String,
@@ -377,6 +428,24 @@ impl fmt::Debug for CommandV2 {
                 limit,
             } => formatter
                 .debug_struct("ThreadedChanges")
+                .field("room_id_bytes", &room_id.len())
+                .field("cursor", cursor)
+                .field("limit", limit)
+                .finish(),
+            Self::OpenTopicChanges {
+                room_id,
+                observed_revision,
+            } => formatter
+                .debug_struct("OpenTopicChanges")
+                .field("room_id_bytes", &room_id.len())
+                .field("observed_revision", observed_revision)
+                .finish(),
+            Self::TopicChanges {
+                room_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("TopicChanges")
                 .field("room_id_bytes", &room_id.len())
                 .field("cursor", cursor)
                 .field("limit", limit)
@@ -611,6 +680,54 @@ impl fmt::Debug for CommandV2 {
                 .field("has_cursor", &cursor.is_some())
                 .field("limit", limit)
                 .finish(),
+            Self::Topics {
+                room_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("Topics")
+                .field("room_id_bytes", &room_id.len())
+                .field("has_cursor", &cursor.is_some())
+                .field("limit", limit)
+                .finish(),
+            Self::TopicMessages {
+                room_id,
+                topic_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("TopicMessages")
+                .field("room_id_bytes", &room_id.len())
+                .field("topic_id", topic_id)
+                .field("has_cursor", &cursor.is_some())
+                .field("limit", limit)
+                .finish(),
+            Self::CreateTopic {
+                room_id,
+                expected_revision,
+                name,
+            } => formatter
+                .debug_struct("CreateTopic")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("name_bytes", &name.len())
+                .finish(),
+            Self::SpeakInTopic {
+                room_id,
+                expected_revision,
+                topic_id,
+                logical_time,
+                body,
+                addressed_to,
+            } => formatter
+                .debug_struct("SpeakInTopic")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("topic_id", topic_id)
+                .field("logical_time", logical_time)
+                .field("body_bytes", &body.len())
+                .field("addressed_count", &addressed_to.len())
+                .finish(),
         }
     }
 }
@@ -633,6 +750,7 @@ pub enum CapabilityV2 {
     ThreadLifecycleV1,
     ReactionsV1,
     MessageRevisionsV1,
+    TopicsV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -774,6 +892,52 @@ pub struct ThreadedMessageV1 {
     pub reply_to_root: Option<MessageIdV1>,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicV1 {
+    pub topic_id: TopicIdV1,
+    pub name: String,
+    pub creator_id: String,
+}
+
+impl fmt::Debug for TopicV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicV1")
+            .field("topic_id", &self.topic_id)
+            .field("name_bytes", &self.name.len())
+            .field("creator_id_bytes", &self.creator_id.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicMessageV1 {
+    pub message_id: MessageIdV1,
+    pub sequence: u64,
+    pub author: String,
+    pub logical_time: u64,
+    pub body: String,
+    pub addressed_to: Vec<String>,
+    pub reply_to_root: Option<MessageIdV1>,
+    pub topic_id: Option<TopicIdV1>,
+}
+
+impl fmt::Debug for TopicMessageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicMessageV1")
+            .field("message_id", &self.message_id)
+            .field("sequence", &self.sequence)
+            .field("author_bytes", &self.author.len())
+            .field("logical_time", &self.logical_time)
+            .field("body_bytes", &self.body.len())
+            .field("addressed_count", &self.addressed_to.len())
+            .field("is_reply", &self.reply_to_root.is_some())
+            .field("has_topic", &self.topic_id.is_some())
+            .finish()
+    }
+}
+
 impl fmt::Debug for ThreadedMessageV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -841,6 +1005,50 @@ pub struct ThreadMessagePageV1 {
     pub oldest_retained_sequence: u64,
     pub next_message_sequence: u64,
     pub next: Option<PageCursorV2>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicPageV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub topics: Vec<TopicV1>,
+    pub next: Option<PageCursorV2>,
+}
+
+impl fmt::Debug for TopicPageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicPageV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("topic_count", &self.topics.len())
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicMessagePageV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub topic_id: TopicIdV1,
+    pub messages: Vec<TopicMessageV1>,
+    pub oldest_retained_sequence: u64,
+    pub next_message_sequence: u64,
+    pub next: Option<PageCursorV2>,
+}
+
+impl fmt::Debug for TopicMessagePageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicMessagePageV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("topic_id", &self.topic_id)
+            .field("message_count", &self.messages.len())
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
 }
 
 impl fmt::Debug for ThreadMessagePageV1 {
@@ -976,6 +1184,11 @@ pub enum RoomEventV2 {
         owner: String,
         admission: AdmissionPolicyV2,
     },
+    TopicCreated {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        name: String,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1054,6 +1267,11 @@ impl fmt::Debug for RoomEventV2 {
             Self::RoomCreated { admission, .. } => formatter
                 .debug_struct("RoomCreated")
                 .field("admission", admission)
+                .finish_non_exhaustive(),
+            Self::TopicCreated { actor_id, name, .. } => formatter
+                .debug_struct("TopicCreated")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("name_bytes", &name.len())
                 .finish_non_exhaustive(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
@@ -1185,6 +1403,11 @@ pub enum IdentifiedRoomEventV1 {
         owner: String,
         admission: AdmissionPolicyV2,
     },
+    TopicCreated {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        name: String,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1263,6 +1486,11 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
             Self::RoomCreated { admission, .. } => formatter
                 .debug_struct("RoomCreated")
                 .field("admission", admission)
+                .finish_non_exhaustive(),
+            Self::TopicCreated { actor_id, name, .. } => formatter
+                .debug_struct("TopicCreated")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("name_bytes", &name.len())
                 .finish_non_exhaustive(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
@@ -1394,6 +1622,11 @@ pub enum ThreadedRoomEventV1 {
         owner: String,
         admission: AdmissionPolicyV2,
     },
+    TopicCreated {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        name: String,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1473,6 +1706,235 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .debug_struct("RoomCreated")
                 .field("admission", admission)
                 .finish_non_exhaustive(),
+            Self::TopicCreated { actor_id, name, .. } => formatter
+                .debug_struct("TopicCreated")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("name_bytes", &name.len())
+                .finish_non_exhaustive(),
+            Self::InvitationRecorded { participant_id }
+            | Self::ParticipantJoined { participant_id }
+            | Self::ParticipantLeft { participant_id } => formatter
+                .debug_struct("ParticipantChange")
+                .field("participant_id_bytes", &participant_id.len())
+                .finish_non_exhaustive(),
+            Self::RoleChanged {
+                participant_id,
+                role,
+            } => formatter
+                .debug_struct("RoleChanged")
+                .field("participant_id_bytes", &participant_id.len())
+                .field("role", role)
+                .finish(),
+            Self::RoomPolicyChanged {
+                actor_id,
+                previous,
+                admission,
+            } => formatter
+                .debug_struct("RoomPolicyChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("previous", previous)
+                .field("admission", admission)
+                .finish(),
+            Self::ParticipantKicked {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            }
+            | Self::ParticipantBanned {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            }
+            | Self::ParticipantUnbanned {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("ModerationEvent")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("participant_id_bytes", &participant_id.len())
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::MessageAccepted(message) => formatter
+                .debug_tuple("MessageAccepted")
+                .field(message)
+                .finish(),
+            Self::MessageWithdrawn {
+                actor_id,
+                message_id,
+                sequence,
+            } => formatter
+                .debug_struct("MessageWithdrawn")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("sequence", sequence)
+                .finish(),
+            Self::MessageRedacted {
+                actor_id,
+                author_id,
+                message_id,
+                sequence,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("MessageRedacted")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("author_id_bytes", &author_id.len())
+                .field("message_id", message_id)
+                .field("sequence", sequence)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::ThreadLifecycleChanged {
+                actor_id,
+                root_message_id,
+                archived,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("ThreadLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("root_message_id", root_message_id)
+                .field("archived", archived)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::ReactionChanged {
+                actor_id,
+                message_id,
+                key,
+                reacted,
+            } => formatter
+                .debug_struct("ReactionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("key_bytes", &key.len())
+                .field("reacted", reacted)
+                .finish(),
+            Self::MessageEdited {
+                actor_id,
+                message_id,
+                message_revision,
+                logical_time,
+                body,
+            } => formatter
+                .debug_struct("MessageEdited")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("message_revision", message_revision)
+                .field("logical_time", logical_time)
+                .field("body_bytes", &body.len())
+                .finish(),
+        }
+    }
+}
+
+/// Additive room-event profile carrying both reply topology and the immutable
+/// optional topic relation on accepted messages.
+#[derive(Clone, Eq, PartialEq)]
+pub enum TopicRoomEventV1 {
+    RoomCreated {
+        owner: String,
+        admission: AdmissionPolicyV2,
+    },
+    TopicCreated {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        name: String,
+    },
+    InvitationRecorded {
+        participant_id: String,
+    },
+    ParticipantJoined {
+        participant_id: String,
+    },
+    ParticipantLeft {
+        participant_id: String,
+    },
+    RoleChanged {
+        participant_id: String,
+        role: RoleV2,
+    },
+    RoomPolicyChanged {
+        actor_id: String,
+        previous: AdmissionPolicyV2,
+        admission: AdmissionPolicyV2,
+    },
+    ParticipantKicked {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ParticipantBanned {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ParticipantUnbanned {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    MessageAccepted(TopicMessageV1),
+    MessageWithdrawn {
+        actor_id: String,
+        message_id: MessageIdV1,
+        sequence: u64,
+    },
+    MessageRedacted {
+        actor_id: String,
+        author_id: String,
+        message_id: MessageIdV1,
+        sequence: u64,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ThreadLifecycleChanged {
+        actor_id: String,
+        root_message_id: MessageIdV1,
+        archived: bool,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ReactionChanged {
+        actor_id: String,
+        message_id: MessageIdV1,
+        key: String,
+        reacted: bool,
+    },
+    MessageEdited {
+        actor_id: String,
+        message_id: MessageIdV1,
+        message_revision: u32,
+        logical_time: u64,
+        body: String,
+    },
+}
+
+impl fmt::Debug for TopicRoomEventV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RoomCreated { admission, .. } => formatter
+                .debug_struct("RoomCreated")
+                .field("admission", admission)
+                .finish_non_exhaustive(),
+            Self::TopicCreated {
+                actor_id,
+                topic_id,
+                name,
+            } => formatter
+                .debug_struct("TopicCreated")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("name_bytes", &name.len())
+                .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
             | Self::ParticipantLeft { participant_id } => formatter
@@ -1640,6 +2102,33 @@ pub struct ThreadedRoomChangePageV1 {
     pub has_more: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TopicRoomChangeV1 {
+    pub event_sequence: u64,
+    pub revision: u64,
+    pub event: TopicRoomEventV1,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicRoomChangePageV1 {
+    pub revision: u64,
+    pub changes: Vec<TopicRoomChangeV1>,
+    pub next: PageCursorV2,
+    pub has_more: bool,
+}
+
+impl fmt::Debug for TopicRoomChangePageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicRoomChangePageV1")
+            .field("revision", &self.revision)
+            .field("change_count", &self.changes.len())
+            .field("next", &self.next)
+            .field("has_more", &self.has_more)
+            .finish()
+    }
+}
+
 impl fmt::Debug for ThreadedRoomChangePageV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -1721,6 +2210,8 @@ pub enum OutcomeV2 {
     ThreadStatus(ThreadStatusV1),
     ReactionStatus(ReactionStatusV1),
     MessageRevisions(MessageRevisionPageV1),
+    Topics(TopicPageV1),
+    TopicMessages(TopicMessagePageV1),
     ChangesOpened {
         revision: u64,
         cursor: PageCursorV2,
@@ -1728,6 +2219,7 @@ pub enum OutcomeV2 {
     Changes(RoomChangePageV2),
     IdentifiedChanges(IdentifiedRoomChangePageV1),
     ThreadedChanges(ThreadedRoomChangePageV1),
+    TopicChanges(TopicRoomChangePageV1),
     ChangeGap {
         current_revision: u64,
         cause: ChangeGapV2,
@@ -1805,6 +2297,16 @@ pub enum OutcomeV2 {
         message_id: MessageIdV1,
         message_revision: u32,
     },
+    TopicCreated {
+        revision: u64,
+        topic_id: TopicIdV1,
+    },
+    TopicMessageAccepted {
+        revision: u64,
+        message_id: MessageIdV1,
+        topic_id: TopicIdV1,
+        sequence: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1826,6 +2328,7 @@ pub enum RefusalV2 {
     Unavailable,
     Banned,
     ThreadArchived,
+    UnknownTopic,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -121,6 +121,13 @@ impl Writer {
             self.text(id.as_str())?
         }
         self.message_id_option(m.reply_to_root)?;
+        match m.topic_id {
+            None => self.byte(0)?,
+            Some(topic_id) => {
+                self.byte(1)?;
+                self.raw(&topic_id.into_bytes())?;
+            }
+        }
         self.count(m.revisions.len())?;
         for revision in &m.revisions {
             self.number(u64::from(revision.number))?;
@@ -153,6 +160,18 @@ impl Writer {
                 self.text(room_id.as_str())?;
                 self.text(owner.as_str())?;
                 self.byte(admission_tag(*admission))
+            }
+            DomainEventV2::TopicCreated {
+                room_id,
+                actor,
+                topic_id,
+                name,
+            } => {
+                self.byte(16)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&topic_id.into_bytes())?;
+                self.text(name)
             }
             DomainEventV2::InvitationRecorded {
                 room_id,
@@ -406,6 +425,11 @@ impl<'a> Reader<'a> {
             addressed_to.push(self.participant(l)?)
         }
         let reply_to_root = self.message_id_option()?;
+        let topic_id = match self.byte()? {
+            0 => None,
+            1 => Some(TopicId::from_bytes(self.fixed()?)),
+            _ => return Err(CheckpointError::Invalid),
+        };
         let revision_count = self.count(MAX_MESSAGE_REVISIONS_V1)?;
         if revision_count == 0 {
             return Err(CheckpointError::Invalid);
@@ -443,6 +467,7 @@ impl<'a> Reader<'a> {
             body,
             addressed_to,
             reply_to_root,
+            topic_id,
             revisions,
         })
     }
@@ -564,6 +589,12 @@ impl<'a> Reader<'a> {
                 at: LogicalTime(self.number()?),
                 body: self.text(l.max_message_body_bytes)?,
             },
+            16 => DomainEventV2::TopicCreated {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                topic_id: TopicId::from_bytes(self.fixed()?),
+                name: self.text(l.max_topic_name_bytes)?,
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -609,7 +640,7 @@ fn read_role(v: u8) -> Result<Role, CheckpointError> {
         _ => Err(CheckpointError::Invalid),
     }
 }
-fn limits_values(l: Limits) -> [usize; 15] {
+fn limits_values(l: Limits) -> [usize; 17] {
     [
         l.max_participants,
         l.max_rooms,
@@ -617,6 +648,7 @@ fn limits_values(l: Limits) -> [usize; 15] {
         l.max_invitations_per_room,
         l.max_bans_per_room,
         l.max_messages_per_room,
+        l.max_topics_per_room,
         l.max_pending_events,
         l.max_publication_receipts,
         l.max_addressed_participants_per_message,
@@ -624,6 +656,7 @@ fn limits_values(l: Limits) -> [usize; 15] {
         l.max_room_id_bytes,
         l.max_display_name_bytes,
         l.max_room_name_bytes,
+        l.max_topic_name_bytes,
         l.max_message_body_bytes,
         l.max_moderation_reason_bytes,
     ]
@@ -636,6 +669,7 @@ fn read_limits(r: &mut Reader<'_>, c: Limits) -> Result<Limits, CheckpointError>
         max_invitations_per_room: r.size(c.max_invitations_per_room)?,
         max_bans_per_room: r.size(c.max_bans_per_room)?,
         max_messages_per_room: r.size(c.max_messages_per_room)?,
+        max_topics_per_room: r.size(c.max_topics_per_room)?,
         max_pending_events: r.size(c.max_pending_events)?,
         max_publication_receipts: r.size(c.max_publication_receipts)?,
         max_addressed_participants_per_message: r.size(c.max_addressed_participants_per_message)?,
@@ -643,6 +677,7 @@ fn read_limits(r: &mut Reader<'_>, c: Limits) -> Result<Limits, CheckpointError>
         max_room_id_bytes: r.size(c.max_room_id_bytes)?,
         max_display_name_bytes: r.size(c.max_display_name_bytes)?,
         max_room_name_bytes: r.size(c.max_room_name_bytes)?,
+        max_topic_name_bytes: r.size(c.max_topic_name_bytes)?,
         max_message_body_bytes: r.size(c.max_message_body_bytes)?,
         max_moderation_reason_bytes: r.size(c.max_moderation_reason_bytes)?,
     })
@@ -666,7 +701,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(11)?;
+        w.byte(12)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -688,6 +723,8 @@ impl Engine {
             w.number(room.message_identity_incarnation)?;
             w.number(room.next_message_identity)?;
             w.number(room.next_message_sequence)?;
+            w.number(room.topic_identity_incarnation)?;
+            w.number(room.next_topic_identity)?;
             w.count(room.members.len())?;
             for (id, role) in &room.members {
                 w.text(id.as_str())?;
@@ -726,6 +763,12 @@ impl Engine {
                     }
                 }
             }
+            w.count(room.topics.len())?;
+            for (topic_id, topic) in &room.topics {
+                w.raw(&topic_id.into_bytes())?;
+                w.text(&topic.name)?;
+                w.text(topic.creator.as_str())?;
+            }
         }
         w.count(self.publications.len())?;
         for (key, p) in &self.publications {
@@ -758,7 +801,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 11 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 12 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -785,6 +828,8 @@ impl Engine {
             let message_identity_incarnation = r.number()?;
             let next_message_identity = r.number()?;
             let next_message_sequence = r.number()?;
+            let topic_identity_incarnation = r.number()?;
+            let next_topic_identity = r.number()?;
             let mut members = BTreeMap::new();
             let n = r.count(l.max_members_per_room)?;
             for _ in 0..n {
@@ -876,6 +921,17 @@ impl Engine {
                 }
                 reactions.insert(message_id, by_key);
             }
+            let mut topics = BTreeMap::new();
+            let count = r.count(l.max_topics_per_room)?;
+            for _ in 0..count {
+                let topic_id = TopicId::from_bytes(r.fixed()?);
+                let topic = TopicV1 {
+                    id: topic_id,
+                    name: r.text(l.max_topic_name_bytes)?,
+                    creator: r.participant(l)?,
+                };
+                insert(&mut topics, topic_id, topic)?;
+            }
             insert(
                 &mut e.rooms,
                 id.clone(),
@@ -890,6 +946,9 @@ impl Engine {
                     thread_roots,
                     archived_threads,
                     reactions,
+                    topics,
+                    topic_identity_incarnation,
+                    next_topic_identity,
                     message_identity_incarnation,
                     next_message_identity,
                     next_message_sequence,
@@ -1223,6 +1282,82 @@ impl MessageRevisionPageCursorV1 {
     }
 }
 
+impl TopicPageCursorV1 {
+    pub fn prepare_checkpoint(
+        &self,
+        max_snapshot_bytes: usize,
+    ) -> Result<CursorCheckpointV1, CheckpointError> {
+        let mut writer = Writer {
+            bytes: Vec::new(),
+            max: max_snapshot_bytes,
+        };
+        writer.raw(CURSOR_MAGIC)?;
+        writer.byte(1)?;
+        writer.byte(8)?;
+        writer.number(self.revision.0)?;
+        writer.text(self.observer.as_str())?;
+        writer.text(self.room_id.as_str())?;
+        writer.raw(&self.after.into_bytes())?;
+        Ok(CursorCheckpointV1(writer.bytes))
+    }
+    pub fn recover_checkpoint(
+        bytes: &[u8],
+        bounds: CursorRecoveryLimitsV1,
+    ) -> Result<Self, CheckpointError> {
+        let mut reader = cursor_reader(bytes, bounds, 8)?;
+        let cursor = Self {
+            revision: Revision(reader.number()?),
+            observer: ParticipantId::new(reader.text(bounds.max_participant_id_bytes)?),
+            room_id: RoomId::new(reader.text(bounds.max_room_id_bytes)?),
+            after: TopicId::from_bytes(reader.fixed()?),
+        };
+        finish_cursor(&reader)?;
+        if cursor.observer.as_str().is_empty() || cursor.room_id.as_str().is_empty() {
+            return Err(CheckpointError::Invalid);
+        }
+        Ok(cursor)
+    }
+}
+
+impl TopicMessagePageCursorV1 {
+    pub fn prepare_checkpoint(
+        &self,
+        max_snapshot_bytes: usize,
+    ) -> Result<CursorCheckpointV1, CheckpointError> {
+        let mut writer = Writer {
+            bytes: Vec::new(),
+            max: max_snapshot_bytes,
+        };
+        writer.raw(CURSOR_MAGIC)?;
+        writer.byte(1)?;
+        writer.byte(9)?;
+        writer.number(self.revision.0)?;
+        writer.text(self.observer.as_str())?;
+        writer.text(self.room_id.as_str())?;
+        writer.raw(&self.topic_id.into_bytes())?;
+        writer.number(self.after_sequence)?;
+        Ok(CursorCheckpointV1(writer.bytes))
+    }
+    pub fn recover_checkpoint(
+        bytes: &[u8],
+        bounds: CursorRecoveryLimitsV1,
+    ) -> Result<Self, CheckpointError> {
+        let mut reader = cursor_reader(bytes, bounds, 9)?;
+        let cursor = Self {
+            revision: Revision(reader.number()?),
+            observer: ParticipantId::new(reader.text(bounds.max_participant_id_bytes)?),
+            room_id: RoomId::new(reader.text(bounds.max_room_id_bytes)?),
+            topic_id: TopicId::from_bytes(reader.fixed()?),
+            after_sequence: reader.number()?,
+        };
+        finish_cursor(&reader)?;
+        if cursor.observer.as_str().is_empty() || cursor.room_id.as_str().is_empty() {
+            return Err(CheckpointError::Invalid);
+        }
+        Ok(cursor)
+    }
+}
+
 impl RoomChangePosition {
     pub fn prepare_checkpoint(
         &self,
@@ -1322,6 +1457,11 @@ fn valid_message(e: &Engine, room: &Room, m: &Message) -> Result<(), CheckpointE
     if first.at != m.at || last.body != m.body {
         return Err(CheckpointError::Invalid);
     }
+    if m.topic_id
+        .is_some_and(|topic_id| !room.topics.contains_key(&topic_id))
+    {
+        return Err(CheckpointError::Invalid);
+    }
     if let Some(root) = m.reply_to_root {
         let mut incarnation = [0_u8; 8];
         let mut sequence = [0_u8; 8];
@@ -1340,7 +1480,9 @@ fn valid_message(e: &Engine, room: &Room, m: &Message) -> Result<(), CheckpointE
             return Err(CheckpointError::Invalid);
         }
         if let Some(root_message) = room.messages.iter().find(|message| message.id == root)
-            && (root_message.reply_to_root.is_some() || root_message.sequence >= m.sequence)
+            && (root_message.reply_to_root.is_some()
+                || root_message.sequence >= m.sequence
+                || root_message.topic_id != m.topic_id)
         {
             return Err(CheckpointError::Invalid);
         }
@@ -1450,6 +1592,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             || room.invitations.len() > l.max_invitations_per_room
             || room.bans.len() > l.max_bans_per_room
             || room.messages.len() > l.max_messages_per_room
+            || room.topics.len() > l.max_topics_per_room
             || room.thread_roots.len() > room.messages.len()
             || room.archived_threads.len() > room.messages.len()
         {
@@ -1480,6 +1623,29 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             || room.next_message_identity != room.next_message_sequence
         {
             return Err(CheckpointError::Invalid);
+        }
+        if room.topic_identity_incarnation >= e.revision.0
+            || room.next_topic_identity != room.topics.len() as u64
+        {
+            return Err(CheckpointError::Invalid);
+        }
+        let mut names = BTreeSet::new();
+        for (topic_id, topic) in &room.topics {
+            if topic.id != *topic_id
+                || *topic_id
+                    != TopicId::allocated(
+                        room.topic_identity_incarnation,
+                        topic_id.0[8..]
+                            .try_into()
+                            .map(u64::from_be_bytes)
+                            .map_err(|_| CheckpointError::Invalid)?,
+                    )
+                || !e.participants.contains_key(&topic.creator)
+                || !names.insert(topic.name.clone())
+            {
+                return Err(CheckpointError::Invalid);
+            }
+            bounded(&topic.name, l.max_topic_name_bytes)?;
         }
         if l.max_messages_per_room == 0 && room.next_message_sequence != 0 {
             return Err(CheckpointError::Invalid);
@@ -1552,6 +1718,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             .and_then(|n| n.checked_add((room.members.len() - 1) as u64))
             .and_then(|n| n.checked_add(room.invitations.len() as u64))
             .and_then(|n| n.checked_add(room.bans.len() as u64))
+            .and_then(|n| n.checked_add(room.topics.len() as u64))
             .ok_or(CheckpointError::Invalid)?;
     }
     if minimum > e.revision.0 {
@@ -1648,6 +1815,20 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
         } => {
             let r = room(room_id)?;
             if owner(r)? != id {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::TopicCreated {
+            room_id,
+            actor,
+            topic_id,
+            name,
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            bounded(name, e.limits.max_topic_name_bytes)?;
+            let topic = r.topics.get(topic_id).ok_or(CheckpointError::Invalid)?;
+            if topic.creator != *actor || topic.name != *name {
                 return Err(CheckpointError::Invalid);
             }
         }

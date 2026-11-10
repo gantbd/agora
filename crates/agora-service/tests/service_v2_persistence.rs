@@ -98,6 +98,96 @@ fn populated() -> (
         ),
         ReplyV2::Accepted(OutcomeV2::MessageEdited { revision: 7, .. })
     ));
+    let ReplyV2::Accepted(OutcomeV2::TopicCreated { topic_id, .. }) = service.execute(
+        alice,
+        request(
+            100,
+            CommandV2::CreateTopic {
+                room_id: "alpha".to_owned(),
+                expected_revision: 7,
+                name: "incidents".to_owned(),
+            },
+        ),
+    ) else {
+        panic!("topic creation expected");
+    };
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                101,
+                CommandV2::CreateTopic {
+                    room_id: "alpha".to_owned(),
+                    expected_revision: 8,
+                    name: "operations".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicCreated { revision: 9, .. })
+    ));
+    for (request_id, expected_revision, logical_time, body) in
+        [(102, 9, 11, "topic one"), (103, 10, 12, "topic two")]
+    {
+        assert!(matches!(
+            service.execute(
+                alice,
+                request(
+                    request_id,
+                    CommandV2::SpeakInTopic {
+                        room_id: "alpha".to_owned(),
+                        expected_revision,
+                        topic_id,
+                        logical_time,
+                        body: body.to_owned(),
+                        addressed_to: vec![],
+                    },
+                ),
+            ),
+            ReplyV2::Accepted(OutcomeV2::TopicMessageAccepted { .. })
+        ));
+    }
+    let ReplyV2::Accepted(OutcomeV2::Topics(topic_page)) = service.execute(
+        alice,
+        request(
+            104,
+            CommandV2::Topics {
+                room_id: "alpha".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("topic page expected");
+    };
+    assert!(topic_page.next.is_some());
+    let ReplyV2::Accepted(OutcomeV2::TopicMessages(topic_messages)) = service.execute(
+        alice,
+        request(
+            105,
+            CommandV2::TopicMessages {
+                room_id: "alpha".to_owned(),
+                topic_id,
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("topic message page expected");
+    };
+    assert!(topic_messages.next.is_some());
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                106,
+                CommandV2::OpenTopicChanges {
+                    room_id: "alpha".to_owned(),
+                    observed_revision: 11,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision: 11, .. })
+    ));
     let ReplyV2::Accepted(OutcomeV2::Rooms(page)) = service.execute(
         alice,
         request(
@@ -123,7 +213,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v13.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v14.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -231,7 +321,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 14;
+    future[8] = 15;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -1403,7 +1493,7 @@ fn recovered_change_position_continues_without_snapshot_gap() {
         ),
         ReplyV2::Accepted(OutcomeV2::MessageAccepted {
             revision: revision + 1,
-            sequence: 1,
+            sequence: 3,
         })
     );
     let ReplyV2::Accepted(OutcomeV2::Changes(page)) = recovered.execute(
@@ -1421,4 +1511,73 @@ fn recovered_change_position_continues_without_snapshot_gap() {
     };
     assert_eq!(page.changes.len(), 1);
     assert_eq!(page.changes[0].revision, revision + 1);
+}
+
+#[test]
+fn topic_change_position_continues_after_recovery_with_topic_identity() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::OpenTopicChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 2,
+            },
+        ),
+    ) else {
+        panic!("topic change position expected");
+    };
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    let ReplyV2::Accepted(OutcomeV2::TopicCreated { topic_id, .. }) = recovered.execute(
+        alice,
+        request(
+            2,
+            CommandV2::CreateTopic {
+                room_id: "room".to_owned(),
+                expected_revision: 2,
+                name: "incidents".to_owned(),
+            },
+        ),
+    ) else {
+        panic!("topic creation expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::TopicChanges(page)) = recovered.execute(
+        alice,
+        request(
+            3,
+            CommandV2::TopicChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("recovered topic feed expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        agora_protocol::v2::TopicRoomEventV1::TopicCreated {
+            topic_id: event_topic,
+            ..
+        } if *event_topic == topic_id
+    ));
 }

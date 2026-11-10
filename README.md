@@ -8,7 +8,7 @@ behavior, or wall-clock access.
 
 The v0.3 core provides bounded deterministic transitions, typed atomic refusal,
 room-local message ordering and retention, optimistic revisions, an ordered
-bounded outbox, replay-safe response publication, and canonical profile-10 checkpoints.
+bounded outbox, replay-safe response publication, and canonical profile-12 checkpoints.
 Messages may explicitly address a canonical bounded list of current room members.
 Participant kind never changes admission, role, speaking, or addressing behavior.
 
@@ -66,6 +66,12 @@ The separately advertised `ThreadLifecycleV1` capability makes active/archived
 state an attributable room fact. Root authors, owners, and moderators may
 archive or reopen retained roots with bounded evidence; archive blocks new
 replies without hiding topology, deleting content, or implying task completion.
+The `TopicsV1` capability adds stable opaque room-local topic identity, bounded
+owner/moderator creation, topic-scoped speaking, and participant-bound topic and
+topic-message pages. Replies inherit their root's immutable optional topic
+relation. A parallel topic-aware change profile carries that relation without
+altering legacy, identified, or threaded message bytes. Topics grant no posting,
+subscription, notification, workflow, or agent-execution authority.
 
 An independently versioned Service V2 checkpoint preserves the engine, pending
 outbox, client namespace, exact request replies, and live cursor consequences.
@@ -143,8 +149,8 @@ key. Matching replay returns the original transition without another message or
 revision. Changed content conflicts. The bounded volatile receipt index becomes
 durable only when a host persists it atomically with Agora state.
 
-The `AGORACP` version-11 codec validates bounds, canonical order, ownership/references,
-message and event frontiers, addressed membership, bans, moderation evidence, publication attribution, and
+The `AGORACP` version-12 codec validates bounds, canonical order, ownership/references,
+message and event frontiers, addressed membership, topics, bans, moderation evidence, publication attribution, and
 the exact unacknowledged outbox suffix. V1 bytes are refused because their agent
 activation state has no neutral interpretation. The codec proves neither origin
 authentication nor storage durability. Earlier profile bytes are refused.

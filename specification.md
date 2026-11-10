@@ -510,6 +510,22 @@ blocks cleanup. The host still performs no network I/O, credential verification,
 authorization-policy evaluation, physical persistence, or encryption. Durable
 session recovery requires the separate combined profile above.
 
+## Stable topic profile V1
+
+A room owns a bounded canonical map of opaque 128-bit topic identities to
+bounded names and attributable creators. Only a current owner or moderator may
+create a topic. `SpeakInTopic` requires current membership and an existing topic;
+normal message validation, sequence, identity, addressing, retention, outbox,
+revision, and replay laws remain unchanged. A reply inherits the root's topic
+and accepts no caller-supplied replacement.
+
+Topic and topic-message pages are current-member observations bound to observer,
+room, exact engine revision, profile, and topic where applicable. Topic-message
+pages retain global room sequence order and disclose the room retained interval.
+The topic-aware change profile uses the shared ordered outbox but carries the
+optional topic relation on accepted messages; older profiles deliberately omit
+it and keep their existing bytes. Topic IDs grant no additional authority.
+
 ## Wire profile V1
 
 `agora-wire` canonically encodes passive protocol V1 requests and replies using

@@ -40,6 +40,9 @@ not ready for a network service or crates.io release.
 - bounded immutable message revisions with original-author authority, stable
   identity and relationships, fixed history ceilings, participant-bound pages,
   all-feed attribution, tombstone scrubbing, and exact replay/recovery;
+- stable room-local topics with role-bound kind-neutral creation, immutable
+  message relation and reply inheritance, bounded participant-bound pages, a
+  parallel topic-aware feed, and profile-12/14/14 canonical recovery;
 - authenticated transport-neutral Host V2 with distinct session/client binding,
   per-frame revalidation, substitution fencing, and cleanup;
 - independently versioned, scope-bound Service V2 checkpoints preserving engine,

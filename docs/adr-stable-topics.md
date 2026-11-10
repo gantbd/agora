@@ -1,6 +1,6 @@
 # ADR: stable room-local topics and topic-aware observation
 
-Status: accepted for implementation
+Status: implemented and qualified
 
 Date: 2026-11-10
 

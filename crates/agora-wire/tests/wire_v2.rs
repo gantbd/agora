@@ -7,7 +7,8 @@ use agora_protocol::v2::{
     RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
     RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1,
     ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1,
-    ThreadedRoomEventV1,
+    ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1,
+    TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicV1,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -156,6 +157,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::ThreadLifecycleV1,
         CapabilityV2::ReactionsV1,
         CapabilityV2::MessageRevisionsV1,
+        CapabilityV2::TopicsV1,
     ])))
 }
 
@@ -1497,4 +1499,150 @@ fn v2_limits_apply_before_owned_reconstruction() {
         ),
         Err(WireDecodeError::Limit)
     );
+}
+
+#[test]
+fn v2_topic_commands_pages_and_mutation_outcomes_are_canonical() {
+    let topic_id = TopicIdV1::new([0x44; 16]);
+    let message_id = MessageIdV1::new([0x55; 16]);
+    let requests = [
+        CommandV2::Topics {
+            room_id: "room".to_owned(),
+            cursor: Some(PageCursorV2(7)),
+            limit: 2,
+        },
+        CommandV2::TopicMessages {
+            room_id: "room".to_owned(),
+            topic_id,
+            cursor: None,
+            limit: 3,
+        },
+        CommandV2::CreateTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 8,
+            name: "incidents".to_owned(),
+        },
+        CommandV2::SpeakInTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 9,
+            topic_id,
+            logical_time: 10,
+            body: "evidence".to_owned(),
+            addressed_to: vec!["alice".to_owned()],
+        },
+        CommandV2::OpenTopicChanges {
+            room_id: "room".to_owned(),
+            observed_revision: 10,
+        },
+        CommandV2::TopicChanges {
+            room_id: "room".to_owned(),
+            cursor: PageCursorV2(12),
+            limit: 2,
+        },
+    ];
+    for (offset, command) in requests.into_iter().enumerate() {
+        let request = WireRequestV2::Execute {
+            client: ClientIdV2(1),
+            request: RequestV2 {
+                request_id: RequestIdV2(offset as u64),
+                command,
+            },
+        };
+        let encoded = encode_request_v2(&request, limits()).unwrap();
+        assert_eq!(decode_request_v2(&encoded, limits()).unwrap(), request);
+    }
+
+    let replies = [
+        OutcomeV2::Topics(TopicPageV1 {
+            revision: 10,
+            room_id: "room".to_owned(),
+            topics: vec![TopicV1 {
+                topic_id,
+                name: "incidents".to_owned(),
+                creator_id: "alice".to_owned(),
+            }],
+            next: Some(PageCursorV2(11)),
+        }),
+        OutcomeV2::TopicMessages(TopicMessagePageV1 {
+            revision: 10,
+            room_id: "room".to_owned(),
+            topic_id,
+            messages: vec![TopicMessageV1 {
+                message_id,
+                sequence: 4,
+                author: "bot".to_owned(),
+                logical_time: 9,
+                body: "evidence".to_owned(),
+                addressed_to: vec!["alice".to_owned()],
+                reply_to_root: None,
+                topic_id: Some(topic_id),
+            }],
+            oldest_retained_sequence: 3,
+            next_message_sequence: 5,
+            next: None,
+        }),
+        OutcomeV2::TopicCreated {
+            revision: 9,
+            topic_id,
+        },
+        OutcomeV2::TopicMessageAccepted {
+            revision: 10,
+            message_id,
+            topic_id,
+            sequence: 4,
+        },
+        OutcomeV2::TopicChanges(TopicRoomChangePageV1 {
+            revision: 10,
+            changes: vec![TopicRoomChangeV1 {
+                event_sequence: 8,
+                revision: 10,
+                event: TopicRoomEventV1::MessageAccepted(TopicMessageV1 {
+                    message_id,
+                    sequence: 4,
+                    author: "bot".to_owned(),
+                    logical_time: 9,
+                    body: "evidence".to_owned(),
+                    addressed_to: vec!["alice".to_owned()],
+                    reply_to_root: None,
+                    topic_id: Some(topic_id),
+                }),
+            }],
+            next: PageCursorV2(13),
+            has_more: false,
+        }),
+    ];
+    for outcome in replies {
+        let reply = WireReplyV2::Executed(ReplyV2::Accepted(outcome));
+        let encoded = encode_reply_v2(&reply, limits()).unwrap();
+        assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), reply);
+    }
+
+    let invalid = WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicMessages(
+        TopicMessagePageV1 {
+            revision: 10,
+            room_id: "room".to_owned(),
+            topic_id,
+            messages: vec![TopicMessageV1 {
+                message_id,
+                sequence: 4,
+                author: "bot".to_owned(),
+                logical_time: 9,
+                body: "evidence".to_owned(),
+                addressed_to: vec![],
+                reply_to_root: None,
+                topic_id: Some(TopicIdV1::new([0x66; 16])),
+            }],
+            oldest_retained_sequence: 3,
+            next_message_sequence: 5,
+            next: None,
+        },
+    )));
+    assert_eq!(
+        encode_reply_v2(&invalid, limits()),
+        Err(WireEncodeError::Invalid)
+    );
+
+    let refusal = WireReplyV2::Executed(ReplyV2::Refused(RefusalV2::UnknownTopic));
+    let encoded = encode_reply_v2(&refusal, limits()).unwrap();
+    assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), refusal);
 }

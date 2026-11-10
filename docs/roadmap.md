@@ -7,9 +7,8 @@
    of Agora.
 3. Add model, fuzz, and mutation gates around recovery, canonical wire changes,
    filesystem crash points, and command refusal.
-4. Build topics and conversation collections on the implemented one-level
-   threads, lifecycle, reactions, and immutable revision history without
-   weakening identity or tombstone reference integrity.
+4. Extend the implemented stable-topic substrate only through separately
+   decided rename, move, merge, resolution, and conversation-collection laws.
 5. Qualify backup/restore, upgrade/rollback, and an additional physical store only
    when a deployment profile requires claims beyond the current local Unix
    single-owner mechanism.
