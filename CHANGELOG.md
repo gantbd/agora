@@ -20,6 +20,8 @@ follow Semantic Versioning once a public release contract is selected.
   and durable commit-before-reply/lost-reply qualification.
 - Added a finite exhaustive read-position schedule model across both participant
   kinds, all scope variants, and every three-step ordering of three targets.
+- Added a 216-schedule Service V2 model covering human/agent symmetry, stale
+  revisions, membership authority changes, disconnects, and reconnects.
 - Added audience-specific embedded and remote-client SDK facades.
 - Added exact package and canonical-fixture compatibility inventories with
   adversarial drift checks.

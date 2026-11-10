@@ -60,6 +60,14 @@ conflict, disconnect tombstones, and receipt saturation before engine mutation.
 The canonical V2 fixture detects accidental checkpoint drift and is recovered
 and re-encoded during the gate.
 
+A finite Service V2 schedule model enumerates all 216 three-step schedules over
+owner speaking, actor speaking, deliberately stale speaking, leave, join, and
+disconnect/reconnect. Each schedule runs with the second participant represented
+once as human and once as agent. Replies, revision progression, event counts,
+membership authority, stale fencing, retired-client refusal, and reconnect
+namespace reset must match the explicit reference state after every step. This
+is serialized bounded exploration, not thread-parallel linearizability proof.
+
 Wire scenarios freeze representative request/reply bytes, round-trip every
 closed protocol variant, refuse every truncation and trailing byte, and exercise
 frame/text/field/list ceilings, strict UTF-8, unsupported versions, and unknown

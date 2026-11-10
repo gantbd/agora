@@ -32,6 +32,9 @@ not ready for a network service or crates.io release.
   opaque cursors and explicit retained-history intervals;
 - separately typed volatile Protocol/Service/Client V2 source profile closing
   participant-bound room lifecycle commands and bounded cursor projection;
+- exhaustive 216-schedule Service V2 model covering human/agent symmetry,
+  current and stale mutations, leave/join authority, retired clients, and
+  reconnect namespace reset;
 - canonical bounded Wire V2 complete-frame grammar with four additional golden
   fixtures and closed nested vocabularies;
 - deterministic bounded mutation of every canonical V1/V2 wire fixture across
