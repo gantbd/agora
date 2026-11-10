@@ -29,8 +29,10 @@ contains `IdentifiedMessageV1`; withdrawal and moderator-redaction variants
 retain their existing message ID, actor, author where applicable, reason, and
 causation evidence. All other variants preserve their current meaning.
 
-Wire V2 assigns new root command, outcome, and capability tags. Within the new
-outcome only, nested event tag `06` encodes the identified message grammar. The
+Wire V2 assigns command tags `16` (`OpenIdentifiedChanges`) and `17`
+(`IdentifiedChanges`), outcome tag `17` (`IdentifiedChanges`), and capability
+tag `0a` (`IdentifiedRoomChangesV1`). The service assigns outer cursor kind `7`.
+Within the new outcome only, nested event tag `06` encodes the identified message grammar. The
 legacy Changes outcome, its nested tags, all existing fixtures, and legacy
 cursor behavior remain byte-identical.
 
@@ -62,6 +64,15 @@ information only; it grants no authority and changes no ordering law.
 - Service and host checkpoints advance independently if durable identified
   cursor or reply grammar is added; the engine checkpoint does not advance
   unless its authoritative schema changes.
+
+## Implementation closure
+
+- [ ] Closed protocol commands, capability, identified event vocabulary, page,
+  and outcome.
+- [ ] Serialized service open/pull projection and cross-profile cursor refusal.
+- [ ] Cursor-kind `7` checkpoint/recovery with service/host profile advance.
+- [ ] Canonical wire codec and identified-change fixture without legacy drift.
+- [ ] Service replay, gap, recovery, redaction, SDK, and compatibility evidence.
 
 ## Nonclaims
 
