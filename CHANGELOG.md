@@ -35,10 +35,15 @@ follow Semantic Versioning once a public release contract is selected.
 - Added a snapshot-aligned bounded room change feed with stable event identity,
   exclusive replay-safe positions, explicit retention and membership-epoch gaps,
   durable Service V2 cursors, and a closed canonical Wire V2 projection.
+- Added participant-neutral kick, ban, and unban with role-scoped authority,
+  bounded reason and causation evidence, current-member feed projection, durable
+  recovery, and canonical moderation wire/checkpoint fixtures.
 
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
+- Advanced the engine, service, and host checkpoint records to profiles 3, 2,
+  and 2 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

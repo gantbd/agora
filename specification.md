@@ -128,14 +128,16 @@ before message mutation at capacity. Publication deliberately addresses nobody;
 an orchestrator must use an explicit conversation command if addressing is part
 of the response semantics.
 
-## Checkpoint profile V2
+## Checkpoint profile V3
 
-The closed `AGORACP` V2 codec captures limits, participants, rooms, membership,
-invitations, retained message suffixes and addressing, complete publication
+The closed `AGORACP` version-3 codec captures limits, participants, rooms,
+membership, invitations, bans, retained message suffixes and addressing, complete publication
 records, revision/event frontiers, acknowledgment cursor, and pending events.
 Host byte/cardinality ceilings apply before checkpoint-owned limits or allocation.
 Invalid tags, UTF-8, ordering, identities, references, suffixes, cursors, and
-receipt attribution are refused. Successful recovery has one canonical encoding.
+receipt attribution, moderation evidence, and ban/member overlap are refused.
+Successful recovery has one canonical encoding. Earlier profile bytes are refused
+rather than guessed or reinterpreted.
 
 V1 checkpoint bytes are intentionally refused rather than reinterpreted. V1
 contained agent-activation state that has no participant-neutral equivalent.
@@ -168,6 +170,13 @@ V1 service. A V2 connection binds a separately typed client handle to one alread
 registered participant. Create-room owner, invitation and role actor, joining or
 leaving participant, and message author are always derived from that binding.
 No V2 command may nominate its own actor.
+
+Kick, ban, and unban use the same participant-bound authority path for humans
+and agents. Owners may moderate non-owners; moderators may moderate members but
+not owners or moderators. Every accepted transition retains actor, subject,
+bounded reason, opaque 16-byte causation, revision, and event sequence. A kick
+permits admission again; a ban blocks invitation and joining until an authorized
+unban. Moderation evidence is visible only through the current-member room feed.
 
 The profile closes the current engine lifecycle commands and bounded room,
 member, and retained-message pages. The service converts engine continuations
@@ -208,7 +217,7 @@ position.
 
 ## Service checkpoint profile V2
 
-The `AGORASV` version-1 record is independent of public wire versioning and is
+The `AGORASV` version-2 record is independent of public wire versioning and is
 bound to an exact caller-supplied 16-byte store scope. It contains the canonical
 engine checkpoint, configured service limits, active client-to-participant
 bindings, ordered retired tombstones, exact request/reply receipts, private
@@ -264,7 +273,7 @@ requests, reconnect a host session, or prove server durability.
 
 ## Authenticated host checkpoint and durable publication V2
 
-The `AGORAHST` version-1 record is independently versioned and bound to an exact
+The `AGORAHST` version-2 record is independently versioned and bound to an exact
 16-byte store scope. It contains Host V2 limits, the next non-reused session
 frontier, every active mapping from opaque host session to verified subject,
 participant, service client and last verification time, the bounded retired

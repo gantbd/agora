@@ -2,9 +2,9 @@
 
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, MemberPageCursor, MessagePageCursor,
-    ObservationRefusal, OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind,
-    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomChangeGap,
-    RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
+    ModerationCausationV1, ModerationReasonV1, ObservationRefusal, OutcomeV2 as EngineOutcome,
+    ParticipantId, ParticipantKind, Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role,
+    RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, ChangeGapV2, ClientIdV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2,
@@ -26,6 +26,7 @@ pub struct ServiceLimitsV2 {
     pub max_room_id_bytes: usize,
     pub max_room_name_bytes: usize,
     pub max_message_body_bytes: usize,
+    pub max_moderation_reason_bytes: usize,
     pub max_addressed_participants: usize,
 }
 
@@ -41,6 +42,7 @@ impl Default for ServiceLimitsV2 {
             max_room_id_bytes: 128,
             max_room_name_bytes: 256,
             max_message_body_bytes: 16 * 1_024,
+            max_moderation_reason_bytes: 1_024,
             max_addressed_participants: 64,
         }
     }
@@ -315,6 +317,54 @@ impl ServiceV2 {
                     role: map_role_to_engine(*role),
                 },
             ),
+            CommandV2::Kick {
+                room_id,
+                participant_id,
+                reason,
+                causation,
+                expected_revision,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::Kick {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    participant: ParticipantId::new(participant_id),
+                    reason: ModerationReasonV1::new(reason),
+                    causation: ModerationCausationV1::new(*causation),
+                },
+            ),
+            CommandV2::Ban {
+                room_id,
+                participant_id,
+                reason,
+                causation,
+                expected_revision,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::Ban {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    participant: ParticipantId::new(participant_id),
+                    reason: ModerationReasonV1::new(reason),
+                    causation: ModerationCausationV1::new(*causation),
+                },
+            ),
+            CommandV2::Unban {
+                room_id,
+                participant_id,
+                reason,
+                causation,
+                expected_revision,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::Unban {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    participant: ParticipantId::new(participant_id),
+                    reason: ModerationReasonV1::new(reason),
+                    causation: ModerationCausationV1::new(*causation),
+                },
+            ),
             CommandV2::Speak {
                 room_id,
                 expected_revision,
@@ -364,6 +414,9 @@ impl ServiceV2 {
             EngineOutcome::Joined { .. } => Ok(OutcomeV2::Joined { revision }),
             EngineOutcome::Left { .. } => Ok(OutcomeV2::Left { revision }),
             EngineOutcome::RoleChanged { .. } => Ok(OutcomeV2::RoleChanged { revision }),
+            EngineOutcome::Kicked { .. } => Ok(OutcomeV2::Kicked { revision }),
+            EngineOutcome::Banned { .. } => Ok(OutcomeV2::Banned { revision }),
+            EngineOutcome::Unbanned { .. } => Ok(OutcomeV2::Unbanned { revision }),
             EngineOutcome::MessageAccepted { sequence, .. } => {
                 Ok(OutcomeV2::MessageAccepted { revision, sequence })
             }
@@ -635,6 +688,42 @@ impl ServiceV2 {
                                 participant_id: participant.as_str().to_owned(),
                                 role: map_role_from_engine(role),
                             },
+                            agora_engine::DomainEventV2::ParticipantKicked {
+                                actor,
+                                participant,
+                                reason,
+                                causation,
+                                ..
+                            } => RoomEventV2::ParticipantKicked {
+                                actor_id: actor.as_str().to_owned(),
+                                participant_id: participant.as_str().to_owned(),
+                                reason: reason.as_str().to_owned(),
+                                causation: causation.into_bytes(),
+                            },
+                            agora_engine::DomainEventV2::ParticipantBanned {
+                                actor,
+                                participant,
+                                reason,
+                                causation,
+                                ..
+                            } => RoomEventV2::ParticipantBanned {
+                                actor_id: actor.as_str().to_owned(),
+                                participant_id: participant.as_str().to_owned(),
+                                reason: reason.as_str().to_owned(),
+                                causation: causation.into_bytes(),
+                            },
+                            agora_engine::DomainEventV2::ParticipantUnbanned {
+                                actor,
+                                participant,
+                                reason,
+                                causation,
+                                ..
+                            } => RoomEventV2::ParticipantUnbanned {
+                                actor_id: actor.as_str().to_owned(),
+                                participant_id: participant.as_str().to_owned(),
+                                reason: reason.as_str().to_owned(),
+                                causation: causation.into_bytes(),
+                            },
                             agora_engine::DomainEventV2::MessageAccepted { message, .. } => {
                                 RoomEventV2::MessageAccepted(map_message_from_engine(message))
                             }
@@ -729,6 +818,28 @@ impl ServiceV2 {
                 participant_id,
                 ..
             } => valid_room(room_id) && valid_participant(participant_id),
+            CommandV2::Kick {
+                room_id,
+                participant_id,
+                reason,
+                ..
+            }
+            | CommandV2::Ban {
+                room_id,
+                participant_id,
+                reason,
+                ..
+            }
+            | CommandV2::Unban {
+                room_id,
+                participant_id,
+                reason,
+                ..
+            } => {
+                valid_room(room_id)
+                    && valid_participant(participant_id)
+                    && valid_text(reason, self.limits.max_moderation_reason_bytes)
+            }
             CommandV2::Join { room_id, .. } | CommandV2::Leave { room_id, .. } => {
                 valid_room(room_id)
             }
@@ -823,10 +934,12 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         EngineRefusal::NotAuthorized(_)
         | EngineRefusal::InvitationRequired(_)
         | EngineRefusal::OwnerCannotLeave => RefusalV2::NotAuthorized,
+        EngineRefusal::ParticipantBanned(_) => RefusalV2::Banned,
         EngineRefusal::ParticipantLimit
         | EngineRefusal::RoomLimit
         | EngineRefusal::MemberLimit
         | EngineRefusal::InvitationLimit
+        | EngineRefusal::BanLimit
         | EngineRefusal::MessageRetentionDisabled
         | EngineRefusal::AddressedParticipantLimit
         | EngineRefusal::EventOutboxFull => RefusalV2::Capacity,
@@ -839,9 +952,11 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidRoomName
         | EngineRefusal::InvalidMessageBody
         | EngineRefusal::NonCanonicalAddressing
+        | EngineRefusal::InvalidModerationReason
         | EngineRefusal::InvalidRoleChange
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)
-        | EngineRefusal::AlreadyMember(_) => RefusalV2::InvalidInput,
+        | EngineRefusal::AlreadyMember(_)
+        | EngineRefusal::NotBanned(_) => RefusalV2::InvalidInput,
     }
 }

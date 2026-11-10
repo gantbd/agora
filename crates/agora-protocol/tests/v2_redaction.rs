@@ -6,13 +6,22 @@ use agora_protocol::v2::{
 
 #[test]
 fn v2_debug_output_is_content_safe() {
-    let command = CommandV2::Speak {
-        room_id: "secret-room".to_owned(),
-        expected_revision: 1,
-        logical_time: 2,
-        body: "secret-body".to_owned(),
-        addressed_to: vec!["secret-recipient".to_owned()],
-    };
+    let commands = [
+        CommandV2::Speak {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 1,
+            logical_time: 2,
+            body: "secret-body".to_owned(),
+            addressed_to: vec!["secret-recipient".to_owned()],
+        },
+        CommandV2::Ban {
+            room_id: "secret-room".to_owned(),
+            participant_id: "secret-participant".to_owned(),
+            reason: "secret-reason".to_owned(),
+            causation: *b"secret-cause-123",
+            expected_revision: 2,
+        },
+    ];
     let replies = [
         ReplyV2::Accepted(OutcomeV2::Rooms(RoomPageV2 {
             revision: 1,
@@ -68,8 +77,23 @@ fn v2_debug_output_is_content_safe() {
             next: PageCursorV2(43),
             has_more: false,
         })),
+        ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 3,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 2,
+                revision: 3,
+                event: RoomEventV2::ParticipantBanned {
+                    actor_id: "secret-actor".to_owned(),
+                    participant_id: "secret-participant".to_owned(),
+                    reason: "secret-reason".to_owned(),
+                    causation: *b"secret-cause-123",
+                },
+            }],
+            next: PageCursorV2(44),
+            has_more: false,
+        })),
     ];
-    let rendered = format!("{command:?} {replies:?} {:?}", PageCursorV2(42));
+    let rendered = format!("{commands:?} {replies:?} {:?}", PageCursorV2(42));
     for secret in [
         "secret-room",
         "secret-body",
@@ -78,8 +102,12 @@ fn v2_debug_output_is_content_safe() {
         "secret-participant",
         "secret-display",
         "secret-author",
+        "secret-reason",
+        "secret-cause-123",
+        "secret-actor",
         "42",
         "43",
+        "44",
     ] {
         assert!(!rendered.contains(secret));
     }

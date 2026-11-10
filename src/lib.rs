@@ -14,6 +14,7 @@ pub struct Limits {
     pub max_rooms: usize,
     pub max_members_per_room: usize,
     pub max_invitations_per_room: usize,
+    pub max_bans_per_room: usize,
     pub max_messages_per_room: usize,
     pub max_pending_events: usize,
     pub max_publication_receipts: usize,
@@ -23,6 +24,7 @@ pub struct Limits {
     pub max_display_name_bytes: usize,
     pub max_room_name_bytes: usize,
     pub max_message_body_bytes: usize,
+    pub max_moderation_reason_bytes: usize,
 }
 
 impl Default for Limits {
@@ -32,6 +34,7 @@ impl Default for Limits {
             max_rooms: 256,
             max_members_per_room: 256,
             max_invitations_per_room: 256,
+            max_bans_per_room: 256,
             max_messages_per_room: 1_024,
             max_pending_events: 4_096,
             max_publication_receipts: 4_096,
@@ -41,6 +44,7 @@ impl Default for Limits {
             max_display_name_bytes: 256,
             max_room_name_bytes: 256,
             max_message_body_bytes: 16 * 1_024,
+            max_moderation_reason_bytes: 1_024,
         }
     }
 }
@@ -183,6 +187,7 @@ pub struct RoomView {
     pub admission: AdmissionPolicy,
     pub members: Vec<(ParticipantId, Role)>,
     pub pending_invitations: Vec<ParticipantId>,
+    pub banned_participants: Vec<ParticipantId>,
     pub messages: Vec<Message>,
     pub next_message_sequence: u64,
 }
@@ -471,6 +476,7 @@ struct Room {
     admission: AdmissionPolicy,
     members: BTreeMap<ParticipantId, Role>,
     invitations: BTreeSet<ParticipantId>,
+    bans: BTreeMap<ParticipantId, Role>,
     messages: VecDeque<Message>,
     next_message_sequence: u64,
 }
@@ -487,8 +493,86 @@ impl Room {
                 .map(|(id, role)| (id.clone(), *role))
                 .collect(),
             pending_invitations: self.invitations.iter().cloned().collect(),
+            banned_participants: self.bans.keys().cloned().collect(),
             messages: self.messages.iter().cloned().collect(),
             next_message_sequence: self.next_message_sequence,
+        }
+    }
+}
+
+/// Opaque caller-supplied correlation for one moderation decision.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ModerationCausationV1([u8; 16]);
+
+impl ModerationCausationV1 {
+    pub const fn new(value: [u8; 16]) -> Self {
+        Self(value)
+    }
+
+    pub const fn into_bytes(self) -> [u8; 16] {
+        self.0
+    }
+}
+
+impl fmt::Debug for ModerationCausationV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ModerationCausationV1(<opaque>)")
+    }
+}
+
+/// Human-readable moderation rationale. Debug output is content-free.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ModerationReasonV1(String);
+
+impl ModerationReasonV1 {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for ModerationReasonV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ModerationReasonV1")
+            .field("bytes", &self.0.len())
+            .finish()
+    }
+}
+
+/// Finite room action vocabulary represented by the current engine profile.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RoomActionV1 {
+    CreateRoom,
+    Invite,
+    Join,
+    Leave,
+    Speak,
+    ManageRole,
+    Kick,
+    Ban,
+    Unban,
+    InspectHistory,
+}
+
+impl CommandV2 {
+    /// Passive authorization vocabulary for a trusted host or Aegis adapter.
+    /// Agora still enforces its room invariants after any external decision.
+    pub fn room_action(&self) -> Option<RoomActionV1> {
+        match self {
+            Self::RegisterParticipant(_) => None,
+            Self::CreateRoom { .. } => Some(RoomActionV1::CreateRoom),
+            Self::Invite { .. } => Some(RoomActionV1::Invite),
+            Self::Join { .. } => Some(RoomActionV1::Join),
+            Self::Leave { .. } => Some(RoomActionV1::Leave),
+            Self::SetRole { .. } => Some(RoomActionV1::ManageRole),
+            Self::Kick { .. } => Some(RoomActionV1::Kick),
+            Self::Ban { .. } => Some(RoomActionV1::Ban),
+            Self::Unban { .. } => Some(RoomActionV1::Unban),
+            Self::Speak { .. } | Self::SpeakAddressed { .. } => Some(RoomActionV1::Speak),
         }
     }
 }
@@ -521,6 +605,27 @@ pub enum CommandV2 {
         actor: ParticipantId,
         participant: ParticipantId,
         role: Role,
+    },
+    Kick {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
+    Ban {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
+    Unban {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
     },
     Speak {
         room_id: RoomId,
@@ -560,6 +665,27 @@ pub enum OutcomeV2 {
         participant: ParticipantId,
         role: Role,
     },
+    Kicked {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
+    Banned {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
+    Unbanned {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
     MessageAccepted {
         room_id: RoomId,
         sequence: u64,
@@ -578,6 +704,7 @@ pub enum Refusal {
     RoomLimit,
     MemberLimit,
     InvitationLimit,
+    BanLimit,
     MessageRetentionDisabled,
     MessageSequenceExhausted,
     EventOutboxFull,
@@ -585,6 +712,7 @@ pub enum Refusal {
     EventSequenceExhausted,
     AddressedParticipantLimit,
     NonCanonicalAddressing,
+    InvalidModerationReason,
     DuplicateParticipant(ParticipantId),
     DuplicateRoom(RoomId),
     UnknownParticipant(ParticipantId),
@@ -592,6 +720,8 @@ pub enum Refusal {
     AlreadyMember(ParticipantId),
     NotMember(ParticipantId),
     InvitationRequired(ParticipantId),
+    ParticipantBanned(ParticipantId),
+    NotBanned(ParticipantId),
     NotAuthorized(ParticipantId),
     OwnerCannotLeave,
     InvalidRoleChange,
@@ -729,6 +859,27 @@ pub enum DomainEventV2 {
         participant: ParticipantId,
         role: Role,
     },
+    ParticipantKicked {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
+    ParticipantBanned {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
+    ParticipantUnbanned {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
     MessageAccepted {
         room_id: RoomId,
         message: Message,
@@ -744,6 +895,9 @@ impl DomainEventV2 {
             | Self::ParticipantJoined { room_id, .. }
             | Self::ParticipantLeft { room_id, .. }
             | Self::RoleChanged { room_id, .. }
+            | Self::ParticipantKicked { room_id, .. }
+            | Self::ParticipantBanned { room_id, .. }
+            | Self::ParticipantUnbanned { room_id, .. }
             | Self::MessageAccepted { room_id, .. } => Some(room_id),
         }
     }
@@ -1196,6 +1350,8 @@ impl Engine {
                 &event.event,
                 DomainEventV2::ParticipantJoined { participant, .. }
                     | DomainEventV2::ParticipantLeft { participant, .. }
+                    | DomainEventV2::ParticipantKicked { participant, .. }
+                    | DomainEventV2::ParticipantBanned { participant, .. }
                     if participant == observer
             ) {
                 return Ok(RoomChangeResult::Gap {
@@ -1408,6 +1564,27 @@ impl Engine {
                 participant,
                 role,
             } => self.set_role(room_id, actor, participant, role),
+            CommandV2::Kick {
+                room_id,
+                actor,
+                participant,
+                reason,
+                causation,
+            } => self.kick(room_id, actor, participant, reason, causation),
+            CommandV2::Ban {
+                room_id,
+                actor,
+                participant,
+                reason,
+                causation,
+            } => self.ban(room_id, actor, participant, reason, causation),
+            CommandV2::Unban {
+                room_id,
+                actor,
+                participant,
+                reason,
+                causation,
+            } => self.unban(room_id, actor, participant, reason, causation),
             CommandV2::Speak {
                 room_id,
                 author,
@@ -1484,6 +1661,54 @@ impl Engine {
                 room_id: room_id.clone(),
                 participant: participant.clone(),
                 role: *role,
+            },
+            (
+                CommandV2::Kick { .. },
+                OutcomeV2::Kicked {
+                    room_id,
+                    actor,
+                    participant,
+                    reason,
+                    causation,
+                },
+            ) => DomainEventV2::ParticipantKicked {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                participant: participant.clone(),
+                reason: reason.clone(),
+                causation: *causation,
+            },
+            (
+                CommandV2::Ban { .. },
+                OutcomeV2::Banned {
+                    room_id,
+                    actor,
+                    participant,
+                    reason,
+                    causation,
+                },
+            ) => DomainEventV2::ParticipantBanned {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                participant: participant.clone(),
+                reason: reason.clone(),
+                causation: *causation,
+            },
+            (
+                CommandV2::Unban { .. },
+                OutcomeV2::Unbanned {
+                    room_id,
+                    actor,
+                    participant,
+                    reason,
+                    causation,
+                },
+            ) => DomainEventV2::ParticipantUnbanned {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                participant: participant.clone(),
+                reason: reason.clone(),
+                causation: *causation,
             },
             (
                 CommandV2::Speak {
@@ -1587,6 +1812,7 @@ impl Engine {
                 admission,
                 members,
                 invitations: BTreeSet::new(),
+                bans: BTreeMap::new(),
                 messages: VecDeque::new(),
                 next_message_sequence: 0,
             },
@@ -1613,6 +1839,9 @@ impl Engine {
         if room.members.contains_key(&participant) {
             return Err(Refusal::AlreadyMember(participant));
         }
+        if room.bans.contains_key(&participant) {
+            return Err(Refusal::ParticipantBanned(participant));
+        }
         if !room.invitations.contains(&participant)
             && room.invitations.len() >= self.limits.max_invitations_per_room
         {
@@ -1636,6 +1865,9 @@ impl Engine {
         let room = self.room_ref(&room_id)?;
         if room.members.contains_key(&participant) {
             return Err(Refusal::AlreadyMember(participant));
+        }
+        if room.bans.contains_key(&participant) {
+            return Err(Refusal::ParticipantBanned(participant));
         }
         if room.members.len() >= self.limits.max_members_per_room {
             return Err(Refusal::MemberLimit);
@@ -1701,6 +1933,142 @@ impl Engine {
             room_id,
             participant,
             role,
+        })
+    }
+
+    fn validate_moderation_reason(&self, reason: &ModerationReasonV1) -> Result<(), Refusal> {
+        self.validate_nonempty_bounded(
+            reason.as_str(),
+            self.limits.max_moderation_reason_bytes,
+            Refusal::InvalidModerationReason,
+        )
+    }
+
+    fn moderation_authorized(
+        room: &Room,
+        actor: &ParticipantId,
+        participant: &ParticipantId,
+    ) -> bool {
+        if actor == participant {
+            return false;
+        }
+        match room.members.get(actor) {
+            Some(Role::Owner) => room.members.get(participant) != Some(&Role::Owner),
+            Some(Role::Moderator) => !matches!(
+                room.members.get(participant),
+                Some(Role::Owner | Role::Moderator)
+            ),
+            _ => false,
+        }
+    }
+
+    fn kick(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_moderation_reason(&reason)?;
+        let room = self.room_ref(&room_id)?;
+        if !Self::moderation_authorized(room, &actor, &participant) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        if !room.members.contains_key(&participant) {
+            return Err(Refusal::NotMember(participant));
+        }
+        let room = self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation");
+        room.members.remove(&participant);
+        room.invitations.remove(&participant);
+        Ok(OutcomeV2::Kicked {
+            room_id,
+            actor,
+            participant,
+            reason,
+            causation,
+        })
+    }
+
+    fn ban(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_moderation_reason(&reason)?;
+        if !self.participants.contains_key(&participant) {
+            return Err(Refusal::UnknownParticipant(participant));
+        }
+        let room = self.room_ref(&room_id)?;
+        if !Self::moderation_authorized(room, &actor, &participant) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        if room.bans.contains_key(&participant) {
+            return Err(Refusal::ParticipantBanned(participant));
+        }
+        if room.bans.len() >= self.limits.max_bans_per_room {
+            return Err(Refusal::BanLimit);
+        }
+        let room = self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation");
+        let prior_role = room
+            .members
+            .get(&participant)
+            .copied()
+            .unwrap_or(Role::Member);
+        room.members.remove(&participant);
+        room.invitations.remove(&participant);
+        room.bans.insert(participant.clone(), prior_role);
+        Ok(OutcomeV2::Banned {
+            room_id,
+            actor,
+            participant,
+            reason,
+            causation,
+        })
+    }
+
+    fn unban(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_moderation_reason(&reason)?;
+        let room = self.room_ref(&room_id)?;
+        let Some(prior_role) = room.bans.get(&participant).copied() else {
+            return Err(Refusal::NotBanned(participant));
+        };
+        let authorized = actor != participant
+            && match room.members.get(&actor) {
+                Some(Role::Owner) => prior_role != Role::Owner,
+                Some(Role::Moderator) => prior_role == Role::Member,
+                _ => false,
+            };
+        if !authorized {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        self.rooms
+            .get_mut(&room_id)
+            .expect("room established by validation")
+            .bans
+            .remove(&participant);
+        Ok(OutcomeV2::Unbanned {
+            room_id,
+            actor,
+            participant,
+            reason,
+            causation,
         })
     }
 

@@ -1,7 +1,7 @@
 use agora_engine::persistence::RecoveryLimits;
 use agora_engine::{
-    AdmissionPolicy, CommandV2, Engine, EventSequence, LogicalTime, Participant, ParticipantKind,
-    PublicationCommandV2, PublicationKeyV2,
+    AdmissionPolicy, CommandV2, Engine, EventSequence, LogicalTime, ModerationCausationV1,
+    ModerationReasonV1, Participant, ParticipantKind, PublicationCommandV2, PublicationKeyV2,
 };
 
 fn fixture_engine() -> Engine {
@@ -51,6 +51,15 @@ fn fixture_engine() -> Engine {
         .unwrap();
     engine.acknowledge_events(EventSequence(2)).unwrap();
     engine
+        .apply(CommandV2::Ban {
+            room_id: "room".into(),
+            actor: "human".into(),
+            participant: "agent".into(),
+            reason: ModerationReasonV1::new("policy"),
+            causation: ModerationCausationV1::new([0x5a; 16]),
+        })
+        .unwrap();
+    engine
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -80,9 +89,9 @@ fn unhex(value: &str) -> Vec<u8> {
 }
 
 #[test]
-fn canonical_v2_checkpoint_is_immutable_and_recovers() {
+fn canonical_v3_checkpoint_is_immutable_and_recovers() {
     let prepared = fixture_engine().prepare_checkpoint(65_536).unwrap();
-    let expected_hex = include_str!("fixtures/checkpoint-v2.hex").trim();
+    let expected_hex = include_str!("fixtures/checkpoint-v3.hex").trim();
     assert_eq!(hex(prepared.bytes()), expected_hex);
 
     let recovered = Engine::recover_checkpoint(

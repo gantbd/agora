@@ -173,6 +173,40 @@ impl Writer {
                 self.text(room_id.as_str())?;
                 self.message(message)
             }
+            DomainEventV2::ParticipantKicked {
+                room_id,
+                actor,
+                participant,
+                reason,
+                causation,
+            }
+            | DomainEventV2::ParticipantBanned {
+                room_id,
+                actor,
+                participant,
+                reason,
+                causation,
+            }
+            | DomainEventV2::ParticipantUnbanned {
+                room_id,
+                actor,
+                participant,
+                reason,
+                causation,
+            } => {
+                let tag = match e {
+                    DomainEventV2::ParticipantKicked { .. } => 7,
+                    DomainEventV2::ParticipantBanned { .. } => 8,
+                    DomainEventV2::ParticipantUnbanned { .. } => 9,
+                    _ => unreachable!(),
+                };
+                self.byte(tag)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.text(participant.as_str())?;
+                self.text(reason.as_str())?;
+                self.raw(&causation.into_bytes())
+            }
         }
     }
 }
@@ -295,6 +329,37 @@ impl<'a> Reader<'a> {
                 room_id: self.room(l)?,
                 message: self.message(l)?,
             },
+            tag @ 7..=9 => {
+                let room_id = self.room(l)?;
+                let actor = self.participant(l)?;
+                let participant = self.participant(l)?;
+                let reason = ModerationReasonV1::new(self.text(l.max_moderation_reason_bytes)?);
+                let causation = ModerationCausationV1::new(self.fixed()?);
+                match tag {
+                    7 => DomainEventV2::ParticipantKicked {
+                        room_id,
+                        actor,
+                        participant,
+                        reason,
+                        causation,
+                    },
+                    8 => DomainEventV2::ParticipantBanned {
+                        room_id,
+                        actor,
+                        participant,
+                        reason,
+                        causation,
+                    },
+                    9 => DomainEventV2::ParticipantUnbanned {
+                        room_id,
+                        actor,
+                        participant,
+                        reason,
+                        causation,
+                    },
+                    _ => unreachable!(),
+                }
+            }
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -340,12 +405,13 @@ fn read_role(v: u8) -> Result<Role, CheckpointError> {
         _ => Err(CheckpointError::Invalid),
     }
 }
-fn limits_values(l: Limits) -> [usize; 13] {
+fn limits_values(l: Limits) -> [usize; 15] {
     [
         l.max_participants,
         l.max_rooms,
         l.max_members_per_room,
         l.max_invitations_per_room,
+        l.max_bans_per_room,
         l.max_messages_per_room,
         l.max_pending_events,
         l.max_publication_receipts,
@@ -355,6 +421,7 @@ fn limits_values(l: Limits) -> [usize; 13] {
         l.max_display_name_bytes,
         l.max_room_name_bytes,
         l.max_message_body_bytes,
+        l.max_moderation_reason_bytes,
     ]
 }
 fn read_limits(r: &mut Reader<'_>, c: Limits) -> Result<Limits, CheckpointError> {
@@ -363,6 +430,7 @@ fn read_limits(r: &mut Reader<'_>, c: Limits) -> Result<Limits, CheckpointError>
         max_rooms: r.size(c.max_rooms)?,
         max_members_per_room: r.size(c.max_members_per_room)?,
         max_invitations_per_room: r.size(c.max_invitations_per_room)?,
+        max_bans_per_room: r.size(c.max_bans_per_room)?,
         max_messages_per_room: r.size(c.max_messages_per_room)?,
         max_pending_events: r.size(c.max_pending_events)?,
         max_publication_receipts: r.size(c.max_publication_receipts)?,
@@ -372,6 +440,7 @@ fn read_limits(r: &mut Reader<'_>, c: Limits) -> Result<Limits, CheckpointError>
         max_display_name_bytes: r.size(c.max_display_name_bytes)?,
         max_room_name_bytes: r.size(c.max_room_name_bytes)?,
         max_message_body_bytes: r.size(c.max_message_body_bytes)?,
+        max_moderation_reason_bytes: r.size(c.max_moderation_reason_bytes)?,
     })
 }
 fn insert<K: Ord, V>(map: &mut BTreeMap<K, V>, key: K, value: V) -> Result<(), CheckpointError> {
@@ -393,7 +462,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(2)?;
+        w.byte(3)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -421,6 +490,11 @@ impl Engine {
             w.count(room.invitations.len())?;
             for id in &room.invitations {
                 w.text(id.as_str())?
+            }
+            w.count(room.bans.len())?;
+            for (id, role) in &room.bans {
+                w.text(id.as_str())?;
+                w.byte(role_tag(*role))?
             }
             w.count(room.messages.len())?;
             for m in &room.messages {
@@ -458,7 +532,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 2 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 3 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -499,6 +573,18 @@ impl Engine {
                 }
                 invitations.insert(id);
             }
+            let n = r.count(l.max_bans_per_room)?;
+            let mut bans = BTreeMap::new();
+            for _ in 0..n {
+                let id = r.participant(l)?;
+                if bans.last_key_value().is_some_and(|(old, _)| old >= &id) {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                let role = read_role(r.byte()?)?;
+                if bans.insert(id, role).is_some() {
+                    return Err(CheckpointError::NonCanonical);
+                }
+            }
             let n = r.count(l.max_messages_per_room)?;
             let mut messages = VecDeque::new();
             messages
@@ -516,6 +602,7 @@ impl Engine {
                     admission,
                     members,
                     invitations,
+                    bans,
                     messages,
                     next_message_sequence,
                 },
@@ -866,6 +953,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         if id != &room.id
             || room.members.len() > l.max_members_per_room
             || room.invitations.len() > l.max_invitations_per_room
+            || room.bans.len() > l.max_bans_per_room
             || room.messages.len() > l.max_messages_per_room
         {
             return Err(CheckpointError::Invalid);
@@ -877,11 +965,16 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             .members
             .keys()
             .chain(room.invitations.iter())
+            .chain(room.bans.keys())
             .any(|id| !e.participants.contains_key(id))
             || room
                 .invitations
                 .iter()
                 .any(|id| room.members.contains_key(id))
+            || room
+                .bans
+                .keys()
+                .any(|id| room.members.contains_key(id) || room.invitations.contains(id))
         {
             return Err(CheckpointError::Invalid);
         }
@@ -909,6 +1002,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             .checked_add(room.next_message_sequence)
             .and_then(|n| n.checked_add((room.members.len() - 1) as u64))
             .and_then(|n| n.checked_add(room.invitations.len() as u64))
+            .and_then(|n| n.checked_add(room.bans.len() as u64))
             .ok_or(CheckpointError::Invalid)?;
     }
     if minimum > e.revision.0 {
@@ -1016,6 +1110,35 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             room(room_id)?;
             participant(id)?;
             if *role == Role::Owner {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::ParticipantKicked {
+            room_id,
+            actor,
+            participant: id,
+            reason,
+            ..
+        }
+        | DomainEventV2::ParticipantBanned {
+            room_id,
+            actor,
+            participant: id,
+            reason,
+            ..
+        }
+        | DomainEventV2::ParticipantUnbanned {
+            room_id,
+            actor,
+            participant: id,
+            reason,
+            ..
+        } => {
+            room(room_id)?;
+            participant(actor)?;
+            participant(id)?;
+            bounded(reason.as_str(), e.limits.max_moderation_reason_bytes)?;
+            if actor == id || owner(room(room_id)?)? == id {
                 return Err(CheckpointError::Invalid);
             }
         }

@@ -7,8 +7,10 @@
    of Agora.
 3. Add model, fuzz, and mutation gates around recovery, canonical wire changes,
    filesystem crash points, and command refusal.
-4. Specify moderation, message revision, threads, and deletion only as separately
-   bounded profiles with explicit authority and retention consequences.
+4. Extend the now-qualified kick/ban/unban membership slice with author
+   withdrawal, moderator redaction, and room-policy changes as separately bounded
+   profiles with explicit authority, evidence, visibility, and retention laws;
+   add message revision and threads only under the same discipline.
 5. Qualify backup/restore, upgrade/rollback, and an additional physical store only
    when a deployment profile requires claims beyond the current local Unix
    single-owner mechanism.

@@ -665,3 +665,162 @@ fn v2_change_feed_requires_resnapshot_after_leave_and_rejoin() {
         })
     );
 }
+
+#[test]
+fn v2_moderation_is_actor_bound_replayable_and_distinguishes_kick_from_ban() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                0,
+                CommandV2::CreateRoom {
+                    room_id: "room".to_owned(),
+                    name: "Room".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 5 })
+    );
+    assert!(matches!(
+        service.execute(
+            bot,
+            request(
+                0,
+                CommandV2::Join {
+                    room_id: "room".to_owned(),
+                    expected_revision: 5,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Joined { revision: 6 })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 6,
+            },
+        ),
+    ) else {
+        panic!("change position expected");
+    };
+
+    let moderation = |participant_id: &str, reason: &str, cause, revision| CommandV2::Kick {
+        room_id: "room".to_owned(),
+        participant_id: participant_id.to_owned(),
+        reason: reason.to_owned(),
+        causation: [cause; 16],
+        expected_revision: revision,
+    };
+    assert_eq!(
+        service.execute(alice, request(2, moderation("bot", "cooldown", 1, 6))),
+        ReplyV2::Accepted(OutcomeV2::Kicked { revision: 7 })
+    );
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                1,
+                CommandV2::Join {
+                    room_id: "room".to_owned(),
+                    expected_revision: 7,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Joined { revision: 8 })
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                3,
+                CommandV2::Ban {
+                    room_id: "room".to_owned(),
+                    participant_id: "bot".to_owned(),
+                    reason: "policy".to_owned(),
+                    causation: [2; 16],
+                    expected_revision: 8,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Banned { revision: 9 })
+    );
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                2,
+                CommandV2::Join {
+                    room_id: "room".to_owned(),
+                    expected_revision: 9,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::Banned)
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                4,
+                CommandV2::Unban {
+                    room_id: "room".to_owned(),
+                    participant_id: "bot".to_owned(),
+                    reason: "appeal".to_owned(),
+                    causation: [3; 16],
+                    expected_revision: 9,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Unbanned { revision: 10 })
+    );
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                3,
+                CommandV2::Join {
+                    room_id: "room".to_owned(),
+                    expected_revision: 10,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Joined { revision: 11 })
+    );
+
+    let ReplyV2::Accepted(OutcomeV2::Changes(page)) = service.execute(
+        alice,
+        request(
+            5,
+            CommandV2::Changes {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 8,
+            },
+        ),
+    ) else {
+        panic!("change page expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        RoomEventV2::ParticipantKicked { actor_id, participant_id, reason, causation }
+            if actor_id == "alice" && participant_id == "bot" && reason == "cooldown" && causation == &[1; 16]
+    ));
+    assert!(page.changes.iter().any(|change| matches!(
+        &change.event,
+        RoomEventV2::ParticipantBanned { actor_id, participant_id, reason, causation }
+            if actor_id == "alice" && participant_id == "bot" && reason == "policy" && causation == &[2; 16]
+    )));
+    assert!(page.changes.iter().any(|change| matches!(
+        &change.event,
+        RoomEventV2::ParticipantUnbanned { actor_id, participant_id, reason, causation }
+            if actor_id == "alice" && participant_id == "bot" && reason == "appeal" && causation == &[3; 16]
+    )));
+}

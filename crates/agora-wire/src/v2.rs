@@ -279,6 +279,51 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             sink.u8(encode_role(*role))?;
             sink.u64(*expected_revision)
         }
+        CommandV2::Kick {
+            room_id,
+            participant_id,
+            reason,
+            causation,
+            expected_revision,
+        } => encode_moderation_command(
+            sink,
+            12,
+            room_id,
+            participant_id,
+            reason,
+            causation,
+            *expected_revision,
+        ),
+        CommandV2::Ban {
+            room_id,
+            participant_id,
+            reason,
+            causation,
+            expected_revision,
+        } => encode_moderation_command(
+            sink,
+            13,
+            room_id,
+            participant_id,
+            reason,
+            causation,
+            *expected_revision,
+        ),
+        CommandV2::Unban {
+            room_id,
+            participant_id,
+            reason,
+            causation,
+            expected_revision,
+        } => encode_moderation_command(
+            sink,
+            14,
+            room_id,
+            participant_id,
+            reason,
+            causation,
+            *expected_revision,
+        ),
         CommandV2::Speak {
             room_id,
             expected_revision,
@@ -371,8 +416,69 @@ fn decode_command(
             cursor: PageCursorV2(read_u64(decoder)?),
             limit: read_u32(decoder)?,
         }),
+        12 => decode_moderation_command(decoder, ModerationCommand::Kick),
+        13 => decode_moderation_command(decoder, ModerationCommand::Ban),
+        14 => decode_moderation_command(decoder, ModerationCommand::Unban),
         _ => Err(WireDecodeError::UnknownTag),
     }
+}
+
+#[derive(Clone, Copy)]
+enum ModerationCommand {
+    Kick,
+    Ban,
+    Unban,
+}
+
+fn encode_moderation_command(
+    sink: &mut dyn Sink,
+    tag: u8,
+    room_id: &str,
+    participant_id: &str,
+    reason: &str,
+    causation: &[u8; 16],
+    expected_revision: u64,
+) -> Result<(), WireEncodeError> {
+    sink.u8(tag)?;
+    sink.text(room_id)?;
+    sink.text(participant_id)?;
+    sink.text(reason)?;
+    encode_causation(sink, causation)?;
+    sink.u64(expected_revision)
+}
+
+fn decode_moderation_command(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    command: ModerationCommand,
+) -> Result<CommandV2, WireDecodeError> {
+    let room_id = read_text(decoder)?;
+    let participant_id = read_text(decoder)?;
+    let reason = read_text(decoder)?;
+    let causation = decode_causation(decoder)?;
+    let expected_revision = read_u64(decoder)?;
+    Ok(match command {
+        ModerationCommand::Kick => CommandV2::Kick {
+            room_id,
+            participant_id,
+            reason,
+            causation,
+            expected_revision,
+        },
+        ModerationCommand::Ban => CommandV2::Ban {
+            room_id,
+            participant_id,
+            reason,
+            causation,
+            expected_revision,
+        },
+        ModerationCommand::Unban => CommandV2::Unban {
+            room_id,
+            participant_id,
+            reason,
+            causation,
+            expected_revision,
+        },
+    })
 }
 
 fn encode_protocol_reply(sink: &mut dyn Sink, reply: &ReplyV2) -> Result<(), WireEncodeError> {
@@ -448,6 +554,9 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             sink.u64(*revision)?;
             sink.u64(*sequence)
         }
+        OutcomeV2::Kicked { revision } => encode_revision_outcome(sink, 13, *revision),
+        OutcomeV2::Banned { revision } => encode_revision_outcome(sink, 14, *revision),
+        OutcomeV2::Unbanned { revision } => encode_revision_outcome(sink, 15, *revision),
     }
 }
 
@@ -506,6 +615,15 @@ fn decode_outcome(
                 cause,
             })
         }
+        13 => Ok(OutcomeV2::Kicked {
+            revision: read_u64(decoder)?,
+        }),
+        14 => Ok(OutcomeV2::Banned {
+            revision: read_u64(decoder)?,
+        }),
+        15 => Ok(OutcomeV2::Unbanned {
+            revision: read_u64(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -663,6 +781,24 @@ fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<()
                 sink.u8(6)?;
                 encode_message(sink, message)?;
             }
+            RoomEventV2::ParticipantKicked {
+                actor_id,
+                participant_id,
+                reason,
+                causation,
+            } => encode_moderation_event(sink, 7, actor_id, participant_id, reason, causation)?,
+            RoomEventV2::ParticipantBanned {
+                actor_id,
+                participant_id,
+                reason,
+                causation,
+            } => encode_moderation_event(sink, 8, actor_id, participant_id, reason, causation)?,
+            RoomEventV2::ParticipantUnbanned {
+                actor_id,
+                participant_id,
+                reason,
+                causation,
+            } => encode_moderation_event(sink, 9, actor_id, participant_id, reason, causation)?,
         }
     }
     sink.u64(page.next.0)?;
@@ -698,6 +834,9 @@ fn decode_change_page(
                 role: decode_role(decoder)?,
             },
             6 => RoomEventV2::MessageAccepted(decode_message(decoder, limits)?),
+            7 => decode_moderation_event(decoder, ModerationEvent::Kicked)?,
+            8 => decode_moderation_event(decoder, ModerationEvent::Banned)?,
+            9 => decode_moderation_event(decoder, ModerationEvent::Unbanned)?,
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(RoomChangeV2 {
@@ -718,6 +857,76 @@ fn decode_change_page(
         next,
         has_more,
     })
+}
+
+#[derive(Clone, Copy)]
+enum ModerationEvent {
+    Kicked,
+    Banned,
+    Unbanned,
+}
+
+fn encode_moderation_event(
+    sink: &mut dyn Sink,
+    tag: u8,
+    actor_id: &str,
+    participant_id: &str,
+    reason: &str,
+    causation: &[u8; 16],
+) -> Result<(), WireEncodeError> {
+    sink.u8(tag)?;
+    sink.text(actor_id)?;
+    sink.text(participant_id)?;
+    sink.text(reason)?;
+    encode_causation(sink, causation)
+}
+
+fn decode_moderation_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    event: ModerationEvent,
+) -> Result<RoomEventV2, WireDecodeError> {
+    let actor_id = read_text(decoder)?;
+    let participant_id = read_text(decoder)?;
+    let reason = read_text(decoder)?;
+    let causation = decode_causation(decoder)?;
+    Ok(match event {
+        ModerationEvent::Kicked => RoomEventV2::ParticipantKicked {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        },
+        ModerationEvent::Banned => RoomEventV2::ParticipantBanned {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        },
+        ModerationEvent::Unbanned => RoomEventV2::ParticipantUnbanned {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        },
+    })
+}
+
+fn encode_causation(sink: &mut dyn Sink, causation: &[u8; 16]) -> Result<(), WireEncodeError> {
+    let mut high = [0_u8; 8];
+    let mut low = [0_u8; 8];
+    high.copy_from_slice(&causation[..8]);
+    low.copy_from_slice(&causation[8..]);
+    sink.u64(u64::from_be_bytes(high))?;
+    sink.u64(u64::from_be_bytes(low))
+}
+
+fn decode_causation(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<[u8; 16], WireDecodeError> {
+    let mut causation = [0_u8; 16];
+    causation[..8].copy_from_slice(&read_u64(decoder)?.to_be_bytes());
+    causation[8..].copy_from_slice(&read_u64(decoder)?.to_be_bytes());
+    Ok(causation)
 }
 
 fn encode_message(sink: &mut dyn Sink, message: &MessageV2) -> Result<(), WireEncodeError> {
@@ -771,6 +980,7 @@ fn encode_refusal(sink: &mut dyn Sink, refusal: RefusalV2) -> Result<(), WireEnc
         RefusalV2::Capacity => 13,
         RefusalV2::Exhausted => 14,
         RefusalV2::Unavailable => 15,
+        RefusalV2::Banned => 16,
     };
     sink.u8(tag)?;
     if let RefusalV2::Stale { actual_revision } = refusal {
@@ -798,6 +1008,7 @@ fn decode_refusal(decoder: &mut keystone_codec::Decoder<'_>) -> Result<RefusalV2
         13 => Ok(RefusalV2::Capacity),
         14 => Ok(RefusalV2::Exhausted),
         15 => Ok(RefusalV2::Unavailable),
+        16 => Ok(RefusalV2::Banned),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }

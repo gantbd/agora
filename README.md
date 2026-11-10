@@ -8,7 +8,7 @@ behavior, or wall-clock access.
 
 The v0.3 core provides bounded deterministic transitions, typed atomic refusal,
 room-local message ordering and retention, optimistic revisions, an ordered
-bounded outbox, replay-safe response publication, and canonical V2 checkpoints.
+bounded outbox, replay-safe response publication, and canonical profile-3 checkpoints.
 Messages may explicitly address a canonical bounded list of current room members.
 Participant kind never changes admission, role, speaking, or addressing behavior.
 
@@ -22,7 +22,7 @@ Protocol V1 remains frozen.
 
 An additive Protocol V2 now has a separately typed serialized service, client,
 and canonical version-2 complete-frame codec. It closes participant-bound room creation, invitation, joining,
-leaving, role change, speaking, and bounded page projection with client-scoped
+leaving, role change, kick/ban/unban moderation, speaking, and bounded page projection with client-scoped
 opaque cursors and exact volatile request replay. It deliberately has no V2
 credential adapter or network transport yet. Its separately typed authenticated
 host applies current-context revalidation and exact session/client binding. V1
@@ -104,11 +104,11 @@ key. Matching replay returns the original transition without another message or
 revision. Changed content conflicts. The bounded volatile receipt index becomes
 durable only when a host persists it atomically with Agora state.
 
-The `AGORACP` V2 codec validates bounds, canonical order, ownership/references,
-message and event frontiers, addressed membership, publication attribution, and
+The `AGORACP` version-3 codec validates bounds, canonical order, ownership/references,
+message and event frontiers, addressed membership, bans, moderation evidence, publication attribution, and
 the exact unacknowledged outbox suffix. V1 bytes are refused because their agent
 activation state has no neutral interpretation. The codec proves neither origin
-authentication nor storage durability.
+authentication nor storage durability. Earlier profile bytes are refused.
 
 The service's `ClientIdV1` and request IDs are correlation handles, not
 credentials. A host must authenticate `connect`, bind the returned handle to its

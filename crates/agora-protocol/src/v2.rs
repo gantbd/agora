@@ -88,6 +88,27 @@ pub enum CommandV2 {
         role: RoleV2,
         expected_revision: u64,
     },
+    Kick {
+        room_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+        expected_revision: u64,
+    },
+    Ban {
+        room_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+        expected_revision: u64,
+    },
+    Unban {
+        room_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+        expected_revision: u64,
+    },
     Speak {
         room_id: String,
         expected_revision: u64,
@@ -191,6 +212,34 @@ impl fmt::Debug for CommandV2 {
                 .field("room_id_bytes", &room_id.len())
                 .field("participant_id_bytes", &participant_id.len())
                 .field("role", role)
+                .field("expected_revision", expected_revision)
+                .finish(),
+            Self::Kick {
+                room_id,
+                participant_id,
+                reason,
+                expected_revision,
+                ..
+            }
+            | Self::Ban {
+                room_id,
+                participant_id,
+                reason,
+                expected_revision,
+                ..
+            }
+            | Self::Unban {
+                room_id,
+                participant_id,
+                reason,
+                expected_revision,
+                ..
+            } => formatter
+                .debug_struct("Moderation")
+                .field("room_id_bytes", &room_id.len())
+                .field("participant_id_bytes", &participant_id.len())
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
                 .field("expected_revision", expected_revision)
                 .finish(),
             Self::Speak {
@@ -339,6 +388,24 @@ pub enum RoomEventV2 {
         participant_id: String,
         role: RoleV2,
     },
+    ParticipantKicked {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ParticipantBanned {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ParticipantUnbanned {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
     MessageAccepted(MessageV2),
 }
 
@@ -362,6 +429,30 @@ impl fmt::Debug for RoomEventV2 {
                 .debug_struct("RoleChanged")
                 .field("participant_id_bytes", &participant_id.len())
                 .field("role", role)
+                .finish(),
+            Self::ParticipantKicked {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            }
+            | Self::ParticipantBanned {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            }
+            | Self::ParticipantUnbanned {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("ModerationEvent")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("participant_id_bytes", &participant_id.len())
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
                 .finish(),
             Self::MessageAccepted(message) => formatter
                 .debug_tuple("MessageAccepted")
@@ -452,6 +543,15 @@ pub enum OutcomeV2 {
     RoleChanged {
         revision: u64,
     },
+    Kicked {
+        revision: u64,
+    },
+    Banned {
+        revision: u64,
+    },
+    Unbanned {
+        revision: u64,
+    },
     MessageAccepted {
         revision: u64,
         sequence: u64,
@@ -475,6 +575,7 @@ pub enum RefusalV2 {
     Capacity,
     Exhausted,
     Unavailable,
+    Banned,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

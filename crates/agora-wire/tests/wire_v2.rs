@@ -85,6 +85,24 @@ fn changes_reply() -> WireReplyV2 {
     })))
 }
 
+fn moderation_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+        revision: 16,
+        changes: vec![RoomChangeV2 {
+            event_sequence: 15,
+            revision: 16,
+            event: RoomEventV2::ParticipantBanned {
+                actor_id: "alice".to_owned(),
+                participant_id: "bot".to_owned(),
+                reason: "policy".to_owned(),
+                causation: [0x5a; 16],
+            },
+        }],
+        next: PageCursorV2(16),
+        has_more: false,
+    })))
+}
+
 fn fixture(source: &str) -> Vec<u8> {
     source
         .split_ascii_whitespace()
@@ -110,6 +128,10 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
         (
             encode_reply_v2(&changes_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/changes-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&moderation_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/moderation-change-reply-v2.hex")),
         ),
     ];
     for (actual, expected) in cases {
@@ -190,6 +212,27 @@ fn every_v2_command_round_trips() {
             participant_id: "bot".to_owned(),
             role: RoleV2::Moderator,
             expected_revision: 5,
+        },
+        CommandV2::Kick {
+            room_id: "room".to_owned(),
+            participant_id: "bot".to_owned(),
+            reason: "reason".to_owned(),
+            causation: [1; 16],
+            expected_revision: 6,
+        },
+        CommandV2::Ban {
+            room_id: "room".to_owned(),
+            participant_id: "bot".to_owned(),
+            reason: "reason".to_owned(),
+            causation: [2; 16],
+            expected_revision: 7,
+        },
+        CommandV2::Unban {
+            room_id: "room".to_owned(),
+            participant_id: "bot".to_owned(),
+            reason: "reason".to_owned(),
+            causation: [3; 16],
+            expected_revision: 8,
         },
         CommandV2::Speak {
             room_id: "room".to_owned(),
@@ -299,6 +342,36 @@ fn every_v2_outcome_and_refusal_round_trips() {
                         addressed_to: vec!["alice".to_owned()],
                     }),
                 },
+                RoomChangeV2 {
+                    event_sequence: 9,
+                    revision: 10,
+                    event: RoomEventV2::ParticipantKicked {
+                        actor_id: "alice".to_owned(),
+                        participant_id: "bot".to_owned(),
+                        reason: "kick".to_owned(),
+                        causation: [1; 16],
+                    },
+                },
+                RoomChangeV2 {
+                    event_sequence: 10,
+                    revision: 11,
+                    event: RoomEventV2::ParticipantBanned {
+                        actor_id: "alice".to_owned(),
+                        participant_id: "bot".to_owned(),
+                        reason: "ban".to_owned(),
+                        causation: [2; 16],
+                    },
+                },
+                RoomChangeV2 {
+                    event_sequence: 11,
+                    revision: 12,
+                    event: RoomEventV2::ParticipantUnbanned {
+                        actor_id: "alice".to_owned(),
+                        participant_id: "bot".to_owned(),
+                        reason: "unban".to_owned(),
+                        causation: [3; 16],
+                    },
+                },
             ],
             next: PageCursorV2(9),
             has_more: false,
@@ -313,6 +386,9 @@ fn every_v2_outcome_and_refusal_round_trips() {
             current_revision: 11,
             cause: ChangeGapV2::MembershipChanged,
         },
+        OutcomeV2::Kicked { revision: 12 },
+        OutcomeV2::Banned { revision: 13 },
+        OutcomeV2::Unbanned { revision: 14 },
     ];
     for outcome in outcomes {
         let reply = WireReplyV2::Executed(ReplyV2::Accepted(outcome));
@@ -336,6 +412,7 @@ fn every_v2_outcome_and_refusal_round_trips() {
         RefusalV2::Capacity,
         RefusalV2::Exhausted,
         RefusalV2::Unavailable,
+        RefusalV2::Banned,
     ];
     for refusal in refusals {
         for reply in [

@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 const MAGIC: &[u8; 8] = b"AGORASV\0";
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ServiceCheckpointScopeV1([u8; 16]);
@@ -189,7 +189,7 @@ impl<'a> Reader<'a> {
     }
 }
 
-fn limits_values(limits: ServiceLimitsV2) -> [usize; 10] {
+fn limits_values(limits: ServiceLimitsV2) -> [usize; 11] {
     [
         limits.max_clients,
         limits.max_retired_clients,
@@ -200,6 +200,7 @@ fn limits_values(limits: ServiceLimitsV2) -> [usize; 10] {
         limits.max_room_id_bytes,
         limits.max_room_name_bytes,
         limits.max_message_body_bytes,
+        limits.max_moderation_reason_bytes,
         limits.max_addressed_participants,
     ]
 }
@@ -236,7 +237,8 @@ fn read_limits(
         max_room_id_bytes: reader.size(values[6])?,
         max_room_name_bytes: reader.size(values[7])?,
         max_message_body_bytes: reader.size(values[8])?,
-        max_addressed_participants: reader.size(values[9])?,
+        max_moderation_reason_bytes: reader.size(values[9])?,
+        max_addressed_participants: reader.size(values[10])?,
     })
 }
 
@@ -247,7 +249,8 @@ fn wire_limits(limits: ServiceLimitsV2, max_frame_bytes: usize) -> WireLimits {
             .max_message_body_bytes
             .max(limits.max_room_name_bytes)
             .max(limits.max_room_id_bytes)
-            .max(limits.max_participant_id_bytes),
+            .max(limits.max_participant_id_bytes)
+            .max(limits.max_moderation_reason_bytes),
         max_fields: max_frame_bytes,
         max_list_items: limits
             .max_page_items

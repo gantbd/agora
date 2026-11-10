@@ -96,13 +96,12 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v1.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v2.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    assert_eq!(actual.len(), fixture.len());
     assert_eq!(actual, fixture);
     let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
 
@@ -205,7 +204,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 2;
+    future[8] = 3;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -236,6 +235,63 @@ fn any_accepted_mutation_after_recovery_advances_from_the_recovered_revision() {
         ReplyV2::Accepted(OutcomeV2::RoomCreated {
             revision: before + 1
         })
+    );
+}
+
+#[test]
+fn moderation_state_and_receipt_survive_recovery() {
+    let mut engine = Engine::new();
+    for id in ["alice", "bot"] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id,
+                id,
+                ParticipantKind::Human,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let ban = request(
+        1,
+        CommandV2::Ban {
+            room_id: "room".to_owned(),
+            participant_id: "bot".to_owned(),
+            reason: "policy".to_owned(),
+            causation: [7; 16],
+            expected_revision: 3,
+        },
+    );
+    let accepted = service.execute(alice, ban.clone());
+    assert_eq!(
+        accepted,
+        ReplyV2::Accepted(OutcomeV2::Banned { revision: 4 })
+    );
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(alice, ban), accepted);
+    assert_eq!(
+        recovered.execute(
+            bot,
+            request(
+                1,
+                CommandV2::Join {
+                    room_id: "room".to_owned(),
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::Banned)
     );
 }
 
