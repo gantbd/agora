@@ -1,0 +1,19 @@
+[package]
+name = "agora-sdk-client"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+description = "Protocol-facing client SDK facade for Agora"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+agora-client = { path = "../../crates/agora-client", version = "=0.1.0" }
+agora-protocol = { path = "../../crates/agora-protocol", version = "=0.1.0" }
+agora-wire = { path = "../../crates/agora-wire", version = "=0.1.0" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

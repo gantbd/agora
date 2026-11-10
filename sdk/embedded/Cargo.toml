@@ -1,0 +1,18 @@
+[package]
+name = "agora-sdk-embedded"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+description = "Zero-authority embedded SDK facade for Agora"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+agora-engine = { path = "../..", version = "=0.3.0" }
+agora-host = { path = "../../crates/agora-host", version = "=0.1.0" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

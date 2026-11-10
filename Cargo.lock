@@ -30,6 +30,23 @@ name = "agora-protocol"
 version = "0.1.0"
 
 [[package]]
+name = "agora-sdk-client"
+version = "0.1.0"
+dependencies = [
+ "agora-client",
+ "agora-protocol",
+ "agora-wire",
+]
+
+[[package]]
+name = "agora-sdk-embedded"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+ "agora-host",
+]
+
+[[package]]
 name = "agora-service"
 version = "0.1.0"
 dependencies = [

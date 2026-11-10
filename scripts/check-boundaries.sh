@@ -8,7 +8,7 @@ if rg -n 'AgentActivation|activate_agents|max_agent_activations' src tests; then
   exit 1
 fi
 
-if rg -n 'std::(fs|net|process)::|tokio|async_std|reqwest|rusqlite' src crates/*/src; then
+if rg -n 'std::(fs|net|process)::|tokio|async_std|reqwest|rusqlite' src crates/*/src sdk/*/src; then
   echo 'effectful runtime dependency crossed an Agora semantic boundary' >&2
   exit 1
 fi
@@ -43,6 +43,25 @@ fi
 host_tree=$(cargo tree -p agora-host --edges normal --depth 1 --locked --offline)
 if printf '%s\n' "$host_tree" | rg 'agora-client|aegis|chronos|moira|daimon|hermes'; then
   echo 'Agora host imported a client, authority, or peer-engine implementation' >&2
+  exit 1
+fi
+
+embedded_sdk_tree=$(cargo tree -p agora-sdk-embedded --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$embedded_sdk_tree" | wc -l | tr -d ' ') != 3 ]] \
+  || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-engine' \
+  || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-host'; then
+  printf '%s\n' "$embedded_sdk_tree" >&2
+  echo 'Agora embedded SDK escaped its engine-and-host closure' >&2
+  exit 1
+fi
+
+client_sdk_tree=$(cargo tree -p agora-sdk-client --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$client_sdk_tree" | wc -l | tr -d ' ') != 4 ]] \
+  || ! printf '%s\n' "$client_sdk_tree" | rg -q 'agora-client' \
+  || ! printf '%s\n' "$client_sdk_tree" | rg -q 'agora-protocol' \
+  || ! printf '%s\n' "$client_sdk_tree" | rg -q 'agora-wire'; then
+  printf '%s\n' "$client_sdk_tree" >&2
+  echo 'Agora client SDK escaped its client-protocol-wire closure' >&2
   exit 1
 fi
 

@@ -24,6 +24,8 @@ members = [
     "crates/agora-service",
     "crates/agora-host",
     "crates/agora-client",
+    "sdk/embedded",
+    "sdk/client",
 ]
 
 [lints.rust]
