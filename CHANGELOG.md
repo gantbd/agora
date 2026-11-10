@@ -50,12 +50,15 @@ follow Semantic Versioning once a public release contract is selected.
   tombstones, scrubbed retained feed content, and an attributable room event.
 - Added role-scoped moderator message redaction as a distinct action with
   bounded reason, opaque causation, author evidence, tombstones, and recovery.
+- Added an identity-bearing room-change profile with isolated durable cursors,
+  stable message IDs across receipt/history/feed/recovery, and canonical wire
+  and SDK evidence without changing the legacy change grammar.
 
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 7, 8,
-  and 8 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 7, 9,
+  and 9 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

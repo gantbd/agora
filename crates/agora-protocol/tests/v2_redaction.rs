@@ -1,6 +1,7 @@
 use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, CommandV2,
-    IdentifiedMessagePageV1, IdentifiedMessageV1, MemberPageV2, MemberV2, MessageIdV1,
+    IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
+    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReplyV2, RoleV2,
     RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
@@ -12,6 +13,15 @@ fn v2_debug_output_is_content_safe() {
         CommandV2::IdentifiedMessages {
             room_id: "secret-room".to_owned(),
             cursor: Some(PageCursorV2(48)),
+            limit: 1,
+        },
+        CommandV2::OpenIdentifiedChanges {
+            room_id: "secret-room".to_owned(),
+            observed_revision: 1,
+        },
+        CommandV2::IdentifiedChanges {
+            room_id: "secret-room".to_owned(),
+            cursor: PageCursorV2(52),
             limit: 1,
         },
         CommandV2::SpeakIdentified {
@@ -77,6 +87,23 @@ fn v2_debug_output_is_content_safe() {
             oldest_retained_sequence: 0,
             next_message_sequence: 1,
             next: Some(PageCursorV2(49)),
+        })),
+        ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(IdentifiedRoomChangePageV1 {
+            revision: 7,
+            changes: vec![IdentifiedRoomChangeV1 {
+                event_sequence: 6,
+                revision: 7,
+                event: IdentifiedRoomEventV1::MessageAccepted(IdentifiedMessageV1 {
+                    message_id: MessageIdV1::new([0x5e; 16]),
+                    sequence: 2,
+                    author: "secret-author".to_owned(),
+                    logical_time: 3,
+                    body: "secret-body".to_owned(),
+                    addressed_to: vec!["secret-recipient".to_owned()],
+                }),
+            }],
+            next: PageCursorV2(53),
+            has_more: false,
         })),
         ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
             revision: 2,
@@ -241,6 +268,8 @@ fn v2_debug_output_is_content_safe() {
         "49",
         "50",
         "51",
+        "52",
+        "53",
     ] {
         assert!(!rendered.contains(secret));
     }

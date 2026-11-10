@@ -66,6 +66,10 @@ foreign, cross-room, or consumed handles share `InvalidCursor`. Outbox retention
 loss and leave/rejoin visibility discontinuity are explicit gap outcomes that
 require resnapshot. The cursor is included in complete service recovery, but the
 feed remains pull observation rather than delivery acknowledgment or presence.
+The additive identified-change feed uses the same engine log and continuity
+laws but a distinct service cursor kind and outcome vocabulary. Cross-profile
+cursor substitution refuses without consuming either cursor. Stable message
+identity is reference data only; it does not alter sequence order or authority.
 
 ## Durable state and publication
 

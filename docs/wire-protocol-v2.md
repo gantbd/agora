@@ -45,6 +45,8 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `13` | SpeakIdentified | room, expected revision, logical time, body, addressed-participant list |
 | `14` | WithdrawMessage | room, expected revision, 16-byte opaque message ID |
 | `15` | RedactMessage | room, expected revision, message ID, reason, 16-byte opaque causation |
+| `16` | OpenIdentifiedChanges | room `text`, exact completed snapshot revision |
+| `17` | IdentifiedChanges | room `text`, required opaque cursor `u64`, limit |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -57,7 +59,7 @@ a refusal. Outcome tags are Rooms `01`, Members `02`, Messages `03`, RoomCreated
 MessageAccepted `09`, ChangesOpened `0a`, Changes `0b`, ChangeGap `0c`, Kicked
 `0d`, Banned `0e`, Unbanned `0f`, RoomPolicyChanged `10`, Bans `11`, and
 Capabilities `12`, IdentifiedMessages `13`, IdentifiedMessageAccepted `14`, and
-MessageWithdrawn `15`, and MessageRedacted `16`.
+MessageWithdrawn `15`, MessageRedacted `16`, and IdentifiedChanges `17`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -110,6 +112,14 @@ text, bounded reason text, and fixed 16-byte causation encoded as two big-endian
 Retention `01` plus acknowledged-through sequence or MembershipChanged `02`.
 Unknown event, gap, or Boolean tags refuse.
 
+OpenIdentifiedChanges reuses the ChangesOpened scalar result, but the service
+binds its handle to a distinct cursor profile. IdentifiedChanges has the same
+page envelope, ordering, bounds, and gap laws as Changes. Its closed nested
+event vocabulary uses the same tags and fields except event `06`, which carries
+an identified message beginning with its opaque 16-byte message ID. This new
+outcome does not alter legacy Changes bytes or make the two cursor profiles
+substitutable.
+
 ## Refusals
 
 | Tag | Refusal | Payload |
@@ -143,7 +153,8 @@ page carrying retention bounds and addressing, a change page carrying its
 stable event identity and next cursor, a moderation change preserving evidence,
 an admission-policy change, and a ban page preserving its authority-relevant
 prior role, a complete canonical capability inventory, an identified-message
-page, an author-withdrawal change, and a moderator-redaction change. Round-trip tests cover every command,
+page, an author-withdrawal change, a moderator-redaction change, and an
+identity-bearing accepted-message change. Round-trip tests cover every command,
 outcome, refusal, room-event kind, and gap cause. Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push

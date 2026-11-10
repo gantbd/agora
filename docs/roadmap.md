@@ -7,8 +7,8 @@
    of Agora.
 3. Add model, fuzz, and mutation gates around recovery, canonical wire changes,
    filesystem crash points, and command refusal.
-4. Implement the accepted additive identity-bearing room-change profile, then
-   add one-level replies and threads under the qualified withdrawal/redaction
+4. Build on the implemented additive identity-bearing room-change profile by
+   adding one-level replies and threads under the qualified withdrawal/redaction
    tombstone laws; preserve identity and reference integrity before reactions
    or edits.
 5. Qualify backup/restore, upgrade/rollback, and an additional physical store only

@@ -2,8 +2,8 @@ use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Participant, ParticipantKind,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, MessageIdV1, OutcomeV2,
-    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomEventV2,
+    AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, IdentifiedRoomEventV1,
+    MessageIdV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomEventV2,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -877,6 +877,22 @@ fn v2_change_feed_requires_resnapshot_after_leave_and_rejoin() {
     ) else {
         panic!("change position expected");
     };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: identified_cursor,
+        ..
+    }) = service.execute(
+        bot,
+        request(
+            5,
+            CommandV2::OpenIdentifiedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 6,
+            },
+        ),
+    )
+    else {
+        panic!("identified change position expected");
+    };
     assert!(matches!(
         service.execute(
             bot,
@@ -927,6 +943,23 @@ fn v2_change_feed_requires_resnapshot_after_leave_and_rejoin() {
                 CommandV2::Changes {
                     room_id: "room".to_owned(),
                     cursor,
+                    limit: 8,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ChangeGap {
+            current_revision: 9,
+            cause: ChangeGapV2::MembershipChanged,
+        })
+    );
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                6,
+                CommandV2::IdentifiedChanges {
+                    room_id: "room".to_owned(),
+                    cursor: identified_cursor,
                     limit: 8,
                 },
             ),
@@ -1133,10 +1166,10 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 9);
+    assert_eq!(capabilities.len(), 10);
     assert_eq!(
         capabilities.last(),
-        Some(&CapabilityV2::ModeratorRedactionV1)
+        Some(&CapabilityV2::IdentifiedRoomChangesV1)
     );
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
@@ -1241,6 +1274,163 @@ fn v2_identified_messages_preserve_identity_without_reinterpreting_legacy_pages(
         panic!("legacy page expected");
     };
     assert_eq!(legacy.messages[0].sequence, 0);
+}
+
+#[test]
+fn v2_identified_change_feed_preserves_identity_and_isolates_cursor_profiles() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: legacy_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 2,
+            },
+        ),
+    )
+    else {
+        panic!("legacy change position expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: identified_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::OpenIdentifiedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 2,
+            },
+        ),
+    )
+    else {
+        panic!("identified change position expected");
+    };
+
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                3,
+                CommandV2::Changes {
+                    room_id: "room".to_owned(),
+                    cursor: identified_cursor,
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidCursor)
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                4,
+                CommandV2::IdentifiedChanges {
+                    room_id: "room".to_owned(),
+                    cursor: legacy_cursor,
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidCursor)
+    );
+
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        message_id,
+        sequence: 0,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            5,
+            CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: 2,
+                logical_time: 7,
+                body: "stable".to_owned(),
+                addressed_to: vec![],
+            },
+        ),
+    )
+    else {
+        panic!("identified acceptance expected");
+    };
+
+    let identified_request = request(
+        6,
+        CommandV2::IdentifiedChanges {
+            room_id: "room".to_owned(),
+            cursor: identified_cursor,
+            limit: 1,
+        },
+    );
+    let identified_reply = service.execute(alice, identified_request.clone());
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(page)) = &identified_reply else {
+        panic!("identified change page expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        IdentifiedRoomEventV1::MessageAccepted(message)
+            if message.message_id == message_id && message.sequence == 0
+    ));
+    assert_eq!(service.execute(alice, identified_request), identified_reply);
+
+    let ReplyV2::Accepted(OutcomeV2::Changes(legacy)) = service.execute(
+        alice,
+        request(
+            7,
+            CommandV2::Changes {
+                room_id: "room".to_owned(),
+                cursor: legacy_cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("legacy change page expected");
+    };
+    assert!(matches!(
+        &legacy.changes[0].event,
+        RoomEventV2::MessageAccepted(message) if message.sequence == 0
+    ));
+
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(history)) = service.execute(
+        alice,
+        request(
+            8,
+            CommandV2::IdentifiedMessages {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("identified history expected");
+    };
+    assert_eq!(history.messages[0].message_id, message_id);
 }
 
 #[test]

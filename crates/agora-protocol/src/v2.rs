@@ -93,6 +93,15 @@ pub enum CommandV2 {
         cursor: PageCursorV2,
         limit: u32,
     },
+    OpenIdentifiedChanges {
+        room_id: String,
+        observed_revision: u64,
+    },
+    IdentifiedChanges {
+        room_id: String,
+        cursor: PageCursorV2,
+        limit: u32,
+    },
     CreateRoom {
         room_id: String,
         name: String,
@@ -235,6 +244,24 @@ impl fmt::Debug for CommandV2 {
                 limit,
             } => formatter
                 .debug_struct("Changes")
+                .field("room_id_bytes", &room_id.len())
+                .field("cursor", cursor)
+                .field("limit", limit)
+                .finish(),
+            Self::OpenIdentifiedChanges {
+                room_id,
+                observed_revision,
+            } => formatter
+                .debug_struct("OpenIdentifiedChanges")
+                .field("room_id_bytes", &room_id.len())
+                .field("observed_revision", observed_revision)
+                .finish(),
+            Self::IdentifiedChanges {
+                room_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("IdentifiedChanges")
                 .field("room_id_bytes", &room_id.len())
                 .field("cursor", cursor)
                 .field("limit", limit)
@@ -389,6 +416,7 @@ pub enum CapabilityV2 {
     IdentifiedMessagesV1,
     AuthorWithdrawalV1,
     ModeratorRedactionV1,
+    IdentifiedRoomChangesV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -709,6 +737,155 @@ impl fmt::Debug for RoomEventV2 {
     }
 }
 
+/// Additive room-event profile whose accepted-message variant carries stable
+/// identity. It is deliberately distinct from the frozen `RoomEventV2` grammar.
+#[derive(Clone, Eq, PartialEq)]
+pub enum IdentifiedRoomEventV1 {
+    RoomCreated {
+        owner: String,
+        admission: AdmissionPolicyV2,
+    },
+    InvitationRecorded {
+        participant_id: String,
+    },
+    ParticipantJoined {
+        participant_id: String,
+    },
+    ParticipantLeft {
+        participant_id: String,
+    },
+    RoleChanged {
+        participant_id: String,
+        role: RoleV2,
+    },
+    RoomPolicyChanged {
+        actor_id: String,
+        previous: AdmissionPolicyV2,
+        admission: AdmissionPolicyV2,
+    },
+    ParticipantKicked {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ParticipantBanned {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ParticipantUnbanned {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    MessageAccepted(IdentifiedMessageV1),
+    MessageWithdrawn {
+        actor_id: String,
+        message_id: MessageIdV1,
+        sequence: u64,
+    },
+    MessageRedacted {
+        actor_id: String,
+        author_id: String,
+        message_id: MessageIdV1,
+        sequence: u64,
+        reason: String,
+        causation: [u8; 16],
+    },
+}
+
+impl fmt::Debug for IdentifiedRoomEventV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RoomCreated { admission, .. } => formatter
+                .debug_struct("RoomCreated")
+                .field("admission", admission)
+                .finish_non_exhaustive(),
+            Self::InvitationRecorded { participant_id }
+            | Self::ParticipantJoined { participant_id }
+            | Self::ParticipantLeft { participant_id } => formatter
+                .debug_struct("ParticipantChange")
+                .field("participant_id_bytes", &participant_id.len())
+                .finish_non_exhaustive(),
+            Self::RoleChanged {
+                participant_id,
+                role,
+            } => formatter
+                .debug_struct("RoleChanged")
+                .field("participant_id_bytes", &participant_id.len())
+                .field("role", role)
+                .finish(),
+            Self::RoomPolicyChanged {
+                actor_id,
+                previous,
+                admission,
+            } => formatter
+                .debug_struct("RoomPolicyChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("previous", previous)
+                .field("admission", admission)
+                .finish(),
+            Self::ParticipantKicked {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            }
+            | Self::ParticipantBanned {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            }
+            | Self::ParticipantUnbanned {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("ModerationEvent")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("participant_id_bytes", &participant_id.len())
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::MessageAccepted(message) => formatter
+                .debug_tuple("MessageAccepted")
+                .field(message)
+                .finish(),
+            Self::MessageWithdrawn {
+                actor_id,
+                message_id,
+                sequence,
+            } => formatter
+                .debug_struct("MessageWithdrawn")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("sequence", sequence)
+                .finish(),
+            Self::MessageRedacted {
+                actor_id,
+                author_id,
+                message_id,
+                sequence,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("MessageRedacted")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("author_id_bytes", &author_id.len())
+                .field("message_id", message_id)
+                .field("sequence", sequence)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoomChangeV2 {
     pub event_sequence: u64,
@@ -722,6 +899,33 @@ pub struct RoomChangePageV2 {
     pub changes: Vec<RoomChangeV2>,
     pub next: PageCursorV2,
     pub has_more: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdentifiedRoomChangeV1 {
+    pub event_sequence: u64,
+    pub revision: u64,
+    pub event: IdentifiedRoomEventV1,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct IdentifiedRoomChangePageV1 {
+    pub revision: u64,
+    pub changes: Vec<IdentifiedRoomChangeV1>,
+    pub next: PageCursorV2,
+    pub has_more: bool,
+}
+
+impl fmt::Debug for IdentifiedRoomChangePageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("IdentifiedRoomChangePageV1")
+            .field("revision", &self.revision)
+            .field("change_count", &self.changes.len())
+            .field("next", &self.next)
+            .field("has_more", &self.has_more)
+            .finish()
+    }
 }
 
 impl fmt::Debug for RoomChangePageV2 {
@@ -781,6 +985,7 @@ pub enum OutcomeV2 {
         cursor: PageCursorV2,
     },
     Changes(RoomChangePageV2),
+    IdentifiedChanges(IdentifiedRoomChangePageV1),
     ChangeGap {
         current_revision: u64,
         cause: ChangeGapV2,

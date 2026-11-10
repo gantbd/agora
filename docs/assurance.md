@@ -20,7 +20,7 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact ten-package workspace and eighteen canonical fixtures. These
+closes over the exact ten-package workspace and nineteen canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -86,11 +86,11 @@ contents. The client test fixes the independent monotone V2 request namespace.
 No V2 authenticated host, persistence, transport, or uncertainty behavior is
 claimed.
 
-Wire V2 freezes four additional golden frames and round-trips every V2 command,
+Wire V2 freezes twelve canonical frames and round-trips every V2 command,
 outcome, and refusal. It independently exercises every truncation of
 representative request and reply frames, trailing data, V1/version mismatch,
 unknown command and cursor tags, text/list ceilings, and content-safe Debug
-surfaces. These seven wire fixtures establish only complete-frame codec behavior;
+surfaces. These fixtures establish only complete-frame codec behavior;
 Host V2 evidence
 is separate below and no transport is claimed.
 The remote-client facade-only scenario also constructs a V2 client request and
@@ -113,7 +113,7 @@ changed-input conflict, continue mutation from the recovered revision, and
 refuse every truncation plus foreign scope, reduced host ceiling, future profile,
 and trailing data. The service record and its private cursor subrecords have
 content-safe Debug surfaces. A representative complete service checkpoint is
-frozen as the eighth canonical fixture.
+frozen as a canonical fixture.
 
 The store-neutral durable boundary scenarios use a deterministic
 checkpoint-store fault model.
@@ -139,13 +139,13 @@ foreign scope. Durable-host fault scenarios prove authenticated Connect and
 service client allocation commit together, indeterminate-after-commit recovery
 replays the same request without a duplicate room event, known store refusal
 rolls back both namespaces, and revoked-session cleanup is durable before the
-Unavailable result is visible. The ninth canonical fixture pins the combined
+Unavailable result is visible. A canonical fixture pins the combined
 record.
 
 The private-directory scenarios exercise a real Unix filesystem: initialization,
 two CAS revisions, close/reopen recovery, wrong-revision and capacity refusal,
 exclusive locking, private modes, lock symlinks, crash residue, header corruption,
-and live head replacement. The tenth fixture freezes the `AGDIRCP` bytes. A full
+and live head replacement. A fixture freezes the `AGDIRCP` bytes. A full
 `DurableHostV2` composition then closes and reopens the store, recovers the
 authenticated host/service unit, and proves same-time exact replay adds neither
 an engine event nor a store offer. The adapter's durable claim is limited to
@@ -160,9 +160,15 @@ without overlap, and surface both acknowledged-prefix loss and leave/rejoin
 visibility discontinuity as explicit resnapshot gaps. Foreign client/room use,
 invalid limits, debug redaction, every truncated private position, canonical
 engine recovery, durable service-cursor recovery, every wire command/outcome/
-room-event/gap variant, nested unknown tags, and the eleventh frozen fixture
+room-event/gap variant, nested unknown tags, and frozen legacy-change fixture
 close the represented pull path. They do not establish push delivery, per-client
 event retention, read receipts, presence, or transport reconnection policy.
+
+The additive identified-change scenarios prove cursor-profile isolation without
+consumption, one stable ID across acceptance, history, feed, checkpoint
+recovery, and SDK decoding, membership-gap continuity, content-safe Debug, and
+all-event closed wire decoding. A separate canonical fixture freezes the new
+accepted-message grammar while the legacy change fixture remains byte-identical.
 
 The gate does not establish a credential adapter, transport security,
 multi-host serialization, physical-device power-loss behavior, event delivery,

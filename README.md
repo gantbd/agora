@@ -44,6 +44,10 @@ reference-preserving empty-body tombstone; this is not a physical-erasure claim.
 The distinct `ModeratorRedactionV1` capability applies the room role hierarchy
 to another author's retained message and preserves bounded reason, opaque
 causation, actor, author, identity, and order in an attributable event.
+The `IdentifiedRoomChangesV1` capability carries that same stable identity in a
+parallel bounded room-change profile. Its cursor kind is isolated from the
+legacy feed, while ordering, membership checks, gaps, and authority remain
+unchanged.
 
 An independently versioned Service V2 checkpoint preserves the engine, pending
 outbox, client namespace, exact request replies, and live cursor consequences.

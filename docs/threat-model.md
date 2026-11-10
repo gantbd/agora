@@ -49,6 +49,10 @@ secret, do not grant read or mutation authority, and must not be interpreted as
 chronology. Identified history still rechecks current membership; legacy and
 identified cursor kinds are isolated so a handle cannot silently change the
 shape or disclosure contract of its continuation.
+The identity-bearing change profile exposes the same stable ID to authorized
+current members and therefore adds correlation surface, not authority. Every
+pull rechecks membership, and an ID never substitutes for a room role, cursor,
+or authenticated participant binding.
 
 Author withdrawal rechecks current membership and exact authorship at the
 named message ID; participant kind, room role, and knowledge of the ID grant no

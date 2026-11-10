@@ -1,6 +1,7 @@
 use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
-    CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, MemberPageV2, MemberV2, MessageIdV1,
+    CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
+    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
     RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
     RoomSummaryV2,
@@ -147,6 +148,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::IdentifiedMessagesV1,
         CapabilityV2::AuthorWithdrawalV1,
         CapabilityV2::ModeratorRedactionV1,
+        CapabilityV2::IdentifiedRoomChangesV1,
     ])))
 }
 
@@ -166,6 +168,28 @@ fn identified_messages_reply() -> WireReplyV2 {
             oldest_retained_sequence: 4,
             next_message_sequence: 5,
             next: None,
+        },
+    )))
+}
+
+fn identified_changes_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(
+        IdentifiedRoomChangePageV1 {
+            revision: 22,
+            changes: vec![IdentifiedRoomChangeV1 {
+                event_sequence: 21,
+                revision: 22,
+                event: IdentifiedRoomEventV1::MessageAccepted(IdentifiedMessageV1 {
+                    message_id: MessageIdV1::new([0x8d; 16]),
+                    sequence: 5,
+                    author: "bot".to_owned(),
+                    logical_time: 10,
+                    body: "identified change".to_owned(),
+                    addressed_to: vec!["alice".to_owned()],
+                }),
+            }],
+            next: PageCursorV2(22),
+            has_more: false,
         },
     )))
 }
@@ -261,6 +285,10 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
             encode_reply_v2(&redaction_change_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/redaction-change-reply-v2.hex")),
         ),
+        (
+            encode_reply_v2(&identified_changes_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/identified-changes-reply-v2.hex")),
+        ),
     ];
     for (actual, expected) in cases {
         assert_eq!(actual, expected);
@@ -323,6 +351,15 @@ fn every_v2_command_round_trips() {
             observed_revision: 4,
         },
         CommandV2::Changes {
+            room_id: "room".to_owned(),
+            cursor: PageCursorV2(3),
+            limit: 4,
+        },
+        CommandV2::OpenIdentifiedChanges {
+            room_id: "room".to_owned(),
+            observed_revision: 4,
+        },
+        CommandV2::IdentifiedChanges {
             room_id: "room".to_owned(),
             cursor: PageCursorV2(3),
             limit: 4,
@@ -596,6 +633,10 @@ fn every_v2_outcome_and_refusal_round_trips() {
             next: PageCursorV2(9),
             has_more: false,
         }),
+        match identified_changes_reply() {
+            WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
+            _ => unreachable!(),
+        },
         OutcomeV2::ChangeGap {
             current_revision: 10,
             cause: ChangeGapV2::Retention {
@@ -648,12 +689,95 @@ fn every_v2_outcome_and_refusal_round_trips() {
 }
 
 #[test]
+fn every_identified_change_event_round_trips() {
+    let events = [
+        IdentifiedRoomEventV1::RoomCreated {
+            owner: "alice".to_owned(),
+            admission: AdmissionPolicyV2::Open,
+        },
+        IdentifiedRoomEventV1::InvitationRecorded {
+            participant_id: "bot".to_owned(),
+        },
+        IdentifiedRoomEventV1::ParticipantJoined {
+            participant_id: "bot".to_owned(),
+        },
+        IdentifiedRoomEventV1::ParticipantLeft {
+            participant_id: "bot".to_owned(),
+        },
+        IdentifiedRoomEventV1::RoleChanged {
+            participant_id: "bot".to_owned(),
+            role: RoleV2::Moderator,
+        },
+        IdentifiedRoomEventV1::MessageAccepted(IdentifiedMessageV1 {
+            message_id: MessageIdV1::new([6; 16]),
+            sequence: 6,
+            author: "bot".to_owned(),
+            logical_time: 7,
+            body: "body".to_owned(),
+            addressed_to: vec!["alice".to_owned()],
+        }),
+        IdentifiedRoomEventV1::ParticipantKicked {
+            actor_id: "alice".to_owned(),
+            participant_id: "bot".to_owned(),
+            reason: "kick".to_owned(),
+            causation: [7; 16],
+        },
+        IdentifiedRoomEventV1::ParticipantBanned {
+            actor_id: "alice".to_owned(),
+            participant_id: "bot".to_owned(),
+            reason: "ban".to_owned(),
+            causation: [8; 16],
+        },
+        IdentifiedRoomEventV1::ParticipantUnbanned {
+            actor_id: "alice".to_owned(),
+            participant_id: "bot".to_owned(),
+            reason: "unban".to_owned(),
+            causation: [9; 16],
+        },
+        IdentifiedRoomEventV1::RoomPolicyChanged {
+            actor_id: "alice".to_owned(),
+            previous: AdmissionPolicyV2::Open,
+            admission: AdmissionPolicyV2::InviteOnly,
+        },
+        IdentifiedRoomEventV1::MessageWithdrawn {
+            actor_id: "bot".to_owned(),
+            message_id: MessageIdV1::new([11; 16]),
+            sequence: 6,
+        },
+        IdentifiedRoomEventV1::MessageRedacted {
+            actor_id: "alice".to_owned(),
+            author_id: "bot".to_owned(),
+            message_id: MessageIdV1::new([12; 16]),
+            sequence: 6,
+            reason: "policy".to_owned(),
+            causation: [12; 16],
+        },
+    ];
+    for (index, event) in events.into_iter().enumerate() {
+        let reply = WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(
+            IdentifiedRoomChangePageV1 {
+                revision: 20,
+                changes: vec![IdentifiedRoomChangeV1 {
+                    event_sequence: index as u64,
+                    revision: 20,
+                    event,
+                }],
+                next: PageCursorV2(21),
+                has_more: index % 2 == 0,
+            },
+        )));
+        let encoded = encode_reply_v2(&reply, limits()).unwrap();
+        assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), reply);
+    }
+}
+
+#[test]
 fn v2_decoding_is_closed_and_version_isolated() {
     let request = encode_request_v2(&create_request(), limits()).unwrap();
     for end in 0..request.len() {
         assert!(decode_request_v2(&request[..end], limits()).is_err());
     }
-    for reply in [rooms_reply(), messages_reply()] {
+    for reply in [rooms_reply(), messages_reply(), identified_changes_reply()] {
         let encoded = encode_reply_v2(&reply, limits()).unwrap();
         for end in 0..encoded.len() {
             assert!(decode_reply_v2(&encoded[..end], limits()).is_err());
@@ -693,6 +817,13 @@ fn v2_decoding_is_closed_and_version_isolated() {
     unknown_change_event[36] = 0x7f;
     assert_eq!(
         decode_reply_v2(&unknown_change_event, limits()),
+        Err(WireDecodeError::UnknownTag)
+    );
+    let mut unknown_identified_change_event =
+        encode_reply_v2(&identified_changes_reply(), limits()).unwrap();
+    unknown_identified_change_event[36] = 0x7f;
+    assert_eq!(
+        decode_reply_v2(&unknown_identified_change_event, limits()),
         Err(WireDecodeError::UnknownTag)
     );
     let mut invalid_has_more = encode_reply_v2(&changes_reply(), limits()).unwrap();

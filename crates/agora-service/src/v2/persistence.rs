@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 const MAGIC: &[u8; 8] = b"AGORASV\0";
-const VERSION: u8 = 8;
+const VERSION: u8 = 9;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ServiceCheckpointScopeV1([u8; 16]);
@@ -378,6 +378,14 @@ impl ServiceV2 {
                         .map_err(|error| map_engine(error, true))?;
                     writer.blob(checkpoint.bytes())?;
                 }
+                CursorPage::IdentifiedChanges { room_id, position } => {
+                    writer.byte(7)?;
+                    writer.text(room_id.as_str())?;
+                    let checkpoint = position
+                        .prepare_checkpoint(max_snapshot_bytes)
+                        .map_err(|error| map_engine(error, true))?;
+                    writer.blob(checkpoint.bytes())?;
+                }
             }
         }
         Ok(ServiceCheckpointV2(writer.bytes))
@@ -566,6 +574,21 @@ impl ServiceV2 {
                         return Err(ServiceCheckpointErrorV2::Invalid);
                     }
                     CursorPage::IdentifiedMessages { room_id, cursor }
+                }
+                7 => {
+                    let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
+                    let position = RoomChangePosition::recover_checkpoint(
+                        reader.blob(bounds.max_snapshot_bytes)?,
+                        cursor_bounds,
+                    )
+                    .map_err(|error| map_engine(error, true))?;
+                    if room_id.as_str().is_empty()
+                        || !position.is_bound_to(participant, &room_id)
+                        || position.revision() > engine.revision()
+                    {
+                        return Err(ServiceCheckpointErrorV2::Invalid);
+                    }
+                    CursorPage::IdentifiedChanges { room_id, position }
                 }
                 _ => return Err(ServiceCheckpointErrorV2::Invalid),
             };

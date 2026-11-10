@@ -9,7 +9,8 @@ use agora_engine::{
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
-    CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, MemberPageV2, MemberV2, MessageIdV1,
+    CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
+    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
     RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
     RoomSummaryV2,
@@ -96,6 +97,10 @@ enum CursorPage {
         cursor: MessagePageCursor,
     },
     Changes {
+        room_id: RoomId,
+        position: RoomChangePosition,
+    },
+    IdentifiedChanges {
         room_id: RoomId,
         position: RoomChangePosition,
     },
@@ -258,6 +263,7 @@ impl ServiceV2 {
                 CapabilityV2::IdentifiedMessagesV1,
                 CapabilityV2::AuthorWithdrawalV1,
                 CapabilityV2::ModeratorRedactionV1,
+                CapabilityV2::IdentifiedRoomChangesV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -289,6 +295,15 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.changes(client, participant, room_id, *cursor, *limit),
+            CommandV2::OpenIdentifiedChanges {
+                room_id,
+                observed_revision,
+            } => self.open_identified_changes(client, participant, room_id, *observed_revision),
+            CommandV2::IdentifiedChanges {
+                room_id,
+                cursor,
+                limit,
+            } => self.identified_changes(client, participant, room_id, *cursor, *limit),
             CommandV2::CreateRoom {
                 room_id,
                 name,
@@ -1018,6 +1033,104 @@ impl ServiceV2 {
         }
     }
 
+    fn open_identified_changes(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        observed_revision: u64,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let position = self
+            .engine
+            .room_change_position(observer, &room, Revision(observed_revision))
+            .map_err(map_observation_refusal)?;
+        let cursor = self
+            .replace_cursor(
+                client,
+                None,
+                Some(CursorPage::IdentifiedChanges {
+                    room_id: room,
+                    position,
+                }),
+            )?
+            .ok_or(RefusalV2::Unavailable)?;
+        Ok(OutcomeV2::ChangesOpened {
+            revision: observed_revision,
+            cursor,
+        })
+    }
+
+    fn identified_changes(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        cursor_id: PageCursorV2,
+        limit: u32,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let position = match self.cursor_for(client, cursor_id)? {
+            CursorPage::IdentifiedChanges {
+                room_id: bound_room,
+                position,
+            } if bound_room == room => position,
+            _ => return Err(RefusalV2::InvalidCursor),
+        };
+        match self
+            .engine
+            .room_change_page(observer, &room, &position, limit as usize)
+            .map_err(map_observation_refusal)?
+        {
+            RoomChangeResult::Gap {
+                cause,
+                current_revision,
+            } => {
+                self.replace_cursor(client, Some(cursor_id), None)?;
+                Ok(OutcomeV2::ChangeGap {
+                    current_revision: current_revision.0,
+                    cause: match cause {
+                        RoomChangeGap::Retention {
+                            acknowledged_through,
+                        } => ChangeGapV2::Retention {
+                            acknowledged_through: acknowledged_through.0,
+                        },
+                        RoomChangeGap::MembershipChanged => ChangeGapV2::MembershipChanged,
+                    },
+                })
+            }
+            RoomChangeResult::Page(page) => {
+                let next = self
+                    .replace_cursor(
+                        client,
+                        Some(cursor_id),
+                        Some(CursorPage::IdentifiedChanges {
+                            room_id: room,
+                            position: page.next,
+                        }),
+                    )?
+                    .ok_or(RefusalV2::Unavailable)?;
+                let changes = page
+                    .changes
+                    .into_iter()
+                    .map(|change| {
+                        Ok(IdentifiedRoomChangeV1 {
+                            event_sequence: change.sequence.0,
+                            revision: change.revision.0,
+                            event: map_identified_room_event(change.event)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, RefusalV2>>()?;
+                Ok(OutcomeV2::IdentifiedChanges(IdentifiedRoomChangePageV1 {
+                    revision: page.revision.0,
+                    changes,
+                    next,
+                    has_more: page.has_more,
+                }))
+            }
+        }
+    }
+
     fn cursor_for(
         &self,
         client: ClientIdV2,
@@ -1079,8 +1192,12 @@ impl ServiceV2 {
             | CommandV2::IdentifiedMessages { room_id, limit, .. } => {
                 valid_room(room_id) && valid_page(*limit)
             }
-            CommandV2::OpenChanges { room_id, .. } => valid_room(room_id),
-            CommandV2::Changes { room_id, limit, .. } => valid_room(room_id) && valid_page(*limit),
+            CommandV2::OpenChanges { room_id, .. }
+            | CommandV2::OpenIdentifiedChanges { room_id, .. } => valid_room(room_id),
+            CommandV2::Changes { room_id, limit, .. }
+            | CommandV2::IdentifiedChanges { room_id, limit, .. } => {
+                valid_room(room_id) && valid_page(*limit)
+            }
             CommandV2::CreateRoom { room_id, name, .. } => {
                 valid_room(room_id) && valid_text(name, self.limits.max_room_name_bytes)
             }
@@ -1178,6 +1295,118 @@ fn map_identified_message_from_engine(message: agora_engine::Message) -> Identif
             .map(|participant| participant.as_str().to_owned())
             .collect(),
     }
+}
+
+fn map_identified_room_event(
+    event: agora_engine::DomainEventV2,
+) -> Result<IdentifiedRoomEventV1, RefusalV2> {
+    Ok(match event {
+        agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
+            return Err(RefusalV2::Unavailable);
+        }
+        agora_engine::DomainEventV2::RoomCreated {
+            owner, admission, ..
+        } => IdentifiedRoomEventV1::RoomCreated {
+            owner: owner.as_str().to_owned(),
+            admission: map_admission_from_engine(admission),
+        },
+        agora_engine::DomainEventV2::InvitationRecorded { participant, .. } => {
+            IdentifiedRoomEventV1::InvitationRecorded {
+                participant_id: participant.as_str().to_owned(),
+            }
+        }
+        agora_engine::DomainEventV2::ParticipantJoined { participant, .. } => {
+            IdentifiedRoomEventV1::ParticipantJoined {
+                participant_id: participant.as_str().to_owned(),
+            }
+        }
+        agora_engine::DomainEventV2::ParticipantLeft { participant, .. } => {
+            IdentifiedRoomEventV1::ParticipantLeft {
+                participant_id: participant.as_str().to_owned(),
+            }
+        }
+        agora_engine::DomainEventV2::RoleChanged {
+            participant, role, ..
+        } => IdentifiedRoomEventV1::RoleChanged {
+            participant_id: participant.as_str().to_owned(),
+            role: map_role_from_engine(role),
+        },
+        agora_engine::DomainEventV2::RoomPolicyChanged {
+            actor,
+            previous,
+            admission,
+            ..
+        } => IdentifiedRoomEventV1::RoomPolicyChanged {
+            actor_id: actor.as_str().to_owned(),
+            previous: map_admission_from_engine(previous),
+            admission: map_admission_from_engine(admission),
+        },
+        agora_engine::DomainEventV2::ParticipantKicked {
+            actor,
+            participant,
+            reason,
+            causation,
+            ..
+        } => IdentifiedRoomEventV1::ParticipantKicked {
+            actor_id: actor.as_str().to_owned(),
+            participant_id: participant.as_str().to_owned(),
+            reason: reason.as_str().to_owned(),
+            causation: causation.into_bytes(),
+        },
+        agora_engine::DomainEventV2::ParticipantBanned {
+            actor,
+            participant,
+            reason,
+            causation,
+            ..
+        } => IdentifiedRoomEventV1::ParticipantBanned {
+            actor_id: actor.as_str().to_owned(),
+            participant_id: participant.as_str().to_owned(),
+            reason: reason.as_str().to_owned(),
+            causation: causation.into_bytes(),
+        },
+        agora_engine::DomainEventV2::ParticipantUnbanned {
+            actor,
+            participant,
+            reason,
+            causation,
+            ..
+        } => IdentifiedRoomEventV1::ParticipantUnbanned {
+            actor_id: actor.as_str().to_owned(),
+            participant_id: participant.as_str().to_owned(),
+            reason: reason.as_str().to_owned(),
+            causation: causation.into_bytes(),
+        },
+        agora_engine::DomainEventV2::MessageAccepted { message, .. } => {
+            IdentifiedRoomEventV1::MessageAccepted(map_identified_message_from_engine(message))
+        }
+        agora_engine::DomainEventV2::MessageWithdrawn {
+            actor,
+            message_id,
+            sequence,
+            ..
+        } => IdentifiedRoomEventV1::MessageWithdrawn {
+            actor_id: actor.as_str().to_owned(),
+            message_id: MessageIdV1::new(message_id.into_bytes()),
+            sequence,
+        },
+        agora_engine::DomainEventV2::MessageRedacted {
+            actor,
+            author,
+            message_id,
+            sequence,
+            reason,
+            causation,
+            ..
+        } => IdentifiedRoomEventV1::MessageRedacted {
+            actor_id: actor.as_str().to_owned(),
+            author_id: author.as_str().to_owned(),
+            message_id: MessageIdV1::new(message_id.into_bytes()),
+            sequence,
+            reason: reason.as_str().to_owned(),
+            causation: causation.into_bytes(),
+        },
+    })
 }
 
 fn map_admission_to_engine(value: AdmissionPolicyV2) -> AdmissionPolicy {

@@ -6,7 +6,8 @@ use super::{
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
-    CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, MemberPageV2, MemberV2, MessageIdV1,
+    CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
+    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
     RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
     RoomSummaryV2,
@@ -248,6 +249,24 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             limit,
         } => {
             sink.u8(11)?;
+            sink.text(room_id)?;
+            sink.u64(cursor.0)?;
+            sink.u64(u64::from(*limit))
+        }
+        CommandV2::OpenIdentifiedChanges {
+            room_id,
+            observed_revision,
+        } => {
+            sink.u8(22)?;
+            sink.text(room_id)?;
+            sink.u64(*observed_revision)
+        }
+        CommandV2::IdentifiedChanges {
+            room_id,
+            cursor,
+            limit,
+        } => {
+            sink.u8(23)?;
             sink.text(room_id)?;
             sink.u64(cursor.0)?;
             sink.u64(u64::from(*limit))
@@ -553,6 +572,15 @@ fn decode_command(
                 causation,
             })
         }
+        22 => Ok(CommandV2::OpenIdentifiedChanges {
+            room_id: read_text(decoder)?,
+            observed_revision: read_u64(decoder)?,
+        }),
+        23 => Ok(CommandV2::IdentifiedChanges {
+            room_id: read_text(decoder)?,
+            cursor: PageCursorV2(read_u64(decoder)?),
+            limit: read_u32(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -658,6 +686,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::IdentifiedMessagesV1 => 7,
                     CapabilityV2::AuthorWithdrawalV1 => 8,
                     CapabilityV2::ModeratorRedactionV1 => 9,
+                    CapabilityV2::IdentifiedRoomChangesV1 => 10,
                 })?;
             }
             Ok(())
@@ -690,6 +719,10 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
         OutcomeV2::Changes(page) => {
             sink.u8(11)?;
             encode_change_page(sink, page)
+        }
+        OutcomeV2::IdentifiedChanges(page) => {
+            sink.u8(23)?;
+            encode_identified_change_page(sink, page)
         }
         OutcomeV2::ChangeGap {
             current_revision,
@@ -836,6 +869,7 @@ fn decode_outcome(
                     7 => CapabilityV2::IdentifiedMessagesV1,
                     8 => CapabilityV2::AuthorWithdrawalV1,
                     9 => CapabilityV2::ModeratorRedactionV1,
+                    10 => CapabilityV2::IdentifiedRoomChangesV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -862,6 +896,9 @@ fn decode_outcome(
             message_id: decode_message_id(decoder)?,
             sequence: read_u64(decoder)?,
         }),
+        23 => Ok(OutcomeV2::IdentifiedChanges(decode_identified_change_page(
+            decoder, limits,
+        )?)),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1301,6 +1338,179 @@ fn decode_change_page(
     })
 }
 
+fn encode_identified_change_page(
+    sink: &mut dyn Sink,
+    page: &IdentifiedRoomChangePageV1,
+) -> Result<(), WireEncodeError> {
+    sink.u64(page.revision)?;
+    sink.list(page.changes.len())?;
+    for change in &page.changes {
+        sink.u64(change.event_sequence)?;
+        sink.u64(change.revision)?;
+        match &change.event {
+            IdentifiedRoomEventV1::RoomCreated { owner, admission } => {
+                sink.u8(1)?;
+                sink.text(owner)?;
+                sink.u8(encode_admission(*admission))?;
+            }
+            IdentifiedRoomEventV1::InvitationRecorded { participant_id } => {
+                sink.u8(2)?;
+                sink.text(participant_id)?;
+            }
+            IdentifiedRoomEventV1::ParticipantJoined { participant_id } => {
+                sink.u8(3)?;
+                sink.text(participant_id)?;
+            }
+            IdentifiedRoomEventV1::ParticipantLeft { participant_id } => {
+                sink.u8(4)?;
+                sink.text(participant_id)?;
+            }
+            IdentifiedRoomEventV1::RoleChanged {
+                participant_id,
+                role,
+            } => {
+                sink.u8(5)?;
+                sink.text(participant_id)?;
+                sink.u8(encode_role(*role))?;
+            }
+            IdentifiedRoomEventV1::MessageAccepted(message) => {
+                sink.u8(6)?;
+                encode_identified_message(sink, message)?;
+            }
+            IdentifiedRoomEventV1::ParticipantKicked {
+                actor_id,
+                participant_id,
+                reason,
+                causation,
+            } => encode_moderation_event(sink, 7, actor_id, participant_id, reason, causation)?,
+            IdentifiedRoomEventV1::ParticipantBanned {
+                actor_id,
+                participant_id,
+                reason,
+                causation,
+            } => encode_moderation_event(sink, 8, actor_id, participant_id, reason, causation)?,
+            IdentifiedRoomEventV1::ParticipantUnbanned {
+                actor_id,
+                participant_id,
+                reason,
+                causation,
+            } => encode_moderation_event(sink, 9, actor_id, participant_id, reason, causation)?,
+            IdentifiedRoomEventV1::RoomPolicyChanged {
+                actor_id,
+                previous,
+                admission,
+            } => {
+                sink.u8(10)?;
+                sink.text(actor_id)?;
+                sink.u8(encode_admission(*previous))?;
+                sink.u8(encode_admission(*admission))?;
+            }
+            IdentifiedRoomEventV1::MessageWithdrawn {
+                actor_id,
+                message_id,
+                sequence,
+            } => {
+                sink.u8(11)?;
+                sink.text(actor_id)?;
+                encode_message_id(sink, *message_id)?;
+                sink.u64(*sequence)?;
+            }
+            IdentifiedRoomEventV1::MessageRedacted {
+                actor_id,
+                author_id,
+                message_id,
+                sequence,
+                reason,
+                causation,
+            } => {
+                sink.u8(12)?;
+                sink.text(actor_id)?;
+                sink.text(author_id)?;
+                encode_message_id(sink, *message_id)?;
+                sink.u64(*sequence)?;
+                sink.text(reason)?;
+                encode_causation(sink, causation)?;
+            }
+        }
+    }
+    sink.u64(page.next.0)?;
+    sink.u8(u8::from(page.has_more))
+}
+
+fn decode_identified_change_page(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<IdentifiedRoomChangePageV1, WireDecodeError> {
+    let revision = read_u64(decoder)?;
+    let length = read_list(decoder, limits)?;
+    let mut changes = try_vec(length)?;
+    for _ in 0..length {
+        let event_sequence = read_u64(decoder)?;
+        let revision = read_u64(decoder)?;
+        let event = match read_u8(decoder)? {
+            1 => IdentifiedRoomEventV1::RoomCreated {
+                owner: read_text(decoder)?,
+                admission: decode_admission(decoder)?,
+            },
+            2 => IdentifiedRoomEventV1::InvitationRecorded {
+                participant_id: read_text(decoder)?,
+            },
+            3 => IdentifiedRoomEventV1::ParticipantJoined {
+                participant_id: read_text(decoder)?,
+            },
+            4 => IdentifiedRoomEventV1::ParticipantLeft {
+                participant_id: read_text(decoder)?,
+            },
+            5 => IdentifiedRoomEventV1::RoleChanged {
+                participant_id: read_text(decoder)?,
+                role: decode_role(decoder)?,
+            },
+            6 => {
+                IdentifiedRoomEventV1::MessageAccepted(decode_identified_message(decoder, limits)?)
+            }
+            7 => decode_identified_moderation_event(decoder, ModerationEvent::Kicked)?,
+            8 => decode_identified_moderation_event(decoder, ModerationEvent::Banned)?,
+            9 => decode_identified_moderation_event(decoder, ModerationEvent::Unbanned)?,
+            10 => IdentifiedRoomEventV1::RoomPolicyChanged {
+                actor_id: read_text(decoder)?,
+                previous: decode_admission(decoder)?,
+                admission: decode_admission(decoder)?,
+            },
+            11 => IdentifiedRoomEventV1::MessageWithdrawn {
+                actor_id: read_text(decoder)?,
+                message_id: decode_message_id(decoder)?,
+                sequence: read_u64(decoder)?,
+            },
+            12 => IdentifiedRoomEventV1::MessageRedacted {
+                actor_id: read_text(decoder)?,
+                author_id: read_text(decoder)?,
+                message_id: decode_message_id(decoder)?,
+                sequence: read_u64(decoder)?,
+                reason: read_text(decoder)?,
+                causation: decode_causation(decoder)?,
+            },
+            _ => return Err(WireDecodeError::UnknownTag),
+        };
+        changes.push(IdentifiedRoomChangeV1 {
+            event_sequence,
+            revision,
+            event,
+        });
+    }
+    let next = PageCursorV2(read_u64(decoder)?);
+    let has_more = match read_u8(decoder)? {
+        0 => false,
+        1 => true,
+        _ => return Err(WireDecodeError::UnknownTag),
+    };
+    Ok(IdentifiedRoomChangePageV1 {
+        revision,
+        changes,
+        next,
+        has_more,
+    })
+}
+
 #[derive(Clone, Copy)]
 enum ModerationEvent {
     Kicked,
@@ -1345,6 +1555,36 @@ fn decode_moderation_event(
             causation,
         },
         ModerationEvent::Unbanned => RoomEventV2::ParticipantUnbanned {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        },
+    })
+}
+
+fn decode_identified_moderation_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    event: ModerationEvent,
+) -> Result<IdentifiedRoomEventV1, WireDecodeError> {
+    let actor_id = read_text(decoder)?;
+    let participant_id = read_text(decoder)?;
+    let reason = read_text(decoder)?;
+    let causation = decode_causation(decoder)?;
+    Ok(match event {
+        ModerationEvent::Kicked => IdentifiedRoomEventV1::ParticipantKicked {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        },
+        ModerationEvent::Banned => IdentifiedRoomEventV1::ParticipantBanned {
+            actor_id,
+            participant_id,
+            reason,
+            causation,
+        },
+        ModerationEvent::Unbanned => IdentifiedRoomEventV1::ParticipantUnbanned {
             actor_id,
             participant_id,
             reason,

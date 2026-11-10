@@ -128,4 +128,29 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
         wire::v2::decode_request_v2(&encoded, limits).unwrap(),
         redaction
     );
+
+    for command in [
+        protocol::v2::CommandV2::OpenIdentifiedChanges {
+            room_id: "room".to_owned(),
+            observed_revision: 10,
+        },
+        protocol::v2::CommandV2::IdentifiedChanges {
+            room_id: "room".to_owned(),
+            cursor: protocol::v2::PageCursorV2(12),
+            limit: 2,
+        },
+    ] {
+        let request = wire::v2::WireRequestV2::Execute {
+            client: protocol::v2::ClientIdV2(7),
+            request: protocol::v2::RequestV2 {
+                request_id: protocol::v2::RequestIdV2(12),
+                command,
+            },
+        };
+        let encoded = wire::v2::encode_request_v2(&request, limits).unwrap();
+        assert_eq!(
+            wire::v2::decode_request_v2(&encoded, limits).unwrap(),
+            request
+        );
+    }
 }

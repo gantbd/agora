@@ -2,7 +2,8 @@ use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind,
 };
 use agora_protocol::v2::{
-    ClientIdV2, CommandV2, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
+    ClientIdV2, CommandV2, IdentifiedRoomEventV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
+    RequestV2,
 };
 use agora_service::v2::{
     ServiceLimitsV2, ServiceV2,
@@ -96,7 +97,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v8.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v9.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -204,7 +205,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 9;
+    future[8] = 10;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -509,6 +510,94 @@ fn identified_message_receipt_and_cursor_survive_recovery_exactly() {
     assert_ne!(second_page.messages[0].message_id, first_id);
     assert_eq!(second_page.messages[0].sequence, 1);
     assert!(second_page.next.is_none());
+}
+
+#[test]
+fn identified_change_cursor_and_message_identity_survive_recovery_exactly() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let open = request(
+        1,
+        CommandV2::OpenIdentifiedChanges {
+            room_id: "room".to_owned(),
+            observed_revision: 2,
+        },
+    );
+    let opened = service.execute(alice, open.clone());
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = &opened else {
+        panic!("identified change position expected");
+    };
+    let cursor = *cursor;
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(alice, open), opened);
+
+    let speak = request(
+        2,
+        CommandV2::SpeakIdentified {
+            room_id: "room".to_owned(),
+            expected_revision: 2,
+            logical_time: 3,
+            body: "after recovery".to_owned(),
+            addressed_to: vec![],
+        },
+    );
+    let receipt = recovered.execute(alice, speak.clone());
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted { message_id, .. }) = &receipt
+    else {
+        panic!("identified receipt expected");
+    };
+    let message_id = *message_id;
+    assert_eq!(recovered.execute(alice, speak), receipt);
+
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(page)) = recovered.execute(
+        alice,
+        request(
+            3,
+            CommandV2::IdentifiedChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("identified change page expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        IdentifiedRoomEventV1::MessageAccepted(message) if message.message_id == message_id
+    ));
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(history)) = recovered.execute(
+        alice,
+        request(
+            4,
+            CommandV2::IdentifiedMessages {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("identified history expected");
+    };
+    assert_eq!(history.messages[0].message_id, message_id);
 }
 
 #[test]
