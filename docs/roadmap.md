@@ -7,9 +7,10 @@
    of Agora.
 3. Add model, fuzz, and mutation gates around recovery, canonical wire changes,
    filesystem crash points, and command refusal.
-4. Add one-level replies and threads only after defining their behavior under
-   the now-qualified author-withdrawal and moderator-redaction tombstone laws;
-   preserve identity and reference integrity before adding reactions or edits.
+4. Implement the accepted additive identity-bearing room-change profile, then
+   add one-level replies and threads under the qualified withdrawal/redaction
+   tombstone laws; preserve identity and reference integrity before reactions
+   or edits.
 5. Qualify backup/restore, upgrade/rollback, and an additional physical store only
    when a deployment profile requires claims beyond the current local Unix
    single-owner mechanism.
