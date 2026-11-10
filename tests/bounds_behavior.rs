@@ -1,5 +1,5 @@
 use agora_engine::{
-    AdmissionPolicy, CommandV1, Engine, Limits, Participant, ParticipantId, ParticipantKind,
+    AdmissionPolicy, CommandV2, Engine, Limits, Participant, ParticipantId, ParticipantKind,
     Refusal, RoomId,
 };
 
@@ -13,7 +13,7 @@ fn invalid_registration_and_capacity_refusals_are_atomic() {
     });
 
     assert_eq!(
-        engine.apply(CommandV1::RegisterParticipant(Participant::new(
+        engine.apply(CommandV2::RegisterParticipant(Participant::new(
             "large",
             "safe",
             ParticipantKind::Agent,
@@ -23,14 +23,14 @@ fn invalid_registration_and_capacity_refusals_are_atomic() {
     assert_eq!(engine.participants().len(), 0);
 
     engine
-        .apply(CommandV1::RegisterParticipant(Participant::new(
+        .apply(CommandV2::RegisterParticipant(Participant::new(
             "safe",
             "safe",
             ParticipantKind::Human,
         )))
         .unwrap();
     assert_eq!(
-        engine.apply(CommandV1::RegisterParticipant(Participant::new(
+        engine.apply(CommandV2::RegisterParticipant(Participant::new(
             "next",
             "next",
             ParticipantKind::Agent,
@@ -47,7 +47,7 @@ fn room_creation_requires_registered_owner_and_member_capacity() {
         ..Limits::default()
     });
     engine
-        .apply(CommandV1::RegisterParticipant(Participant::new(
+        .apply(CommandV2::RegisterParticipant(Participant::new(
             "owner",
             "Owner",
             ParticipantKind::Human,
@@ -55,7 +55,7 @@ fn room_creation_requires_registered_owner_and_member_capacity() {
         .unwrap();
 
     assert_eq!(
-        engine.apply(CommandV1::CreateRoom {
+        engine.apply(CommandV2::CreateRoom {
             room_id: RoomId::from("room"),
             name: "Room".into(),
             owner: ParticipantId::from("missing"),
@@ -65,7 +65,7 @@ fn room_creation_requires_registered_owner_and_member_capacity() {
     );
     assert_eq!(engine.rooms().count(), 0);
     assert_eq!(
-        engine.apply(CommandV1::CreateRoom {
+        engine.apply(CommandV2::CreateRoom {
             room_id: RoomId::from("room"),
             name: "Room".into(),
             owner: ParticipantId::from("owner"),

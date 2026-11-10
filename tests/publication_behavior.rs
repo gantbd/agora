@@ -1,26 +1,26 @@
 use agora_engine::{
-    AdmissionPolicy, CommandV1, Engine, Limits, LogicalTime, Participant, ParticipantId,
-    ParticipantKind, PublicationCommandV1, PublicationKeyV1, PublicationRefusalV1, RoomId,
+    AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, Participant, ParticipantId,
+    ParticipantKind, PublicationCommandV2, PublicationKeyV2, PublicationRefusalV2, RoomId,
 };
 
 fn setup(limits: Limits) -> Engine {
     let mut engine = Engine::with_limits(limits);
     engine
-        .apply(CommandV1::RegisterParticipant(Participant::new(
+        .apply(CommandV2::RegisterParticipant(Participant::new(
             "human",
             "Human",
             ParticipantKind::Human,
         )))
         .unwrap();
     engine
-        .apply(CommandV1::RegisterParticipant(Participant::new(
+        .apply(CommandV2::RegisterParticipant(Participant::new(
             "agent",
             "Agent",
             ParticipantKind::Agent,
         )))
         .unwrap();
     engine
-        .apply(CommandV1::CreateRoom {
+        .apply(CommandV2::CreateRoom {
             room_id: RoomId::from("room"),
             name: "Room".into(),
             owner: ParticipantId::from("human"),
@@ -28,7 +28,7 @@ fn setup(limits: Limits) -> Engine {
         })
         .unwrap();
     engine
-        .apply(CommandV1::Join {
+        .apply(CommandV2::Join {
             room_id: RoomId::from("room"),
             participant: ParticipantId::from("agent"),
         })
@@ -36,10 +36,10 @@ fn setup(limits: Limits) -> Engine {
     engine
 }
 
-fn publication(engine: &Engine, key: [u8; 16], body: &str) -> PublicationCommandV1 {
-    PublicationCommandV1::new(
+fn publication(engine: &Engine, key: [u8; 16], body: &str) -> PublicationCommandV2 {
+    PublicationCommandV2::new(
         engine.revision(),
-        PublicationKeyV1::new(key),
+        PublicationKeyV2::new(key),
         RoomId::from("room"),
         ParticipantId::from("agent"),
         LogicalTime(20),
@@ -55,7 +55,7 @@ fn matching_publication_replay_returns_the_original_transition_without_a_second_
     let accepted_revision = engine.revision();
 
     engine
-        .apply(CommandV1::RegisterParticipant(Participant::new(
+        .apply(CommandV2::RegisterParticipant(Participant::new(
             "observer",
             "Observer",
             ParticipantKind::Human,
@@ -79,7 +79,7 @@ fn publication_key_reuse_with_changed_content_is_a_conflict() {
 
     assert_eq!(
         engine.publish(publication(&engine, [2; 16], "changed")),
-        Err(PublicationRefusalV1::IdempotencyConflict)
+        Err(PublicationRefusalV2::IdempotencyConflict)
     );
     assert_eq!(engine.revision(), revision);
     assert_eq!(
@@ -101,7 +101,7 @@ fn full_publication_receipt_index_backpressures_before_message_mutation() {
 
     assert_eq!(
         engine.publish(publication(&engine, [4; 16], "second")),
-        Err(PublicationRefusalV1::PublicationReceiptLimit)
+        Err(PublicationRefusalV2::PublicationReceiptLimit)
     );
     assert_eq!(engine.revision(), revision);
     assert_eq!(

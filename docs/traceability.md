@@ -4,18 +4,18 @@ This ledger records current evidence. Open work is not a pass.
 
 | Requirement | Implementation | Evidence | Status |
 | --- | --- | --- | --- |
-| R1 authoritative state | non-`Clone` `Engine`, private maps | behavior tests through public observations | Satisfied for in-process v0.2 |
+| R1 authoritative state | non-`Clone` `Engine`, private maps | behavior tests through public observations | Satisfied for in-process v0.3 |
 | R2 mixed participation | `ParticipantKind`, common command paths | human/agent conversation scenario | Satisfied |
 | R3 bounded state | `Limits`, pre-publication validation | boundary and capacity scenarios | Satisfied for represented domains |
-| R4 determinism | `CommandV1`, `LogicalTime`, ordered collections | deterministic transcript scenario | Satisfied for serial execution |
+| R4 determinism | `CommandV2`, `LogicalTime`, ordered collections | deterministic transcript scenario | Satisfied for serial execution |
 | R5 admission | `AdmissionPolicy`, invitations, roles | open/invite-only/authority scenarios | Satisfied |
 | R6 atomic refusal | validate-before-mutate transitions | state snapshot assertions around refusals | Satisfied for tested commands |
 | R7 ordered conversation | checked room-local sequence, FIFO | ordering/retention scenarios | Satisfied |
 | R8 privacy | custom content-free message `Debug` | debug redaction test | Satisfied for `Message` |
 | R9 effect isolation | dependency-free library core | source boundary and build graph | Satisfied for core; adapters open |
-| R10 optimistic publication | `Revision`, `RevisionedCommandV1`, checked counters | stale-writer and ordered transition scenarios | Satisfied for serial in-process owner |
-| R11 bounded delivery | bounded `EventEnvelopeV1` queue and monotone acknowledgment cursor | saturation, release, beyond-edge, and regression scenarios | Satisfied for volatile outbox; durability open |
-| R12 agent activation | closed room policy and typed activation events | disabled, explicit, automatic, stable-order, and no-recursion scenarios | Satisfied for request generation; connectors open |
+| R10 optimistic publication | `Revision`, `RevisionedCommandV2`, checked counters | stale-writer and ordered transition scenarios | Satisfied for serial in-process owner |
+| R11 bounded delivery | bounded `EventEnvelopeV2` queue and monotone acknowledgment cursor | saturation, release, beyond-edge, and regression scenarios | Satisfied for volatile outbox; durability open |
+| R12 neutral addressing | `SpeakAddressed`, canonical member list retained in `Message` | kind-symmetry, order, membership, capacity, redaction, checkpoint, and bounded-model scenarios | Satisfied for represented message addressing; execution intentionally excluded |
 | R13 replay-safe publication | opaque fixed-width key and bounded exact-content transition index | matching lost-reply replay, key conflict, saturation atomicity, and debug-redaction scenarios | Satisfied for volatile in-process profile; durable persistence open |
 
 ## Verification gates

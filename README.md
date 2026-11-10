@@ -1,74 +1,51 @@
 # Agora
 
-Agora is a Rust chat-room engine in which humans and software agents are equal,
-explicitly identified participants. It is a library, not a server: authentication,
-agent execution, storage, transports, user interfaces, and wall-clock access live
-outside the engine.
+Agora is a headless Rust conversation engine in which humans and software agents
+are equal, explicitly identified participants. It owns participants, rooms,
+membership, roles, messages, and participant-neutral addressing. It does not own
+authentication, orchestration, tasks, harnesses, storage, transports, UI, model
+behavior, or wall-clock access.
 
-The v0.2 core provides:
-
-- bounded registration for human and agent participants;
-- bounded room creation with an owner and open or invite-only admission;
-- explicit invitation and membership transitions;
-- owner, moderator, and member roles;
-- deterministic, caller-timestamped messages with per-room FIFO retention;
-- a closed, versioned command vocabulary and typed outcomes/refusals;
-- atomic refusal: invalid commands leave authoritative state unchanged;
-- content-redacted `Debug` output for messages;
-- optimistic engine revisions that reject stale writers before mutation;
-- a bounded, ordered domain-event outbox with monotone prefix acknowledgment;
-- a bounded replay-safe response-publication profile with opaque idempotency
-  keys and exact-content conflict detection;
-- bounded canonical V1 semantic checkpoints preserving retention, replay receipts,
-  pending events and acknowledgement cursors, with host recovery ceilings;
-- room-scoped agent activation policies with bounded fan-out;
-- automatic activation by human messages without agent-to-agent wakeup loops.
+The v0.3 core provides bounded deterministic transitions, typed atomic refusal,
+room-local message ordering and retention, optimistic revisions, an ordered
+bounded outbox, replay-safe response publication, and canonical V2 checkpoints.
+Messages may explicitly address a canonical bounded list of current room members.
+Participant kind never changes admission, role, speaking, or addressing behavior.
 
 ## Boundary
 
-The engine accepts `RevisionedCommandV1` values and returns `TransitionV1` values.
-The convenience `apply` method binds a `CommandV1` to the current revision. It performs
-no I/O, reads no clock, starts no agent, and authenticates no principal. A host is
-responsible for mapping an authenticated connection to a `ParticipantId`; passing
-an ID to this library is not proof of identity.
+The engine accepts `RevisionedCommandV2` and returns `TransitionV2`. The
+convenience `apply` method binds a `CommandV2` to the current revision. It performs
+no I/O, reads no clock, starts no participant, and authenticates no principal.
 
-Commands publish exactly one event and advance exactly one revision. Concurrent
-hosts use `apply_revisioned` for optimistic exclusion; the core still requires a
-single serialized publication owner and makes no distributed-consensus claim.
-Adapters must deliver and acknowledge the outbox rather than infer delivery from
-accepted commands.
+Addressing is conversation data only. Agora never turns an addressed participant
+into a task or execution request. An adapter may offer accepted messages to Moira;
+Moira decides whether workflow exists, Chronos schedules it, and Daimon executes
+already-authorized work.
 
-Cross-engine response adapters use `PublicationCommandV1`. First acceptance runs
-the ordinary closed `Speak` transition and retains its exact transition under an
-opaque fixed-width key. Matching replay returns that transition without adding a
-message or advancing revision, even when the original expected revision is now
-stale. Reusing the key with changed semantic content is refused. This receipt
-index is bounded and volatile; durable lost-reply recovery still requires a host
-to persist it atomically with Agora state.
+Commands publish one event and advance one revision. Concurrent hosts use
+`apply_revisioned`; the core still requires one serialized publication owner and
+makes no consensus claim. Adapters must deliver and acknowledge the outbox rather
+than infer delivery from command acceptance.
 
-`Engine::prepare_checkpoint` and `Engine::recover_checkpoint` now provide that
-authority-free data boundary. Recovery validates configured bounds, canonical
-ordering, room ownership/references, message/revision/event frontiers, retained
-publication attribution and the exact unacknowledged outbox suffix. Event and
-receipt validation use indexed lookups rather than repeated history scans.
-This native codec adds no runtime dependencies, I/O, clocks or authentication;
-it does not authenticate checkpoint origin or itself establish durability.
-The separate `../moira/adapters/moira-sqlite` receiver persists this checkpoint and
-stable source/room correspondence in a single-owner local SQLite profile. Its
-storage, failure-boundary and restart claims belong to that adapter.
+`PublicationCommandV2` binds one exact plain response to an opaque idempotency
+key. Matching replay returns the original transition without another message or
+revision. Changed content conflicts. The bounded volatile receipt index becomes
+durable only when a host persists it atomically with Agora state.
 
-Agent activation is a request for an external connector, never proof that an agent
-ran. Rooms default to disabled activation. Owners may select explicit human
-requests or automatic activation of agent members on human messages. Agent-authored
-messages never automatically activate other agents.
+The `AGORACP` V2 codec validates bounds, canonical order, ownership/references,
+message and event frontiers, addressed membership, publication attribution, and
+the exact unacknowledged outbox suffix. V1 bytes are refused because their agent
+activation state has no neutral interpretation. The codec proves neither origin
+authentication nor storage durability.
 
-## Rigor
+## Assurance
 
-The project follows the useful discipline established by the neighboring Chronos
-engine: closed data, explicit bounds, deterministic transitions, effect isolation,
-typed refusal, scenario tests, and honest traceability. See
-[requirements](requirements.md), [specification](specification.md), and the
-[traceability ledger](docs/traceability.md).
+The active claim is defined by [requirements](requirements.md), the
+[specification](specification.md), [traceability](docs/traceability.md),
+[assurance plan](docs/assurance.md), [threat model](docs/threat-model.md), and
+[release-readiness ledger](docs/release-readiness.md). Open work remains explicit
+in the [roadmap](docs/roadmap.md).
 
 ## Development
 
@@ -77,4 +54,3 @@ Agora requires Rust 1.95 or newer.
 ```sh
 make check
 ```
-

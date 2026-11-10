@@ -1,17 +1,17 @@
 use agora_engine::{
-    AcknowledgeError, CommandV1, DomainEventV1, Engine, EventSequence, Limits, Participant,
-    ParticipantKind, Refusal, Revision, RevisionedCommandV1,
+    AcknowledgeError, CommandV2, DomainEventV2, Engine, EventSequence, Limits, Participant,
+    ParticipantKind, Refusal, Revision, RevisionedCommandV2,
 };
 
-fn registration(id: &str) -> CommandV1 {
-    CommandV1::RegisterParticipant(Participant::new(id, id, ParticipantKind::Human))
+fn registration(id: &str) -> CommandV2 {
+    CommandV2::RegisterParticipant(Participant::new(id, id, ParticipantKind::Human))
 }
 
 #[test]
 fn stale_revision_refuses_without_mutating_or_publishing() {
     let mut engine = Engine::new();
     let accepted = engine
-        .apply_revisioned(RevisionedCommandV1 {
+        .apply_revisioned(RevisionedCommandV2 {
             expected_revision: Revision(0),
             command: registration("alice"),
         })
@@ -20,7 +20,7 @@ fn stale_revision_refuses_without_mutating_or_publishing() {
     assert_eq!(accepted.event_sequence, EventSequence(0));
 
     assert_eq!(
-        engine.apply_revisioned(RevisionedCommandV1 {
+        engine.apply_revisioned(RevisionedCommandV2 {
             expected_revision: Revision(0),
             command: registration("bob"),
         }),
@@ -54,14 +54,14 @@ fn full_outbox_backpressures_before_state_mutation_and_ack_releases_capacity() {
     let accepted = engine.apply(registration("bob")).unwrap();
     assert!(matches!(
         accepted,
-        agora_engine::OutcomeV1::ParticipantRegistered(_)
+        agora_engine::OutcomeV2::ParticipantRegistered(_)
     ));
     let event = engine.pending_events().next().unwrap();
     assert_eq!(event.sequence, EventSequence(1));
     assert_eq!(event.revision, Revision(2));
     assert!(matches!(
         event.event,
-        DomainEventV1::ParticipantRegistered { .. }
+        DomainEventV2::ParticipantRegistered { .. }
     ));
 }
 

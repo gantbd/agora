@@ -1,102 +1,90 @@
 # Core specification
 
-For the configured limits, an admitted state and a revisioned command define a total
+For configured limits, an admitted state and revisioned command define a total
 deterministic transition:
 
 ```text
-(State, RevisionedCommandV1) -> (State, Result<TransitionV1, Refusal>)
+(State, RevisionedCommandV2) -> (State, Result<TransitionV2, Refusal>)
 ```
 
-Expected invalidity is a `Refusal`; it is not a panic. Refusal is the identity
-state transition. The mutable Rust owner is an implementation detail of this
-functional contract.
+Expected invalidity is a `Refusal`; it is the identity state transition. Every
+accepted command increments the engine revision and event sequence exactly once
+and appends exactly one event. Revision conflict, outbox saturation, and counter
+exhaustion are checked before the domain command runs.
 
-Every accepted command increments the engine revision and event sequence exactly
-once and appends exactly one event. Revision conflict, outbox saturation, or
-counter exhaustion is checked before the domain command runs. The unrevisioned
-`apply` convenience method binds the command to the current in-process revision.
+## State and authority
 
-## State
+An engine owns participants, rooms, revision/event cursors, a bounded event
+outbox, and bounded publication receipts. A room owns its admission policy,
+members and roles, invitations, retained messages, and next message sequence.
+Collections with observable order are ordered.
 
-An engine contains a participant registry and room map. A room contains its
-admission policy, members and roles, pending invitations, retained messages, the
-next room-local message sequence, and its agent activation policy. The engine also
-contains revision and event cursors plus a bounded event outbox. Domain collections
-are ordered maps/sets so observation and activation order are stable.
-
-## Authority
-
-- A room creator becomes its owner and first member.
+- A room creator becomes owner and first member.
 - Owners and moderators may invite registered participants.
 - Only owners may promote or demote moderators.
-- Open rooms admit any registered participant with remaining capacity.
-- Invite-only rooms admit a registered participant only while an invitation is
-  pending; successful joining consumes it.
-- An owner cannot leave. Ownership transfer is deliberately absent in v0.2.
-- Any member may speak. Participant kind grants no special authority.
+- Open rooms admit registered participants with capacity.
+- Invite-only rooms require a pending invitation, consumed on join.
+- Owners cannot leave; ownership transfer is absent in v0.3.
+- Any member may speak. Participant kind grants no authority.
 
-The host must authenticate command actors. The engine checks room authority but
-does not establish that a caller owns a supplied participant ID.
+The host authenticates command actors. Supplying a `ParticipantId` is not proof
+of identity, authority outside the room, or possession of an Aegis grant.
 
-## Agent activation
+## Participant-neutral addressing
 
-Rooms begin with `Disabled` activation. An owner may select:
+`SpeakAddressed` atomically retains a message and its addressed participants.
+The list must be strictly increasing by participant ID, contain only room members
+at acceptance, and fit `max_addressed_participants_per_message`. Later membership
+changes do not rewrite historical messages. Validation precedes message sequence
+allocation and retention eviction. `Speak` is the exact empty-addressing case.
 
-- `Disabled`: activation requests are refused;
-- `Explicit`: a human room member may request one admitted agent for a retained
-  causal message;
-- `OnHumanMessage`: accepting a human message emits all admitted agent members as
-  activation targets in stable ID order.
-
-Automatic activation never follows an agent-authored message. Therefore the core
-cannot create an unbounded agent-to-agent wakeup chain. Fan-out is checked against
-`max_agent_activations_per_message` before accepting the message. An activation
-event means requested work only; connector completion and delivery remain external.
+Participant kind is descriptive metadata and is not consulted by addressing,
+admission, role, or speaking transitions. Agora does not wake a participant,
+create work, select a harness, or infer that an addressed participant responded.
+An adapter may offer accepted message facts to Moira; orchestration belongs there.
 
 ## Event outbox
 
-Accepted commands append one `EventEnvelopeV1` containing the event sequence,
+Accepted commands append one `EventEnvelopeV2` containing the event sequence,
 accepted revision, and typed domain event. Saturation refuses before state change.
 Acknowledgment may advance only through the published edge and cannot regress.
-Acknowledged prefixes are removed. The in-memory outbox is not durable evidence;
-an adapter must atomically persist state and events to claim crash recovery.
+Acknowledged prefixes are removed. The in-memory outbox is not durable evidence.
 
 ## Message retention
 
-Each accepted message gets the current room-local sequence; checked increment
-precedes publication. When retention is full, the oldest retained message is
-evicted before the new message is appended. A zero retention limit refuses
-speaking. Eviction affects retrieval only, not sequence continuity.
+Each accepted message receives the room's current sequence and caller-supplied
+logical time. Checked increment precedes publication. At capacity, the oldest
+retained message is evicted before insertion. Zero retention refuses speaking.
+Eviction affects retrieval, not sequence continuity.
 
-## Bounds
+## Bounds and observation
 
-`Limits` bounds participant count, room count, members/invitations/messages per
-room, pending events, activation fan-out, and UTF-8 byte lengths for IDs, display
-names, room names, and bodies.
-Empty identifiers/names/bodies are refused. Arithmetic overflow is refused.
+`Limits` bounds participants, rooms, members, invitations, messages, pending
+events, publication receipts, addressed participants, and UTF-8 bytes for IDs,
+names, and bodies. Empty identifiers, names, and bodies are refused. Arithmetic
+overflow is refused. Message and publication debug output reports sizes and
+closed metadata without message bodies or idempotency keys.
 
 ## Replay-safe response publication
 
-`PublicationCommandV1` is an adapter profile over the closed v0.2 `Speak`
-command, not an expansion of `CommandV1`. It binds one opaque 16-byte key to the
-room, author, logical time, body, and original accepted transition. A matching
-replay observes the retained transition and does not re-run optimistic revision
-checking. Changed semantic content under the same key is an idempotency conflict.
-New keys backpressure before message mutation when
-`max_publication_receipts` is full. The in-memory receipt map is not durable
-evidence until a host persists it atomically with engine state.
+`PublicationCommandV2` is an adapter profile over plain `Speak`. One opaque
+16-byte key binds to the room, author, logical time, body, and original accepted
+transition. Matching replay returns the retained transition without rerunning
+optimistic revision checking. Changed content conflicts. New keys backpressure
+before message mutation at capacity. Publication deliberately addresses nobody;
+an orchestrator must use an explicit conversation command if addressing is part
+of the response semantics.
 
-## Checkpoint profile V1
+## Checkpoint profile V2
 
-The separate closed `AGORACP` V1 codec captures engine limits, participants, rooms,
-membership/invitations, retained message suffixes and sequence frontiers, complete
-publication records and their original transitions, revision/event frontiers,
-acknowledgement cursor and pending event envelopes. It does not expand `CommandV1`
-or supply actor authentication. Host byte/cardinality ceilings apply before trusting
-checkpoint-owned limits or allocating decoded collections. Invalid tags, UTF-8,
-ordering, duplicate identities, references, message suffixes and inconsistent cursor
-or receipt attribution are refused. Successful recovery has one canonical encoding.
-These are structural/semantic checks, not proof of authenticated historical origin.
-Checkpoint preparation neither advances a revision nor acknowledges event delivery.
-Storage atomicity and durability remain adapter conformance obligations.
+The closed `AGORACP` V2 codec captures limits, participants, rooms, membership,
+invitations, retained message suffixes and addressing, complete publication
+records, revision/event frontiers, acknowledgment cursor, and pending events.
+Host byte/cardinality ceilings apply before checkpoint-owned limits or allocation.
+Invalid tags, UTF-8, ordering, identities, references, suffixes, cursors, and
+receipt attribution are refused. Successful recovery has one canonical encoding.
 
+V1 checkpoint bytes are intentionally refused rather than reinterpreted. V1
+contained agent-activation state that has no participant-neutral equivalent.
+Checkpoint origin authentication, storage atomicity, and durability remain host
+or adapter obligations.

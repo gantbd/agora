@@ -1,4 +1,4 @@
-//! Bounded canonical V1 semantic checkpoints. No I/O, clocks or authentication.
+//! Bounded canonical V2 semantic checkpoints. No I/O, clocks or authentication.
 use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -22,15 +22,15 @@ impl fmt::Display for CheckpointError {
     }
 }
 impl std::error::Error for CheckpointError {}
-pub struct CheckpointV1(Vec<u8>);
-impl CheckpointV1 {
+pub struct CheckpointV2(Vec<u8>);
+impl CheckpointV2 {
     pub fn bytes(&self) -> &[u8] {
         &self.0
     }
 }
-impl fmt::Debug for CheckpointV1 {
+impl fmt::Debug for CheckpointV2 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("CheckpointV1(<redacted>)")
+        f.write_str("CheckpointV2(<redacted>)")
     }
 }
 struct Writer {
@@ -81,11 +81,16 @@ impl Writer {
         self.number(m.sequence)?;
         self.text(m.author.as_str())?;
         self.number(m.at.0)?;
-        self.text(&m.body)
+        self.text(&m.body)?;
+        self.count(m.addressed_to.len())?;
+        for id in &m.addressed_to {
+            self.text(id.as_str())?
+        }
+        Ok(())
     }
-    fn event(&mut self, e: &DomainEventV1) -> Result<(), CheckpointError> {
+    fn event(&mut self, e: &DomainEventV2) -> Result<(), CheckpointError> {
         match e {
-            DomainEventV1::ParticipantRegistered {
+            DomainEventV2::ParticipantRegistered {
                 participant_id,
                 kind,
             } => {
@@ -93,7 +98,7 @@ impl Writer {
                 self.text(participant_id.as_str())?;
                 self.byte(kind_tag(*kind))
             }
-            DomainEventV1::RoomCreated {
+            DomainEventV2::RoomCreated {
                 room_id,
                 owner,
                 admission,
@@ -103,7 +108,7 @@ impl Writer {
                 self.text(owner.as_str())?;
                 self.byte(admission_tag(*admission))
             }
-            DomainEventV1::InvitationRecorded {
+            DomainEventV2::InvitationRecorded {
                 room_id,
                 participant,
             } => {
@@ -111,7 +116,7 @@ impl Writer {
                 self.text(room_id.as_str())?;
                 self.text(participant.as_str())
             }
-            DomainEventV1::ParticipantJoined {
+            DomainEventV2::ParticipantJoined {
                 room_id,
                 participant,
             } => {
@@ -119,7 +124,7 @@ impl Writer {
                 self.text(room_id.as_str())?;
                 self.text(participant.as_str())
             }
-            DomainEventV1::ParticipantLeft {
+            DomainEventV2::ParticipantLeft {
                 room_id,
                 participant,
             } => {
@@ -127,7 +132,7 @@ impl Writer {
                 self.text(room_id.as_str())?;
                 self.text(participant.as_str())
             }
-            DomainEventV1::RoleChanged {
+            DomainEventV2::RoleChanged {
                 room_id,
                 participant,
                 role,
@@ -137,36 +142,10 @@ impl Writer {
                 self.text(participant.as_str())?;
                 self.byte(role_tag(*role))
             }
-            DomainEventV1::AgentActivationPolicyChanged { room_id, policy } => {
+            DomainEventV2::MessageAccepted { room_id, message } => {
                 self.byte(6)?;
                 self.text(room_id.as_str())?;
-                self.byte(policy_tag(*policy))
-            }
-            DomainEventV1::AgentActivationRequested {
-                room_id,
-                requested_by,
-                agent,
-                cause_message_sequence,
-            } => {
-                self.byte(7)?;
-                self.text(room_id.as_str())?;
-                self.text(requested_by.as_str())?;
-                self.text(agent.as_str())?;
-                self.number(*cause_message_sequence)
-            }
-            DomainEventV1::MessageAccepted {
-                room_id,
-                message,
-                activate_agents,
-            } => {
-                self.byte(8)?;
-                self.text(room_id.as_str())?;
-                self.message(message)?;
-                self.count(activate_agents.len())?;
-                for id in activate_agents {
-                    self.text(id.as_str())?
-                }
-                Ok(())
+                self.message(message)
             }
         }
     }
@@ -238,68 +217,58 @@ impl<'a> Reader<'a> {
         }
     }
     fn message(&mut self, l: Limits) -> Result<Message, CheckpointError> {
+        let sequence = self.number()?;
+        let author = self.participant(l)?;
+        let at = LogicalTime(self.number()?);
+        let body = self.text(l.max_message_body_bytes)?;
+        let n = self.count(l.max_addressed_participants_per_message)?;
+        let mut addressed_to = Vec::new();
+        addressed_to
+            .try_reserve(n)
+            .map_err(|_| CheckpointError::Capacity)?;
+        for _ in 0..n {
+            addressed_to.push(self.participant(l)?)
+        }
         Ok(Message {
-            sequence: self.number()?,
-            author: self.participant(l)?,
-            at: LogicalTime(self.number()?),
-            body: self.text(l.max_message_body_bytes)?,
+            sequence,
+            author,
+            at,
+            body,
+            addressed_to,
         })
     }
-    fn event(&mut self, l: Limits) -> Result<DomainEventV1, CheckpointError> {
+    fn event(&mut self, l: Limits) -> Result<DomainEventV2, CheckpointError> {
         Ok(match self.byte()? {
-            0 => DomainEventV1::ParticipantRegistered {
+            0 => DomainEventV2::ParticipantRegistered {
                 participant_id: self.participant(l)?,
                 kind: read_kind(self.byte()?)?,
             },
-            1 => DomainEventV1::RoomCreated {
+            1 => DomainEventV2::RoomCreated {
                 room_id: self.room(l)?,
                 owner: self.participant(l)?,
                 admission: read_admission(self.byte()?)?,
             },
-            2 => DomainEventV1::InvitationRecorded {
+            2 => DomainEventV2::InvitationRecorded {
                 room_id: self.room(l)?,
                 participant: self.participant(l)?,
             },
-            3 => DomainEventV1::ParticipantJoined {
+            3 => DomainEventV2::ParticipantJoined {
                 room_id: self.room(l)?,
                 participant: self.participant(l)?,
             },
-            4 => DomainEventV1::ParticipantLeft {
+            4 => DomainEventV2::ParticipantLeft {
                 room_id: self.room(l)?,
                 participant: self.participant(l)?,
             },
-            5 => DomainEventV1::RoleChanged {
+            5 => DomainEventV2::RoleChanged {
                 room_id: self.room(l)?,
                 participant: self.participant(l)?,
                 role: read_role(self.byte()?)?,
             },
-            6 => DomainEventV1::AgentActivationPolicyChanged {
+            6 => DomainEventV2::MessageAccepted {
                 room_id: self.room(l)?,
-                policy: read_policy(self.byte()?)?,
+                message: self.message(l)?,
             },
-            7 => DomainEventV1::AgentActivationRequested {
-                room_id: self.room(l)?,
-                requested_by: self.participant(l)?,
-                agent: self.participant(l)?,
-                cause_message_sequence: self.number()?,
-            },
-            8 => {
-                let room_id = self.room(l)?;
-                let message = self.message(l)?;
-                let n = self.count(l.max_agent_activations_per_message)?;
-                let mut activate_agents = Vec::new();
-                activate_agents
-                    .try_reserve(n)
-                    .map_err(|_| CheckpointError::Capacity)?;
-                for _ in 0..n {
-                    activate_agents.push(self.participant(l)?)
-                }
-                DomainEventV1::MessageAccepted {
-                    room_id,
-                    message,
-                    activate_agents,
-                }
-            }
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -345,21 +314,6 @@ fn read_role(v: u8) -> Result<Role, CheckpointError> {
         _ => Err(CheckpointError::Invalid),
     }
 }
-fn policy_tag(v: AgentActivationPolicy) -> u8 {
-    match v {
-        AgentActivationPolicy::Disabled => 0,
-        AgentActivationPolicy::Explicit => 1,
-        AgentActivationPolicy::OnHumanMessage => 2,
-    }
-}
-fn read_policy(v: u8) -> Result<AgentActivationPolicy, CheckpointError> {
-    match v {
-        0 => Ok(AgentActivationPolicy::Disabled),
-        1 => Ok(AgentActivationPolicy::Explicit),
-        2 => Ok(AgentActivationPolicy::OnHumanMessage),
-        _ => Err(CheckpointError::Invalid),
-    }
-}
 fn limits_values(l: Limits) -> [usize; 13] {
     [
         l.max_participants,
@@ -369,7 +323,7 @@ fn limits_values(l: Limits) -> [usize; 13] {
         l.max_messages_per_room,
         l.max_pending_events,
         l.max_publication_receipts,
-        l.max_agent_activations_per_message,
+        l.max_addressed_participants_per_message,
         l.max_participant_id_bytes,
         l.max_room_id_bytes,
         l.max_display_name_bytes,
@@ -386,7 +340,7 @@ fn read_limits(r: &mut Reader<'_>, c: Limits) -> Result<Limits, CheckpointError>
         max_messages_per_room: r.size(c.max_messages_per_room)?,
         max_pending_events: r.size(c.max_pending_events)?,
         max_publication_receipts: r.size(c.max_publication_receipts)?,
-        max_agent_activations_per_message: r.size(c.max_agent_activations_per_message)?,
+        max_addressed_participants_per_message: r.size(c.max_addressed_participants_per_message)?,
         max_participant_id_bytes: r.size(c.max_participant_id_bytes)?,
         max_room_id_bytes: r.size(c.max_room_id_bytes)?,
         max_display_name_bytes: r.size(c.max_display_name_bytes)?,
@@ -406,14 +360,14 @@ impl Engine {
     pub fn prepare_checkpoint(
         &self,
         max_snapshot_bytes: usize,
-    ) -> Result<CheckpointV1, CheckpointError> {
+    ) -> Result<CheckpointV2, CheckpointError> {
         validate(self)?;
         let mut w = Writer {
             bytes: Vec::new(),
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(1)?;
+        w.byte(2)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -432,7 +386,6 @@ impl Engine {
             w.text(id.as_str())?;
             w.text(&room.name)?;
             w.byte(admission_tag(room.admission))?;
-            w.byte(policy_tag(room.agent_activation))?;
             w.number(room.next_message_sequence)?;
             w.count(room.members.len())?;
             for (id, role) in &room.members {
@@ -457,7 +410,7 @@ impl Engine {
             w.text(&p.body)?;
             w.number(p.transition.revision.0)?;
             w.number(p.transition.event_sequence.0)?;
-            let OutcomeV1::MessageAccepted { room_id, sequence } = &p.transition.outcome else {
+            let OutcomeV2::MessageAccepted { room_id, sequence } = &p.transition.outcome else {
                 return Err(CheckpointError::Invalid);
             };
             w.text(room_id.as_str())?;
@@ -469,7 +422,7 @@ impl Engine {
             w.number(e.revision.0)?;
             w.event(&e.event)?
         }
-        Ok(CheckpointV1(w.bytes))
+        Ok(CheckpointV2(w.bytes))
     }
     pub fn recover_checkpoint(
         bytes: &[u8],
@@ -479,7 +432,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 1 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 2 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -503,7 +456,6 @@ impl Engine {
             let id = r.room(l)?;
             let name = r.text(l.max_room_name_bytes)?;
             let admission = read_admission(r.byte()?)?;
-            let agent_activation = read_policy(r.byte()?)?;
             let next_message_sequence = r.number()?;
             let mut members = BTreeMap::new();
             let n = r.count(l.max_members_per_room)?;
@@ -536,7 +488,6 @@ impl Engine {
                     id,
                     name,
                     admission,
-                    agent_activation,
                     members,
                     invitations,
                     messages,
@@ -546,26 +497,26 @@ impl Engine {
         }
         let n = r.count(l.max_publication_receipts)?;
         for _ in 0..n {
-            let key = PublicationKeyV1::new(r.fixed()?);
+            let key = PublicationKeyV2::new(r.fixed()?);
             let room_id = r.room(l)?;
             let author = r.participant(l)?;
             let at = LogicalTime(r.number()?);
             let body = r.text(l.max_message_body_bytes)?;
             let revision = Revision(r.number()?);
             let event_sequence = EventSequence(r.number()?);
-            let outcome = OutcomeV1::MessageAccepted {
+            let outcome = OutcomeV2::MessageAccepted {
                 room_id: r.room(l)?,
                 sequence: r.number()?,
             };
             insert(
                 &mut e.publications,
                 key,
-                PublicationRecordV1 {
+                PublicationRecordV2 {
                     room_id,
                     author,
                     at,
                     body,
-                    transition: TransitionV1 {
+                    transition: TransitionV2 {
                         revision,
                         event_sequence,
                         outcome,
@@ -578,7 +529,7 @@ impl Engine {
             .try_reserve(n)
             .map_err(|_| CheckpointError::Capacity)?;
         for _ in 0..n {
-            e.pending_events.push_back(EventEnvelopeV1 {
+            e.pending_events.push_back(EventEnvelopeV2 {
                 sequence: EventSequence(r.number()?),
                 revision: Revision(r.number()?),
                 event: r.event(l)?,
@@ -610,7 +561,19 @@ fn owner(room: &Room) -> Result<&ParticipantId, CheckpointError> {
     Ok(id)
 }
 fn valid_message(e: &Engine, room: &Room, m: &Message) -> Result<(), CheckpointError> {
-    valid_message_parts(e, room, m.sequence, &m.author, m.at, &m.body)
+    valid_message_parts(e, room, m.sequence, &m.author, m.at, &m.body)?;
+    validate_addressing(e, &m.addressed_to)
+}
+fn validate_addressing(e: &Engine, addressed_to: &[ParticipantId]) -> Result<(), CheckpointError> {
+    if addressed_to.len() > e.limits.max_addressed_participants_per_message
+        || addressed_to.windows(2).any(|pair| pair[0] >= pair[1])
+        || addressed_to
+            .iter()
+            .any(|id| !e.participants.contains_key(id))
+    {
+        return Err(CheckpointError::Invalid);
+    }
+    Ok(())
 }
 fn valid_message_parts(
     e: &Engine,
@@ -735,7 +698,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
     let mut messages = BTreeSet::new();
     for p in e.publications.values() {
         let room = e.rooms.get(&p.room_id).ok_or(CheckpointError::Invalid)?;
-        let OutcomeV1::MessageAccepted { room_id, sequence } = &p.transition.outcome else {
+        let OutcomeV2::MessageAccepted { room_id, sequence } = &p.transition.outcome else {
             return Err(CheckpointError::Invalid);
         };
         if room_id != &p.room_id
@@ -748,6 +711,11 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             return Err(CheckpointError::Invalid);
         }
         valid_message_parts(e, room, *sequence, &p.author, p.at, &p.body)?;
+        if e.message(room_id, *sequence)
+            .is_some_and(|message| !message.addressed_to.is_empty())
+        {
+            return Err(CheckpointError::Invalid);
+        }
     }
     for (i, envelope) in e.pending_events.iter().enumerate() {
         if envelope.sequence.0 != first + i as u64 || envelope.revision.0 != envelope.sequence.0 + 1
@@ -756,13 +724,13 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         }
         validate_event(e, &envelope.event)?;
         if let Some(p) = revisions.get(&envelope.revision) {
-            let DomainEventV1::MessageAccepted {
+            let DomainEventV2::MessageAccepted {
                 room_id, message, ..
             } = &envelope.event
             else {
                 return Err(CheckpointError::Invalid);
             };
-            let OutcomeV1::MessageAccepted { sequence, .. } = &p.transition.outcome else {
+            let OutcomeV2::MessageAccepted { sequence, .. } = &p.transition.outcome else {
                 return Err(CheckpointError::Invalid);
             };
             if room_id != &p.room_id
@@ -770,6 +738,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                 || message.author != p.author
                 || message.at != p.at
                 || message.body != p.body
+                || !message.addressed_to.is_empty()
             {
                 return Err(CheckpointError::Invalid);
             }
@@ -777,11 +746,11 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
     }
     Ok(())
 }
-fn validate_event(e: &Engine, event: &DomainEventV1) -> Result<(), CheckpointError> {
+fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointError> {
     let participant = |id: &ParticipantId| e.participants.get(id).ok_or(CheckpointError::Invalid);
     let room = |id: &RoomId| e.rooms.get(id).ok_or(CheckpointError::Invalid);
     match event {
-        DomainEventV1::ParticipantRegistered {
+        DomainEventV2::ParticipantRegistered {
             participant_id,
             kind,
         } => {
@@ -789,7 +758,7 @@ fn validate_event(e: &Engine, event: &DomainEventV1) -> Result<(), CheckpointErr
                 return Err(CheckpointError::Invalid);
             }
         }
-        DomainEventV1::RoomCreated {
+        DomainEventV2::RoomCreated {
             room_id,
             owner: id,
             admission,
@@ -799,18 +768,18 @@ fn validate_event(e: &Engine, event: &DomainEventV1) -> Result<(), CheckpointErr
                 return Err(CheckpointError::Invalid);
             }
         }
-        DomainEventV1::InvitationRecorded {
+        DomainEventV2::InvitationRecorded {
             room_id,
             participant: id,
         } => {
             room(room_id)?;
             participant(id)?;
         }
-        DomainEventV1::ParticipantJoined {
+        DomainEventV2::ParticipantJoined {
             room_id,
             participant: id,
         }
-        | DomainEventV1::ParticipantLeft {
+        | DomainEventV2::ParticipantLeft {
             room_id,
             participant: id,
         } => {
@@ -819,7 +788,7 @@ fn validate_event(e: &Engine, event: &DomainEventV1) -> Result<(), CheckpointErr
             }
             participant(id)?;
         }
-        DomainEventV1::RoleChanged {
+        DomainEventV2::RoleChanged {
             room_id,
             participant: id,
             role,
@@ -830,41 +799,9 @@ fn validate_event(e: &Engine, event: &DomainEventV1) -> Result<(), CheckpointErr
                 return Err(CheckpointError::Invalid);
             }
         }
-        DomainEventV1::AgentActivationPolicyChanged { room_id, .. } => {
-            room(room_id)?;
-        }
-        DomainEventV1::AgentActivationRequested {
-            room_id,
-            requested_by,
-            agent,
-            cause_message_sequence,
-        } => {
+        DomainEventV2::MessageAccepted { room_id, message } => {
             let r = room(room_id)?;
-            if participant(requested_by)?.kind != ParticipantKind::Human
-                || participant(agent)?.kind != ParticipantKind::Agent
-                || *cause_message_sequence >= r.next_message_sequence
-            {
-                return Err(CheckpointError::Invalid);
-            }
-        }
-        DomainEventV1::MessageAccepted {
-            room_id,
-            message,
-            activate_agents,
-        } => {
-            valid_message(e, room(room_id)?, message)?;
-            if activate_agents.len() > e.limits.max_agent_activations_per_message
-                || activate_agents.windows(2).any(|v| v[0] >= v[1])
-                || (participant(&message.author)?.kind == ParticipantKind::Agent
-                    && !activate_agents.is_empty())
-            {
-                return Err(CheckpointError::Invalid);
-            }
-            for id in activate_agents {
-                if participant(id)?.kind != ParticipantKind::Agent {
-                    return Err(CheckpointError::Invalid);
-                }
-            }
+            valid_message(e, r, message)?;
         }
     }
     Ok(())

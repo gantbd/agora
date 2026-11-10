@@ -17,7 +17,7 @@ pub struct Limits {
     pub max_messages_per_room: usize,
     pub max_pending_events: usize,
     pub max_publication_receipts: usize,
-    pub max_agent_activations_per_message: usize,
+    pub max_addressed_participants_per_message: usize,
     pub max_participant_id_bytes: usize,
     pub max_room_id_bytes: usize,
     pub max_display_name_bytes: usize,
@@ -35,7 +35,7 @@ impl Default for Limits {
             max_messages_per_room: 1_024,
             max_pending_events: 4_096,
             max_publication_receipts: 4_096,
-            max_agent_activations_per_message: 64,
+            max_addressed_participants_per_message: 64,
             max_participant_id_bytes: 128,
             max_room_id_bytes: 128,
             max_display_name_bytes: 256,
@@ -125,17 +125,6 @@ pub enum Role {
     Member,
 }
 
-/// The closed policy controlling when room messages may wake software agents.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AgentActivationPolicy {
-    /// Messages never request agent work.
-    Disabled,
-    /// A human member must issue a separate activation command.
-    Explicit,
-    /// Every accepted human message activates all agent members in the room.
-    OnHumanMessage,
-}
-
 /// A caller-supplied timestamp in a host-defined logical epoch.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LogicalTime(pub u64);
@@ -147,6 +136,7 @@ pub struct Message {
     author: ParticipantId,
     at: LogicalTime,
     body: String,
+    addressed_to: Vec<ParticipantId>,
 }
 
 impl Message {
@@ -165,6 +155,12 @@ impl Message {
     pub fn body(&self) -> &str {
         &self.body
     }
+
+    /// Explicit room members addressed by this message in canonical ID order.
+    /// Addressing is conversation data, not permission or proof of execution.
+    pub fn addressed_to(&self) -> &[ParticipantId] {
+        &self.addressed_to
+    }
 }
 
 impl fmt::Debug for Message {
@@ -174,6 +170,7 @@ impl fmt::Debug for Message {
             .field("author", &self.author)
             .field("at", &self.at)
             .field("body_bytes", &self.body.len())
+            .field("addressed_count", &self.addressed_to.len())
             .finish()
     }
 }
@@ -184,7 +181,6 @@ pub struct RoomView {
     pub id: RoomId,
     pub name: String,
     pub admission: AdmissionPolicy,
-    pub agent_activation: AgentActivationPolicy,
     pub members: Vec<(ParticipantId, Role)>,
     pub pending_invitations: Vec<ParticipantId>,
     pub messages: Vec<Message>,
@@ -196,7 +192,6 @@ struct Room {
     id: RoomId,
     name: String,
     admission: AdmissionPolicy,
-    agent_activation: AgentActivationPolicy,
     members: BTreeMap<ParticipantId, Role>,
     invitations: BTreeSet<ParticipantId>,
     messages: VecDeque<Message>,
@@ -209,7 +204,6 @@ impl Room {
             id: self.id.clone(),
             name: self.name.clone(),
             admission: self.admission,
-            agent_activation: self.agent_activation,
             members: self
                 .members
                 .iter()
@@ -222,9 +216,9 @@ impl Room {
     }
 }
 
-/// The closed command vocabulary for the v0.2 in-process profile.
+/// The closed command vocabulary for the v0.3 participant-neutral profile.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CommandV1 {
+pub enum CommandV2 {
     RegisterParticipant(Participant),
     CreateRoom {
         room_id: RoomId,
@@ -251,27 +245,25 @@ pub enum CommandV1 {
         participant: ParticipantId,
         role: Role,
     },
-    SetAgentActivationPolicy {
-        room_id: RoomId,
-        actor: ParticipantId,
-        policy: AgentActivationPolicy,
-    },
-    RequestAgentActivation {
-        room_id: RoomId,
-        actor: ParticipantId,
-        agent: ParticipantId,
-        cause_message_sequence: u64,
-    },
     Speak {
         room_id: RoomId,
         author: ParticipantId,
         at: LogicalTime,
         body: String,
     },
+    /// Atomically publishes a message with explicit participant-neutral
+    /// addressing. `addressed_to` must be strictly increasing by participant ID.
+    SpeakAddressed {
+        room_id: RoomId,
+        author: ParticipantId,
+        at: LogicalTime,
+        body: String,
+        addressed_to: Vec<ParticipantId>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum OutcomeV1 {
+pub enum OutcomeV2 {
     ParticipantRegistered(ParticipantId),
     RoomCreated(RoomId),
     InvitationRecorded {
@@ -290,15 +282,6 @@ pub enum OutcomeV1 {
         room_id: RoomId,
         participant: ParticipantId,
         role: Role,
-    },
-    AgentActivationPolicyChanged {
-        room_id: RoomId,
-        policy: AgentActivationPolicy,
-    },
-    AgentActivationRequested {
-        room_id: RoomId,
-        agent: ParticipantId,
-        cause_message_sequence: u64,
     },
     MessageAccepted {
         room_id: RoomId,
@@ -323,7 +306,8 @@ pub enum Refusal {
     EventOutboxFull,
     RevisionExhausted,
     EventSequenceExhausted,
-    AgentActivationLimit,
+    AddressedParticipantLimit,
+    NonCanonicalAddressing,
     DuplicateParticipant(ParticipantId),
     DuplicateRoom(RoomId),
     UnknownParticipant(ParticipantId),
@@ -334,11 +318,6 @@ pub enum Refusal {
     NotAuthorized(ParticipantId),
     OwnerCannotLeave,
     InvalidRoleChange,
-    AgentActivationDisabled,
-    ExplicitActivationRequired,
-    ActivationRequesterMustBeHuman,
-    TargetNotAgent(ParticipantId),
-    UnknownMessageSequence(u64),
     RevisionConflict {
         expected: Revision,
         actual: Revision,
@@ -355,44 +334,44 @@ pub struct EventSequence(pub u64);
 
 /// Optimistic command envelope used by concurrent or remote hosts.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RevisionedCommandV1 {
+pub struct RevisionedCommandV2 {
     pub expected_revision: Revision,
-    pub command: CommandV1,
+    pub command: CommandV2,
 }
 
 /// Opaque adapter-supplied identity for one response publication.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PublicationKeyV1([u8; 16]);
+pub struct PublicationKeyV2([u8; 16]);
 
-impl PublicationKeyV1 {
+impl PublicationKeyV2 {
     pub const fn new(value: [u8; 16]) -> Self {
         Self(value)
     }
 }
 
-impl fmt::Debug for PublicationKeyV1 {
+impl fmt::Debug for PublicationKeyV2 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("PublicationKeyV1(<opaque>)")
+        formatter.write_str("PublicationKeyV2(<opaque>)")
     }
 }
 
-/// Replay-safe response publication profile layered over the closed v0.2
+/// Replay-safe response publication profile layered over the closed v0.3
 /// command vocabulary. The expected revision applies only to first acceptance;
 /// matching replay observes the retained transition.
 #[derive(Clone, Eq, PartialEq)]
-pub struct PublicationCommandV1 {
+pub struct PublicationCommandV2 {
     expected_revision: Revision,
-    key: PublicationKeyV1,
+    key: PublicationKeyV2,
     room_id: RoomId,
     author: ParticipantId,
     at: LogicalTime,
     body: String,
 }
 
-impl PublicationCommandV1 {
+impl PublicationCommandV2 {
     pub fn new(
         expected_revision: Revision,
-        key: PublicationKeyV1,
+        key: PublicationKeyV2,
         room_id: RoomId,
         author: ParticipantId,
         at: LogicalTime,
@@ -409,10 +388,10 @@ impl PublicationCommandV1 {
     }
 }
 
-impl fmt::Debug for PublicationCommandV1 {
+impl fmt::Debug for PublicationCommandV2 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("PublicationCommandV1")
+            .debug_struct("PublicationCommandV2")
             .field("expected_revision", &self.expected_revision)
             .field("key", &self.key)
             .field("room_id", &self.room_id)
@@ -424,13 +403,13 @@ impl fmt::Debug for PublicationCommandV1 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PublicationRefusalV1 {
+pub enum PublicationRefusalV2 {
     IdempotencyConflict,
     PublicationReceiptLimit,
     Core(Refusal),
 }
 
-impl From<Refusal> for PublicationRefusalV1 {
+impl From<Refusal> for PublicationRefusalV2 {
     fn from(value: Refusal) -> Self {
         Self::Core(value)
     }
@@ -438,15 +417,15 @@ impl From<Refusal> for PublicationRefusalV1 {
 
 /// Accepted transition metadata.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TransitionV1 {
+pub struct TransitionV2 {
     pub revision: Revision,
     pub event_sequence: EventSequence,
-    pub outcome: OutcomeV1,
+    pub outcome: OutcomeV2,
 }
 
 /// Ordered facts emitted after accepted commands.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DomainEventV1 {
+pub enum DomainEventV2 {
     ParticipantRegistered {
         participant_id: ParticipantId,
         kind: ParticipantKind,
@@ -473,28 +452,17 @@ pub enum DomainEventV1 {
         participant: ParticipantId,
         role: Role,
     },
-    AgentActivationPolicyChanged {
-        room_id: RoomId,
-        policy: AgentActivationPolicy,
-    },
-    AgentActivationRequested {
-        room_id: RoomId,
-        requested_by: ParticipantId,
-        agent: ParticipantId,
-        cause_message_sequence: u64,
-    },
     MessageAccepted {
         room_id: RoomId,
         message: Message,
-        activate_agents: Vec<ParticipantId>,
     },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EventEnvelopeV1 {
+pub struct EventEnvelopeV2 {
     pub sequence: EventSequence,
     pub revision: Revision,
-    pub event: DomainEventV1,
+    pub event: DomainEventV2,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -510,18 +478,18 @@ pub enum AcknowledgeError {
 }
 
 #[derive(Clone, Eq, PartialEq)]
-struct PublicationRecordV1 {
+struct PublicationRecordV2 {
     room_id: RoomId,
     author: ParticipantId,
     at: LogicalTime,
     body: String,
-    transition: TransitionV1,
+    transition: TransitionV2,
 }
 
-impl fmt::Debug for PublicationRecordV1 {
+impl fmt::Debug for PublicationRecordV2 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("PublicationRecordV1")
+            .debug_struct("PublicationRecordV2")
             .field("room_id", &self.room_id)
             .field("author", &self.author)
             .field("at", &self.at)
@@ -541,8 +509,8 @@ pub struct Engine {
     next_event_sequence: EventSequence,
     last_published_event: Option<EventSequence>,
     acknowledged_through: Option<EventSequence>,
-    pending_events: VecDeque<EventEnvelopeV1>,
-    publications: BTreeMap<PublicationKeyV1, PublicationRecordV1>,
+    pending_events: VecDeque<EventEnvelopeV2>,
+    publications: BTreeMap<PublicationKeyV2, PublicationRecordV2>,
 }
 
 impl Default for Engine {
@@ -607,7 +575,7 @@ impl Engine {
         self.revision
     }
 
-    pub fn pending_events(&self) -> impl ExactSizeIterator<Item = &EventEnvelopeV1> {
+    pub fn pending_events(&self) -> impl ExactSizeIterator<Item = &EventEnvelopeV2> {
         self.pending_events.iter()
     }
 
@@ -620,8 +588,8 @@ impl Engine {
     /// optimistic revision is now stale.
     pub fn publish(
         &mut self,
-        command: PublicationCommandV1,
-    ) -> Result<TransitionV1, PublicationRefusalV1> {
+        command: PublicationCommandV2,
+    ) -> Result<TransitionV2, PublicationRefusalV2> {
         if let Some(existing) = self.publications.get(&command.key) {
             if existing.room_id == command.room_id
                 && existing.author == command.author
@@ -630,20 +598,20 @@ impl Engine {
             {
                 return Ok(existing.transition.clone());
             }
-            return Err(PublicationRefusalV1::IdempotencyConflict);
+            return Err(PublicationRefusalV2::IdempotencyConflict);
         }
         if self.publications.len() >= self.limits.max_publication_receipts {
-            return Err(PublicationRefusalV1::PublicationReceiptLimit);
+            return Err(PublicationRefusalV2::PublicationReceiptLimit);
         }
 
-        let record = PublicationRecordV1 {
+        let record = PublicationRecordV2 {
             room_id: command.room_id.clone(),
             author: command.author.clone(),
             at: command.at,
             body: command.body.clone(),
-            transition: self.apply_revisioned(RevisionedCommandV1 {
+            transition: self.apply_revisioned(RevisionedCommandV2 {
                 expected_revision: command.expected_revision,
-                command: CommandV1::Speak {
+                command: CommandV2::Speak {
                     room_id: command.room_id,
                     author: command.author,
                     at: command.at,
@@ -693,8 +661,8 @@ impl Engine {
     ///
     /// Hosts coordinating concurrent writers should use [`Engine::apply_revisioned`]
     /// and persist the returned revision with the accepted event.
-    pub fn apply(&mut self, command: CommandV1) -> Result<OutcomeV1, Refusal> {
-        self.apply_revisioned(RevisionedCommandV1 {
+    pub fn apply(&mut self, command: CommandV2) -> Result<OutcomeV2, Refusal> {
+        self.apply_revisioned(RevisionedCommandV2 {
             expected_revision: self.revision,
             command,
         })
@@ -704,8 +672,8 @@ impl Engine {
     /// Applies exactly one optimistic command and publishes exactly one event.
     pub fn apply_revisioned(
         &mut self,
-        envelope: RevisionedCommandV1,
-    ) -> Result<TransitionV1, Refusal> {
+        envelope: RevisionedCommandV2,
+    ) -> Result<TransitionV2, Refusal> {
         if envelope.expected_revision != self.revision {
             return Err(Refusal::RevisionConflict {
                 expected: envelope.expected_revision,
@@ -735,170 +703,165 @@ impl Engine {
         self.revision = next_revision;
         self.next_event_sequence = next_event_sequence;
         self.last_published_event = Some(event_sequence);
-        self.pending_events.push_back(EventEnvelopeV1 {
+        self.pending_events.push_back(EventEnvelopeV2 {
             sequence: event_sequence,
             revision: next_revision,
             event,
         });
-        Ok(TransitionV1 {
+        Ok(TransitionV2 {
             revision: next_revision,
             event_sequence,
             outcome,
         })
     }
 
-    fn apply_command(&mut self, command: CommandV1) -> Result<OutcomeV1, Refusal> {
+    fn apply_command(&mut self, command: CommandV2) -> Result<OutcomeV2, Refusal> {
         match command {
-            CommandV1::RegisterParticipant(participant) => self.register(participant),
-            CommandV1::CreateRoom {
+            CommandV2::RegisterParticipant(participant) => self.register(participant),
+            CommandV2::CreateRoom {
                 room_id,
                 name,
                 owner,
                 admission,
             } => self.create_room(room_id, name, owner, admission),
-            CommandV1::Invite {
+            CommandV2::Invite {
                 room_id,
                 actor,
                 participant,
             } => self.invite(room_id, actor, participant),
-            CommandV1::Join {
+            CommandV2::Join {
                 room_id,
                 participant,
             } => self.join(room_id, participant),
-            CommandV1::Leave {
+            CommandV2::Leave {
                 room_id,
                 participant,
             } => self.leave(room_id, participant),
-            CommandV1::SetRole {
+            CommandV2::SetRole {
                 room_id,
                 actor,
                 participant,
                 role,
             } => self.set_role(room_id, actor, participant, role),
-            CommandV1::SetAgentActivationPolicy {
-                room_id,
-                actor,
-                policy,
-            } => self.set_agent_activation_policy(room_id, actor, policy),
-            CommandV1::RequestAgentActivation {
-                room_id,
-                actor,
-                agent,
-                cause_message_sequence,
-            } => self.request_agent_activation(room_id, actor, agent, cause_message_sequence),
-            CommandV1::Speak {
+            CommandV2::Speak {
                 room_id,
                 author,
                 at,
                 body,
-            } => self.speak(room_id, author, at, body),
+            } => self.speak(room_id, author, at, body, Vec::new()),
+            CommandV2::SpeakAddressed {
+                room_id,
+                author,
+                at,
+                body,
+                addressed_to,
+            } => self.speak(room_id, author, at, body, addressed_to),
         }
     }
 
-    fn event_for(&self, command: &CommandV1, outcome: &OutcomeV1) -> DomainEventV1 {
+    fn event_for(&self, command: &CommandV2, outcome: &OutcomeV2) -> DomainEventV2 {
         match (command, outcome) {
             (
-                CommandV1::RegisterParticipant(participant),
-                OutcomeV1::ParticipantRegistered(participant_id),
-            ) => DomainEventV1::ParticipantRegistered {
+                CommandV2::RegisterParticipant(participant),
+                OutcomeV2::ParticipantRegistered(participant_id),
+            ) => DomainEventV2::ParticipantRegistered {
                 participant_id: participant_id.clone(),
                 kind: participant.kind,
             },
             (
-                CommandV1::CreateRoom {
+                CommandV2::CreateRoom {
                     owner, admission, ..
                 },
-                OutcomeV1::RoomCreated(room_id),
-            ) => DomainEventV1::RoomCreated {
+                OutcomeV2::RoomCreated(room_id),
+            ) => DomainEventV2::RoomCreated {
                 room_id: room_id.clone(),
                 owner: owner.clone(),
                 admission: *admission,
             },
             (
-                CommandV1::Invite { .. },
-                OutcomeV1::InvitationRecorded {
+                CommandV2::Invite { .. },
+                OutcomeV2::InvitationRecorded {
                     room_id,
                     participant,
                 },
-            ) => DomainEventV1::InvitationRecorded {
+            ) => DomainEventV2::InvitationRecorded {
                 room_id: room_id.clone(),
                 participant: participant.clone(),
             },
             (
-                CommandV1::Join { .. },
-                OutcomeV1::Joined {
+                CommandV2::Join { .. },
+                OutcomeV2::Joined {
                     room_id,
                     participant,
                 },
-            ) => DomainEventV1::ParticipantJoined {
+            ) => DomainEventV2::ParticipantJoined {
                 room_id: room_id.clone(),
                 participant: participant.clone(),
             },
             (
-                CommandV1::Leave { .. },
-                OutcomeV1::Left {
+                CommandV2::Leave { .. },
+                OutcomeV2::Left {
                     room_id,
                     participant,
                 },
-            ) => DomainEventV1::ParticipantLeft {
+            ) => DomainEventV2::ParticipantLeft {
                 room_id: room_id.clone(),
                 participant: participant.clone(),
             },
             (
-                CommandV1::SetRole { .. },
-                OutcomeV1::RoleChanged {
+                CommandV2::SetRole { .. },
+                OutcomeV2::RoleChanged {
                     room_id,
                     participant,
                     role,
                 },
-            ) => DomainEventV1::RoleChanged {
+            ) => DomainEventV2::RoleChanged {
                 room_id: room_id.clone(),
                 participant: participant.clone(),
                 role: *role,
             },
             (
-                CommandV1::SetAgentActivationPolicy { .. },
-                OutcomeV1::AgentActivationPolicyChanged { room_id, policy },
-            ) => DomainEventV1::AgentActivationPolicyChanged {
-                room_id: room_id.clone(),
-                policy: *policy,
-            },
-            (
-                CommandV1::RequestAgentActivation { actor, .. },
-                OutcomeV1::AgentActivationRequested {
-                    room_id,
-                    agent,
-                    cause_message_sequence,
-                },
-            ) => DomainEventV1::AgentActivationRequested {
-                room_id: room_id.clone(),
-                requested_by: actor.clone(),
-                agent: agent.clone(),
-                cause_message_sequence: *cause_message_sequence,
-            },
-            (
-                CommandV1::Speak {
+                CommandV2::Speak {
                     room_id,
                     author,
                     at,
                     body,
                 },
-                OutcomeV1::MessageAccepted { sequence, .. },
-            ) => DomainEventV1::MessageAccepted {
+                OutcomeV2::MessageAccepted { sequence, .. },
+            ) => DomainEventV2::MessageAccepted {
                 room_id: room_id.clone(),
                 message: Message {
                     sequence: *sequence,
                     author: author.clone(),
                     at: *at,
                     body: body.clone(),
+                    addressed_to: Vec::new(),
                 },
-                activate_agents: self.activation_targets(room_id, author),
+            },
+            (
+                CommandV2::SpeakAddressed {
+                    room_id,
+                    author,
+                    at,
+                    body,
+                    addressed_to,
+                },
+                OutcomeV2::MessageAccepted { sequence, .. },
+            ) => DomainEventV2::MessageAccepted {
+                room_id: room_id.clone(),
+                message: Message {
+                    sequence: *sequence,
+                    author: author.clone(),
+                    at: *at,
+                    body: body.clone(),
+                    addressed_to: addressed_to.clone(),
+                },
             },
             _ => unreachable!("command and outcome are produced by one exhaustive transition"),
         }
     }
 
-    fn register(&mut self, participant: Participant) -> Result<OutcomeV1, Refusal> {
+    fn register(&mut self, participant: Participant) -> Result<OutcomeV2, Refusal> {
         self.validate_nonempty_bounded(
             participant.id.as_str(),
             self.limits.max_participant_id_bytes,
@@ -917,7 +880,7 @@ impl Engine {
         }
         let id = participant.id.clone();
         self.participants.insert(id.clone(), participant);
-        Ok(OutcomeV1::ParticipantRegistered(id))
+        Ok(OutcomeV2::ParticipantRegistered(id))
     }
 
     fn create_room(
@@ -926,7 +889,7 @@ impl Engine {
         name: String,
         owner: ParticipantId,
         admission: AdmissionPolicy,
-    ) -> Result<OutcomeV1, Refusal> {
+    ) -> Result<OutcomeV2, Refusal> {
         self.validate_nonempty_bounded(
             room_id.as_str(),
             self.limits.max_room_id_bytes,
@@ -957,14 +920,13 @@ impl Engine {
                 id: room_id.clone(),
                 name,
                 admission,
-                agent_activation: AgentActivationPolicy::Disabled,
                 members,
                 invitations: BTreeSet::new(),
                 messages: VecDeque::new(),
                 next_message_sequence: 0,
             },
         );
-        Ok(OutcomeV1::RoomCreated(room_id))
+        Ok(OutcomeV2::RoomCreated(room_id))
     }
 
     fn invite(
@@ -972,7 +934,7 @@ impl Engine {
         room_id: RoomId,
         actor: ParticipantId,
         participant: ParticipantId,
-    ) -> Result<OutcomeV1, Refusal> {
+    ) -> Result<OutcomeV2, Refusal> {
         if !self.participants.contains_key(&participant) {
             return Err(Refusal::UnknownParticipant(participant));
         }
@@ -996,13 +958,13 @@ impl Engine {
             .expect("room established by validation")
             .invitations
             .insert(participant.clone());
-        Ok(OutcomeV1::InvitationRecorded {
+        Ok(OutcomeV2::InvitationRecorded {
             room_id,
             participant,
         })
     }
 
-    fn join(&mut self, room_id: RoomId, participant: ParticipantId) -> Result<OutcomeV1, Refusal> {
+    fn join(&mut self, room_id: RoomId, participant: ParticipantId) -> Result<OutcomeV2, Refusal> {
         if !self.participants.contains_key(&participant) {
             return Err(Refusal::UnknownParticipant(participant));
         }
@@ -1023,13 +985,13 @@ impl Engine {
             .expect("room established by validation");
         room.invitations.remove(&participant);
         room.members.insert(participant.clone(), Role::Member);
-        Ok(OutcomeV1::Joined {
+        Ok(OutcomeV2::Joined {
             room_id,
             participant,
         })
     }
 
-    fn leave(&mut self, room_id: RoomId, participant: ParticipantId) -> Result<OutcomeV1, Refusal> {
+    fn leave(&mut self, room_id: RoomId, participant: ParticipantId) -> Result<OutcomeV2, Refusal> {
         let room = self.room_ref(&room_id)?;
         let Some(role) = room.members.get(&participant) else {
             return Err(Refusal::NotMember(participant));
@@ -1042,7 +1004,7 @@ impl Engine {
             .expect("room established by validation")
             .members
             .remove(&participant);
-        Ok(OutcomeV1::Left {
+        Ok(OutcomeV2::Left {
             room_id,
             participant,
         })
@@ -1054,7 +1016,7 @@ impl Engine {
         actor: ParticipantId,
         participant: ParticipantId,
         role: Role,
-    ) -> Result<OutcomeV1, Refusal> {
+    ) -> Result<OutcomeV2, Refusal> {
         let room = self.room_ref(&room_id)?;
         if room.members.get(&actor) != Some(&Role::Owner) {
             return Err(Refusal::NotAuthorized(actor));
@@ -1070,67 +1032,10 @@ impl Engine {
             .expect("room established by validation")
             .members
             .insert(participant.clone(), role);
-        Ok(OutcomeV1::RoleChanged {
+        Ok(OutcomeV2::RoleChanged {
             room_id,
             participant,
             role,
-        })
-    }
-
-    fn set_agent_activation_policy(
-        &mut self,
-        room_id: RoomId,
-        actor: ParticipantId,
-        policy: AgentActivationPolicy,
-    ) -> Result<OutcomeV1, Refusal> {
-        let room = self.room_ref(&room_id)?;
-        if room.members.get(&actor) != Some(&Role::Owner) {
-            return Err(Refusal::NotAuthorized(actor));
-        }
-        self.rooms
-            .get_mut(&room_id)
-            .expect("room established by validation")
-            .agent_activation = policy;
-        Ok(OutcomeV1::AgentActivationPolicyChanged { room_id, policy })
-    }
-
-    fn request_agent_activation(
-        &mut self,
-        room_id: RoomId,
-        actor: ParticipantId,
-        agent: ParticipantId,
-        cause_message_sequence: u64,
-    ) -> Result<OutcomeV1, Refusal> {
-        let room = self.room_ref(&room_id)?;
-        if room.agent_activation == AgentActivationPolicy::Disabled {
-            return Err(Refusal::AgentActivationDisabled);
-        }
-        if room.agent_activation == AgentActivationPolicy::OnHumanMessage {
-            return Err(Refusal::ExplicitActivationRequired);
-        }
-        if !room.members.contains_key(&actor) {
-            return Err(Refusal::NotMember(actor));
-        }
-        if self.participants.get(&actor).map(Participant::kind) != Some(ParticipantKind::Human) {
-            return Err(Refusal::ActivationRequesterMustBeHuman);
-        }
-        if !room.members.contains_key(&agent) {
-            return Err(Refusal::NotMember(agent));
-        }
-        if self.participants.get(&agent).map(Participant::kind) != Some(ParticipantKind::Agent) {
-            return Err(Refusal::TargetNotAgent(agent));
-        }
-        if !room
-            .messages
-            .iter()
-            .any(|message| message.sequence == cause_message_sequence)
-        {
-            return Err(Refusal::UnknownMessageSequence(cause_message_sequence));
-        }
-        Ok(OutcomeV1::AgentActivationRequested {
-            room_id,
-            agent,
-            cause_message_sequence,
         })
     }
 
@@ -1140,7 +1045,8 @@ impl Engine {
         author: ParticipantId,
         at: LogicalTime,
         body: String,
-    ) -> Result<OutcomeV1, Refusal> {
+        addressed_to: Vec<ParticipantId>,
+    ) -> Result<OutcomeV2, Refusal> {
         self.validate_nonempty_bounded(
             &body,
             self.limits.max_message_body_bytes,
@@ -1153,10 +1059,17 @@ impl Engine {
         if !room.members.contains_key(&author) {
             return Err(Refusal::NotMember(author));
         }
-        if self.activation_targets(&room_id, &author).len()
-            > self.limits.max_agent_activations_per_message
+        if addressed_to.len() > self.limits.max_addressed_participants_per_message {
+            return Err(Refusal::AddressedParticipantLimit);
+        }
+        if addressed_to.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(Refusal::NonCanonicalAddressing);
+        }
+        if let Some(id) = addressed_to
+            .iter()
+            .find(|id| !room.members.contains_key(*id))
         {
-            return Err(Refusal::AgentActivationLimit);
+            return Err(Refusal::NotMember(id.clone()));
         }
         let sequence = room.next_message_sequence;
         let next = sequence
@@ -1174,30 +1087,10 @@ impl Engine {
             author,
             at,
             body,
+            addressed_to,
         });
         room.next_message_sequence = next;
-        Ok(OutcomeV1::MessageAccepted { room_id, sequence })
-    }
-
-    fn activation_targets(&self, room_id: &RoomId, author: &ParticipantId) -> Vec<ParticipantId> {
-        let Some(room) = self.rooms.get(room_id) else {
-            return Vec::new();
-        };
-        if room.agent_activation != AgentActivationPolicy::OnHumanMessage
-            || self.participants.get(author).map(Participant::kind) != Some(ParticipantKind::Human)
-        {
-            return Vec::new();
-        }
-        room.members
-            .keys()
-            .filter(|participant_id| {
-                self.participants
-                    .get(*participant_id)
-                    .map(Participant::kind)
-                    == Some(ParticipantKind::Agent)
-            })
-            .cloned()
-            .collect()
+        Ok(OutcomeV2::MessageAccepted { room_id, sequence })
     }
 
     fn room_ref(&self, room_id: &RoomId) -> Result<&Room, Refusal> {

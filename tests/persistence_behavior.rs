@@ -9,19 +9,19 @@ fn configured() -> Engine {
         ("human", ParticipantKind::Human),
         ("agent", ParticipantKind::Agent),
     ] {
-        e.apply(CommandV1::RegisterParticipant(Participant::new(
+        e.apply(CommandV2::RegisterParticipant(Participant::new(
             id, id, kind,
         )))
         .unwrap();
     }
-    e.apply(CommandV1::CreateRoom {
+    e.apply(CommandV2::CreateRoom {
         room_id: "room".into(),
         name: "Room".into(),
         owner: "human".into(),
         admission: AdmissionPolicy::Open,
     })
     .unwrap();
-    e.apply(CommandV1::Join {
+    e.apply(CommandV2::Join {
         room_id: "room".into(),
         participant: "agent".into(),
     })
@@ -41,16 +41,16 @@ fn recover(bytes: &[u8]) -> Engine {
 #[test]
 fn native_checkpoint_retains_evicted_publication_receipts_and_exact_outbox() {
     let mut e = configured();
-    let publication = PublicationCommandV1::new(
+    let publication = PublicationCommandV2::new(
         e.revision(),
-        PublicationKeyV1::new([1; 16]),
+        PublicationKeyV2::new([1; 16]),
         "room".into(),
         "agent".into(),
         LogicalTime(10),
         "reply\0\r\n🇩🇪",
     );
     let first = e.publish(publication.clone()).unwrap();
-    e.apply(CommandV1::Speak {
+    e.apply(CommandV2::Speak {
         room_id: "room".into(),
         author: "human".into(),
         at: LogicalTime(11),
@@ -76,6 +76,18 @@ fn native_checkpoint_retains_evicted_publication_receipts_and_exact_outbox() {
 fn snapshot_framing_and_host_limits_are_checked_before_reconstruction() {
     let e = configured();
     let cp = e.prepare_checkpoint(65536).unwrap();
+    let mut v1 = cp.bytes().to_vec();
+    v1[8] = 1;
+    assert!(matches!(
+        Engine::recover_checkpoint(
+            &v1,
+            RecoveryLimits {
+                max_snapshot_bytes: 65536,
+                maximum_engine_limits: Limits::default(),
+            }
+        ),
+        Err(CheckpointError::Profile)
+    ));
     for end in 0..cp.bytes().len() {
         assert!(
             Engine::recover_checkpoint(
@@ -120,80 +132,60 @@ fn snapshot_framing_and_host_limits_are_checked_before_reconstruction() {
 }
 
 #[test]
-fn every_event_kind_and_activation_policy_survives_checkpoint_and_prefix_acknowledgement() {
+fn every_event_kind_and_addressing_survives_checkpoint_and_prefix_acknowledgement() {
     let mut e = configured();
     let commands = vec![
-        CommandV1::RegisterParticipant(Participant::new("other", "Other", ParticipantKind::Human)),
-        CommandV1::Invite {
+        CommandV2::RegisterParticipant(Participant::new("other", "Other", ParticipantKind::Human)),
+        CommandV2::Invite {
             room_id: "room".into(),
             actor: "human".into(),
             participant: "other".into(),
         },
-        CommandV1::Join {
+        CommandV2::Join {
             room_id: "room".into(),
             participant: "other".into(),
         },
-        CommandV1::SetRole {
+        CommandV2::SetRole {
             room_id: "room".into(),
             actor: "human".into(),
             participant: "other".into(),
             role: Role::Moderator,
         },
-        CommandV1::SetRole {
+        CommandV2::SetRole {
             room_id: "room".into(),
             actor: "human".into(),
             participant: "other".into(),
             role: Role::Member,
         },
-        CommandV1::SetAgentActivationPolicy {
-            room_id: "room".into(),
-            actor: "human".into(),
-            policy: AgentActivationPolicy::Explicit,
-        },
-        CommandV1::Speak {
+        CommandV2::SpeakAddressed {
             room_id: "room".into(),
             author: "human".into(),
             at: LogicalTime(1),
             body: "question".into(),
+            addressed_to: vec!["other".into()],
         },
-        CommandV1::RequestAgentActivation {
-            room_id: "room".into(),
-            actor: "human".into(),
-            agent: "agent".into(),
-            cause_message_sequence: 0,
-        },
-        CommandV1::SetAgentActivationPolicy {
-            room_id: "room".into(),
-            actor: "human".into(),
-            policy: AgentActivationPolicy::OnHumanMessage,
-        },
-        CommandV1::Speak {
+        CommandV2::Speak {
             room_id: "room".into(),
             author: "human".into(),
             at: LogicalTime(2),
             body: "second".into(),
         },
-        CommandV1::Speak {
+        CommandV2::Speak {
             room_id: "room".into(),
             author: "agent".into(),
             at: LogicalTime(3),
             body: "answer".into(),
         },
-        CommandV1::SetAgentActivationPolicy {
-            room_id: "room".into(),
-            actor: "human".into(),
-            policy: AgentActivationPolicy::Disabled,
-        },
-        CommandV1::Leave {
+        CommandV2::Leave {
             room_id: "room".into(),
             participant: "other".into(),
         },
-        CommandV1::Invite {
+        CommandV2::Invite {
             room_id: "room".into(),
             actor: "human".into(),
             participant: "other".into(),
         },
-        CommandV1::CreateRoom {
+        CommandV2::CreateRoom {
             room_id: "closed".into(),
             name: "Closed".into(),
             owner: "agent".into(),

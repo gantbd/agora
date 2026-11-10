@@ -1,11 +1,11 @@
 use agora_engine::{
-    AdmissionPolicy, CommandV1, Engine, Limits, LogicalTime, Participant, ParticipantId,
+    AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, Participant, ParticipantId,
     ParticipantKind, Refusal, Role, RoomId,
 };
 
 fn register(engine: &mut Engine, id: &str, kind: ParticipantKind) {
     engine
-        .apply(CommandV1::RegisterParticipant(Participant::new(
+        .apply(CommandV2::RegisterParticipant(Participant::new(
             id, id, kind,
         )))
         .unwrap();
@@ -13,7 +13,7 @@ fn register(engine: &mut Engine, id: &str, kind: ParticipantKind) {
 
 fn create_room(engine: &mut Engine, admission: AdmissionPolicy) {
     engine
-        .apply(CommandV1::CreateRoom {
+        .apply(CommandV2::CreateRoom {
             room_id: RoomId::from("commons"),
             name: "Commons".into(),
             owner: ParticipantId::from("alice"),
@@ -30,13 +30,13 @@ fn human_and_agent_join_and_speak_under_the_same_rules() {
     create_room(&mut engine, AdmissionPolicy::Open);
 
     engine
-        .apply(CommandV1::Join {
+        .apply(CommandV2::Join {
             room_id: RoomId::from("commons"),
             participant: ParticipantId::from("bot"),
         })
         .unwrap();
     engine
-        .apply(CommandV1::Speak {
+        .apply(CommandV2::Speak {
             room_id: RoomId::from("commons"),
             author: ParticipantId::from("alice"),
             at: LogicalTime(10),
@@ -44,7 +44,7 @@ fn human_and_agent_join_and_speak_under_the_same_rules() {
         })
         .unwrap();
     engine
-        .apply(CommandV1::Speak {
+        .apply(CommandV2::Speak {
             room_id: RoomId::from("commons"),
             author: ParticipantId::from("bot"),
             at: LogicalTime(11),
@@ -68,14 +68,14 @@ fn invite_only_admission_requires_explicit_authority() {
     create_room(&mut engine, AdmissionPolicy::InviteOnly);
 
     assert_eq!(
-        engine.apply(CommandV1::Join {
+        engine.apply(CommandV2::Join {
             room_id: RoomId::from("commons"),
             participant: ParticipantId::from("bot"),
         }),
         Err(Refusal::InvitationRequired(ParticipantId::from("bot")))
     );
     assert_eq!(
-        engine.apply(CommandV1::Invite {
+        engine.apply(CommandV2::Invite {
             room_id: RoomId::from("commons"),
             actor: ParticipantId::from("bob"),
             participant: ParticipantId::from("bot"),
@@ -83,14 +83,14 @@ fn invite_only_admission_requires_explicit_authority() {
         Err(Refusal::NotAuthorized(ParticipantId::from("bob")))
     );
     engine
-        .apply(CommandV1::Invite {
+        .apply(CommandV2::Invite {
             room_id: RoomId::from("commons"),
             actor: ParticipantId::from("alice"),
             participant: ParticipantId::from("bot"),
         })
         .unwrap();
     engine
-        .apply(CommandV1::Join {
+        .apply(CommandV2::Join {
             room_id: RoomId::from("commons"),
             participant: ParticipantId::from("bot"),
         })
@@ -115,13 +115,13 @@ fn owner_can_delegate_invitation_authority_without_transferring_ownership() {
     }
     create_room(&mut engine, AdmissionPolicy::Open);
     engine
-        .apply(CommandV1::Join {
+        .apply(CommandV2::Join {
             room_id: RoomId::from("commons"),
             participant: ParticipantId::from("bob"),
         })
         .unwrap();
     engine
-        .apply(CommandV1::SetRole {
+        .apply(CommandV2::SetRole {
             room_id: RoomId::from("commons"),
             actor: ParticipantId::from("alice"),
             participant: ParticipantId::from("bob"),
@@ -129,7 +129,7 @@ fn owner_can_delegate_invitation_authority_without_transferring_ownership() {
         })
         .unwrap();
     engine
-        .apply(CommandV1::Invite {
+        .apply(CommandV2::Invite {
             room_id: RoomId::from("commons"),
             actor: ParticipantId::from("bob"),
             participant: ParticipantId::from("bot"),
@@ -137,7 +137,7 @@ fn owner_can_delegate_invitation_authority_without_transferring_ownership() {
         .unwrap();
 
     assert_eq!(
-        engine.apply(CommandV1::Leave {
+        engine.apply(CommandV2::Leave {
             room_id: RoomId::from("commons"),
             participant: ParticipantId::from("alice"),
         }),
@@ -156,7 +156,7 @@ fn retention_is_fifo_and_sequences_remain_monotone() {
 
     for (at, body) in ["one", "two", "three"].into_iter().enumerate() {
         engine
-            .apply(CommandV1::Speak {
+            .apply(CommandV2::Speak {
                 room_id: RoomId::from("commons"),
                 author: ParticipantId::from("alice"),
                 at: LogicalTime(at as u64),
@@ -187,7 +187,7 @@ fn refused_message_does_not_consume_sequence_or_change_transcript() {
     let before = engine.room(&RoomId::from("commons")).unwrap();
 
     assert_eq!(
-        engine.apply(CommandV1::Speak {
+        engine.apply(CommandV2::Speak {
             room_id: RoomId::from("commons"),
             author: ParticipantId::from("alice"),
             at: LogicalTime(9),
@@ -204,7 +204,7 @@ fn message_debug_redacts_content() {
     register(&mut engine, "alice", ParticipantKind::Human);
     create_room(&mut engine, AdmissionPolicy::Open);
     engine
-        .apply(CommandV1::Speak {
+        .apply(CommandV2::Speak {
             room_id: RoomId::from("commons"),
             author: ParticipantId::from("alice"),
             at: LogicalTime(1),

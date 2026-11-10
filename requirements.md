@@ -1,6 +1,6 @@
 # Requirements
 
-## Core v0.2
+## Core v0.3
 
 - **R1 — Authoritative state:** one non-cloneable engine owns participant, room,
   membership, invitation, and retained-message state.
@@ -24,9 +24,10 @@
   revision, advances it exactly once, and publishes one ordered domain event.
 - **R11 — Bounded delivery:** a full event outbox backpressures commands before
   domain mutation; acknowledgment removes only a monotone published prefix.
-- **R12 — Agent activation:** rooms use a closed activation policy. Activation
-  fan-out is bounded, targets only admitted agent participants, and automatic
-  activation occurs only for human-authored messages.
+- **R12 — Neutral addressing:** a message may explicitly address a bounded,
+  canonical set of room members. Human and agent authors and recipients follow
+  identical rules. Addressing is conversation state and never proof or a request
+  that a participant executed work.
 - **R13 — Replay-safe publication:** a cross-engine response key binds to one
   exact message publication. Matching replay returns the original transition;
   changed content conflicts; retained receipts are bounded.
@@ -36,5 +37,5 @@
 Durable storage adapters, durable event sinks, connection/session
 capabilities, bans, message
 editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
-acknowledgment, and durable audit are not part of the v0.1 claim.
+acknowledgment, and durable audit are not part of the v0.3 claim.
 

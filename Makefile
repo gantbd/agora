@@ -1,6 +1,9 @@
-.PHONY: check fmt lint test doc
+.PHONY: check check-boundaries fmt lint test doc
 
-check: fmt lint test doc
+check: check-boundaries fmt lint test doc
+
+check-boundaries:
+	./scripts/check-boundaries.sh
 
 fmt:
 	cargo fmt --all -- --check
