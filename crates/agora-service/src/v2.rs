@@ -1,15 +1,17 @@
 //! Serialized volatile implementation of Agora Protocol V2.
 
 use agora_engine::{
-    AdmissionPolicy, CommandV2 as EngineCommand, Engine, MemberPageCursor, MessagePageCursor,
-    ModerationCausationV1, ModerationReasonV1, ObservationRefusal, OutcomeV2 as EngineOutcome,
-    ParticipantId, ParticipantKind, Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role,
-    RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
+    AdmissionPolicy, BanPageCursor, CommandV2 as EngineCommand, Engine, MemberPageCursor,
+    MessagePageCursor, ModerationCausationV1, ModerationReasonV1, ObservationRefusal,
+    OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind, Refusal as EngineRefusal, Revision,
+    RevisionedCommandV2, Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId,
+    RoomPageCursor,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, ChangeGapV2, ClientIdV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2,
-    MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2,
-    RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
+    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, ChangeGapV2, ClientIdV2, CommandV2,
+    MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2,
+    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
+    RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -79,6 +81,10 @@ enum CursorPage {
     Members {
         room_id: RoomId,
         cursor: MemberPageCursor,
+    },
+    Bans {
+        room_id: RoomId,
+        cursor: BanPageCursor,
     },
     Messages {
         room_id: RoomId,
@@ -243,6 +249,11 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.members(client, participant, room_id, *cursor, *limit),
+            CommandV2::Bans {
+                room_id,
+                cursor,
+                limit,
+            } => self.bans(client, participant, room_id, *cursor, *limit),
             CommandV2::Messages {
                 room_id,
                 cursor,
@@ -590,6 +601,55 @@ impl ServiceV2 {
         }))
     }
 
+    fn bans(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        cursor_id: Option<PageCursorV2>,
+        limit: u32,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let cursor = match cursor_id {
+            Some(id) => match self.cursor_for(client, id)? {
+                CursorPage::Bans {
+                    room_id: bound_room,
+                    cursor,
+                } if bound_room == room => Some(cursor),
+                _ => return Err(RefusalV2::InvalidCursor),
+            },
+            None => None,
+        };
+        let page = self
+            .engine
+            .ban_page(observer, &room, cursor.as_ref(), limit as usize)
+            .map_err(map_observation_refusal)?;
+        let next_page = page.next.map(|cursor| CursorPage::Bans {
+            room_id: room.clone(),
+            cursor,
+        });
+        let next = self.replace_cursor(client, cursor_id, next_page)?;
+        let banned = page
+            .banned
+            .into_iter()
+            .map(|entry| BannedParticipantV2 {
+                participant_id: entry.participant_id.as_str().to_owned(),
+                display_name: entry.display_name,
+                kind: match entry.kind {
+                    ParticipantKind::Human => ParticipantKindV2::Human,
+                    ParticipantKind::Agent => ParticipantKindV2::Agent,
+                },
+                prior_role: map_role_from_engine(entry.prior_role),
+            })
+            .collect();
+        Ok(OutcomeV2::Bans(BanPageV2 {
+            revision: page.revision.0,
+            room_id: page.room_id.as_str().to_owned(),
+            banned,
+            next,
+        }))
+    }
+
     fn open_changes(
         &mut self,
         client: ClientIdV2,
@@ -825,6 +885,7 @@ impl ServiceV2 {
         match command {
             CommandV2::Rooms { limit, .. } => valid_page(*limit),
             CommandV2::Members { room_id, limit, .. }
+            | CommandV2::Bans { room_id, limit, .. }
             | CommandV2::Messages { room_id, limit, .. } => {
                 valid_room(room_id) && valid_page(*limit)
             }
@@ -939,6 +1000,7 @@ fn map_observation_refusal(refusal: ObservationRefusal) -> RefusalV2 {
         ObservationRefusal::UnknownParticipant => RefusalV2::UnknownParticipant,
         ObservationRefusal::UnknownRoom => RefusalV2::UnknownRoom,
         ObservationRefusal::NotMember => RefusalV2::NotMember,
+        ObservationRefusal::NotAuthorized => RefusalV2::NotAuthorized,
         ObservationRefusal::InvalidLimit => RefusalV2::InvalidInput,
         ObservationRefusal::ForeignCursor => RefusalV2::InvalidCursor,
         ObservationRefusal::Stale { actual_revision } => RefusalV2::Stale {

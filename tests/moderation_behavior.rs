@@ -265,3 +265,72 @@ fn moderation_evidence_is_bounded_atomic_and_content_safe() {
         Err(Refusal::NotBanned("other".into()))
     );
 }
+
+#[test]
+fn ban_pages_are_bounded_authority_scoped_and_revision_bound() {
+    let mut engine = configured(
+        Limits::default(),
+        ParticipantKind::Human,
+        ParticipantKind::Agent,
+    );
+    engine
+        .apply(CommandV2::RegisterParticipant(Participant::new(
+            "viewer",
+            "viewer",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(CommandV2::Join {
+            room_id: "room".into(),
+            participant: "viewer".into(),
+        })
+        .unwrap();
+    for (subject, cause) in [("member", 11), ("other", 12)] {
+        let (reason, causation) = moderation(cause);
+        engine
+            .apply(CommandV2::Ban {
+                room_id: "room".into(),
+                actor: "owner".into(),
+                participant: subject.into(),
+                reason,
+                causation,
+            })
+            .unwrap();
+    }
+    let first = engine
+        .ban_page(&"moderator".into(), &"room".into(), None, 1)
+        .unwrap();
+    assert_eq!(first.banned.len(), 1);
+    assert!(first.next.is_some());
+    let second = engine
+        .ban_page(&"moderator".into(), &"room".into(), first.next.as_ref(), 1)
+        .unwrap();
+    assert_eq!(second.banned.len(), 1);
+    assert!(second.next.is_none());
+    assert!(!format!("{first:?}").contains("member"));
+    assert_eq!(
+        engine.ban_page(&"viewer".into(), &"room".into(), None, 1),
+        Err(agora_engine::ObservationRefusal::NotAuthorized)
+    );
+    assert_eq!(
+        engine.ban_page(&"member".into(), &"room".into(), None, 1),
+        Err(agora_engine::ObservationRefusal::NotMember)
+    );
+
+    let cursor = first.next.unwrap();
+    let (reason, causation) = moderation(13);
+    engine
+        .apply(CommandV2::Unban {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            participant: "member".into(),
+            reason,
+            causation,
+        })
+        .unwrap();
+    assert!(matches!(
+        engine.ban_page(&"moderator".into(), &"room".into(), Some(&cursor), 1),
+        Err(agora_engine::ObservationRefusal::Stale { .. })
+    ));
+}

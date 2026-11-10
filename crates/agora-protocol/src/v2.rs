@@ -49,6 +49,11 @@ pub enum CommandV2 {
         cursor: Option<PageCursorV2>,
         limit: u32,
     },
+    Bans {
+        room_id: String,
+        cursor: Option<PageCursorV2>,
+        limit: u32,
+    },
     Messages {
         room_id: String,
         cursor: Option<PageCursorV2>,
@@ -137,6 +142,16 @@ impl fmt::Debug for CommandV2 {
                 limit,
             } => formatter
                 .debug_struct("Members")
+                .field("room_id_bytes", &room_id.len())
+                .field("has_cursor", &cursor.is_some())
+                .field("limit", limit)
+                .finish(),
+            Self::Bans {
+                room_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("Bans")
                 .field("room_id_bytes", &room_id.len())
                 .field("has_cursor", &cursor.is_some())
                 .field("limit", limit)
@@ -338,6 +353,26 @@ impl fmt::Debug for MemberV2 {
 }
 
 #[derive(Clone, Eq, PartialEq)]
+pub struct BannedParticipantV2 {
+    pub participant_id: String,
+    pub display_name: String,
+    pub kind: ParticipantKindV2,
+    pub prior_role: RoleV2,
+}
+
+impl fmt::Debug for BannedParticipantV2 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BannedParticipantV2")
+            .field("participant_id_bytes", &self.participant_id.len())
+            .field("display_name_bytes", &self.display_name.len())
+            .field("kind", &self.kind)
+            .field("prior_role", &self.prior_role)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct MessageV2 {
     pub sequence: u64,
     pub author: String,
@@ -371,6 +406,14 @@ pub struct MemberPageV2 {
     pub revision: u64,
     pub room_id: String,
     pub members: Vec<MemberV2>,
+    pub next: Option<PageCursorV2>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct BanPageV2 {
+    pub revision: u64,
+    pub room_id: String,
+    pub banned: Vec<BannedParticipantV2>,
     pub next: Option<PageCursorV2>,
 }
 
@@ -542,12 +585,14 @@ macro_rules! page_debug {
 
 page_debug!(RoomPageV2, "RoomPageV2", rooms, "room_count");
 page_debug!(MemberPageV2, "MemberPageV2", members, "member_count");
+page_debug!(BanPageV2, "BanPageV2", banned, "banned_count");
 page_debug!(MessagePageV2, "MessagePageV2", messages, "message_count");
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OutcomeV2 {
     Rooms(RoomPageV2),
     Members(MemberPageV2),
+    Bans(BanPageV2),
     Messages(MessagePageV2),
     ChangesOpened {
         revision: u64,

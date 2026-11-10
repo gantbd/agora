@@ -5,9 +5,10 @@ use super::{
     read_text, read_u8, read_u64, try_vec,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, ChangeGapV2, ClientIdV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2,
-    MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2,
-    RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
+    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, ChangeGapV2, ClientIdV2, CommandV2,
+    MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2,
+    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
+    RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
 use std::fmt;
 
@@ -197,6 +198,16 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             limit,
         } => {
             sink.u8(2)?;
+            sink.text(room_id)?;
+            encode_optional_cursor(sink, *cursor)?;
+            sink.u64(u64::from(*limit))
+        }
+        CommandV2::Bans {
+            room_id,
+            cursor,
+            limit,
+        } => {
+            sink.u8(16)?;
             sink.text(room_id)?;
             encode_optional_cursor(sink, *cursor)?;
             sink.u64(u64::from(*limit))
@@ -434,6 +445,11 @@ fn decode_command(
             admission: decode_admission(decoder)?,
             expected_revision: read_u64(decoder)?,
         }),
+        16 => Ok(CommandV2::Bans {
+            room_id: read_text(decoder)?,
+            cursor: decode_optional_cursor(decoder)?,
+            limit: read_u32(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -529,6 +545,10 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
         OutcomeV2::Members(page) => {
             sink.u8(2)?;
             encode_member_page(sink, page)
+        }
+        OutcomeV2::Bans(page) => {
+            sink.u8(17)?;
+            encode_ban_page(sink, page)
         }
         OutcomeV2::Messages(page) => {
             sink.u8(3)?;
@@ -643,6 +663,7 @@ fn decode_outcome(
         16 => Ok(OutcomeV2::RoomPolicyChanged {
             revision: read_u64(decoder)?,
         }),
+        17 => Ok(OutcomeV2::Bans(decode_ban_page(decoder, limits)?)),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -727,6 +748,50 @@ fn decode_member_page(
         revision,
         room_id,
         members,
+        next: decode_optional_cursor(decoder)?,
+    })
+}
+
+fn encode_ban_page(sink: &mut dyn Sink, page: &BanPageV2) -> Result<(), WireEncodeError> {
+    sink.u64(page.revision)?;
+    sink.text(&page.room_id)?;
+    sink.list(page.banned.len())?;
+    for entry in &page.banned {
+        sink.text(&entry.participant_id)?;
+        sink.text(&entry.display_name)?;
+        sink.u8(match entry.kind {
+            ParticipantKindV2::Human => 1,
+            ParticipantKindV2::Agent => 2,
+        })?;
+        sink.u8(encode_role(entry.prior_role))?;
+    }
+    encode_optional_cursor(sink, page.next)
+}
+
+fn decode_ban_page(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<BanPageV2, WireDecodeError> {
+    let revision = read_u64(decoder)?;
+    let room_id = read_text(decoder)?;
+    let length = read_list(decoder, limits)?;
+    let mut banned = try_vec(length)?;
+    for _ in 0..length {
+        banned.push(BannedParticipantV2 {
+            participant_id: read_text(decoder)?,
+            display_name: read_text(decoder)?,
+            kind: match read_u8(decoder)? {
+                1 => ParticipantKindV2::Human,
+                2 => ParticipantKindV2::Agent,
+                _ => return Err(WireDecodeError::UnknownTag),
+            },
+            prior_role: decode_role(decoder)?,
+        });
+    }
+    Ok(BanPageV2 {
+        revision,
+        room_id,
+        banned,
         next: decode_optional_cursor(decoder)?,
     })
 }

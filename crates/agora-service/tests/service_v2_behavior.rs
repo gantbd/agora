@@ -765,11 +765,30 @@ fn v2_moderation_is_actor_bound_replayable_and_distinguishes_kick_from_ban() {
         ),
         ReplyV2::Refused(RefusalV2::Banned)
     );
+    let ReplyV2::Accepted(OutcomeV2::Bans(page)) = service.execute(
+        alice,
+        request(
+            4,
+            CommandV2::Bans {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("ban page expected");
+    };
+    assert_eq!(page.banned[0].participant_id, "bot");
+    assert_eq!(
+        page.banned[0].kind,
+        agora_protocol::v2::ParticipantKindV2::Agent
+    );
+    assert_eq!(page.banned[0].prior_role, RoleV2::Member);
     assert_eq!(
         service.execute(
             alice,
             request(
-                4,
+                5,
                 CommandV2::Unban {
                     room_id: "room".to_owned(),
                     participant_id: "bot".to_owned(),
@@ -798,7 +817,7 @@ fn v2_moderation_is_actor_bound_replayable_and_distinguishes_kick_from_ban() {
     let ReplyV2::Accepted(OutcomeV2::Changes(page)) = service.execute(
         alice,
         request(
-            5,
+            6,
             CommandV2::Changes {
                 room_id: "room".to_owned(),
                 cursor,

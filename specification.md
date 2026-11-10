@@ -180,6 +180,9 @@ unban. Moderation evidence is visible only through the current-member room feed.
 Only the owner may change a room's admission policy. The accepted event records
 actor, prior policy, new policy, revision, and event sequence; it does not erase
 or reinterpret earlier invitations or admissions.
+The ban set is observable only to a current owner or moderator through bounded
+canonical participant-ID pages. Each entry preserves descriptive participant
+kind and prior room role; cursors bind observer, room, and exact revision.
 
 The profile closes the current engine lifecycle commands and bounded room,
 member, and retained-message pages. The service converts engine continuations
@@ -220,7 +223,7 @@ position.
 
 ## Service checkpoint profile V2
 
-The `AGORASV` version-3 record is independent of public wire versioning and is
+The `AGORASV` version-4 record is independent of public wire versioning and is
 bound to an exact caller-supplied 16-byte store scope. It contains the canonical
 engine checkpoint, configured service limits, active client-to-participant
 bindings, ordered retired tombstones, exact request/reply receipts, private
@@ -233,7 +236,8 @@ Recovery applies host ceilings before allocation, reconstructs the engine under
 its own ceiling, checks client and cursor attribution, validates identifier
 frontiers and request shapes, refuses duplicate or noncanonical ordering, and
 requires byte-identical re-encoding. Opaque engine cursors have their own private
-`AGORACUR` version-1 profile and remain observer/room/revision bound. Process-local
+`AGORACUR` version-1 profile and remain observer/room/revision bound. Cursor kind
+5 is the authority-scoped ban page. Process-local
 usage counters reset on recovery and are intentionally absent from semantic
 checkpoint bytes.
 
@@ -276,7 +280,7 @@ requests, reconnect a host session, or prove server durability.
 
 ## Authenticated host checkpoint and durable publication V2
 
-The `AGORAHST` version-3 record is independently versioned and bound to an exact
+The `AGORAHST` version-4 record is independently versioned and bound to an exact
 16-byte store scope. It contains Host V2 limits, the next non-reused session
 frontier, every active mapping from opaque host session to verified subject,
 participant, service client and last verification time, the bounded retired

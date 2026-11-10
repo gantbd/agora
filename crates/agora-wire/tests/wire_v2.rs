@@ -1,7 +1,8 @@
 use agora_protocol::v2::{
-    AdmissionPolicyV2, ChangeGapV2, ClientIdV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2,
-    MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2,
-    RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
+    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, ChangeGapV2, ClientIdV2, CommandV2,
+    MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2,
+    RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2,
+    RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -120,6 +121,20 @@ fn policy_reply() -> WireReplyV2 {
     })))
 }
 
+fn bans_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Bans(BanPageV2 {
+        revision: 18,
+        room_id: "private".to_owned(),
+        banned: vec![BannedParticipantV2 {
+            participant_id: "bot".to_owned(),
+            display_name: "Bot".to_owned(),
+            kind: ParticipantKindV2::Agent,
+            prior_role: RoleV2::Moderator,
+        }],
+        next: Some(PageCursorV2(18)),
+    })))
+}
+
 fn fixture(source: &str) -> Vec<u8> {
     source
         .split_ascii_whitespace()
@@ -153,6 +168,10 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
         (
             encode_reply_v2(&policy_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/policy-change-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&bans_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/bans-reply-v2.hex")),
         ),
     ];
     for (actual, expected) in cases {
@@ -191,6 +210,11 @@ fn every_v2_command_round_trips() {
             limit: 2,
         },
         CommandV2::Members {
+            room_id: "room".to_owned(),
+            cursor: Some(PageCursorV2(2)),
+            limit: 3,
+        },
+        CommandV2::Bans {
             room_id: "room".to_owned(),
             cursor: Some(PageCursorV2(2)),
             limit: 3,
@@ -300,6 +324,10 @@ fn every_v2_outcome_and_refusal_round_trips() {
             _ => unreachable!(),
         },
         member_page,
+        match bans_reply() {
+            WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
+            _ => unreachable!(),
+        },
         match messages_reply() {
             WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
             _ => unreachable!(),

@@ -320,6 +320,74 @@ pub struct MemberPage {
     pub next: Option<MemberPageCursor>,
 }
 
+/// One authority-scoped banned-participant projection.
+#[derive(Clone, Eq, PartialEq)]
+pub struct BannedParticipantView {
+    pub participant_id: ParticipantId,
+    pub display_name: String,
+    pub kind: ParticipantKind,
+    pub prior_role: Role,
+}
+
+impl fmt::Debug for BannedParticipantView {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BannedParticipantView")
+            .field("participant_id_bytes", &self.participant_id.as_str().len())
+            .field("display_name_bytes", &self.display_name.len())
+            .field("kind", &self.kind)
+            .field("prior_role", &self.prior_role)
+            .finish()
+    }
+}
+
+/// Opaque continuation for one moderator's observation of one room ban set.
+#[derive(Clone, Eq, PartialEq)]
+pub struct BanPageCursor {
+    revision: Revision,
+    observer: ParticipantId,
+    room_id: RoomId,
+    after: ParticipantId,
+}
+
+impl BanPageCursor {
+    pub fn is_bound_to(&self, observer: &ParticipantId, room_id: &RoomId) -> bool {
+        &self.observer == observer && &self.room_id == room_id
+    }
+}
+
+impl fmt::Debug for BanPageCursor {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BanPageCursor")
+            .field("revision", &self.revision)
+            .field("observer_id_bytes", &self.observer.as_str().len())
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("after_participant_id_bytes", &self.after.as_str().len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct BanPage {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub banned: Vec<BannedParticipantView>,
+    pub next: Option<BanPageCursor>,
+}
+
+impl fmt::Debug for BanPage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BanPage")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("banned_count", &self.banned.len())
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
+}
+
 impl fmt::Debug for MemberPage {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -462,6 +530,7 @@ pub enum ObservationRefusal {
     UnknownParticipant,
     UnknownRoom,
     NotMember,
+    NotAuthorized,
     InvalidLimit,
     ForeignCursor,
     Stale { actual_revision: Revision },
@@ -1191,6 +1260,94 @@ impl Engine {
             revision: self.revision,
             room_id: room_id.clone(),
             members,
+            next,
+        })
+    }
+
+    /// Returns one revision-bound page of banned participants. Only a current
+    /// owner or moderator may observe this authority-sensitive set.
+    pub fn ban_page(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        cursor: Option<&BanPageCursor>,
+        limit: usize,
+    ) -> Result<BanPage, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        if limit == 0 || limit > self.limits.max_bans_per_room {
+            return Err(ObservationRefusal::InvalidLimit);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !matches!(
+            room.members.get(observer),
+            Some(Role::Owner | Role::Moderator)
+        ) {
+            return Err(if room.members.contains_key(observer) {
+                ObservationRefusal::NotAuthorized
+            } else {
+                ObservationRefusal::NotMember
+            });
+        }
+        let after = if let Some(cursor) = cursor {
+            if &cursor.observer != observer || &cursor.room_id != room_id {
+                return Err(ObservationRefusal::ForeignCursor);
+            }
+            if cursor.revision != self.revision {
+                return Err(ObservationRefusal::Stale {
+                    actual_revision: self.revision,
+                });
+            }
+            Some(&cursor.after)
+        } else {
+            None
+        };
+        let mut banned = Vec::new();
+        banned
+            .try_reserve_exact(limit)
+            .map_err(|_| ObservationRefusal::Capacity)?;
+        let mut has_more = false;
+        for (participant_id, prior_role) in &room.bans {
+            if after.is_some_and(|after| participant_id <= after) {
+                continue;
+            }
+            if banned.len() == limit {
+                has_more = true;
+                break;
+            }
+            let participant = self
+                .participants
+                .get(participant_id)
+                .ok_or(ObservationRefusal::InconsistentState)?;
+            banned.push(BannedParticipantView {
+                participant_id: participant_id.clone(),
+                display_name: participant.display_name.clone(),
+                kind: participant.kind,
+                prior_role: *prior_role,
+            });
+        }
+        let next = if has_more {
+            Some(BanPageCursor {
+                revision: self.revision,
+                observer: observer.clone(),
+                room_id: room_id.clone(),
+                after: banned
+                    .last()
+                    .ok_or(ObservationRefusal::InconsistentState)?
+                    .participant_id
+                    .clone(),
+            })
+        } else {
+            None
+        };
+        Ok(BanPage {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            banned,
             next,
         })
     }

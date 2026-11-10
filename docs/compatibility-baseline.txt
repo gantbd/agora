@@ -10,9 +10,10 @@ package|crates/agora-storage-directory/Cargo.toml|agora-storage-directory|0.1.0
 package|crates/agora-wire/Cargo.toml|agora-wire|0.1.0
 package|sdk/client/Cargo.toml|agora-sdk-client|0.1.0
 package|sdk/embedded/Cargo.toml|agora-sdk-embedded|0.1.0
-fixture|crates/agora-host/tests/fixtures/host-checkpoint-v3.hex|834|5a0994edfd61d3ccfff7f83efe6fc33c1b78ac93d681111edbe7b131fd55ca6f
-fixture|crates/agora-service/tests/fixtures/service-checkpoint-v3.hex|1141|fa0858f6b99031c17aa2dfc9519711516586e39ebd5fb97fb4272a092cdca964
+fixture|crates/agora-host/tests/fixtures/host-checkpoint-v4.hex|834|c03c947646d33998e2c0dffafa44cef63f52f0a81f726feff643a43234ff4dec
+fixture|crates/agora-service/tests/fixtures/service-checkpoint-v4.hex|1141|2c50099aef69e4cf0e9c6c5df0dbbea27f23afe0380f24c6daeb19081890b42b
 fixture|crates/agora-storage-directory/tests/fixtures/directory-record-v1.hex|52|377cc1e927daa46ec954c5ad419ca762da86a18ee18b7e2d2169262aa0e70b16
+fixture|crates/agora-wire/tests/fixtures/bans-reply-v2.hex|56|1eceb89d5dd13236623b366cc25ac4d12535cdc87dec8101f2290615f819832a
 fixture|crates/agora-wire/tests/fixtures/changes-reply-v2.hex|101|0e62f74e8368688c28ac2b5b167d4653605b59ed951834165a4cbf5e3509662d
 fixture|crates/agora-wire/tests/fixtures/connect-request-v1.hex|11|4c13512cfcb29d053b6e56610b4693ac9ad5f6cd88650349bfb2df13c75c5fe4
 fixture|crates/agora-wire/tests/fixtures/create-room-request-v2.hex|50|3941c9e17887deddf2bf1e20c6446f3f0510390db656581cffadd0d01cdd9000

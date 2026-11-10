@@ -5,7 +5,7 @@ use agora_service::v2::persistence::{ServiceCheckpointScopeV1, ServiceRecoveryLi
 use std::collections::BTreeSet;
 
 const MAGIC: &[u8; 8] = b"AGORAHST";
-const VERSION: u8 = 3;
+const VERSION: u8 = 4;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct HostCheckpointScopeV1([u8; 16]);

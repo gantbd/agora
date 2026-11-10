@@ -792,6 +792,38 @@ impl MemberPageCursor {
     }
 }
 
+impl BanPageCursor {
+    pub fn prepare_checkpoint(
+        &self,
+        max_snapshot_bytes: usize,
+    ) -> Result<CursorCheckpointV1, CheckpointError> {
+        prepare_cursor(
+            5,
+            self.revision,
+            &self.observer,
+            Some(&self.room_id),
+            Some(self.after.as_str()),
+            None,
+            max_snapshot_bytes,
+        )
+    }
+
+    pub fn recover_checkpoint(
+        bytes: &[u8],
+        bounds: CursorRecoveryLimitsV1,
+    ) -> Result<Self, CheckpointError> {
+        let mut r = cursor_reader(bytes, bounds, 5)?;
+        let cursor = Self {
+            revision: Revision(r.number()?),
+            observer: ParticipantId::new(r.text(bounds.max_participant_id_bytes)?),
+            room_id: RoomId::new(r.text(bounds.max_room_id_bytes)?),
+            after: ParticipantId::new(r.text(bounds.max_participant_id_bytes)?),
+        };
+        finish_cursor(&r)?;
+        Ok(cursor)
+    }
+}
+
 impl MessagePageCursor {
     pub fn prepare_checkpoint(
         &self,

@@ -40,12 +40,14 @@ follow Semantic Versioning once a public release contract is selected.
   recovery, and canonical moderation wire/checkpoint fixtures.
 - Added owner-bound room admission-policy changes as ordered room facts with
   prior/current policy, participant-bound service projection, and frozen wire evidence.
+- Added authority-scoped bounded ban-list pages with opaque revision-bound,
+  client-owned cursors and durable continuation recovery.
 
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 4, 3,
-  and 3 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 4, 4,
+  and 4 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

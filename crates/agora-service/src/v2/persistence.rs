@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 const MAGIC: &[u8; 8] = b"AGORASV\0";
-const VERSION: u8 = 3;
+const VERSION: u8 = 4;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ServiceCheckpointScopeV1([u8; 16]);
@@ -362,6 +362,14 @@ impl ServiceV2 {
                         .map_err(|error| map_engine(error, true))?;
                     writer.blob(checkpoint.bytes())?;
                 }
+                CursorPage::Bans { room_id, cursor } => {
+                    writer.byte(5)?;
+                    writer.text(room_id.as_str())?;
+                    let checkpoint = cursor
+                        .prepare_checkpoint(max_snapshot_bytes)
+                        .map_err(|error| map_engine(error, true))?;
+                    writer.blob(checkpoint.bytes())?;
+                }
             }
         }
         Ok(ServiceCheckpointV2(writer.bytes))
@@ -526,6 +534,18 @@ impl ServiceV2 {
                         return Err(ServiceCheckpointErrorV2::Invalid);
                     }
                     CursorPage::Changes { room_id, position }
+                }
+                5 => {
+                    let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
+                    let cursor = BanPageCursor::recover_checkpoint(
+                        reader.blob(bounds.max_snapshot_bytes)?,
+                        cursor_bounds,
+                    )
+                    .map_err(|error| map_engine(error, true))?;
+                    if room_id.as_str().is_empty() || !cursor.is_bound_to(participant, &room_id) {
+                        return Err(ServiceCheckpointErrorV2::Invalid);
+                    }
+                    CursorPage::Bans { room_id, cursor }
                 }
                 _ => return Err(ServiceCheckpointErrorV2::Invalid),
             };

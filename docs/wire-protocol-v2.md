@@ -39,6 +39,7 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `0d` | Ban | room, participant, reason, 16-byte causation, expected revision |
 | `0e` | Unban | room, participant, reason, 16-byte causation, expected revision |
 | `0f` | SetAdmissionPolicy | room, admission, expected revision |
+| `10` | Bans | room `text`, optional cursor, limit |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -49,7 +50,7 @@ An executed protocol reply is Accepted `01` plus an outcome or Refused `02` plus
 a refusal. Outcome tags are Rooms `01`, Members `02`, Messages `03`, RoomCreated
 `04`, InvitationRecorded `05`, Joined `06`, Left `07`, RoleChanged `08`, and
 MessageAccepted `09`, ChangesOpened `0a`, Changes `0b`, ChangeGap `0c`, Kicked
-`0d`, Banned `0e`, Unbanned `0f`, and RoomPolicyChanged `10`.
+`0d`, Banned `0e`, Unbanned `0f`, RoomPolicyChanged `10`, and Bans `11`.
 
 A room page contains revision, room-summary list, and optional cursor. Each
 summary contains room ID, name, admission, observer role, member count, retained
@@ -59,6 +60,11 @@ display name, kind, and role. A message page contains revision, room ID, message
 list, oldest retained sequence, next message sequence, and optional cursor. Each
 message contains sequence, author, logical time, body, and addressed-participant
 list.
+
+A ban page contains revision, room ID, a bounded list, and optional cursor. Each
+entry contains participant ID, display name, descriptive kind, and prior room
+role. Service authority restricts this page to current owners and moderators;
+the wire representation itself grants no authority.
 
 Revision-only lifecycle outcomes carry one `u64`. MessageAccepted carries
 revision then room-local sequence.
@@ -108,7 +114,8 @@ admissions, roles, kinds, and optional tags refuse.
 Canonical fixtures freeze CreateRoom, a room page with continuation, a message
 page carrying retention bounds and addressing, a change page carrying its
 stable event identity and next cursor, a moderation change preserving evidence,
-and an admission-policy change. Round-trip tests cover every command,
+an admission-policy change, and a ban page preserving its authority-relevant
+prior role. Round-trip tests cover every command,
 outcome, refusal, room-event kind, and gap cause. Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push

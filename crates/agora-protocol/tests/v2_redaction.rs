@@ -1,7 +1,7 @@
 use agora_protocol::v2::{
-    AdmissionPolicyV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2,
-    PageCursorV2, ParticipantKindV2, ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
-    RoomPageV2, RoomSummaryV2,
+    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CommandV2, MemberPageV2, MemberV2,
+    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReplyV2, RoleV2,
+    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
 
 #[test]
@@ -25,6 +25,11 @@ fn v2_debug_output_is_content_safe() {
             room_id: "secret-room".to_owned(),
             admission: AdmissionPolicyV2::Open,
             expected_revision: 3,
+        },
+        CommandV2::Bans {
+            room_id: "secret-room".to_owned(),
+            cursor: Some(PageCursorV2(46)),
+            limit: 1,
         },
     ];
     let replies = [
@@ -51,6 +56,17 @@ fn v2_debug_output_is_content_safe() {
                 role: RoleV2::Member,
             }],
             next: None,
+        })),
+        ReplyV2::Accepted(OutcomeV2::Bans(BanPageV2 {
+            revision: 1,
+            room_id: "secret-room".to_owned(),
+            banned: vec![BannedParticipantV2 {
+                participant_id: "secret-participant".to_owned(),
+                display_name: "secret-display".to_owned(),
+                kind: ParticipantKindV2::Agent,
+                prior_role: RoleV2::Moderator,
+            }],
+            next: Some(PageCursorV2(47)),
         })),
         ReplyV2::Accepted(OutcomeV2::Messages(MessagePageV2 {
             revision: 1,
@@ -128,6 +144,8 @@ fn v2_debug_output_is_content_safe() {
         "43",
         "44",
         "45",
+        "46",
+        "47",
     ] {
         assert!(!rendered.contains(secret));
     }
