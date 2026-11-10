@@ -48,3 +48,9 @@ message fact. Host policy must separately map an Agora participant to an opaque
 Moira participant reference and explicitly admit the message before workflow
 state exists. Acknowledgment follows durable accounting for that decision.
 
+The SDK crates are reexport-only distribution facades. The trusted-host facade
+does not bundle a verifier, transport, storage adapter, or ambient credential;
+the remote-client facade cannot reach engine, service, or host internals. A
+consumer that treats either facade name as authority bypasses the documented
+boundary and must not be considered authenticated.
+

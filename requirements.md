@@ -63,6 +63,14 @@
   not reveal registration state, and unknown/revoked/mismatched sessions share one
   external refusal class. Host diagnostics redact subjects, sessions, and frames.
 
+## SDK distribution facades v0.1
+
+- **R22 — Audience-specific facades:** the trusted-host SDK must be sufficient to
+  construct the engine/service/host stack, while the remote-client SDK exposes
+  only client/protocol/wire concerns. Both are reexport-only, unpublished
+  distribution labels that add no transport, credentials, authority, storage,
+  orchestration, retry, or runtime policy.
+
 ## Explicitly open
 
 Durable storage adapters, durable event sinks, credential/Aegis verifier adapters,

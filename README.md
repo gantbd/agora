@@ -32,10 +32,13 @@ evidence or another credential system. See the
 
 ## SDK facades
 
-`agora-sdk-embedded` is the stable, zero-authority facade for applications that
-embed the Agora engine and host. `agora-sdk-client` is the peer facade for tools
-that speak Agora's client, protocol, and wire contracts. Neither facade chooses
-a transport, credential verifier, persistence adapter, clock, or runtime policy.
+`agora-sdk-embedded` is the trusted-host, zero-authority distribution facade for
+applications that embed the Agora engine, serialized service, and authenticated
+host. `agora-sdk-client` is the remote-client distribution facade for tools that
+speak Agora's client, protocol, and wire contracts. Neither facade chooses a
+transport, credential verifier, persistence adapter, clock, or runtime policy.
+See the [SDK taxonomy](docs/sdk-taxonomy.md) for the dependency closures and
+explicit non-claims.
 
 The wire grammar and tag assignments are frozen in the
 [wire protocol](docs/wire-protocol.md) and executable golden fixtures. A connect

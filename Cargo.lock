@@ -44,6 +44,7 @@ version = "0.1.0"
 dependencies = [
  "agora-engine",
  "agora-host",
+ "agora-service",
 ]
 
 [[package]]

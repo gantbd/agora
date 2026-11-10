@@ -148,3 +148,17 @@ retired-client evidence is a bounded recent window; saturation evicts the oldest
 tombstone and cannot block cleanup. Matching Execute replay preserves the
 service's existing exact request/reply semantics. The host performs neither
 credential verification nor network I/O and imports no authority-engine types.
+
+## SDK distribution profiles V1
+
+SDK is an audience and distribution label, not a semantic layer. The
+`agora-sdk-embedded` trusted-host facade directly reexports only the engine,
+serialized volatile service, and authenticated host. Those exports are
+sufficient to construct the embedded stack; verifier, transport, storage, time,
+and runtime choices remain injected by the application.
+
+The `agora-sdk-client` remote-client facade directly reexports only the
+transport-neutral client, protocol DTOs, and canonical wire codec. It supplies
+no connection lifecycle, transport implementation, credential, retry policy, or
+authority. Neither facade defines new values or behavior, and neither is an
+umbrella over the other.

@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 agora-engine = { path = "../..", version = "=0.3.0" }
 agora-host = { path = "../../crates/agora-host", version = "=0.1.0" }
+agora-service = { path = "../../crates/agora-service", version = "=0.1.0" }
 
 [lints.rust]
 unsafe_code = "forbid"

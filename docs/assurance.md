@@ -43,6 +43,13 @@ host-time regression, capacity/malformed preflight, and tombstone-pressure
 cleanup. The verifier is a trusted test double; no credential system or Aegis
 adapter is qualified.
 
+SDK facade scenarios compile and construct an engine/service/host stack using
+only `agora-sdk-embedded`, and a protocol client plus canonical frame using only
+`agora-sdk-client`. The dependency gate requires the embedded facade's direct
+closure to be exactly engine/service/host and the client facade's direct closure
+to be exactly client/protocol/wire. These checks establish packaging and audience
+separation only; they add no runtime, transport, or release-provenance claim.
+
 The gate does not establish authentication, transport security, multi-process
 serialization, durable storage, event delivery, distributed availability, or
 orchestrator correctness. Those claims require separate adapters and evidence.

@@ -25,6 +25,7 @@ This ledger records current evidence. Open work is not a pass.
 | R19 dual binding | opaque host session mapped to subject, participant, and service client | client substitution and unaffected target-session scenario | Satisfied for volatile host lifetime |
 | R20 revocation-safe cleanup | unconditional close plus eviction-based host/service tombstone windows | revocation replacement, explicit close, zero/full tombstone scenarios | Satisfied for volatile cleanup |
 | R21 disclosure-safe authentication | erased verifier errors, shared Unavailable projection, redacted debug | registered/unregistered authentication refusal equality and debug scenario | Satisfied at host API boundary |
+| R22 audience-specific facades | `agora-sdk-embedded` and `agora-sdk-client` reexport-only crates with closed direct dependencies | facade-only construction tests, dependency boundary script, workspace lint/test/doc gates | Satisfied for unpublished V0.1 distributions |
 
 ## Verification gates
 

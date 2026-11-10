@@ -47,11 +47,13 @@ if printf '%s\n' "$host_tree" | rg 'agora-client|aegis|chronos|moira|daimon|herm
 fi
 
 embedded_sdk_tree=$(cargo tree -p agora-sdk-embedded --edges normal --depth 1 --locked --offline)
-if [[ $(printf '%s\n' "$embedded_sdk_tree" | wc -l | tr -d ' ') != 3 ]] \
+if [[ $(printf '%s\n' "$embedded_sdk_tree" | wc -l | tr -d ' ') != 4 ]] \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-engine' \
-  || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-host'; then
+  || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-host' \
+  || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-service' \
+  || printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-(client|sdk-client)'; then
   printf '%s\n' "$embedded_sdk_tree" >&2
-  echo 'Agora embedded SDK escaped its engine-and-host closure' >&2
+  echo 'Agora embedded SDK escaped its engine-service-host closure' >&2
   exit 1
 fi
 
@@ -59,10 +61,18 @@ client_sdk_tree=$(cargo tree -p agora-sdk-client --edges normal --depth 1 --lock
 if [[ $(printf '%s\n' "$client_sdk_tree" | wc -l | tr -d ' ') != 4 ]] \
   || ! printf '%s\n' "$client_sdk_tree" | rg -q 'agora-client' \
   || ! printf '%s\n' "$client_sdk_tree" | rg -q 'agora-protocol' \
-  || ! printf '%s\n' "$client_sdk_tree" | rg -q 'agora-wire'; then
+  || ! printf '%s\n' "$client_sdk_tree" | rg -q 'agora-wire' \
+  || printf '%s\n' "$client_sdk_tree" | rg -q 'agora-(engine|host|service)'; then
   printf '%s\n' "$client_sdk_tree" >&2
   echo 'Agora client SDK escaped its client-protocol-wire closure' >&2
   exit 1
 fi
+
+for sdk_manifest in sdk/embedded/Cargo.toml sdk/client/Cargo.toml; do
+  if ! rg -q '^publish = false$' "$sdk_manifest"; then
+    echo "$sdk_manifest enabled publication without release approval" >&2
+    exit 1
+  fi
+done
 
 echo 'Agora dependency direction closed; no effects or activation semantics'

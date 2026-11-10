@@ -17,6 +17,8 @@ or crates.io release.
 - canonical bounded V1 wire codec with executable golden compatibility fixtures;
 - transport-neutral authenticated host composition with bounded volatile
   sessions, current-context revalidation, and revocation-safe cleanup;
+- unpublished trusted-host and remote-client SDK facades with executable
+  facade-only construction and closed dependency evidence;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.
@@ -24,6 +26,7 @@ or crates.io release.
 ## Open release blockers
 
 - no published dependency/release provenance or remote CI;
+- SDK facades are not approved or configured for registry publication;
 - no qualified credential/Aegis verifier, network transport, or connector
   conformance package;
 - no independently qualified durable Agora store;
