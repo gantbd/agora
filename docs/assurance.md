@@ -177,7 +177,7 @@ and relationship preservation through withdrawal, redaction, checkpoint, and
 exact replay. All threaded event variants and optional-root tags round-trip;
 semantic page-shape checks, nested unknown tags, every truncation, Debug safety,
 SDK construction, and two canonical wire fixtures close the public profile.
-Canonical profile-12 engine and profile-14 service/host fixtures close recovery.
+Canonical profile-13 engine and profile-15 service/host fixtures close recovery.
 
 Thread lifecycle scenarios prove root-author and owner authority, foreign-author
 refusal, archive reply fencing, reopen admission, current status, exact replay,
@@ -198,7 +198,7 @@ agents, append-only numbering through a fixed saturation ceiling, immutable
 identity/addressing/reply/reaction relations, atomic refusal, revision-bound
 pagination, exact receipt replay, every-feed attribution, recovery continuation,
 and tombstone scrubbing of retained revision and event bodies. Closed protocol,
-wire, Debug, SDK, two canonical frames, and profile-12/14/14 checkpoints close
+wire, Debug, SDK, two canonical frames, and profile-13/15/15 checkpoints close
 the retained short-message correction surface without claiming collaborative
 document editing or physical erasure.
 
@@ -207,9 +207,18 @@ authority without participant-kind privilege, bounded canonical naming and
 capacity, immutable message relation and reply inheritance, topic/profile-bound
 pagination, exact replay, four-profile projection, and cursor continuation after
 recovery. Closed protocol/wire tags, malformed relation checks, Debug/SDK
-construction, expanded capability bytes, and profile-12/14/14 checkpoints close
+construction, expanded capability bytes, and profile-13/15/15 checkpoints close
 the retained topic surface without claiming subscriptions, notifications,
 unread state, workflow resolution, or execution authority.
+
+Private read-position core scenarios prove room/thread/topic scope validation,
+human/agent-neutral self-state, monotone and idempotent advancement, atomic
+stale/regression/target refusal, membership inaccessibility, retention survival,
+and zero domain-revision or outbox effect. Canonical profile-13 engine and
+profile-15 service/host fixtures retain exact markers through nested recovery;
+truncation, profile, scope, ceiling, and canonical-state checks remain closed.
+Participant-bound public service, wire, SDK, and durable lost-reply evidence are
+still required before R46 can be satisfied.
 
 The gate does not establish a credential adapter, transport security,
 multi-host serialization, physical-device power-loss behavior, event delivery,

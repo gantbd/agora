@@ -4,8 +4,8 @@ Agora is pre-1.0 and currently source-distributed. Public schemas still change
 only through an explicit profile revision.
 
 The v0.3 command, event, publication, and checkpoint values use the `V2` suffix.
-The `AGORACP` header version is 12. Earlier checkpoint bytes are refused with
-`CheckpointError::Profile`; they are never interpreted as V12. V1 agent activation
+The `AGORACP` header version is 13. Earlier checkpoint bytes are refused with
+`CheckpointError::Profile`; they are never interpreted as V13. V1 agent activation
 has no migration because activation is orchestration behavior, not conversation
 state. A host retaining V1 state must export conversation facts through a
 purpose-built migration tool before adopting V2.
@@ -16,11 +16,11 @@ fail closed on the new value. Reinterpreting an assigned tag or changing any
 existing field grammar requires a new frame version. Unknown tags, fields, or
 trailing bytes remain refusals.
 
-The immutable `tests/fixtures/checkpoint-v12.hex` artifact pins a representative
-V12 state containing both participant kinds, stable message and topic identity,
+The immutable `tests/fixtures/checkpoint-v13.hex` artifact pins a representative
+V13 state containing both participant kinds, stable message and topic identity,
 topic-scoped messages, thread lifecycle, reactions, message revisions, neutral addressing, replay-safe
-publication, ban and policy-change evidence, acknowledgment, and the exact pending
-outbox suffix.
+publication, ban and policy-change evidence, one private read position,
+acknowledgment, and the exact pending outbox suffix.
 
 The operational protocol is separately versioned as `V1` values. `agora-wire`
 defines its canonical binary representation and refuses unknown versions, tags,
@@ -33,7 +33,7 @@ version byte, closed grammar, and twenty canonical fixtures. Their separately
 typed values and V2 bytes do not alter V1 tags or bytes. Authenticated Host V2
 uses the same canonical frames without reinterpreting V1.
 
-Service persistence is versioned independently. `AGORASV` version 14 captures
+Service persistence is versioned independently. `AGORASV` version 15 captures
 the complete V2 service owner and embeds private `AGORACUR` version-1 cursor
 records. Cursor kind 4 is the snapshot-aligned room change position and kind 5
 is the authority-scoped ban page; neither reinterprets kinds 1–3. Service page
@@ -46,12 +46,12 @@ continuation and binds the message identity in addition to room and observer.
 Discriminators 12 and 13 isolate topic and topic-message continuations; the
 latter binds the exact topic. Discriminator 14 isolates topic-aware room-change
 positions. A representative complete service record is pinned by
-`service-checkpoint-v14.hex`. Public wire
+`service-checkpoint-v15.hex`. Public wire
 compatibility neither implies nor migrates durable state;
 future durable schema changes require a bounded explicit migration profile.
 
-Authenticated host persistence has its own `AGORAHST` version-14 record and
-`host-checkpoint-v14.hex` fixture. It nests the service record but owns host
+Authenticated host persistence has its own `AGORAHST` version-15 record and
+`host-checkpoint-v15.hex` fixture. It nests the service record but owns host
 session compatibility independently; neither wire nor service checkpoint
 decoding implies that a host record can be recovered.
 
@@ -109,6 +109,14 @@ message grammar appends a closed optional topic ID to the threaded grammar.
 Legacy, identified, and threaded accepted-message bytes remain unchanged.
 Engine/service/host profiles advance to 12/14/14 because the topic registry,
 allocator, message relation, receipts, and cursor consequences are durable.
+
+Private read-position persistence advances engine/service/host profiles to
+13/15/15. The engine record appends one canonical participant/room/scope-keyed
+registry after room state; each marker retains exact target identity, sequence,
+and observed revision. Scope tags `01`, `02`, and `03` identify room, thread,
+and topic selectors. No public wire tag is allocated by this persistence-only
+advance, and earlier checkpoint profiles fail closed rather than dropping the
+private state.
 
 ## Conservative baseline gate
 

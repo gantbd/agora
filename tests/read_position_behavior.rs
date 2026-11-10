@@ -1,4 +1,4 @@
-use agora_engine::persistence::CheckpointError;
+use agora_engine::persistence::RecoveryLimits;
 use agora_engine::{
     AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, OutcomeV2, Participant, ParticipantId,
     ParticipantKind, ReadPositionRefusalV1, ReadScopeV1, RoomId,
@@ -182,6 +182,25 @@ fn thread_and_topic_scopes_validate_exact_targets() {
             Err(ReadPositionRefusalV1::InvalidTarget)
         );
     }
+    let checkpoint = engine.prepare_checkpoint(65_536).unwrap();
+    let recovered = Engine::recover_checkpoint(
+        checkpoint.bytes(),
+        RecoveryLimits {
+            max_snapshot_bytes: 65_536,
+            maximum_engine_limits: Limits::default(),
+        },
+    )
+    .unwrap();
+    for scope in [ReadScopeV1::Thread(root_id), ReadScopeV1::Topic(topic_id)] {
+        assert_eq!(
+            recovered
+                .read_position(&ParticipantId::new("agent"), &RoomId::new("room"), &scope,)
+                .unwrap()
+                .unwrap()
+                .target_message_id(),
+            reply_id
+        );
+    }
 }
 
 #[test]
@@ -234,7 +253,7 @@ fn membership_and_retention_do_not_silently_destroy_markers() {
 }
 
 #[test]
-fn stale_and_unknown_targets_refuse_atomically_and_persistence_is_fenced() {
+fn stale_and_unknown_targets_refuse_atomically_and_position_recovers() {
     let mut engine = setup(4);
     let target = root(&mut engine, "owner", "target");
     let revision = engine.revision();
@@ -267,8 +286,25 @@ fn stale_and_unknown_targets_refuse_atomically_and_persistence_is_fenced() {
             target,
         )
         .unwrap();
-    assert!(matches!(
-        engine.prepare_checkpoint(65_536),
-        Err(CheckpointError::UnsupportedState)
-    ));
+    let checkpoint = engine.prepare_checkpoint(65_536).unwrap();
+    let recovered = Engine::recover_checkpoint(
+        checkpoint.bytes(),
+        RecoveryLimits {
+            max_snapshot_bytes: 65_536,
+            maximum_engine_limits: Limits::default(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        recovered
+            .read_position(
+                &ParticipantId::new("agent"),
+                &RoomId::new("room"),
+                &ReadScopeV1::Room,
+            )
+            .unwrap()
+            .unwrap()
+            .target_message_id(),
+        target
+    );
 }

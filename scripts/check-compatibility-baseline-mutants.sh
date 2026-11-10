@@ -24,8 +24,14 @@ awk '!/^package\|sdk\/client\// { print }' \
   docs/compatibility-baseline.txt > "$task_dir/baseline.txt"
 expect_refusal 'missing package'
 
-sed 's/86e36595708924672b71757c1426411f850ff3b57c8a27b14bda5c4a0b269448/06e36595708924672b71757c1426411f850ff3b57c8a27b14bda5c4a0b269448/' \
-  docs/compatibility-baseline.txt > "$task_dir/baseline.txt"
+awk -F '|' 'BEGIN { OFS = "|" }
+  $1 == "fixture" && !changed {
+    replacement = substr($4, 1, 63) (substr($4, 64, 1) == "0" ? "1" : "0")
+    $4 = replacement
+    changed = 1
+  }
+  { print }
+' docs/compatibility-baseline.txt > "$task_dir/baseline.txt"
 expect_refusal 'changed fixture digest'
 
 awk '!/^fixture\|/' docs/compatibility-baseline.txt > "$task_dir/baseline.txt"

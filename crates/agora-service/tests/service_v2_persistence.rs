@@ -1,6 +1,6 @@
 use agora_engine::{
-    AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind,
-    RoomId,
+    AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantId,
+    ParticipantKind, ReadScopeV1, RoomId,
 };
 use agora_protocol::v2::{
     ClientIdV2, CommandV2, IdentifiedRoomEventV1, MessageIdV1, MessageRevisionAvailabilityV1,
@@ -58,6 +58,30 @@ fn populated() -> (
             })
             .unwrap();
     }
+    let agora_engine::OutcomeV2::MessageAccepted { sequence, .. } = engine
+        .apply(EngineCommand::Speak {
+            room_id: "alpha".into(),
+            author: "alice".into(),
+            at: agora_engine::LogicalTime(8),
+            body: "seed marker".to_owned(),
+        })
+        .unwrap()
+    else {
+        panic!("seed message expected");
+    };
+    let marker_target = engine
+        .message(&RoomId::new("alpha"), sequence)
+        .unwrap()
+        .id();
+    engine
+        .advance_read_position(
+            &ParticipantId::new("alice"),
+            &RoomId::new("alpha"),
+            ReadScopeV1::Room,
+            engine.revision(),
+            marker_target,
+        )
+        .unwrap();
     let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
     let alice = service.connect("alice").unwrap();
     let _bot = service.connect("bot").unwrap();
@@ -67,7 +91,7 @@ fn populated() -> (
             10,
             CommandV2::Speak {
                 room_id: "alpha".to_owned(),
-                expected_revision: 5,
+                expected_revision: 6,
                 logical_time: 9,
                 body: "checkpoint me".to_owned(),
                 addressed_to: vec![],
@@ -89,14 +113,14 @@ fn populated() -> (
                 99,
                 CommandV2::EditMessage {
                     room_id: "alpha".to_owned(),
-                    expected_revision: 6,
+                    expected_revision: 7,
                     message_id,
                     logical_time: 10,
                     body: "checkpoint revised".to_owned(),
                 },
             ),
         ),
-        ReplyV2::Accepted(OutcomeV2::MessageEdited { revision: 7, .. })
+        ReplyV2::Accepted(OutcomeV2::MessageEdited { revision: 8, .. })
     ));
     let ReplyV2::Accepted(OutcomeV2::TopicCreated { topic_id, .. }) = service.execute(
         alice,
@@ -104,7 +128,7 @@ fn populated() -> (
             100,
             CommandV2::CreateTopic {
                 room_id: "alpha".to_owned(),
-                expected_revision: 7,
+                expected_revision: 8,
                 name: "incidents".to_owned(),
             },
         ),
@@ -118,15 +142,15 @@ fn populated() -> (
                 101,
                 CommandV2::CreateTopic {
                     room_id: "alpha".to_owned(),
-                    expected_revision: 8,
+                    expected_revision: 9,
                     name: "operations".to_owned(),
                 },
             ),
         ),
-        ReplyV2::Accepted(OutcomeV2::TopicCreated { revision: 9, .. })
+        ReplyV2::Accepted(OutcomeV2::TopicCreated { revision: 10, .. })
     ));
     for (request_id, expected_revision, logical_time, body) in
-        [(102, 9, 11, "topic one"), (103, 10, 12, "topic two")]
+        [(102, 10, 11, "topic one"), (103, 11, 12, "topic two")]
     {
         assert!(matches!(
             service.execute(
@@ -182,11 +206,11 @@ fn populated() -> (
                 106,
                 CommandV2::OpenTopicChanges {
                     room_id: "alpha".to_owned(),
-                    observed_revision: 11,
+                    observed_revision: 12,
                 },
             ),
         ),
-        ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision: 11, .. })
+        ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision: 12, .. })
     ));
     let ReplyV2::Accepted(OutcomeV2::Rooms(page)) = service.execute(
         alice,
@@ -213,7 +237,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v14.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v15.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -223,6 +247,17 @@ fn complete_service_state_round_trips_and_continues_exactly() {
     let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
 
     assert_eq!(recovered.engine().revision(), revision);
+    assert!(
+        recovered
+            .engine()
+            .read_position(
+                &ParticipantId::new("alice"),
+                &RoomId::new("alpha"),
+                &ReadScopeV1::Room,
+            )
+            .unwrap()
+            .is_some()
+    );
     assert_eq!(
         recovered
             .engine()
@@ -246,7 +281,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
                 10,
                 CommandV2::Speak {
                     room_id: "alpha".to_owned(),
-                    expected_revision: 5,
+                    expected_revision: 6,
                     logical_time: 9,
                     body: "checkpoint me".to_owned(),
                     addressed_to: vec![],
@@ -263,7 +298,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
                 10,
                 CommandV2::Speak {
                     room_id: "alpha".to_owned(),
-                    expected_revision: 5,
+                    expected_revision: 6,
                     logical_time: 9,
                     body: "changed".to_owned(),
                     addressed_to: vec![],
@@ -321,7 +356,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 15;
+    future[8] = 16;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -1493,7 +1528,7 @@ fn recovered_change_position_continues_without_snapshot_gap() {
         ),
         ReplyV2::Accepted(OutcomeV2::MessageAccepted {
             revision: revision + 1,
-            sequence: 3,
+            sequence: 4,
         })
     );
     let ReplyV2::Accepted(OutcomeV2::Changes(page)) = recovered.execute(

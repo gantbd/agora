@@ -1,4 +1,7 @@
-use agora_engine::{CommandV2 as EngineCommand, Engine, Participant, ParticipantKind, Revision};
+use agora_engine::{
+    AdmissionPolicy, CommandV2 as EngineCommand, Engine, LogicalTime, OutcomeV2 as EngineOutcome,
+    Participant, ParticipantId, ParticipantKind, ReadScopeV1, Revision, RoomId,
+};
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
@@ -314,9 +317,47 @@ fn v2_disconnect_and_transport_close_reclaim_service_state() {
 
 #[test]
 fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity() {
-    let (mut host, _) = make_host(2);
+    let mut seeded = engine();
+    seeded
+        .apply(EngineCommand::CreateRoom {
+            room_id: "seed".into(),
+            name: "Seed".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let EngineOutcome::MessageAccepted { sequence, .. } = seeded
+        .apply(EngineCommand::Speak {
+            room_id: "seed".into(),
+            author: "alice".into(),
+            at: LogicalTime(1),
+            body: "private marker".to_owned(),
+        })
+        .unwrap()
+    else {
+        panic!("seed message expected");
+    };
+    let target = seeded.message(&RoomId::new("seed"), sequence).unwrap().id();
+    seeded
+        .advance_read_position(
+            &ParticipantId::new("alice"),
+            &RoomId::new("seed"),
+            ReadScopeV1::Room,
+            seeded.revision(),
+            target,
+        )
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let service = ServiceV2::new(seeded, ServiceLimitsV2::default());
+    let mut host = HostV2::new(
+        service,
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(2),
+    );
     let (session, client, context) = open(&mut host, "alice", 1);
-    let request = create_frame(client, 9, 2);
+    let request = create_frame(client, 9, 4);
     let first = host
         .handle(session, &request, &context, HostTimeV1(2))
         .unwrap();
@@ -327,7 +368,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
                 request_id: RequestIdV2(10),
                 command: CommandV2::SpeakIdentified {
                     room_id: "private".to_owned(),
-                    expected_revision: 3,
+                    expected_revision: 5,
                     logical_time: 10,
                     body: "checkpoint original".to_owned(),
                     addressed_to: vec![],
@@ -354,7 +395,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
                 request_id: RequestIdV2(11),
                 command: CommandV2::EditMessage {
                     room_id: "private".to_owned(),
-                    expected_revision: 4,
+                    expected_revision: 6,
                     message_id,
                     logical_time: 20,
                     body: "checkpoint revised".to_owned(),
@@ -373,7 +414,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
         )
         .unwrap(),
         WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::MessageEdited {
-            revision: 5,
+            revision: 7,
             ..
         }))
     ));
@@ -384,7 +425,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
                 request_id: RequestIdV2(12),
                 command: CommandV2::CreateTopic {
                     room_id: "private".to_owned(),
-                    expected_revision: 5,
+                    expected_revision: 7,
                     name: "incidents".to_owned(),
                 },
             },
@@ -410,7 +451,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
                 request_id: RequestIdV2(13),
                 command: CommandV2::SpeakInTopic {
                     room_id: "private".to_owned(),
-                    expected_revision: 6,
+                    expected_revision: 8,
                     topic_id,
                     logical_time: 21,
                     body: "checkpoint topic".to_owned(),
@@ -430,14 +471,14 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
         )
         .unwrap(),
         WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicMessageAccepted {
-            revision: 7,
+            revision: 9,
             ..
         }))
     ));
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    let fixture = include_str!("fixtures/host-checkpoint-v14.hex").trim();
+    let fixture = include_str!("fixtures/host-checkpoint-v15.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -455,6 +496,18 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
         },
     )
     .unwrap();
+    assert!(
+        recovered
+            .service()
+            .engine()
+            .read_position(
+                &ParticipantId::new("alice"),
+                &RoomId::new("seed"),
+                &ReadScopeV1::Room,
+            )
+            .unwrap()
+            .is_some()
+    );
     assert_eq!(
         recovered
             .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
@@ -468,7 +521,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
             .unwrap(),
         first
     );
-    assert_eq!(recovered.service().engine().revision(), Revision(7));
+    assert_eq!(recovered.service().engine().revision(), Revision(9));
     assert_eq!(calls.get(), 1, "recovered session must be revalidated");
 }
 

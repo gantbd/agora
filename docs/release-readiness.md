@@ -42,7 +42,7 @@ not ready for a network service or crates.io release.
   all-feed attribution, tombstone scrubbing, and exact replay/recovery;
 - stable room-local topics with role-bound kind-neutral creation, immutable
   message relation and reply inheritance, bounded participant-bound pages, a
-  parallel topic-aware feed, and profile-12/14/14 canonical recovery;
+  parallel topic-aware feed, and profile-13/15/15 canonical recovery;
 - authenticated transport-neutral Host V2 with distinct session/client binding,
   per-frame revalidation, substitution fencing, and cleanup;
 - independently versioned, scope-bound Service V2 checkpoints preserving engine,
@@ -81,9 +81,9 @@ not ready for a network service or crates.io release.
 
 ## Open release blockers
 
-- R46 private read positions have core semantics only; checkpoints explicitly
-  fence marker-bearing state until persistence, service/wire/SDK exposure,
-  compatibility fixtures, recovery proof, and release evidence land;
+- R46 private read positions have core semantics and profile-13/15/15 canonical
+  recovery; participant-bound service/wire/SDK exposure, public compatibility
+  fixtures, and complete release evidence remain open;
 - no self-contained dependency/release provenance or remote CI; the source
   profile still requires the documented sibling Keystone checkout;
 - SDK facades are not approved or configured for registry publication;

@@ -15,7 +15,6 @@ pub enum CheckpointError {
     Invalid,
     NonCanonical,
     Trailing,
-    UnsupportedState,
 }
 impl fmt::Display for CheckpointError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -696,16 +695,13 @@ impl Engine {
         &self,
         max_snapshot_bytes: usize,
     ) -> Result<CheckpointV2, CheckpointError> {
-        if !self.read_positions.is_empty() {
-            return Err(CheckpointError::UnsupportedState);
-        }
         validate(self)?;
         let mut w = Writer {
             bytes: Vec::new(),
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(12)?;
+        w.byte(13)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -774,6 +770,25 @@ impl Engine {
                 w.text(topic.creator.as_str())?;
             }
         }
+        w.count(self.read_positions.len())?;
+        for ((participant, room_id, scope), position) in &self.read_positions {
+            w.text(participant.as_str())?;
+            w.text(room_id.as_str())?;
+            match scope {
+                ReadScopeV1::Room => w.byte(1)?,
+                ReadScopeV1::Thread(root_message_id) => {
+                    w.byte(2)?;
+                    w.raw(&root_message_id.into_bytes())?;
+                }
+                ReadScopeV1::Topic(topic_id) => {
+                    w.byte(3)?;
+                    w.raw(&topic_id.into_bytes())?;
+                }
+            }
+            w.raw(&position.target_message_id.into_bytes())?;
+            w.number(position.target_sequence)?;
+            w.number(position.observed_revision.0)?;
+        }
         w.count(self.publications.len())?;
         for (key, p) in &self.publications {
             w.raw(&key.0)?;
@@ -805,7 +820,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 12 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 13 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -957,6 +972,29 @@ impl Engine {
                     next_message_identity,
                     next_message_sequence,
                 },
+            )?;
+        }
+        let count = r.count(MAX_READ_POSITIONS_V1)?;
+        for _ in 0..count {
+            let participant = r.participant(l)?;
+            let room_id = r.room(l)?;
+            let scope = match r.byte()? {
+                1 => ReadScopeV1::Room,
+                2 => ReadScopeV1::Thread(MessageId::from_bytes(r.fixed()?)),
+                3 => ReadScopeV1::Topic(TopicId::from_bytes(r.fixed()?)),
+                _ => return Err(CheckpointError::Invalid),
+            };
+            let position = ReadPositionV1 {
+                room_id: room_id.clone(),
+                scope,
+                target_message_id: MessageId::from_bytes(r.fixed()?),
+                target_sequence: r.number()?,
+                observed_revision: Revision(r.number()?),
+            };
+            insert(
+                &mut e.read_positions,
+                (participant, room_id, scope),
+                position,
             )?;
         }
         let n = r.count(l.max_publication_receipts)?;
@@ -1559,6 +1597,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         || e.rooms.len() > l.max_rooms
         || e.publications.len() > l.max_publication_receipts
         || e.pending_events.len() > l.max_pending_events
+        || e.read_positions.len() > MAX_READ_POSITIONS_V1
     {
         return Err(CheckpointError::Limit);
     }
@@ -1724,6 +1763,59 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             .and_then(|n| n.checked_add(room.bans.len() as u64))
             .and_then(|n| n.checked_add(room.topics.len() as u64))
             .ok_or(CheckpointError::Invalid)?;
+    }
+    for ((participant, room_id, scope), position) in &e.read_positions {
+        let room = e.rooms.get(room_id).ok_or(CheckpointError::Invalid)?;
+        if !e.participants.contains_key(participant)
+            || &position.room_id != room_id
+            || &position.scope != scope
+            || position.observed_revision > e.revision
+            || position.target_sequence >= room.next_message_sequence
+            || position.target_message_id
+                != MessageId::allocated(room.message_identity_incarnation, position.target_sequence)
+        {
+            return Err(CheckpointError::Invalid);
+        }
+        match scope {
+            ReadScopeV1::Room => {}
+            ReadScopeV1::Thread(root_message_id) => {
+                if root_message_id.0[..8] != room.message_identity_incarnation.to_be_bytes()
+                    || u64::from_be_bytes(
+                        root_message_id.0[8..]
+                            .try_into()
+                            .map_err(|_| CheckpointError::Invalid)?,
+                    ) >= room.next_message_sequence
+                    || room
+                        .messages
+                        .iter()
+                        .find(|message| message.id == *root_message_id)
+                        .is_some_and(|message| message.reply_to_root.is_some())
+                {
+                    return Err(CheckpointError::Invalid);
+                }
+            }
+            ReadScopeV1::Topic(topic_id) => {
+                if !room.topics.contains_key(topic_id) {
+                    return Err(CheckpointError::Invalid);
+                }
+            }
+        }
+        if let Some(target) = room
+            .messages
+            .iter()
+            .find(|message| message.id == position.target_message_id)
+        {
+            let in_scope = match scope {
+                ReadScopeV1::Room => true,
+                ReadScopeV1::Thread(root) => {
+                    target.id == *root || target.reply_to_root == Some(*root)
+                }
+                ReadScopeV1::Topic(topic) => target.topic_id == Some(*topic),
+            };
+            if target.sequence != position.target_sequence || !in_scope {
+                return Err(CheckpointError::Invalid);
+            }
+        }
     }
     if minimum > e.revision.0 {
         return Err(CheckpointError::Invalid);

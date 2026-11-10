@@ -538,10 +538,11 @@ Read positions are checkpointed private projection state. They do not increment
 the authoritative domain revision, enter any room-change feed, or disclose one
 participant's marker to another. Service identity is actor-derived and durable
 publication must commit marker state plus the exact request receipt before
-reply. The engine tranche implements the bounded registry and refuses checkpoint
-preparation while any marker exists, preventing silent loss before the next
-persistence profile lands. R46 remains open until persistence, service,
-protocol, wire, SDK, fixtures, and assurance evidence close together.
+reply. The engine tranche implements the bounded registry. Canonical engine
+profile 13 and enclosing service/host profile 15 records retain private markers
+through nested recovery without publishing them. R46 remains open until
+participant-bound service, protocol, wire, SDK, and assurance evidence close
+together.
 
 ## Wire profile V1
 

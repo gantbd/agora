@@ -90,6 +90,15 @@ fn fixture_engine() -> Engine {
             body: "hello revised".to_owned(),
         })
         .unwrap();
+    engine
+        .advance_read_position(
+            &"human".into(),
+            &"room".into(),
+            agora_engine::ReadScopeV1::Room,
+            engine.revision(),
+            root_message_id,
+        )
+        .unwrap();
     engine.acknowledge_events(EventSequence(2)).unwrap();
     engine
         .apply(CommandV2::Ban {
@@ -137,9 +146,9 @@ fn unhex(value: &str) -> Vec<u8> {
 }
 
 #[test]
-fn canonical_v12_checkpoint_is_immutable_and_recovers() {
+fn canonical_v13_checkpoint_is_immutable_and_recovers() {
     let prepared = fixture_engine().prepare_checkpoint(65_536).unwrap();
-    let expected_hex = include_str!("fixtures/checkpoint-v12.hex").trim();
+    let expected_hex = include_str!("fixtures/checkpoint-v13.hex").trim();
     assert_eq!(hex(prepared.bytes()), expected_hex);
 
     let recovered = Engine::recover_checkpoint(

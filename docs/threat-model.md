@@ -165,6 +165,15 @@ closed. Retention may remove every topic message while leaving the topic and its
 ordered creation fact; deployments must not infer completeness or resolution
 from an empty page.
 
+Private read positions are sensitive behavioral metadata even though they prove
+neither delivery nor attention. The engine exposes only the actor-keyed marker
+and rechecks current membership; leave, kick, and ban make it inaccessible
+without silently erasing it. Canonical recovery validates participant/room/scope
+keys, deterministic target identity, monotone sequence bounds, observed
+revision, and retained target relation where evidence remains. Hosts must not
+project markers to moderators, other participants, feeds, analytics, or agent
+harnesses without a separate consent and product-policy decision.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A
