@@ -3,7 +3,7 @@ use agora_engine::{
 };
 use agora_protocol::v2::{
     ClientIdV2, CommandV2, IdentifiedRoomEventV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
-    RequestV2,
+    RequestV2, ThreadedRoomEventV1,
 };
 use agora_service::v2::{
     ServiceLimitsV2, ServiceV2,
@@ -97,7 +97,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v9.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v10.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -205,7 +205,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 10;
+    future[8] = 11;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -598,6 +598,152 @@ fn identified_change_cursor_and_message_identity_survive_recovery_exactly() {
         panic!("identified history expected");
     };
     assert_eq!(history.messages[0].message_id, message_id);
+}
+
+#[test]
+fn thread_reply_page_feed_and_receipt_survive_recovery_exactly() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        message_id: root_id,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: 2,
+                logical_time: 1,
+                body: "root".to_owned(),
+                addressed_to: vec![],
+            },
+        ),
+    )
+    else {
+        panic!("root expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: feed_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::OpenThreadedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 3,
+            },
+        ),
+    )
+    else {
+        panic!("threaded feed expected");
+    };
+    let first_request = request(
+        3,
+        CommandV2::SpeakReply {
+            room_id: "room".to_owned(),
+            expected_revision: 3,
+            root_message_id: root_id,
+            logical_time: 2,
+            body: "one".to_owned(),
+            addressed_to: vec![],
+        },
+    );
+    let first_reply = service.execute(alice, first_request.clone());
+    let ReplyV2::Accepted(OutcomeV2::ReplyAccepted {
+        message_id: first_id,
+        ..
+    }) = &first_reply
+    else {
+        panic!("first reply expected");
+    };
+    let first_id = *first_id;
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                4,
+                CommandV2::SpeakReply {
+                    room_id: "room".to_owned(),
+                    expected_revision: 4,
+                    root_message_id: root_id,
+                    logical_time: 3,
+                    body: "two".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ReplyAccepted { .. })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::ThreadReplies(first_page)) = service.execute(
+        alice,
+        request(
+            5,
+            CommandV2::ThreadReplies {
+                room_id: "room".to_owned(),
+                root_message_id: root_id,
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("reply page expected");
+    };
+    let continuation = first_page.next.unwrap();
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(alice, first_request), first_reply);
+    let ReplyV2::Accepted(OutcomeV2::ThreadReplies(second_page)) = recovered.execute(
+        alice,
+        request(
+            6,
+            CommandV2::ThreadReplies {
+                room_id: "room".to_owned(),
+                root_message_id: root_id,
+                cursor: Some(continuation),
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("continued reply page expected");
+    };
+    assert_ne!(second_page.messages[0].message_id, first_id);
+    assert_eq!(second_page.messages[0].reply_to_root, Some(root_id));
+    let ReplyV2::Accepted(OutcomeV2::ThreadedChanges(changes)) = recovered.execute(
+        alice,
+        request(
+            7,
+            CommandV2::ThreadedChanges {
+                room_id: "room".to_owned(),
+                cursor: feed_cursor,
+                limit: 2,
+            },
+        ),
+    ) else {
+        panic!("threaded changes expected");
+    };
+    assert!(matches!(
+        &changes.changes[0].event,
+        ThreadedRoomEventV1::MessageAccepted(message)
+            if message.message_id == first_id && message.reply_to_root == Some(root_id)
+    ));
 }
 
 #[test]

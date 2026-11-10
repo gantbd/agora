@@ -102,6 +102,26 @@ pub enum CommandV2 {
         cursor: PageCursorV2,
         limit: u32,
     },
+    ThreadRoots {
+        room_id: String,
+        cursor: Option<PageCursorV2>,
+        limit: u32,
+    },
+    ThreadReplies {
+        room_id: String,
+        root_message_id: MessageIdV1,
+        cursor: Option<PageCursorV2>,
+        limit: u32,
+    },
+    OpenThreadedChanges {
+        room_id: String,
+        observed_revision: u64,
+    },
+    ThreadedChanges {
+        room_id: String,
+        cursor: PageCursorV2,
+        limit: u32,
+    },
     CreateRoom {
         room_id: String,
         name: String,
@@ -163,6 +183,14 @@ pub enum CommandV2 {
     SpeakIdentified {
         room_id: String,
         expected_revision: u64,
+        logical_time: u64,
+        body: String,
+        addressed_to: Vec<String>,
+    },
+    SpeakReply {
+        room_id: String,
+        expected_revision: u64,
+        root_message_id: MessageIdV1,
         logical_time: u64,
         body: String,
         addressed_to: Vec<String>,
@@ -262,6 +290,46 @@ impl fmt::Debug for CommandV2 {
                 limit,
             } => formatter
                 .debug_struct("IdentifiedChanges")
+                .field("room_id_bytes", &room_id.len())
+                .field("cursor", cursor)
+                .field("limit", limit)
+                .finish(),
+            Self::ThreadRoots {
+                room_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("ThreadRoots")
+                .field("room_id_bytes", &room_id.len())
+                .field("has_cursor", &cursor.is_some())
+                .field("limit", limit)
+                .finish(),
+            Self::ThreadReplies {
+                room_id,
+                root_message_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("ThreadReplies")
+                .field("room_id_bytes", &room_id.len())
+                .field("root_message_id", root_message_id)
+                .field("has_cursor", &cursor.is_some())
+                .field("limit", limit)
+                .finish(),
+            Self::OpenThreadedChanges {
+                room_id,
+                observed_revision,
+            } => formatter
+                .debug_struct("OpenThreadedChanges")
+                .field("room_id_bytes", &room_id.len())
+                .field("observed_revision", observed_revision)
+                .finish(),
+            Self::ThreadedChanges {
+                room_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("ThreadedChanges")
                 .field("room_id_bytes", &room_id.len())
                 .field("cursor", cursor)
                 .field("limit", limit)
@@ -375,6 +443,22 @@ impl fmt::Debug for CommandV2 {
                 .field("body_bytes", &body.len())
                 .field("addressed_count", &addressed_to.len())
                 .finish(),
+            Self::SpeakReply {
+                room_id,
+                expected_revision,
+                root_message_id,
+                logical_time,
+                body,
+                addressed_to,
+            } => formatter
+                .debug_struct("SpeakReply")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("root_message_id", root_message_id)
+                .field("logical_time", logical_time)
+                .field("body_bytes", &body.len())
+                .field("addressed_count", &addressed_to.len())
+                .finish(),
             Self::WithdrawMessage {
                 room_id,
                 expected_revision,
@@ -417,6 +501,7 @@ pub enum CapabilityV2 {
     AuthorWithdrawalV1,
     ModeratorRedactionV1,
     IdentifiedRoomChangesV1,
+    ThreadsV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -548,6 +633,32 @@ impl fmt::Debug for IdentifiedMessageV1 {
 }
 
 #[derive(Clone, Eq, PartialEq)]
+pub struct ThreadedMessageV1 {
+    pub message_id: MessageIdV1,
+    pub sequence: u64,
+    pub author: String,
+    pub logical_time: u64,
+    pub body: String,
+    pub addressed_to: Vec<String>,
+    pub reply_to_root: Option<MessageIdV1>,
+}
+
+impl fmt::Debug for ThreadedMessageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ThreadedMessageV1")
+            .field("message_id", &self.message_id)
+            .field("sequence", &self.sequence)
+            .field("author_bytes", &self.author.len())
+            .field("logical_time", &self.logical_time)
+            .field("body_bytes", &self.body.len())
+            .field("addressed_count", &self.addressed_to.len())
+            .field("is_reply", &self.reply_to_root.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct RoomPageV2 {
     pub revision: u64,
     pub rooms: Vec<RoomSummaryV2>,
@@ -588,6 +699,30 @@ pub struct IdentifiedMessagePageV1 {
     pub oldest_retained_sequence: u64,
     pub next_message_sequence: u64,
     pub next: Option<PageCursorV2>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ThreadMessagePageV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub root_message_id: Option<MessageIdV1>,
+    pub messages: Vec<ThreadedMessageV1>,
+    pub oldest_retained_sequence: u64,
+    pub next_message_sequence: u64,
+    pub next: Option<PageCursorV2>,
+}
+
+impl fmt::Debug for ThreadMessagePageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ThreadMessagePageV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("is_reply_page", &self.root_message_id.is_some())
+            .field("message_count", &self.messages.len())
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -886,6 +1021,155 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
     }
 }
 
+/// Additive room-event profile whose accepted-message variant carries a stable
+/// one-level root relationship.
+#[derive(Clone, Eq, PartialEq)]
+pub enum ThreadedRoomEventV1 {
+    RoomCreated {
+        owner: String,
+        admission: AdmissionPolicyV2,
+    },
+    InvitationRecorded {
+        participant_id: String,
+    },
+    ParticipantJoined {
+        participant_id: String,
+    },
+    ParticipantLeft {
+        participant_id: String,
+    },
+    RoleChanged {
+        participant_id: String,
+        role: RoleV2,
+    },
+    RoomPolicyChanged {
+        actor_id: String,
+        previous: AdmissionPolicyV2,
+        admission: AdmissionPolicyV2,
+    },
+    ParticipantKicked {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ParticipantBanned {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ParticipantUnbanned {
+        actor_id: String,
+        participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    MessageAccepted(ThreadedMessageV1),
+    MessageWithdrawn {
+        actor_id: String,
+        message_id: MessageIdV1,
+        sequence: u64,
+    },
+    MessageRedacted {
+        actor_id: String,
+        author_id: String,
+        message_id: MessageIdV1,
+        sequence: u64,
+        reason: String,
+        causation: [u8; 16],
+    },
+}
+
+impl fmt::Debug for ThreadedRoomEventV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RoomCreated { admission, .. } => formatter
+                .debug_struct("RoomCreated")
+                .field("admission", admission)
+                .finish_non_exhaustive(),
+            Self::InvitationRecorded { participant_id }
+            | Self::ParticipantJoined { participant_id }
+            | Self::ParticipantLeft { participant_id } => formatter
+                .debug_struct("ParticipantChange")
+                .field("participant_id_bytes", &participant_id.len())
+                .finish_non_exhaustive(),
+            Self::RoleChanged {
+                participant_id,
+                role,
+            } => formatter
+                .debug_struct("RoleChanged")
+                .field("participant_id_bytes", &participant_id.len())
+                .field("role", role)
+                .finish(),
+            Self::RoomPolicyChanged {
+                actor_id,
+                previous,
+                admission,
+            } => formatter
+                .debug_struct("RoomPolicyChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("previous", previous)
+                .field("admission", admission)
+                .finish(),
+            Self::ParticipantKicked {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            }
+            | Self::ParticipantBanned {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            }
+            | Self::ParticipantUnbanned {
+                actor_id,
+                participant_id,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("ModerationEvent")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("participant_id_bytes", &participant_id.len())
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::MessageAccepted(message) => formatter
+                .debug_tuple("MessageAccepted")
+                .field(message)
+                .finish(),
+            Self::MessageWithdrawn {
+                actor_id,
+                message_id,
+                sequence,
+            } => formatter
+                .debug_struct("MessageWithdrawn")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("sequence", sequence)
+                .finish(),
+            Self::MessageRedacted {
+                actor_id,
+                author_id,
+                message_id,
+                sequence,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("MessageRedacted")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("author_id_bytes", &author_id.len())
+                .field("message_id", message_id)
+                .field("sequence", sequence)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoomChangeV2 {
     pub event_sequence: u64,
@@ -914,6 +1198,33 @@ pub struct IdentifiedRoomChangePageV1 {
     pub changes: Vec<IdentifiedRoomChangeV1>,
     pub next: PageCursorV2,
     pub has_more: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ThreadedRoomChangeV1 {
+    pub event_sequence: u64,
+    pub revision: u64,
+    pub event: ThreadedRoomEventV1,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ThreadedRoomChangePageV1 {
+    pub revision: u64,
+    pub changes: Vec<ThreadedRoomChangeV1>,
+    pub next: PageCursorV2,
+    pub has_more: bool,
+}
+
+impl fmt::Debug for ThreadedRoomChangePageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ThreadedRoomChangePageV1")
+            .field("revision", &self.revision)
+            .field("change_count", &self.changes.len())
+            .field("next", &self.next)
+            .field("has_more", &self.has_more)
+            .finish()
+    }
 }
 
 impl fmt::Debug for IdentifiedRoomChangePageV1 {
@@ -980,12 +1291,15 @@ pub enum OutcomeV2 {
     Bans(BanPageV2),
     Messages(MessagePageV2),
     IdentifiedMessages(IdentifiedMessagePageV1),
+    ThreadRoots(ThreadMessagePageV1),
+    ThreadReplies(ThreadMessagePageV1),
     ChangesOpened {
         revision: u64,
         cursor: PageCursorV2,
     },
     Changes(RoomChangePageV2),
     IdentifiedChanges(IdentifiedRoomChangePageV1),
+    ThreadedChanges(ThreadedRoomChangePageV1),
     ChangeGap {
         current_revision: u64,
         cause: ChangeGapV2,
@@ -1024,6 +1338,12 @@ pub enum OutcomeV2 {
     IdentifiedMessageAccepted {
         revision: u64,
         message_id: MessageIdV1,
+        sequence: u64,
+    },
+    ReplyAccepted {
+        revision: u64,
+        message_id: MessageIdV1,
+        root_message_id: MessageIdV1,
         sequence: u64,
     },
     MessageWithdrawn {

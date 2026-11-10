@@ -47,6 +47,11 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `15` | RedactMessage | room, expected revision, message ID, reason, 16-byte opaque causation |
 | `16` | OpenIdentifiedChanges | room `text`, exact completed snapshot revision |
 | `17` | IdentifiedChanges | room `text`, required opaque cursor `u64`, limit |
+| `18` | ThreadRoots | room `text`, optional cursor, limit |
+| `19` | ThreadReplies | room `text`, 16-byte root message ID, optional cursor, limit |
+| `1a` | SpeakReply | room, expected revision, root message ID, logical time, body, addressed-participant list |
+| `1b` | OpenThreadedChanges | room `text`, exact completed snapshot revision |
+| `1c` | ThreadedChanges | room `text`, required opaque cursor `u64`, limit |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -59,7 +64,8 @@ a refusal. Outcome tags are Rooms `01`, Members `02`, Messages `03`, RoomCreated
 MessageAccepted `09`, ChangesOpened `0a`, Changes `0b`, ChangeGap `0c`, Kicked
 `0d`, Banned `0e`, Unbanned `0f`, RoomPolicyChanged `10`, Bans `11`, and
 Capabilities `12`, IdentifiedMessages `13`, IdentifiedMessageAccepted `14`, and
-MessageWithdrawn `15`, MessageRedacted `16`, and IdentifiedChanges `17`.
+MessageWithdrawn `15`, MessageRedacted `16`, IdentifiedChanges `17`, ThreadRoots
+`18`, ThreadReplies `19`, ReplyAccepted `1a`, and ThreadedChanges `1b`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -120,6 +126,20 @@ an identified message beginning with its opaque 16-byte message ID. This new
 outcome does not alter legacy Changes bytes or make the two cursor profiles
 substitutable.
 
+A threaded message is the identified-message grammar followed by a closed
+optional root-message ID (`00` absent, `01` plus 16 bytes). ThreadRoots pages
+require the page selector and every message relationship to be absent.
+ThreadReplies pages require one page root and the same root on every message;
+encoders and decoders reject inconsistent shapes. Both pages retain the normal
+revision, room, retained interval, and optional continuation fields.
+ReplyAccepted carries revision, reply ID, root ID, and sequence.
+
+OpenThreadedChanges reuses ChangesOpened but receives a separately typed service
+cursor. ThreadedChanges mirrors the identified closed event vocabulary; only
+event `06` uses the threaded-message grammar. Cross-use with legacy or
+identified feed cursors refuses. The relationship is reference metadata, not
+authority: every operation still rechecks membership and room role rules.
+
 ## Refusals
 
 | Tag | Refusal | Payload |
@@ -155,7 +175,9 @@ an admission-policy change, and a ban page preserving its authority-relevant
 prior role, a complete canonical capability inventory, an identified-message
 page, an author-withdrawal change, a moderator-redaction change, and an
 identity-bearing accepted-message change. Round-trip tests cover every command,
-outcome, refusal, room-event kind, and gap cause. Truncation, trailing data,
+outcome, refusal, room-event kind, and gap cause. Thread reply-page and threaded
+change fixtures additionally freeze the optional relationship grammar and page
+shape. Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push
 delivery, or an authenticated host.

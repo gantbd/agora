@@ -4,7 +4,8 @@ use agora_protocol::v2::{
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
     RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
-    RoomSummaryV2,
+    RoomSummaryV2, ThreadMessagePageV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
+    ThreadedRoomChangeV1, ThreadedRoomEventV1,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -149,6 +150,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::AuthorWithdrawalV1,
         CapabilityV2::ModeratorRedactionV1,
         CapabilityV2::IdentifiedRoomChangesV1,
+        CapabilityV2::ThreadsV1,
     ])))
 }
 
@@ -189,6 +191,73 @@ fn identified_changes_reply() -> WireReplyV2 {
                 }),
             }],
             next: PageCursorV2(22),
+            has_more: false,
+        },
+    )))
+}
+
+fn thread_replies_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadReplies(
+        ThreadMessagePageV1 {
+            revision: 23,
+            room_id: "private".to_owned(),
+            root_message_id: Some(MessageIdV1::new([0x90; 16])),
+            messages: vec![ThreadedMessageV1 {
+                message_id: MessageIdV1::new([0x91; 16]),
+                sequence: 6,
+                author: "bot".to_owned(),
+                logical_time: 11,
+                body: "thread reply".to_owned(),
+                addressed_to: vec!["alice".to_owned()],
+                reply_to_root: Some(MessageIdV1::new([0x90; 16])),
+            }],
+            oldest_retained_sequence: 4,
+            next_message_sequence: 7,
+            next: None,
+        },
+    )))
+}
+
+fn thread_roots_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadRoots(
+        ThreadMessagePageV1 {
+            revision: 23,
+            room_id: "private".to_owned(),
+            root_message_id: None,
+            messages: vec![ThreadedMessageV1 {
+                message_id: MessageIdV1::new([0x90; 16]),
+                sequence: 5,
+                author: "alice".to_owned(),
+                logical_time: 10,
+                body: "thread root".to_owned(),
+                addressed_to: Vec::new(),
+                reply_to_root: None,
+            }],
+            oldest_retained_sequence: 4,
+            next_message_sequence: 7,
+            next: None,
+        },
+    )))
+}
+
+fn threaded_changes_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadedChanges(
+        ThreadedRoomChangePageV1 {
+            revision: 23,
+            changes: vec![ThreadedRoomChangeV1 {
+                event_sequence: 22,
+                revision: 23,
+                event: ThreadedRoomEventV1::MessageAccepted(ThreadedMessageV1 {
+                    message_id: MessageIdV1::new([0x91; 16]),
+                    sequence: 6,
+                    author: "bot".to_owned(),
+                    logical_time: 11,
+                    body: "thread reply".to_owned(),
+                    addressed_to: vec!["alice".to_owned()],
+                    reply_to_root: Some(MessageIdV1::new([0x90; 16])),
+                }),
+            }],
+            next: PageCursorV2(23),
             has_more: false,
         },
     )))
@@ -289,6 +358,14 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
             encode_reply_v2(&identified_changes_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/identified-changes-reply-v2.hex")),
         ),
+        (
+            encode_reply_v2(&thread_replies_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/thread-replies-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&threaded_changes_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/threaded-changes-reply-v2.hex")),
+        ),
     ];
     for (actual, expected) in cases {
         assert_eq!(actual, expected);
@@ -364,6 +441,26 @@ fn every_v2_command_round_trips() {
             cursor: PageCursorV2(3),
             limit: 4,
         },
+        CommandV2::ThreadRoots {
+            room_id: "room".to_owned(),
+            cursor: Some(PageCursorV2(4)),
+            limit: 2,
+        },
+        CommandV2::ThreadReplies {
+            room_id: "room".to_owned(),
+            root_message_id: MessageIdV1::new([0x90; 16]),
+            cursor: None,
+            limit: 2,
+        },
+        CommandV2::OpenThreadedChanges {
+            room_id: "room".to_owned(),
+            observed_revision: 4,
+        },
+        CommandV2::ThreadedChanges {
+            room_id: "room".to_owned(),
+            cursor: PageCursorV2(3),
+            limit: 4,
+        },
         CommandV2::CreateRoom {
             room_id: "room".to_owned(),
             name: "Room".to_owned(),
@@ -429,6 +526,14 @@ fn every_v2_command_round_trips() {
             body: "identified".to_owned(),
             addressed_to: vec!["alice".to_owned()],
         },
+        CommandV2::SpeakReply {
+            room_id: "room".to_owned(),
+            expected_revision: 8,
+            root_message_id: MessageIdV1::new([0x90; 16]),
+            logical_time: 9,
+            body: "reply".to_owned(),
+            addressed_to: vec!["alice".to_owned()],
+        },
         CommandV2::WithdrawMessage {
             room_id: "room".to_owned(),
             expected_revision: 8,
@@ -487,6 +592,14 @@ fn every_v2_outcome_and_refusal_round_trips() {
             _ => unreachable!(),
         },
         match identified_messages_reply() {
+            WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
+            _ => unreachable!(),
+        },
+        match thread_roots_reply() {
+            WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
+            _ => unreachable!(),
+        },
+        match thread_replies_reply() {
             WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
             _ => unreachable!(),
         },
@@ -637,6 +750,16 @@ fn every_v2_outcome_and_refusal_round_trips() {
             WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
             _ => unreachable!(),
         },
+        match threaded_changes_reply() {
+            WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
+            _ => unreachable!(),
+        },
+        OutcomeV2::ReplyAccepted {
+            revision: 9,
+            message_id: MessageIdV1::new([0x91; 16]),
+            root_message_id: MessageIdV1::new([0x90; 16]),
+            sequence: 6,
+        },
         OutcomeV2::ChangeGap {
             current_revision: 10,
             cause: ChangeGapV2::Retention {
@@ -772,12 +895,103 @@ fn every_identified_change_event_round_trips() {
 }
 
 #[test]
+fn every_threaded_change_event_round_trips() {
+    let events = [
+        ThreadedRoomEventV1::RoomCreated {
+            owner: "alice".to_owned(),
+            admission: AdmissionPolicyV2::Open,
+        },
+        ThreadedRoomEventV1::InvitationRecorded {
+            participant_id: "bot".to_owned(),
+        },
+        ThreadedRoomEventV1::ParticipantJoined {
+            participant_id: "bot".to_owned(),
+        },
+        ThreadedRoomEventV1::ParticipantLeft {
+            participant_id: "bot".to_owned(),
+        },
+        ThreadedRoomEventV1::RoleChanged {
+            participant_id: "bot".to_owned(),
+            role: RoleV2::Moderator,
+        },
+        ThreadedRoomEventV1::MessageAccepted(ThreadedMessageV1 {
+            message_id: MessageIdV1::new([6; 16]),
+            sequence: 6,
+            author: "bot".to_owned(),
+            logical_time: 7,
+            body: "body".to_owned(),
+            addressed_to: vec!["alice".to_owned()],
+            reply_to_root: Some(MessageIdV1::new([5; 16])),
+        }),
+        ThreadedRoomEventV1::ParticipantKicked {
+            actor_id: "alice".to_owned(),
+            participant_id: "bot".to_owned(),
+            reason: "kick".to_owned(),
+            causation: [7; 16],
+        },
+        ThreadedRoomEventV1::ParticipantBanned {
+            actor_id: "alice".to_owned(),
+            participant_id: "bot".to_owned(),
+            reason: "ban".to_owned(),
+            causation: [8; 16],
+        },
+        ThreadedRoomEventV1::ParticipantUnbanned {
+            actor_id: "alice".to_owned(),
+            participant_id: "bot".to_owned(),
+            reason: "unban".to_owned(),
+            causation: [9; 16],
+        },
+        ThreadedRoomEventV1::RoomPolicyChanged {
+            actor_id: "alice".to_owned(),
+            previous: AdmissionPolicyV2::Open,
+            admission: AdmissionPolicyV2::InviteOnly,
+        },
+        ThreadedRoomEventV1::MessageWithdrawn {
+            actor_id: "bot".to_owned(),
+            message_id: MessageIdV1::new([11; 16]),
+            sequence: 6,
+        },
+        ThreadedRoomEventV1::MessageRedacted {
+            actor_id: "alice".to_owned(),
+            author_id: "bot".to_owned(),
+            message_id: MessageIdV1::new([12; 16]),
+            sequence: 6,
+            reason: "policy".to_owned(),
+            causation: [12; 16],
+        },
+    ];
+    for (index, event) in events.into_iter().enumerate() {
+        let reply = WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadedChanges(
+            ThreadedRoomChangePageV1 {
+                revision: 20,
+                changes: vec![ThreadedRoomChangeV1 {
+                    event_sequence: index as u64,
+                    revision: 20,
+                    event,
+                }],
+                next: PageCursorV2(21),
+                has_more: index % 2 == 0,
+            },
+        )));
+        let encoded = encode_reply_v2(&reply, limits()).unwrap();
+        assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), reply);
+    }
+}
+
+#[test]
 fn v2_decoding_is_closed_and_version_isolated() {
     let request = encode_request_v2(&create_request(), limits()).unwrap();
     for end in 0..request.len() {
         assert!(decode_request_v2(&request[..end], limits()).is_err());
     }
-    for reply in [rooms_reply(), messages_reply(), identified_changes_reply()] {
+    for reply in [
+        rooms_reply(),
+        messages_reply(),
+        identified_changes_reply(),
+        thread_roots_reply(),
+        thread_replies_reply(),
+        threaded_changes_reply(),
+    ] {
         let encoded = encode_reply_v2(&reply, limits()).unwrap();
         for end in 0..encoded.len() {
             assert!(decode_reply_v2(&encoded[..end], limits()).is_err());
@@ -826,6 +1040,19 @@ fn v2_decoding_is_closed_and_version_isolated() {
         decode_reply_v2(&unknown_identified_change_event, limits()),
         Err(WireDecodeError::UnknownTag)
     );
+    let mut unknown_threaded_change_event =
+        encode_reply_v2(&threaded_changes_reply(), limits()).unwrap();
+    unknown_threaded_change_event[36] = 0x7f;
+    assert_eq!(
+        decode_reply_v2(&unknown_threaded_change_event, limits()),
+        Err(WireDecodeError::UnknownTag)
+    );
+    let mut unknown_thread_root_tag = encode_reply_v2(&thread_replies_reply(), limits()).unwrap();
+    unknown_thread_root_tag[23] = 0x7f;
+    assert_eq!(
+        decode_reply_v2(&unknown_thread_root_tag, limits()),
+        Err(WireDecodeError::UnknownTag)
+    );
     let mut invalid_has_more = encode_reply_v2(&changes_reply(), limits()).unwrap();
     *invalid_has_more.last_mut().unwrap() = 2;
     assert_eq!(
@@ -850,6 +1077,31 @@ fn v2_decoding_is_closed_and_version_isolated() {
     assert_eq!(
         encode_reply_v2(&noncanonical, limits()),
         Err(WireEncodeError::Invalid)
+    );
+
+    let mut invalid_root_page = thread_roots_reply();
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadRoots(page))) =
+        &mut invalid_root_page
+    else {
+        unreachable!()
+    };
+    page.messages[0].reply_to_root = Some(MessageIdV1::new([0x90; 16]));
+    assert_eq!(
+        encode_reply_v2(&invalid_root_page, limits()),
+        Err(WireEncodeError::Invalid)
+    );
+
+    let mut mismatched_reply = encode_reply_v2(&thread_replies_reply(), limits()).unwrap();
+    let relation_offsets: Vec<_> = mismatched_reply
+        .windows(16)
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == [0x90; 16]).then_some(offset))
+        .collect();
+    assert_eq!(relation_offsets.len(), 2);
+    mismatched_reply[relation_offsets[1]] = 0x92;
+    assert_eq!(
+        decode_reply_v2(&mismatched_reply, limits()),
+        Err(WireDecodeError::Malformed)
     );
     let mut duplicate = fixture(include_str!("fixtures/capabilities-reply-v2.hex"));
     *duplicate.last_mut().unwrap() = 5;

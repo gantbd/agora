@@ -8,7 +8,7 @@ behavior, or wall-clock access.
 
 The v0.3 core provides bounded deterministic transitions, typed atomic refusal,
 room-local message ordering and retention, optimistic revisions, an ordered
-bounded outbox, replay-safe response publication, and canonical profile-7 checkpoints.
+bounded outbox, replay-safe response publication, and canonical profile-8 checkpoints.
 Messages may explicitly address a canonical bounded list of current room members.
 Participant kind never changes admission, role, speaking, or addressing behavior.
 
@@ -48,6 +48,11 @@ The `IdentifiedRoomChangesV1` capability carries that same stable identity in a
 parallel bounded room-change profile. Its cursor kind is isolated from the
 legacy feed, while ordering, membership checks, gaps, and authority remain
 unchanged.
+The `ThreadsV1` capability adds an authoritative one-level root/reply relation,
+independently bounded root and reply pages, and a relationship-preserving change
+profile. Replies cannot nest; withdrawn retained roots remain replyable, while
+evicted roots cannot receive new replies. Legacy and identified projections stay
+byte-compatible and deliberately omit the relationship.
 
 An independently versioned Service V2 checkpoint preserves the engine, pending
 outbox, client namespace, exact request replies, and live cursor consequences.
@@ -125,7 +130,7 @@ key. Matching replay returns the original transition without another message or
 revision. Changed content conflicts. The bounded volatile receipt index becomes
 durable only when a host persists it atomically with Agora state.
 
-The `AGORACP` version-7 codec validates bounds, canonical order, ownership/references,
+The `AGORACP` version-8 codec validates bounds, canonical order, ownership/references,
 message and event frontiers, addressed membership, bans, moderation evidence, publication attribution, and
 the exact unacknowledged outbox suffix. V1 bytes are refused because their agent
 activation state has no neutral interpretation. The codec proves neither origin

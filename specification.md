@@ -128,9 +128,9 @@ before message mutation at capacity. Publication deliberately addresses nobody;
 an orchestrator must use an explicit conversation command if addressing is part
 of the response semantics.
 
-## Checkpoint profile V7
+## Checkpoint profile V8
 
-The closed `AGORACP` version-7 codec captures limits, participants, rooms,
+The closed `AGORACP` version-8 codec captures limits, participants, rooms,
 membership, invitations, bans, retained message suffixes and addressing, complete publication
 records, revision/event frontiers, acknowledgment cursor, and pending events.
 Host byte/cardinality ceilings apply before checkpoint-owned limits or allocation.
@@ -223,7 +223,7 @@ position.
 
 ## Service checkpoint profile V2
 
-The `AGORASV` version-8 record is independent of public wire versioning and is
+The `AGORASV` version-10 record is independent of public wire versioning and is
 bound to an exact caller-supplied 16-byte store scope. It contains the canonical
 engine checkpoint, configured service limits, active client-to-participant
 bindings, ordered retired tombstones, exact request/reply receipts, private
@@ -239,7 +239,9 @@ requires byte-identical re-encoding. Opaque engine cursors have their own privat
 `AGORACUR` version-1 profile and remain observer/room/revision bound. Cursor kind
 5 is the authority-scoped ban page. The service profile uses outer page-kind 6
 for identified-message continuation while nesting the unchanged engine message
-cursor kind 3; this prevents legacy/identified handle substitution. Process-local
+cursor kind 3; this prevents legacy/identified handle substitution. Outer kinds
+7, 8, 9, and 10 respectively isolate identified changes, thread roots,
+root-bound thread replies, and threaded changes. Process-local
 usage counters reset on recovery and are intentionally absent from semantic
 checkpoint bytes.
 
@@ -247,8 +249,9 @@ checkpoint bytes.
 
 `Capabilities` returns one canonical strictly increasing list from a closed
 feature vocabulary: room lifecycle V2, retained history V2, room changes V1,
-moderation V1, room policy V1, ban observation V1, identified messages V1, and
-author withdrawal V1, and moderator redaction V1. The request is retained
+moderation V1, room policy V1, ban observation V1, identified messages V1,
+author withdrawal V1, moderator redaction V1, identified room changes V1, and
+threads V1. The request is retained
 and replayed under ordinary service request identity but performs no engine
 mutation. A listed capability means that this service implements the named
 syntax and semantics; it is not authentication, authorization, room membership,
@@ -308,6 +311,26 @@ evicted, already-tombstoned, unauthorized, stale, malformed, and over-bound
 requests are inert. The author, addressing, identity, and order remain visible;
 the withdrawal non-erasure boundaries apply equally to redaction.
 
+### One-level threads V1
+
+Every message stores either no relationship or one immutable root message ID.
+`SpeakReply` accepts only a retained same-room root whose own relationship is
+absent. Unknown or evicted roots and attempts to reply to a reply refuse before
+mutation. A withdrawn but retained root remains a valid target because
+tombstoning suppresses content rather than reference identity. Retained replies
+may continue to name a root later evicted by bounded history; recovery validates
+the canonical referenced-root set without manufacturing the root content.
+
+`ThreadRoots` and `ThreadReplies` are independent bounded observations over the
+same retained interval. Reply continuations bind the exact root in addition to
+observer, room, revision, service client, and page profile. `ThreadedMessageV1`
+adds a closed optional root ID to the identified message grammar, and the
+parallel threaded change profile preserves that relationship on accepted
+messages. Legacy and identified pages/feeds intentionally omit it and retain
+their exact bytes. Withdrawal and redaction clear bodies but never alter the
+relationship. Threads define no recursion, archive state, subscription,
+notification, unread state, workflow admission, or agent activation.
+
 ## Receipt-gated durable service V2
 
 `agora-durable` wraps exactly one `ServiceV2` and one Keystone checkpoint-store
@@ -347,7 +370,7 @@ requests, reconnect a host session, or prove server durability.
 
 ## Authenticated host checkpoint and durable publication V2
 
-The `AGORAHST` version-8 record is independently versioned and bound to an exact
+The `AGORAHST` version-10 record is independently versioned and bound to an exact
 16-byte store scope. It contains Host V2 limits, the next non-reused session
 frontier, every active mapping from opaque host session to verified subject,
 participant, service client and last verification time, the bounded retired

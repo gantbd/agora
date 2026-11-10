@@ -54,6 +54,14 @@ current members and therefore adds correlation surface, not authority. Every
 pull rechecks membership, and an ID never substitutes for a room role, cursor,
 or authenticated participant binding.
 
+Thread root IDs add relationship and participation metadata. Knowing a root or
+reply ID grants no read, reply, mutation, or feed authority. Root/reply/feed
+cursors are isolated and every use rechecks current membership; reply cursors
+also bind the root. Nested replies and unknown or evicted targets fail without
+state change. Withdrawal and redaction hide retained bodies but intentionally
+preserve the relationship, authorship, addressing, and order, so deployments
+must treat conversation topology as sensitive even after tombstoning.
+
 Author withdrawal rechecks current membership and exact authorship at the
 named message ID; participant kind, room role, and knowledge of the ID grant no
 substitute authority. A retained tombstone and retained acceptance event expose

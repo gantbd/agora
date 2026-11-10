@@ -3,7 +3,8 @@ use agora_protocol::v2::{
     IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
     IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
     MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReplyV2, RoleV2,
-    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
+    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadMessagePageV1,
+    ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
 };
 
 #[test]
@@ -30,6 +31,29 @@ fn v2_debug_output_is_content_safe() {
             logical_time: 2,
             body: "secret-body".to_owned(),
             addressed_to: vec!["secret-recipient".to_owned()],
+        },
+        CommandV2::SpeakReply {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 1,
+            root_message_id: MessageIdV1::new([0x60; 16]),
+            logical_time: 2,
+            body: "secret-body".to_owned(),
+            addressed_to: vec!["secret-recipient".to_owned()],
+        },
+        CommandV2::ThreadReplies {
+            room_id: "secret-room".to_owned(),
+            root_message_id: MessageIdV1::new([0x60; 16]),
+            cursor: Some(PageCursorV2(54)),
+            limit: 1,
+        },
+        CommandV2::OpenThreadedChanges {
+            room_id: "secret-room".to_owned(),
+            observed_revision: 1,
+        },
+        CommandV2::ThreadedChanges {
+            room_id: "secret-room".to_owned(),
+            cursor: PageCursorV2(55),
+            limit: 1,
         },
         CommandV2::Speak {
             room_id: "secret-room".to_owned(),
@@ -109,6 +133,47 @@ fn v2_debug_output_is_content_safe() {
             revision: 2,
             message_id: MessageIdV1::new([0x5b; 16]),
             sequence: 0,
+        }),
+        ReplyV2::Accepted(OutcomeV2::ThreadReplies(ThreadMessagePageV1 {
+            revision: 2,
+            room_id: "secret-room".to_owned(),
+            root_message_id: Some(MessageIdV1::new([0x60; 16])),
+            messages: vec![ThreadedMessageV1 {
+                message_id: MessageIdV1::new([0x61; 16]),
+                sequence: 1,
+                author: "secret-author".to_owned(),
+                logical_time: 3,
+                body: "secret-body".to_owned(),
+                addressed_to: vec!["secret-recipient".to_owned()],
+                reply_to_root: Some(MessageIdV1::new([0x60; 16])),
+            }],
+            oldest_retained_sequence: 0,
+            next_message_sequence: 2,
+            next: Some(PageCursorV2(56)),
+        })),
+        ReplyV2::Accepted(OutcomeV2::ThreadedChanges(ThreadedRoomChangePageV1 {
+            revision: 2,
+            changes: vec![ThreadedRoomChangeV1 {
+                event_sequence: 1,
+                revision: 2,
+                event: ThreadedRoomEventV1::MessageAccepted(ThreadedMessageV1 {
+                    message_id: MessageIdV1::new([0x61; 16]),
+                    sequence: 1,
+                    author: "secret-author".to_owned(),
+                    logical_time: 3,
+                    body: "secret-body".to_owned(),
+                    addressed_to: vec!["secret-recipient".to_owned()],
+                    reply_to_root: Some(MessageIdV1::new([0x60; 16])),
+                }),
+            }],
+            next: PageCursorV2(57),
+            has_more: false,
+        })),
+        ReplyV2::Accepted(OutcomeV2::ReplyAccepted {
+            revision: 2,
+            message_id: MessageIdV1::new([0x61; 16]),
+            root_message_id: MessageIdV1::new([0x60; 16]),
+            sequence: 1,
         }),
         ReplyV2::Accepted(OutcomeV2::MessageWithdrawn {
             revision: 3,

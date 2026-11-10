@@ -20,7 +20,7 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact ten-package workspace and nineteen canonical fixtures. These
+closes over the exact ten-package workspace and twenty-one canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -86,7 +86,7 @@ contents. The client test fixes the independent monotone V2 request namespace.
 No V2 authenticated host, persistence, transport, or uncertainty behavior is
 claimed.
 
-Wire V2 freezes twelve canonical frames and round-trips every V2 command,
+Wire V2 freezes fourteen canonical frames and round-trips every V2 command,
 outcome, and refusal. It independently exercises every truncation of
 representative request and reply frames, trailing data, V1/version mismatch,
 unknown command and cursor tags, text/list ceilings, and content-safe Debug
@@ -169,6 +169,15 @@ consumption, one stable ID across acceptance, history, feed, checkpoint
 recovery, and SDK decoding, membership-gap continuity, content-safe Debug, and
 all-event closed wire decoding. A separate canonical fixture freezes the new
 accepted-message grammar while the legacy change fixture remains byte-identical.
+
+The one-level thread scenarios prove human/agent-neutral reply acceptance,
+nested/unknown/evicted-target atomic refusal, independent root/reply pagination,
+root/profile cursor isolation without consumption, stable receipt/page/feed IDs,
+and relationship preservation through withdrawal, redaction, checkpoint, and
+exact replay. All threaded event variants and optional-root tags round-trip;
+semantic page-shape checks, nested unknown tags, every truncation, Debug safety,
+SDK construction, and two canonical wire fixtures close the public profile.
+Canonical profile-8 engine and profile-10 service/host fixtures close recovery.
 
 The gate does not establish a credential adapter, transport security,
 multi-host serialization, physical-device power-loss behavior, event delivery,

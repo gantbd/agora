@@ -4,6 +4,7 @@ use agora_engine::{
 use agora_protocol::v2::{
     AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, IdentifiedRoomEventV1,
     MessageIdV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomEventV2,
+    ThreadedRoomEventV1,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -12,6 +13,407 @@ fn request(id: u64, command: CommandV2) -> RequestV2 {
         request_id: RequestIdV2(id),
         command,
     }
+}
+
+#[test]
+fn v2_one_level_threads_preserve_identity_pages_and_feed_relationships() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        message_id: root_id,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: 4,
+                logical_time: 1,
+                body: "root".to_owned(),
+                addressed_to: vec![],
+            },
+        ),
+    )
+    else {
+        panic!("root acceptance expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: threaded_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::OpenThreadedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 5,
+            },
+        ),
+    )
+    else {
+        panic!("threaded change position expected");
+    };
+    let reply_request = request(
+        1,
+        CommandV2::SpeakReply {
+            room_id: "room".to_owned(),
+            expected_revision: 5,
+            root_message_id: root_id,
+            logical_time: 2,
+            body: "reply".to_owned(),
+            addressed_to: vec!["alice".to_owned()],
+        },
+    );
+    let accepted = service.execute(bot, reply_request.clone());
+    let ReplyV2::Accepted(OutcomeV2::ReplyAccepted {
+        message_id: reply_id,
+        root_message_id,
+        ..
+    }) = &accepted
+    else {
+        panic!("reply acceptance expected");
+    };
+    let reply_id = *reply_id;
+    assert_eq!(*root_message_id, root_id);
+    assert_eq!(service.execute(bot, reply_request), accepted);
+
+    let ReplyV2::Accepted(OutcomeV2::ThreadRoots(roots)) = service.execute(
+        alice,
+        request(
+            3,
+            CommandV2::ThreadRoots {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("root page expected");
+    };
+    assert_eq!(roots.messages[0].message_id, root_id);
+    assert_eq!(roots.messages[0].reply_to_root, None);
+    let ReplyV2::Accepted(OutcomeV2::ThreadReplies(replies)) = service.execute(
+        alice,
+        request(
+            4,
+            CommandV2::ThreadReplies {
+                room_id: "room".to_owned(),
+                root_message_id: root_id,
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("reply page expected");
+    };
+    assert_eq!(replies.messages[0].message_id, reply_id);
+    assert_eq!(replies.messages[0].reply_to_root, Some(root_id));
+    let ReplyV2::Accepted(OutcomeV2::ThreadedChanges(changes)) = service.execute(
+        alice,
+        request(
+            5,
+            CommandV2::ThreadedChanges {
+                room_id: "room".to_owned(),
+                cursor: threaded_cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("threaded change page expected");
+    };
+    assert!(matches!(
+        &changes.changes[0].event,
+        ThreadedRoomEventV1::MessageAccepted(message)
+            if message.message_id == reply_id && message.reply_to_root == Some(root_id)
+    ));
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                2,
+                CommandV2::SpeakReply {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    root_message_id: reply_id,
+                    logical_time: 3,
+                    body: "nested".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidInput)
+    );
+
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        message_id: second_root_id,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            6,
+            CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: 6,
+                logical_time: 4,
+                body: "second root".to_owned(),
+                addressed_to: vec![],
+            },
+        ),
+    )
+    else {
+        panic!("second root acceptance expected");
+    };
+    assert_ne!(second_root_id, root_id);
+    assert!(matches!(
+        service.execute(
+            bot,
+            request(
+                3,
+                CommandV2::SpeakReply {
+                    room_id: "room".to_owned(),
+                    expected_revision: 7,
+                    root_message_id: root_id,
+                    logical_time: 5,
+                    body: "second reply".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ReplyAccepted { .. })
+    ));
+
+    let ReplyV2::Accepted(OutcomeV2::ThreadRoots(root_page)) = service.execute(
+        alice,
+        request(
+            7,
+            CommandV2::ThreadRoots {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("bounded root page expected");
+    };
+    let root_cursor = root_page.next.expect("root continuation expected");
+    let ReplyV2::Accepted(OutcomeV2::ThreadReplies(reply_page)) = service.execute(
+        alice,
+        request(
+            8,
+            CommandV2::ThreadReplies {
+                room_id: "room".to_owned(),
+                root_message_id: root_id,
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("bounded reply page expected");
+    };
+    let reply_cursor = reply_page.next.expect("reply continuation expected");
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                9,
+                CommandV2::ThreadReplies {
+                    room_id: "room".to_owned(),
+                    root_message_id: root_id,
+                    cursor: Some(root_cursor),
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidCursor)
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                10,
+                CommandV2::ThreadRoots {
+                    room_id: "room".to_owned(),
+                    cursor: Some(reply_cursor),
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidCursor)
+    );
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                11,
+                CommandV2::ThreadRoots {
+                    room_id: "room".to_owned(),
+                    cursor: Some(root_cursor),
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ThreadRoots(_))
+    ));
+
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: identified_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            12,
+            CommandV2::OpenIdentifiedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 8,
+            },
+        ),
+    )
+    else {
+        panic!("identified change position expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: threaded_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            13,
+            CommandV2::OpenThreadedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 8,
+            },
+        ),
+    )
+    else {
+        panic!("threaded change position expected");
+    };
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                14,
+                CommandV2::ThreadedChanges {
+                    room_id: "room".to_owned(),
+                    cursor: identified_cursor,
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidCursor)
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                15,
+                CommandV2::IdentifiedChanges {
+                    room_id: "room".to_owned(),
+                    cursor: threaded_cursor,
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidCursor)
+    );
+
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                16,
+                CommandV2::WithdrawMessage {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                    message_id: root_id,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::MessageWithdrawn { .. })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::ReplyAccepted {
+        message_id: post_withdrawal_reply_id,
+        ..
+    }) = service.execute(
+        bot,
+        request(
+            4,
+            CommandV2::SpeakReply {
+                room_id: "room".to_owned(),
+                expected_revision: 9,
+                root_message_id: root_id,
+                logical_time: 6,
+                body: "reply after withdrawal".to_owned(),
+                addressed_to: vec![],
+            },
+        ),
+    )
+    else {
+        panic!("withdrawn retained root remains replyable");
+    };
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                17,
+                CommandV2::RedactMessage {
+                    room_id: "room".to_owned(),
+                    expected_revision: 10,
+                    message_id: post_withdrawal_reply_id,
+                    reason: "policy".to_owned(),
+                    causation: [0x77; 16],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::MessageRedacted { .. })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::ThreadReplies(replies)) = service.execute(
+        alice,
+        request(
+            18,
+            CommandV2::ThreadReplies {
+                room_id: "room".to_owned(),
+                root_message_id: root_id,
+                cursor: None,
+                limit: 10,
+            },
+        ),
+    ) else {
+        panic!("reply page expected after tombstones");
+    };
+    let redacted = replies
+        .messages
+        .iter()
+        .find(|message| message.message_id == post_withdrawal_reply_id)
+        .expect("redacted reply remains retained");
+    assert_eq!(redacted.reply_to_root, Some(root_id));
+    assert!(redacted.body.is_empty());
 }
 
 fn participant_engine() -> Engine {
@@ -1166,11 +1568,8 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 10);
-    assert_eq!(
-        capabilities.last(),
-        Some(&CapabilityV2::IdentifiedRoomChangesV1)
-    );
+    assert_eq!(capabilities.len(), 11);
+    assert_eq!(capabilities.last(), Some(&CapabilityV2::ThreadsV1));
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

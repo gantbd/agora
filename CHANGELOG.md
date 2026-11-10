@@ -53,12 +53,15 @@ follow Semantic Versioning once a public release contract is selected.
 - Added an identity-bearing room-change profile with isolated durable cursors,
   stable message IDs across receipt/history/feed/recovery, and canonical wire
   and SDK evidence without changing the legacy change grammar.
+- Added one-level threads with immutable root/reply identity, independent bounded
+  pages, isolated durable cursors, tombstone-safe references, a parallel threaded
+  change feed, canonical wire fixtures, and SDK evidence.
 
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 7, 9,
-  and 9 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 8, 10,
+  and 10 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

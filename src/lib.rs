@@ -170,6 +170,7 @@ pub struct Message {
     at: LogicalTime,
     body: String,
     addressed_to: Vec<ParticipantId>,
+    reply_to_root: Option<MessageId>,
 }
 
 impl Message {
@@ -204,6 +205,11 @@ impl Message {
     pub fn addressed_to(&self) -> &[ParticipantId] {
         &self.addressed_to
     }
+
+    /// Stable root reference for a one-level reply. Absence identifies a root.
+    pub fn reply_to_root(&self) -> Option<MessageId> {
+        self.reply_to_root
+    }
 }
 
 impl fmt::Debug for Message {
@@ -215,6 +221,7 @@ impl fmt::Debug for Message {
             .field("at", &self.at)
             .field("body_bytes", &self.body.len())
             .field("addressed_count", &self.addressed_to.len())
+            .field("is_reply", &self.reply_to_root.is_some())
             .finish()
     }
 }
@@ -478,6 +485,84 @@ pub struct MessagePage {
     pub next: Option<MessagePageCursor>,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ThreadMessageSelector {
+    Roots,
+    Replies(MessageId),
+}
+
+/// Opaque continuation for a root page or one root's reply page.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ThreadMessagePageCursor {
+    revision: Revision,
+    observer: ParticipantId,
+    room_id: RoomId,
+    selector: ThreadMessageSelector,
+    after_sequence: u64,
+}
+
+impl ThreadMessagePageCursor {
+    pub fn is_bound_to_roots(&self, observer: &ParticipantId, room_id: &RoomId) -> bool {
+        &self.observer == observer
+            && &self.room_id == room_id
+            && self.selector == ThreadMessageSelector::Roots
+    }
+
+    pub fn is_bound_to_replies(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        root_message_id: MessageId,
+    ) -> bool {
+        &self.observer == observer
+            && &self.room_id == room_id
+            && self.selector == ThreadMessageSelector::Replies(root_message_id)
+    }
+}
+
+impl fmt::Debug for ThreadMessagePageCursor {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ThreadMessagePageCursor")
+            .field("revision", &self.revision)
+            .field("observer_id_bytes", &self.observer.as_str().len())
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field(
+                "selector",
+                &match self.selector {
+                    ThreadMessageSelector::Roots => "roots",
+                    ThreadMessageSelector::Replies(_) => "replies",
+                },
+            )
+            .field("after_sequence", &self.after_sequence)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ThreadMessagePage {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub root_message_id: Option<MessageId>,
+    pub messages: Vec<Message>,
+    pub oldest_retained_sequence: u64,
+    pub next_message_sequence: u64,
+    pub next: Option<ThreadMessagePageCursor>,
+}
+
+impl fmt::Debug for ThreadMessagePage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ThreadMessagePage")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("is_reply_page", &self.root_message_id.is_some())
+            .field("message_count", &self.messages.len())
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
+}
+
 /// Opaque exclusive position in one member-visible room change stream.
 ///
 /// Positions are stable across canonical engine recovery. They are not bearer
@@ -587,6 +672,7 @@ struct Room {
     invitations: BTreeSet<ParticipantId>,
     bans: BTreeMap<ParticipantId, Role>,
     messages: VecDeque<Message>,
+    thread_roots: BTreeSet<MessageId>,
     message_identity_incarnation: u64,
     next_message_identity: u64,
     next_message_sequence: u64,
@@ -662,6 +748,7 @@ pub enum RoomActionV1 {
     Join,
     Leave,
     Speak,
+    Reply,
     WithdrawOwn,
     RedactAny,
     ManageRole,
@@ -688,6 +775,7 @@ impl CommandV2 {
             Self::Ban { .. } => Some(RoomActionV1::Ban),
             Self::Unban { .. } => Some(RoomActionV1::Unban),
             Self::Speak { .. } | Self::SpeakAddressed { .. } => Some(RoomActionV1::Speak),
+            Self::SpeakReply { .. } => Some(RoomActionV1::Reply),
             Self::WithdrawMessage { .. } => Some(RoomActionV1::WithdrawOwn),
             Self::RedactMessage { .. } => Some(RoomActionV1::RedactAny),
         }
@@ -764,6 +852,14 @@ pub enum CommandV2 {
         body: String,
         addressed_to: Vec<ParticipantId>,
     },
+    SpeakReply {
+        room_id: RoomId,
+        author: ParticipantId,
+        root_message_id: MessageId,
+        at: LogicalTime,
+        body: String,
+        addressed_to: Vec<ParticipantId>,
+    },
     WithdrawMessage {
         room_id: RoomId,
         actor: ParticipantId,
@@ -830,6 +926,11 @@ pub enum OutcomeV2 {
         room_id: RoomId,
         sequence: u64,
     },
+    ReplyAccepted {
+        room_id: RoomId,
+        root_message_id: MessageId,
+        sequence: u64,
+    },
     MessageWithdrawn {
         room_id: RoomId,
         actor: ParticipantId,
@@ -883,6 +984,7 @@ pub enum Refusal {
     InvalidRoleChange,
     InvalidPolicyChange,
     UnknownMessage,
+    InvalidReplyTarget,
     MessageAlreadyTombstoned,
     RevisionConflict {
         expected: Revision,
@@ -1532,6 +1634,129 @@ impl Engine {
         })
     }
 
+    /// Returns retained root messages in room sequence order.
+    pub fn thread_root_page(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        cursor: Option<&ThreadMessagePageCursor>,
+        limit: usize,
+    ) -> Result<ThreadMessagePage, ObservationRefusal> {
+        self.thread_message_page(
+            observer,
+            room_id,
+            ThreadMessageSelector::Roots,
+            cursor,
+            limit,
+        )
+    }
+
+    /// Returns retained one-level replies to one stable root in sequence order.
+    pub fn thread_reply_page(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        root_message_id: MessageId,
+        cursor: Option<&ThreadMessagePageCursor>,
+        limit: usize,
+    ) -> Result<ThreadMessagePage, ObservationRefusal> {
+        self.thread_message_page(
+            observer,
+            room_id,
+            ThreadMessageSelector::Replies(root_message_id),
+            cursor,
+            limit,
+        )
+    }
+
+    fn thread_message_page(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        selector: ThreadMessageSelector,
+        cursor: Option<&ThreadMessagePageCursor>,
+        limit: usize,
+    ) -> Result<ThreadMessagePage, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        if limit == 0 || limit > self.limits.max_messages_per_room {
+            return Err(ObservationRefusal::InvalidLimit);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        let after_sequence = if let Some(cursor) = cursor {
+            if &cursor.observer != observer
+                || &cursor.room_id != room_id
+                || cursor.selector != selector
+            {
+                return Err(ObservationRefusal::ForeignCursor);
+            }
+            if cursor.revision != self.revision {
+                return Err(ObservationRefusal::Stale {
+                    actual_revision: self.revision,
+                });
+            }
+            Some(cursor.after_sequence)
+        } else {
+            None
+        };
+
+        let matches = |message: &Message| match selector {
+            ThreadMessageSelector::Roots => message.reply_to_root.is_none(),
+            ThreadMessageSelector::Replies(root) => message.reply_to_root == Some(root),
+        };
+        let mut messages = Vec::new();
+        messages
+            .try_reserve_exact(limit)
+            .map_err(|_| ObservationRefusal::Capacity)?;
+        let mut has_more = false;
+        for message in &room.messages {
+            if after_sequence.is_some_and(|after| message.sequence <= after) || !matches(message) {
+                continue;
+            }
+            if messages.len() == limit {
+                has_more = true;
+                break;
+            }
+            messages.push(message.clone());
+        }
+        let next = if has_more {
+            Some(ThreadMessagePageCursor {
+                revision: self.revision,
+                observer: observer.clone(),
+                room_id: room_id.clone(),
+                selector,
+                after_sequence: messages
+                    .last()
+                    .ok_or(ObservationRefusal::InconsistentState)?
+                    .sequence,
+            })
+        } else {
+            None
+        };
+        Ok(ThreadMessagePage {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            root_message_id: match selector {
+                ThreadMessageSelector::Roots => None,
+                ThreadMessageSelector::Replies(root) => Some(root),
+            },
+            messages,
+            oldest_retained_sequence: room
+                .next_message_sequence
+                .checked_sub(room.messages.len() as u64)
+                .ok_or(ObservationRefusal::InconsistentState)?,
+            next_message_sequence: room.next_message_sequence,
+            next,
+        })
+    }
+
     /// Captures the exact stream position corresponding to a completed room
     /// snapshot at `observed_revision`.
     ///
@@ -1876,14 +2101,29 @@ impl Engine {
                 author,
                 at,
                 body,
-            } => self.speak(room_id, author, at, body, Vec::new()),
+            } => self.speak(room_id, author, at, body, Vec::new(), None),
             CommandV2::SpeakAddressed {
                 room_id,
                 author,
                 at,
                 body,
                 addressed_to,
-            } => self.speak(room_id, author, at, body, addressed_to),
+            } => self.speak(room_id, author, at, body, addressed_to, None),
+            CommandV2::SpeakReply {
+                room_id,
+                author,
+                root_message_id,
+                at,
+                body,
+                addressed_to,
+            } => self.speak(
+                room_id,
+                author,
+                at,
+                body,
+                addressed_to,
+                Some(root_message_id),
+            ),
             CommandV2::WithdrawMessage {
                 room_id,
                 actor,
@@ -2022,50 +2262,36 @@ impl Engine {
                 reason: reason.clone(),
                 causation: *causation,
             },
+            (CommandV2::Speak { room_id, .. }, OutcomeV2::MessageAccepted { sequence, .. }) => {
+                DomainEventV2::MessageAccepted {
+                    room_id: room_id.clone(),
+                    message: self
+                        .message(room_id, *sequence)
+                        .expect("accepted message remains retained")
+                        .clone(),
+                }
+            }
             (
-                CommandV2::Speak {
-                    room_id,
-                    author,
-                    at,
-                    body,
-                },
+                CommandV2::SpeakAddressed { room_id, .. },
                 OutcomeV2::MessageAccepted { sequence, .. },
             ) => DomainEventV2::MessageAccepted {
                 room_id: room_id.clone(),
-                message: Message {
-                    id: self
-                        .message(room_id, *sequence)
-                        .expect("accepted message remains retained")
-                        .id(),
-                    sequence: *sequence,
-                    author: author.clone(),
-                    at: *at,
-                    body: body.clone(),
-                    addressed_to: Vec::new(),
-                },
+                message: self
+                    .message(room_id, *sequence)
+                    .expect("accepted message remains retained")
+                    .clone(),
             },
             (
-                CommandV2::SpeakAddressed {
-                    room_id,
-                    author,
-                    at,
-                    body,
-                    addressed_to,
+                CommandV2::SpeakReply { .. },
+                OutcomeV2::ReplyAccepted {
+                    room_id, sequence, ..
                 },
-                OutcomeV2::MessageAccepted { sequence, .. },
             ) => DomainEventV2::MessageAccepted {
                 room_id: room_id.clone(),
-                message: Message {
-                    id: self
-                        .message(room_id, *sequence)
-                        .expect("accepted message remains retained")
-                        .id(),
-                    sequence: *sequence,
-                    author: author.clone(),
-                    at: *at,
-                    body: body.clone(),
-                    addressed_to: addressed_to.clone(),
-                },
+                message: self
+                    .message(room_id, *sequence)
+                    .expect("accepted reply remains retained")
+                    .clone(),
             },
             (
                 CommandV2::WithdrawMessage { .. },
@@ -2168,6 +2394,7 @@ impl Engine {
                 invitations: BTreeSet::new(),
                 bans: BTreeMap::new(),
                 messages: VecDeque::new(),
+                thread_roots: BTreeSet::new(),
                 message_identity_incarnation: self.next_event_sequence.0,
                 next_message_identity: 0,
                 next_message_sequence: 0,
@@ -2461,6 +2688,7 @@ impl Engine {
         at: LogicalTime,
         body: String,
         addressed_to: Vec<ParticipantId>,
+        reply_to_root: Option<MessageId>,
     ) -> Result<OutcomeV2, Refusal> {
         self.validate_nonempty_bounded(
             &body,
@@ -2473,6 +2701,16 @@ impl Engine {
         let room = self.room_ref(&room_id)?;
         if !room.members.contains_key(&author) {
             return Err(Refusal::NotMember(author));
+        }
+        if let Some(root_message_id) = reply_to_root {
+            let root = room
+                .messages
+                .iter()
+                .find(|message| message.id == root_message_id)
+                .ok_or(Refusal::UnknownMessage)?;
+            if root.reply_to_root.is_some() {
+                return Err(Refusal::InvalidReplyTarget);
+            }
         }
         if addressed_to.len() > self.limits.max_addressed_participants_per_message {
             return Err(Refusal::AddressedParticipantLimit);
@@ -2502,8 +2740,15 @@ impl Engine {
             .rooms
             .get_mut(&room_id)
             .expect("room established by validation");
-        if room.messages.len() == self.limits.max_messages_per_room {
-            room.messages.pop_front();
+        if room.messages.len() == self.limits.max_messages_per_room
+            && let Some(evicted) = room.messages.pop_front()
+            && let Some(root) = evicted.reply_to_root
+            && !room
+                .messages
+                .iter()
+                .any(|message| message.reply_to_root == Some(root))
+        {
+            room.thread_roots.remove(&root);
         }
         room.messages.push_back(Message {
             id: message_id,
@@ -2512,10 +2757,21 @@ impl Engine {
             at,
             body,
             addressed_to,
+            reply_to_root,
         });
         room.next_message_identity = next_message_identity;
         room.next_message_sequence = next;
-        Ok(OutcomeV2::MessageAccepted { room_id, sequence })
+        if let Some(root) = reply_to_root {
+            room.thread_roots.insert(root);
+        }
+        Ok(match reply_to_root {
+            Some(root_message_id) => OutcomeV2::ReplyAccepted {
+                room_id,
+                root_message_id,
+                sequence,
+            },
+            None => OutcomeV2::MessageAccepted { room_id, sequence },
+        })
     }
 
     fn withdraw_message(

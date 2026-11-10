@@ -70,6 +70,12 @@ The additive identified-change feed uses the same engine log and continuity
 laws but a distinct service cursor kind and outcome vocabulary. Cross-profile
 cursor substitution refuses without consuming either cursor. Stable message
 identity is reference data only; it does not alter sequence order or authority.
+The one-level thread profile adds independent root and root-bound reply cursors
+plus a threaded change cursor. All are client/observer/room/profile bound; reply
+continuations additionally bind the exact root. Substitution refuses without
+consumption. A reply names one retained non-reply root, and the immutable
+relationship survives withdrawal and redaction tombstones and exact recovery.
+This remains serialized bounded pull, not a subscription or execution trigger.
 
 ## Durable state and publication
 

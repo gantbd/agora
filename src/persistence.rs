@@ -103,6 +103,13 @@ impl Writer {
         }
         Ok(())
     }
+    fn message_id_option(&mut self, value: Option<MessageId>) -> Result<(), CheckpointError> {
+        self.byte(u8::from(value.is_some()))?;
+        if let Some(value) = value {
+            self.raw(&value.into_bytes())?;
+        }
+        Ok(())
+    }
     fn message(&mut self, m: &Message) -> Result<(), CheckpointError> {
         self.raw(&m.id.0)?;
         self.number(m.sequence)?;
@@ -113,7 +120,7 @@ impl Writer {
         for id in &m.addressed_to {
             self.text(id.as_str())?
         }
-        Ok(())
+        self.message_id_option(m.reply_to_root)
     }
     fn event(&mut self, e: &DomainEventV2) -> Result<(), CheckpointError> {
         match e {
@@ -319,6 +326,13 @@ impl<'a> Reader<'a> {
             _ => Err(CheckpointError::Invalid),
         }
     }
+    fn message_id_option(&mut self) -> Result<Option<MessageId>, CheckpointError> {
+        match self.byte()? {
+            0 => Ok(None),
+            1 => Ok(Some(MessageId::from_bytes(self.fixed()?))),
+            _ => Err(CheckpointError::Invalid),
+        }
+    }
     fn message(&mut self, l: Limits) -> Result<Message, CheckpointError> {
         let id = MessageId(self.fixed()?);
         let sequence = self.number()?;
@@ -333,6 +347,7 @@ impl<'a> Reader<'a> {
         for _ in 0..n {
             addressed_to.push(self.participant(l)?)
         }
+        let reply_to_root = self.message_id_option()?;
         Ok(Message {
             id,
             sequence,
@@ -340,6 +355,7 @@ impl<'a> Reader<'a> {
             at,
             body,
             addressed_to,
+            reply_to_root,
         })
     }
     fn event(&mut self, l: Limits) -> Result<DomainEventV2, CheckpointError> {
@@ -528,7 +544,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(7)?;
+        w.byte(8)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -568,6 +584,10 @@ impl Engine {
             for m in &room.messages {
                 w.message(m)?
             }
+            w.count(room.thread_roots.len())?;
+            for root in &room.thread_roots {
+                w.raw(&root.into_bytes())?;
+            }
         }
         w.count(self.publications.len())?;
         for (key, p) in &self.publications {
@@ -600,7 +620,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 7 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 8 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -663,6 +683,15 @@ impl Engine {
             for _ in 0..n {
                 messages.push_back(r.message(l)?)
             }
+            let n = r.count(l.max_messages_per_room)?;
+            let mut thread_roots = BTreeSet::new();
+            for _ in 0..n {
+                let root = MessageId::from_bytes(r.fixed()?);
+                if thread_roots.last().is_some_and(|old| old >= &root) {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                thread_roots.insert(root);
+            }
             insert(
                 &mut e.rooms,
                 id.clone(),
@@ -674,6 +703,7 @@ impl Engine {
                     invitations,
                     bans,
                     messages,
+                    thread_roots,
                     message_identity_incarnation,
                     next_message_identity,
                     next_message_sequence,
@@ -910,6 +940,60 @@ impl MessagePageCursor {
     }
 }
 
+impl ThreadMessagePageCursor {
+    pub fn prepare_checkpoint(
+        &self,
+        max_snapshot_bytes: usize,
+    ) -> Result<CursorCheckpointV1, CheckpointError> {
+        let mut writer = Writer {
+            bytes: Vec::new(),
+            max: max_snapshot_bytes,
+        };
+        writer.raw(CURSOR_MAGIC)?;
+        writer.byte(1)?;
+        writer.byte(6)?;
+        writer.number(self.revision.0)?;
+        writer.text(self.observer.as_str())?;
+        writer.text(self.room_id.as_str())?;
+        match self.selector {
+            ThreadMessageSelector::Roots => writer.byte(0)?,
+            ThreadMessageSelector::Replies(root) => {
+                writer.byte(1)?;
+                writer.raw(&root.into_bytes())?;
+            }
+        }
+        writer.number(self.after_sequence)?;
+        Ok(CursorCheckpointV1(writer.bytes))
+    }
+
+    pub fn recover_checkpoint(
+        bytes: &[u8],
+        bounds: CursorRecoveryLimitsV1,
+    ) -> Result<Self, CheckpointError> {
+        let mut reader = cursor_reader(bytes, bounds, 6)?;
+        let revision = Revision(reader.number()?);
+        let observer = ParticipantId::new(reader.text(bounds.max_participant_id_bytes)?);
+        let room_id = RoomId::new(reader.text(bounds.max_room_id_bytes)?);
+        let selector = match reader.byte()? {
+            0 => ThreadMessageSelector::Roots,
+            1 => ThreadMessageSelector::Replies(MessageId::from_bytes(reader.fixed()?)),
+            _ => return Err(CheckpointError::Invalid),
+        };
+        let cursor = Self {
+            revision,
+            observer,
+            room_id,
+            selector,
+            after_sequence: reader.number()?,
+        };
+        finish_cursor(&reader)?;
+        if cursor.observer.as_str().is_empty() || cursor.room_id.as_str().is_empty() {
+            return Err(CheckpointError::Invalid);
+        }
+        Ok(cursor)
+    }
+}
+
 impl RoomChangePosition {
     pub fn prepare_checkpoint(
         &self,
@@ -984,7 +1068,31 @@ fn valid_message(e: &Engine, room: &Room, m: &Message) -> Result<(), CheckpointE
         },
         false,
     )?;
-    validate_addressing(e, &m.addressed_to)
+    validate_addressing(e, &m.addressed_to)?;
+    if let Some(root) = m.reply_to_root {
+        let mut incarnation = [0_u8; 8];
+        let mut sequence = [0_u8; 8];
+        incarnation.copy_from_slice(&root.0[..8]);
+        sequence.copy_from_slice(&root.0[8..]);
+        let root_sequence = u64::from_be_bytes(sequence);
+        let retained_start = room
+            .next_message_sequence
+            .checked_sub(room.messages.len() as u64)
+            .ok_or(CheckpointError::Invalid)?;
+        if root == m.id
+            || u64::from_be_bytes(incarnation) != room.message_identity_incarnation
+            || root_sequence >= m.sequence
+            || (m.sequence >= retained_start && !room.thread_roots.contains(&root))
+        {
+            return Err(CheckpointError::Invalid);
+        }
+        if let Some(root_message) = room.messages.iter().find(|message| message.id == root)
+            && (root_message.reply_to_root.is_some() || root_message.sequence >= m.sequence)
+        {
+            return Err(CheckpointError::Invalid);
+        }
+    }
+    Ok(())
 }
 fn validate_addressing(e: &Engine, addressed_to: &[ParticipantId]) -> Result<(), CheckpointError> {
     if addressed_to.len() > e.limits.max_addressed_participants_per_message
@@ -1084,6 +1192,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             || room.invitations.len() > l.max_invitations_per_room
             || room.bans.len() > l.max_bans_per_room
             || room.messages.len() > l.max_messages_per_room
+            || room.thread_roots.len() > room.messages.len()
         {
             return Err(CheckpointError::Invalid);
         }
@@ -1135,6 +1244,20 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             }
             valid_message(e, room, m)?
         }
+        for root in &room.thread_roots {
+            if !room
+                .messages
+                .iter()
+                .any(|message| message.reply_to_root == Some(*root))
+                || room
+                    .messages
+                    .iter()
+                    .find(|message| message.id == *root)
+                    .is_some_and(|message| message.reply_to_root.is_some())
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
         minimum = minimum
             .checked_add(room.next_message_sequence)
             .and_then(|n| n.checked_add((room.members.len() - 1) as u64))
@@ -1174,9 +1297,9 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             },
             true,
         )?;
-        if e.message(room_id, *sequence)
-            .is_some_and(|message| !message.addressed_to.is_empty())
-        {
+        if e.message(room_id, *sequence).is_some_and(|message| {
+            !message.addressed_to.is_empty() || message.reply_to_root.is_some()
+        }) {
             return Err(CheckpointError::Invalid);
         }
     }

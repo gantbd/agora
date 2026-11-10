@@ -161,12 +161,46 @@
   resnapshot. Protocol V2, Service V2, Wire V2, and the remote-client facade
   carry the closed commands, events, gap causes, and opaque server cursor without
   granting cursor authority or defining push delivery.
+- **R33 — Moderated membership lifecycle:** kick, ban, and unban are bounded,
+  participant-kind-neutral room transitions authorized only by the current role
+  hierarchy. Their ordered events preserve actor, subject, reason, and opaque
+  causation; bans prevent reentry until an authorized unban.
+- **R34 — Observable room admission policy:** only the current owner may change
+  Open/InviteOnly policy. The ordered event preserves actor plus prior and new
+  policy without rewriting earlier invitation or admission facts.
+- **R35 — Authority-scoped ban observation:** owners and moderators may page a
+  canonical bounded ban set with prior-role evidence. Its cursor is observer,
+  room, revision, client, and profile bound; other participants learn no set.
+- **R36 — Closed capability discovery:** a connected participant may obtain one
+  canonical strictly ordered list from a finite feature vocabulary. Discovery
+  is replayable, nonmutating, descriptive, and grants no authority.
+- **R37 — Stable identified-message profile:** each accepted message has one
+  opaque restart-stable 128-bit reference distinct from order. Additive speak,
+  history, and change projections preserve that reference while legacy grammars
+  and authority laws remain unchanged and cursor profiles remain isolated.
+- **R38 — Author withdrawal:** a current member may tombstone only their own
+  retained message by stable ID. Identity, order, attribution, addressing, and
+  relationship metadata remain; retained bodies are scrubbed from history and
+  acceptance events without making a physical-erasure claim.
+- **R39 — Moderator message redaction:** authorized owners/moderators may
+  tombstone another eligible author's retained message with bounded reason and
+  opaque causation. Role hierarchy, exact replay, attribution, and the same
+  non-erasure boundary apply independently of author withdrawal.
+- **R40 — Identity-bearing room changes:** an additive bounded room-change
+  profile preserves stable message IDs across acceptance, history, feed, replay,
+  and recovery. Its cursor is not substitutable with the legacy feed cursor.
+- **R41 — One-level threads:** a reply names exactly one retained non-reply root
+  in the same room. The immutable relationship survives withdrawal, redaction,
+  replay, and recovery; retained tombstoned roots remain replyable, while unknown
+  or evicted roots and nested replies refuse atomically. Root pages, root-bound
+  reply pages, and threaded changes are independently bounded, client/observer/
+  room/profile bound, and additive to unchanged legacy and identified grammars.
 
 ## Explicitly open
 
 Additional physical durable storage adapters, durable event sinks,
-credential/Aegis verifier adapters, network transports, bans, message
-editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
+credential/Aegis verifier adapters, network transports, message revision history,
+thread archive/close, reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
 Credential/Aegis adapters, transport, backup/restore qualification, and durable
 profiles beyond the qualified single-owner local Unix directory remain open;
