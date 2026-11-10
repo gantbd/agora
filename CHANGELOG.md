@@ -24,6 +24,8 @@ follow Semantic Versioning once a public release contract is selected.
 - Added complete scope-bound Service V2 and private cursor checkpoints plus a
   receipt-gated durable owner with rollback, uncertainty fencing, and exact
   replay recovery over the Keystone storage port.
+- Added a V2 client uncertainty fence that distinguishes not-sent from
+  outcome-unknown, permits only exact replay, and exposes abandonment explicitly.
 
 ### Changed
 

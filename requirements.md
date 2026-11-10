@@ -122,6 +122,13 @@
   pre-offer checkpoint; store error, indeterminate commitment, weak
   acknowledgement, or invalid receipt suppresses the semantic result and fences
   the owner until recovery.
+- **R29 — Client uncertainty fence:** V2 port failures distinguish transmission
+  that did not begin from an outcome that may have committed. After an unknown
+  outcome, the client retains the exact request and permits only the equal
+  command to reuse that identity; a different command is locally fenced without
+  touching the port or allocating an ID. Not-sent retry does not clear earlier
+  uncertainty. Resolution by reply clears it; abandonment and port extraction
+  return the unresolved request explicitly and make no cancellation claim.
 
 ## Explicitly open
 

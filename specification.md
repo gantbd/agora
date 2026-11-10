@@ -165,8 +165,9 @@ conflicts. Engine revision conflict and observation staleness share a typed
 path or authority result.
 
 The transport-neutral `ClientV2` owns a monotone request namespace over an
-abstract V2 service port. It adds no connection lifecycle, authentication,
-transport, retry, cursor traversal, or uncertainty policy.
+abstract V2 service port. Its uncertainty fence is specified below; it adds no
+connection lifecycle, authentication, concrete transport, automatic retry, or
+cursor traversal policy.
 
 The volatile profile by itself makes no cross-restart cursor, request, client,
 or durability claim. The separately versioned service-checkpoint and durable
@@ -212,6 +213,22 @@ the store and resolves which checkpoint exists. This makes exact same-request
 replay the only safe resolution after transmission uncertainty. It does not make
 the abstract store durable: a physical adapter and its crash evidence are a
 separate qualification obligation.
+
+## Client uncertainty profile V2
+
+The V2 client port distinguishes `NotSent`, which establishes that transmission
+did not begin, from `OutcomeUnknown`, which means service commitment cannot be
+inferred. A fresh unknown outcome retains the complete `RequestV2`. While it is
+pending, only a structurally equal command may call the port, and it reuses the
+exact client/request identity. Different commands return `UnresolvedOutcome`
+locally without allocating a request ID or invoking transport. A not-sent exact
+retry leaves the original pending request intact; a reply clears it.
+
+There is no hidden retry. Explicit abandonment returns the unresolved request so
+the caller can account for the possible service-side outcome. Extracting the
+port likewise returns any pending request rather than silently treating it as
+cancelled. The client fence is process-local and does not itself persist pending
+requests, reconnect a host session, or prove server durability.
 
 ## Wire profile V2
 

@@ -24,7 +24,7 @@ impl client::v2::ServicePortV2 for PortV2 {
         &mut self,
         _client: protocol::v2::ClientIdV2,
         _request: protocol::v2::RequestV2,
-    ) -> Result<protocol::v2::ReplyV2, Self::Error> {
+    ) -> Result<protocol::v2::ReplyV2, client::v2::PortFailureV2<Self::Error>> {
         Ok(protocol::v2::ReplyV2::Refused(
             protocol::v2::RefusalV2::UnknownRoom,
         ))

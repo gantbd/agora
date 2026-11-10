@@ -41,6 +41,9 @@ authenticated host profile v0.1, and store-neutral durable-service boundary on
 - `agora-durable` pre-reply compare-and-exchange gating with durable-strength
   receipt validation, known-refusal rollback, replay-without-store, and
   indeterminate-outcome fencing;
+- V2 client uncertainty fencing with exact-request replay, not-sent versus
+  outcome-unknown distinction, different-command suppression, and explicit
+  abandonment evidence;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.

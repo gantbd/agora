@@ -71,6 +71,12 @@ service. Unknown outcome, store error, weak acknowledgement, or malformed receip
 fences the owner. No mutable service access is exposed while fenced. This closes
 the semantic pre-reply gate, not the physical store adapter.
 
+`ClientV2` mirrors that uncertainty boundary without assuming a transport. A
+port reports either definitely-not-sent or outcome-unknown. Unknown retains the
+exact request; only equal-command replay may cross the port until reply or
+explicit abandonment. Extraction returns the pending request. The client does
+not retry automatically or infer cancellation.
+
 ## Deliberate exclusions
 
 The profile performs no network I/O, encryption, physical storage,

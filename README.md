@@ -32,6 +32,10 @@ outbox, client namespace, exact request replies, and live cursor consequences.
 receipt, restores known refusals, and fences indeterminate outcomes. A physical
 store adapter is still a separate qualification.
 
+The V2 client separately fences an outcome-unknown transmission: only the exact
+same command may reuse the retained request identity until a reply resolves it
+or the caller explicitly abandons and accounts for the unresolved request.
+
 The repository also contains an initial transport-neutral operational profile:
 
 - `agora-protocol` owns closed request, reply, snapshot, and refusal values;

@@ -44,8 +44,9 @@ bounded wire codec. It supplies no socket or stream transport, connection
 lifecycle, credentials, retry loop, service discovery, or engine access. A
 Connect participant ID remains an unauthenticated claim until a host verifies it.
 The same dependency closure exposes the separately typed V2 client, protocol,
-and wire modules; it does not imply that a V2 authenticated host or transport is
-available.
+and wire modules, including the process-local exact-request uncertainty fence;
+it does not imply that a V2 authenticated host, durable client journal, or
+transport is available.
 
 ## Laws and evidence
 

@@ -124,6 +124,13 @@ resolves the store. Weak acknowledgement and store error never publish. This is
 store-port and crash-point evidence, not qualification of a filesystem, database,
 cloud service, power-loss boundary, backup, restore, or multi-process owner.
 
+Client V2 scenarios distinguish definitely-not-sent from outcome-unknown,
+retain and resend the exact request identity only for an equal command, fence a
+different command without transport access, keep uncertainty through a later
+not-sent retry, and return the unresolved request on explicit abandonment or
+port extraction. They establish no automatic retry, durable client state, or
+session reconnection behavior.
+
 The gate does not establish a credential adapter, transport security,
 multi-process serialization, physical durable storage, event delivery,
 distributed availability, or orchestrator correctness. Those claims require
