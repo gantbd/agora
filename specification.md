@@ -526,6 +526,22 @@ The topic-aware change profile uses the shared ordered outbox but carries the
 optional topic relation on accepted messages; older profiles deliberately omit
 it and keep their existing bytes. Topic IDs grant no additional authority.
 
+## Planned private read-position profile V1
+
+The accepted architecture defines private current-state markers keyed by actor,
+room, and one closed room/thread/topic scope. An advance names an exact retained
+message and exact observed engine revision, validates current membership and
+scope membership, and may only move forward by room-local message sequence.
+Repeating the same target is idempotent; regression refuses without mutation.
+
+Read positions are checkpointed private projection state. They do not increment
+the authoritative domain revision, enter any room-change feed, or disclose one
+participant's marker to another. Service identity is actor-derived and durable
+publication must commit marker state plus the exact request receipt before
+reply. This section records the accepted target contract; R46 remains open until
+the engine, persistence, service, protocol, wire, SDK, fixtures, and assurance
+evidence close together.
+
 ## Wire profile V1
 
 `agora-wire` canonically encodes passive protocol V1 requests and replies using

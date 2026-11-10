@@ -81,6 +81,8 @@ not ready for a network service or crates.io release.
 
 ## Open release blockers
 
+- R46 private read positions have an accepted architecture but no implementation,
+  compatibility fixtures, recovery proof, or release evidence yet;
 - no self-contained dependency/release provenance or remote CI; the source
   profile still requires the documented sibling Keystone checkout;
 - SDK facades are not approved or configured for registry publication;

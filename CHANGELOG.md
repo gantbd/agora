@@ -8,6 +8,9 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Accepted the private monotone read-position architecture: self-scoped room,
+  thread, and topic markers are durable private projection state, never public
+  events or evidence of delivery, attention, or execution.
 - Added audience-specific embedded and remote-client SDK facades.
 - Added exact package and canonical-fixture compatibility inventories with
   adversarial drift checks.

@@ -230,13 +230,20 @@
   pages plus a profile-isolated topic-aware feed. Legacy, identified, and
   threaded message grammars remain unchanged. Topic knowledge grants no
   authority, subscription, notification, workflow, or execution meaning.
+- **R46 — Private monotone read positions:** a current member may advance and
+  inspect only its own bounded room-, retained-thread-, or stable-topic-scoped
+  marker through an exact retained target and observation revision. Markers are
+  monotone, durable private projection state; they publish no room event, do not
+  alter domain revision, survive unrelated membership and retention changes,
+  and prove no delivery, attention, presence, execution, or completion.
 
 ## Explicitly open
 
 Additional physical durable storage adapters, durable event sinks,
 credential/Aegis verifier adapters, network transports, end-to-end encryption,
 federation, delivery
-acknowledgment, and durable audit are not part of the v0.3 claim.
+acknowledgment, durable audit, and implementation evidence for R46 are not part
+of the current v0.3 claim.
 Credential/Aegis adapters, transport, backup/restore qualification, and durable
 profiles beyond the qualified single-owner local Unix directory remain open;
 Protocol V1 bytes and semantics are unchanged.
