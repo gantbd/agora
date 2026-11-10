@@ -18,6 +18,8 @@ follow Semantic Versioning once a public release contract is selected.
 - Completed participant-bound private read-position service execution, closed
   protocol and canonical wire values, SDK reachability, exact receipt recovery,
   and durable commit-before-reply/lost-reply qualification.
+- Added a finite exhaustive read-position schedule model across both participant
+  kinds, all scope variants, and every three-step ordering of three targets.
 - Added audience-specific embedded and remote-client SDK facades.
 - Added exact package and canonical-fixture compatibility inventories with
   adversarial drift checks.

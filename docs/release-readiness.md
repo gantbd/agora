@@ -51,6 +51,8 @@ not ready for a network service or crates.io release.
 - private monotone room/thread/topic read positions with participant-derived
   authority, closed public values and canonical bytes, exact receipt recovery,
   zero room revision/event effect, and durable lost-reply replay;
+- exhaustive finite three-step read-position schedules across both participant
+  kinds and all room/thread/topic scope variants against a monotone reference;
 - authenticated transport-neutral Host V2 with distinct session/client binding,
   per-frame revalidation, substitution fencing, and cleanup;
 - independently versioned, scope-bound Service V2 checkpoints preserving engine,

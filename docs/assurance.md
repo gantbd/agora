@@ -229,6 +229,10 @@ stale/regression/target refusal, membership inaccessibility, retention survival,
 and zero domain-revision or outbox effect. Canonical profile-13 engine and
 profile-15 service/host fixtures retain exact markers through nested recovery;
 truncation, profile, scope, ceiling, and canonical-state checks remain closed.
+An exhaustive finite model additionally runs every length-three schedule over
+three ordered targets for both participant kinds and all three scope variants,
+checking the monotone reference state plus revision/outbox invariance after each
+operation. It is bounded counterexample search, not an unbounded proof.
 Participant-bound public service, wire, SDK, and durable lost-reply evidence is
 covered by actor-derived service execution and replay tests, exhaustive closed
 wire round trips and a frozen marker fixture, facade-only SDK construction,
