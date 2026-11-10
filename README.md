@@ -12,6 +12,16 @@ bounded outbox, replay-safe response publication, and canonical V2 checkpoints.
 Messages may explicitly address a canonical bounded list of current room members.
 Participant kind never changes admission, role, speaking, or addressing behavior.
 
+The repository also contains an initial transport-neutral operational profile:
+
+- `agora-protocol` owns closed request, reply, snapshot, and refusal values;
+- `agora-service` serially owns one engine, binds each connected client to one
+  registered participant, and provides bounded replay-safe requests;
+- `agora-client` owns a monotone request namespace over an abstract service port.
+
+These crates add no authentication, network transport, durable execution, or
+agent behavior. See the [service architecture](docs/service-architecture.md).
+
 ## Boundary
 
 The engine accepts `RevisionedCommandV2` and returns `TransitionV2`. The
@@ -38,6 +48,10 @@ message and event frontiers, addressed membership, publication attribution, and
 the exact unacknowledged outbox suffix. V1 bytes are refused because their agent
 activation state has no neutral interpretation. The codec proves neither origin
 authentication nor storage durability.
+
+The service's `ClientIdV1` and request IDs are correlation handles, not
+credentials. A host must authenticate `connect`, bind the returned handle to its
+transport context, and never trust a client-supplied participant identity.
 
 ## Assurance
 

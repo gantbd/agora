@@ -15,6 +15,14 @@ Status: initial STRIDE/LINDDUN analysis for the v0.3 core boundary.
 | Unawareness/intervenability | no consent or notification UX exists in the core | clients communicate policy and provide controls |
 | Non-compliance | retention is bounded but deletion/export policy is absent | deployment supplies policy, jurisdiction, and audit controls |
 
+The volatile service narrows impersonation by deriving message authors from a
+server-owned connection binding and narrows room disclosure by requiring
+membership for snapshots. It does not authenticate the participant supplied to
+`connect`. `ClientIdV1` is sequential and forgeable by design; a transport host
+must never expose it as a bearer credential or accept it without a separately
+authenticated connection binding. Retained request replies may contain message
+content and therefore inherit the deployment's memory-protection obligations.
+
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.
 

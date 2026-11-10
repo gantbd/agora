@@ -13,3 +13,11 @@ purpose-built migration tool before adopting V2.
 Future compatible additions require either a reserved representation or a new
 closed version. Unknown tags, fields, or trailing bytes remain refusals.
 
+The immutable `tests/fixtures/checkpoint-v2.hex` artifact pins a representative
+V2 state containing both participant kinds, neutral addressing, replay-safe
+publication, acknowledgment, and the exact pending outbox suffix.
+
+The operational protocol is separately versioned as `V1` values. It is currently
+an in-process semantic contract, not a byte encoding. A future wire codec must
+define its own framing, canonical encoding, ceilings, and unknown-version policy.
+

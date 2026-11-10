@@ -17,12 +17,15 @@ This ledger records current evidence. Open work is not a pass.
 | R11 bounded delivery | bounded `EventEnvelopeV2` queue and monotone acknowledgment cursor | saturation, release, beyond-edge, and regression scenarios | Satisfied for volatile outbox; durability open |
 | R12 neutral addressing | `SpeakAddressed`, canonical member list retained in `Message` | kind-symmetry, order, membership, capacity, redaction, checkpoint, and bounded-model scenarios | Satisfied for represented message addressing; execution intentionally excluded |
 | R13 replay-safe publication | opaque fixed-width key and bounded exact-content transition index | matching lost-reply replay, key conflict, saturation atomicity, and debug-redaction scenarios | Satisfied for volatile in-process profile; durable persistence open |
+| R14 participant-bound requests | service-side client-to-participant binding and member-gated snapshot | author derivation, kind symmetry, addressing, and outsider snapshot scenarios | Satisfied for trusted in-process connections |
+| R15 replay-safe service calls | bounded exact request/reply receipt map | matching replay, changed-request conflict, disconnect reclamation, and receipt saturation scenarios | Satisfied for volatile service lifetime |
+| R16 layered dependencies | workspace crate split and normal dependency checks | boundary script plus workspace build | Satisfied for current crates |
 
 ## Verification gates
 
 `make check` runs formatting, Clippy with warnings denied, all tests offline,
 doctests, and warning-denied documentation. This establishes only the in-process
-core behavior exercised by those checks. It does not establish host authentication,
+core and volatile service behavior exercised by those checks. It does not establish host authentication,
 transport security, persistence durability, distributed ordering, or connector
 behavior.
 

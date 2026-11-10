@@ -88,3 +88,20 @@ V1 checkpoint bytes are intentionally refused rather than reinterpreted. V1
 contained agent-activation state that has no participant-neutral equivalent.
 Checkpoint origin authentication, storage atomicity, and durability remain host
 or adapter obligations.
+
+## Volatile service profile V1
+
+The service owns one engine behind a serialized mutable boundary. A successful
+trusted-host connection binds a service-allocated client handle to one registered
+participant. Commands cannot supply their speaking author. Snapshot access
+requires current room membership.
+
+The key `(ClientIdV1, RequestIdV1)` binds to one exact request and retained
+reply. Matching replay returns the reply without invoking the engine. Changed
+content conflicts. New requests backpressure before invocation when the bounded
+receipt index is full. Disconnect is idempotent through a bounded retired-client
+tombstone and releases that client's receipts.
+
+All service state is volatile. Handles are correlation values rather than
+credentials. Authentication, transport binding, persistence, and distributed
+serialization remain host obligations.

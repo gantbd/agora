@@ -1,6 +1,6 @@
 # Assurance plan
 
-Status: active for the v0.3 in-process core.
+Status: active for the v0.3 core and volatile service v0.1.
 
 Agora uses a requirements-to-scenario-to-invariant evidence chain. A behavior is
 claimed only when its requirement, closed public value, adversarial scenario, and
@@ -18,6 +18,12 @@ kind assignment for a three-participant room. This establishes symmetry only for
 that finite profile; it is executable counterexample search, not an unbounded
 proof. Checkpoint mutation tests cover truncation, trailing data, profile tags,
 host ceilings, and accepted single-bit changes.
+
+The service scenarios exercise participant-derived authorship, member-only
+snapshots, per-client request namespaces, matching retry, changed-request
+conflict, disconnect tombstones, and receipt saturation before engine mutation.
+The canonical V2 fixture detects accidental checkpoint drift and is recovered
+and re-encoded during the gate.
 
 The gate does not establish authentication, transport security, multi-process
 serialization, durable storage, event delivery, distributed availability, or

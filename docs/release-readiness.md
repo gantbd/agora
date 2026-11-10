@@ -1,7 +1,7 @@
 # Release readiness
 
-Status: source-ready for the declared v0.3 in-process profile on 2026-11-09; not
-ready for a standalone service or crates.io release.
+Status: source-ready for the declared v0.3 core and volatile service v0.1 on
+2026-11-09; not ready for a network service or crates.io release.
 
 ## Established
 
@@ -10,14 +10,16 @@ ready for a standalone service or crates.io release.
 - atomic typed refusal and optimistic revision fencing;
 - bounded outbox and replay-safe plain response publication;
 - canonical V2 checkpoint preparation and semantic recovery;
+- immutable representative V2 compatibility fixture;
+- transport-neutral protocol, serialized participant-bound service, and client
+  request profile with bounded volatile replay;
 - offline format, lint, test, doctest, and documentation gate.
 
 ## Open release blockers
 
 - no published dependency/release provenance or remote CI;
-- no authenticated service, wire protocol, or connector conformance package;
+- no authenticated host, wire codec, or connector conformance package;
 - no independently qualified durable Agora store;
-- no immutable compatibility fixtures for V2;
 - no performance, fuzzing, mutation, or supply-chain qualification;
 - no production privacy, deletion, moderation, or abuse policy.
 

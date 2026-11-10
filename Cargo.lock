@@ -3,5 +3,26 @@
 version = 4
 
 [[package]]
+name = "agora-client"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+ "agora-protocol",
+ "agora-service",
+]
+
+[[package]]
 name = "agora-engine"
 version = "0.3.0"
+
+[[package]]
+name = "agora-protocol"
+version = "0.1.0"
+
+[[package]]
+name = "agora-service"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+ "agora-protocol",
+]

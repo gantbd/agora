@@ -32,10 +32,23 @@
   exact message publication. Matching replay returns the original transition;
   changed content conflicts; retained receipts are bounded.
 
+## Volatile service v0.1
+
+- **R14 — Participant-bound requests:** a connected client is bound to one
+  registered participant. Speaking derives its author from that binding and
+  room snapshots require membership. Human and agent participants follow the
+  same service path.
+- **R15 — Replay-safe service calls:** request identity is scoped by client;
+  matching replay returns the retained reply, changed content conflicts, and a
+  full bounded receipt index refuses before engine mutation.
+- **R16 — Layered dependencies:** protocol values do not depend on engine or
+  service internals, client interpretation depends only on protocol, and the
+  serialized service is the only operational layer that owns an engine.
+
 ## Explicitly open
 
-Durable storage adapters, durable event sinks, connection/session
-capabilities, bans, message
+Durable storage adapters, durable event sinks, authenticated connection/session
+capabilities, wire codecs, bans, message
 editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
 
