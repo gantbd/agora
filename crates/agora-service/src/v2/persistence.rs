@@ -351,6 +351,14 @@ impl ServiceV2 {
                         .map_err(|error| map_engine(error, true))?;
                     writer.blob(checkpoint.bytes())?;
                 }
+                CursorPage::Changes { room_id, position } => {
+                    writer.byte(4)?;
+                    writer.text(room_id.as_str())?;
+                    let checkpoint = position
+                        .prepare_checkpoint(max_snapshot_bytes)
+                        .map_err(|error| map_engine(error, true))?;
+                    writer.blob(checkpoint.bytes())?;
+                }
             }
         }
         Ok(ServiceCheckpointV2(writer.bytes))
@@ -500,6 +508,21 @@ impl ServiceV2 {
                         return Err(ServiceCheckpointErrorV2::Invalid);
                     }
                     CursorPage::Messages { room_id, cursor }
+                }
+                4 => {
+                    let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
+                    let position = RoomChangePosition::recover_checkpoint(
+                        reader.blob(bounds.max_snapshot_bytes)?,
+                        cursor_bounds,
+                    )
+                    .map_err(|error| map_engine(error, true))?;
+                    if room_id.as_str().is_empty()
+                        || !position.is_bound_to(participant, &room_id)
+                        || position.revision() > engine.revision()
+                    {
+                        return Err(ServiceCheckpointErrorV2::Invalid);
+                    }
+                    CursorPage::Changes { room_id, position }
                 }
                 _ => return Err(ServiceCheckpointErrorV2::Invalid),
             };

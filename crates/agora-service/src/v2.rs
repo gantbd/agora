@@ -3,12 +3,13 @@
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, MemberPageCursor, MessagePageCursor,
     ObservationRefusal, OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind,
-    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomId, RoomPageCursor,
+    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomChangeGap,
+    RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, ClientIdV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2, MessageV2,
-    OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
-    RoomPageV2, RoomSummaryV2,
+    AdmissionPolicyV2, ChangeGapV2, ClientIdV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2,
+    MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2,
+    RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -80,6 +81,10 @@ enum CursorPage {
     Messages {
         room_id: RoomId,
         cursor: MessagePageCursor,
+    },
+    Changes {
+        room_id: RoomId,
+        position: RoomChangePosition,
     },
 }
 
@@ -241,6 +246,15 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.messages(client, participant, room_id, *cursor, *limit),
+            CommandV2::OpenChanges {
+                room_id,
+                observed_revision,
+            } => self.open_changes(client, participant, room_id, *observed_revision),
+            CommandV2::Changes {
+                room_id,
+                cursor,
+                limit,
+            } => self.changes(client, participant, room_id, *cursor, *limit),
             CommandV2::CreateRoom {
                 room_id,
                 name,
@@ -508,6 +522,140 @@ impl ServiceV2 {
         }))
     }
 
+    fn open_changes(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        observed_revision: u64,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let position = self
+            .engine
+            .room_change_position(observer, &room, Revision(observed_revision))
+            .map_err(map_observation_refusal)?;
+        let cursor = self
+            .replace_cursor(
+                client,
+                None,
+                Some(CursorPage::Changes {
+                    room_id: room,
+                    position,
+                }),
+            )?
+            .ok_or(RefusalV2::Unavailable)?;
+        Ok(OutcomeV2::ChangesOpened {
+            revision: observed_revision,
+            cursor,
+        })
+    }
+
+    fn changes(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        cursor_id: PageCursorV2,
+        limit: u32,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let position = match self.cursor_for(client, cursor_id)? {
+            CursorPage::Changes {
+                room_id: bound_room,
+                position,
+            } if bound_room == room => position,
+            _ => return Err(RefusalV2::InvalidCursor),
+        };
+        match self
+            .engine
+            .room_change_page(observer, &room, &position, limit as usize)
+            .map_err(map_observation_refusal)?
+        {
+            RoomChangeResult::Gap {
+                cause,
+                current_revision,
+            } => {
+                self.replace_cursor(client, Some(cursor_id), None)?;
+                Ok(OutcomeV2::ChangeGap {
+                    current_revision: current_revision.0,
+                    cause: match cause {
+                        RoomChangeGap::Retention {
+                            acknowledged_through,
+                        } => ChangeGapV2::Retention {
+                            acknowledged_through: acknowledged_through.0,
+                        },
+                        RoomChangeGap::MembershipChanged => ChangeGapV2::MembershipChanged,
+                    },
+                })
+            }
+            RoomChangeResult::Page(page) => {
+                let next_position = page.next;
+                let next = self
+                    .replace_cursor(
+                        client,
+                        Some(cursor_id),
+                        Some(CursorPage::Changes {
+                            room_id: room,
+                            position: next_position,
+                        }),
+                    )?
+                    .ok_or(RefusalV2::Unavailable)?;
+                let changes = page
+                    .changes
+                    .into_iter()
+                    .map(|change| {
+                        let event = match change.event {
+                            agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
+                                return Err(RefusalV2::Unavailable);
+                            }
+                            agora_engine::DomainEventV2::RoomCreated {
+                                owner, admission, ..
+                            } => RoomEventV2::RoomCreated {
+                                owner: owner.as_str().to_owned(),
+                                admission: map_admission_from_engine(admission),
+                            },
+                            agora_engine::DomainEventV2::InvitationRecorded {
+                                participant, ..
+                            } => RoomEventV2::InvitationRecorded {
+                                participant_id: participant.as_str().to_owned(),
+                            },
+                            agora_engine::DomainEventV2::ParticipantJoined {
+                                participant, ..
+                            } => RoomEventV2::ParticipantJoined {
+                                participant_id: participant.as_str().to_owned(),
+                            },
+                            agora_engine::DomainEventV2::ParticipantLeft {
+                                participant, ..
+                            } => RoomEventV2::ParticipantLeft {
+                                participant_id: participant.as_str().to_owned(),
+                            },
+                            agora_engine::DomainEventV2::RoleChanged {
+                                participant, role, ..
+                            } => RoomEventV2::RoleChanged {
+                                participant_id: participant.as_str().to_owned(),
+                                role: map_role_from_engine(role),
+                            },
+                            agora_engine::DomainEventV2::MessageAccepted { message, .. } => {
+                                RoomEventV2::MessageAccepted(map_message_from_engine(message))
+                            }
+                        };
+                        Ok(RoomChangeV2 {
+                            event_sequence: change.sequence.0,
+                            revision: change.revision.0,
+                            event,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, RefusalV2>>()?;
+                Ok(OutcomeV2::Changes(RoomChangePageV2 {
+                    revision: page.revision.0,
+                    changes,
+                    next,
+                    has_more: page.has_more,
+                }))
+            }
+        }
+    }
+
     fn cursor_for(
         &self,
         client: ClientIdV2,
@@ -566,6 +714,8 @@ impl ServiceV2 {
             | CommandV2::Messages { room_id, limit, .. } => {
                 valid_room(room_id) && valid_page(*limit)
             }
+            CommandV2::OpenChanges { room_id, .. } => valid_room(room_id),
+            CommandV2::Changes { room_id, limit, .. } => valid_room(room_id) && valid_page(*limit),
             CommandV2::CreateRoom { room_id, name, .. } => {
                 valid_room(room_id) && valid_text(name, self.limits.max_room_name_bytes)
             }
@@ -601,6 +751,20 @@ impl ServiceV2 {
 
 fn valid_text(value: &str, maximum: usize) -> bool {
     !value.is_empty() && value.len() <= maximum
+}
+
+fn map_message_from_engine(message: agora_engine::Message) -> MessageV2 {
+    MessageV2 {
+        sequence: message.sequence(),
+        author: message.author().as_str().to_owned(),
+        logical_time: message.at().0,
+        body: message.body().to_owned(),
+        addressed_to: message
+            .addressed_to()
+            .iter()
+            .map(|participant| participant.as_str().to_owned())
+            .collect(),
+    }
 }
 
 fn map_admission_to_engine(value: AdmissionPolicyV2) -> AdmissionPolicy {

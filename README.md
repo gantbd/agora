@@ -15,8 +15,10 @@ Participant kind never changes admission, role, speaking, or addressing behavior
 The core also provides membership-filtered, bounded room, member, and retained-
 message pages. Their opaque cursors are bound to the exact observer, room where
 applicable, and engine revision; message pages expose the retained sequence
-interval rather than claiming complete history. This profile is not yet projected
-through the frozen Protocol V1 service or wire surface.
+interval rather than claiming complete history. A snapshot-aligned bounded room
+change feed continues from a stable event identity and returns explicit retention
+or leave/rejoin gaps requiring resnapshot. Protocol V2 projects these values;
+Protocol V1 remains frozen.
 
 An additive Protocol V2 now has a separately typed serialized service, client,
 and canonical version-2 complete-frame codec. It closes participant-bound room creation, invitation, joining,

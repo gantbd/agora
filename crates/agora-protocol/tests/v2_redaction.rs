@@ -1,6 +1,7 @@
 use agora_protocol::v2::{
     AdmissionPolicyV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2,
-    PageCursorV2, ParticipantKindV2, ReplyV2, RoleV2, RoomPageV2, RoomSummaryV2,
+    PageCursorV2, ParticipantKindV2, ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
+    RoomPageV2, RoomSummaryV2,
 };
 
 #[test]
@@ -51,6 +52,22 @@ fn v2_debug_output_is_content_safe() {
             next_message_sequence: 1,
             next: None,
         })),
+        ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 2,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 1,
+                revision: 2,
+                event: RoomEventV2::MessageAccepted(MessageV2 {
+                    sequence: 0,
+                    author: "secret-author".to_owned(),
+                    logical_time: 2,
+                    body: "secret-body".to_owned(),
+                    addressed_to: vec!["secret-recipient".to_owned()],
+                }),
+            }],
+            next: PageCursorV2(43),
+            has_more: false,
+        })),
     ];
     let rendered = format!("{command:?} {replies:?} {:?}", PageCursorV2(42));
     for secret in [
@@ -62,6 +79,7 @@ fn v2_debug_output_is_content_safe() {
         "secret-display",
         "secret-author",
         "42",
+        "43",
     ] {
         assert!(!rendered.contains(secret));
     }

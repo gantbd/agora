@@ -2,8 +2,8 @@ use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Participant, ParticipantKind,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, ClientIdV2, CommandV2, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
-    RequestV2, RoleV2,
+    AdmissionPolicyV2, ChangeGapV2, ClientIdV2, CommandV2, OutcomeV2, RefusalV2, ReplyV2,
+    RequestIdV2, RequestV2, RoleV2, RoomEventV2,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -457,4 +457,211 @@ fn v2_disconnect_reclaims_requests_and_cursors() {
         ),
         ReplyV2::Accepted(OutcomeV2::Rooms(_))
     ));
+}
+
+#[test]
+fn v2_change_feed_opens_at_snapshot_and_advances_exclusively() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let outsider = service.connect("outsider").unwrap();
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                0,
+                CommandV2::CreateRoom {
+                    room_id: "room".to_owned(),
+                    name: "Room".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 5 })
+    );
+    let ReplyV2::Accepted(OutcomeV2::Messages(snapshot)) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::Messages {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 4,
+            },
+        ),
+    ) else {
+        panic!("bounded snapshot expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision, cursor }) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: snapshot.revision,
+            },
+        ),
+    ) else {
+        panic!("change position expected");
+    };
+    assert_eq!(revision, snapshot.revision);
+    assert_eq!(
+        service.execute(
+            outsider,
+            request(
+                0,
+                CommandV2::Changes {
+                    room_id: "room".to_owned(),
+                    cursor,
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidCursor)
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                3,
+                CommandV2::Speak {
+                    room_id: "room".to_owned(),
+                    expected_revision: 5,
+                    logical_time: 1,
+                    body: "change".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::MessageAccepted {
+            revision: 6,
+            sequence: 0,
+        })
+    );
+    let change_request = request(
+        4,
+        CommandV2::Changes {
+            room_id: "room".to_owned(),
+            cursor,
+            limit: 1,
+        },
+    );
+    let reply = service.execute(alice, change_request.clone());
+    let ReplyV2::Accepted(OutcomeV2::Changes(page)) = &reply else {
+        panic!("change page expected");
+    };
+    assert_eq!(page.changes.len(), 1);
+    assert!(!page.has_more);
+    assert!(matches!(
+        page.changes[0].event,
+        RoomEventV2::MessageAccepted(_)
+    ));
+    assert_eq!(service.execute(alice, change_request), reply);
+    assert_eq!(service.usage().replayed, 1);
+}
+
+#[test]
+fn v2_change_feed_requires_resnapshot_after_leave_and_rejoin() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                0,
+                CommandV2::CreateRoom {
+                    room_id: "room".to_owned(),
+                    name: "Room".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 5 })
+    ));
+    assert!(matches!(
+        service.execute(
+            bot,
+            request(
+                0,
+                CommandV2::Join {
+                    room_id: "room".to_owned(),
+                    expected_revision: 5,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Joined { revision: 6 })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        bot,
+        request(
+            1,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 6,
+            },
+        ),
+    ) else {
+        panic!("change position expected");
+    };
+    assert!(matches!(
+        service.execute(
+            bot,
+            request(
+                2,
+                CommandV2::Leave {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Left { revision: 7 })
+    ));
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                1,
+                CommandV2::Speak {
+                    room_id: "room".to_owned(),
+                    expected_revision: 7,
+                    logical_time: 1,
+                    body: "while absent".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::MessageAccepted { revision: 8, .. })
+    ));
+    assert!(matches!(
+        service.execute(
+            bot,
+            request(
+                3,
+                CommandV2::Join {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Joined { revision: 9 })
+    ));
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                4,
+                CommandV2::Changes {
+                    room_id: "room".to_owned(),
+                    cursor,
+                    limit: 8,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ChangeGap {
+            current_revision: 9,
+            cause: ChangeGapV2::MembershipChanged,
+        })
+    );
 }

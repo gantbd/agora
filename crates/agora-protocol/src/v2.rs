@@ -54,6 +54,15 @@ pub enum CommandV2 {
         cursor: Option<PageCursorV2>,
         limit: u32,
     },
+    OpenChanges {
+        room_id: String,
+        observed_revision: u64,
+    },
+    Changes {
+        room_id: String,
+        cursor: PageCursorV2,
+        limit: u32,
+    },
     CreateRoom {
         room_id: String,
         name: String,
@@ -114,6 +123,24 @@ impl fmt::Debug for CommandV2 {
                 .debug_struct("Messages")
                 .field("room_id_bytes", &room_id.len())
                 .field("has_cursor", &cursor.is_some())
+                .field("limit", limit)
+                .finish(),
+            Self::OpenChanges {
+                room_id,
+                observed_revision,
+            } => formatter
+                .debug_struct("OpenChanges")
+                .field("room_id_bytes", &room_id.len())
+                .field("observed_revision", observed_revision)
+                .finish(),
+            Self::Changes {
+                room_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("Changes")
+                .field("room_id_bytes", &room_id.len())
+                .field("cursor", cursor)
                 .field("limit", limit)
                 .finish(),
             Self::CreateRoom {
@@ -293,6 +320,90 @@ pub struct MessagePageV2 {
     pub next: Option<PageCursorV2>,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub enum RoomEventV2 {
+    RoomCreated {
+        owner: String,
+        admission: AdmissionPolicyV2,
+    },
+    InvitationRecorded {
+        participant_id: String,
+    },
+    ParticipantJoined {
+        participant_id: String,
+    },
+    ParticipantLeft {
+        participant_id: String,
+    },
+    RoleChanged {
+        participant_id: String,
+        role: RoleV2,
+    },
+    MessageAccepted(MessageV2),
+}
+
+impl fmt::Debug for RoomEventV2 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RoomCreated { admission, .. } => formatter
+                .debug_struct("RoomCreated")
+                .field("admission", admission)
+                .finish_non_exhaustive(),
+            Self::InvitationRecorded { participant_id }
+            | Self::ParticipantJoined { participant_id }
+            | Self::ParticipantLeft { participant_id } => formatter
+                .debug_struct("ParticipantChange")
+                .field("participant_id_bytes", &participant_id.len())
+                .finish_non_exhaustive(),
+            Self::RoleChanged {
+                participant_id,
+                role,
+            } => formatter
+                .debug_struct("RoleChanged")
+                .field("participant_id_bytes", &participant_id.len())
+                .field("role", role)
+                .finish(),
+            Self::MessageAccepted(message) => formatter
+                .debug_tuple("MessageAccepted")
+                .field(message)
+                .finish(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoomChangeV2 {
+    pub event_sequence: u64,
+    pub revision: u64,
+    pub event: RoomEventV2,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct RoomChangePageV2 {
+    pub revision: u64,
+    pub changes: Vec<RoomChangeV2>,
+    pub next: PageCursorV2,
+    pub has_more: bool,
+}
+
+impl fmt::Debug for RoomChangePageV2 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RoomChangePageV2")
+            .field("revision", &self.revision)
+            .field("change_count", &self.changes.len())
+            .field("next", &self.next)
+            .field("has_more", &self.has_more)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChangeGapV2 {
+    Retention { acknowledged_through: u64 },
+    MembershipChanged,
+}
+
 macro_rules! page_debug {
     ($type:ty, $name:literal, $field:ident, $count:literal) => {
         impl fmt::Debug for $type {
@@ -317,12 +428,34 @@ pub enum OutcomeV2 {
     Rooms(RoomPageV2),
     Members(MemberPageV2),
     Messages(MessagePageV2),
-    RoomCreated { revision: u64 },
-    InvitationRecorded { revision: u64 },
-    Joined { revision: u64 },
-    Left { revision: u64 },
-    RoleChanged { revision: u64 },
-    MessageAccepted { revision: u64, sequence: u64 },
+    ChangesOpened {
+        revision: u64,
+        cursor: PageCursorV2,
+    },
+    Changes(RoomChangePageV2),
+    ChangeGap {
+        current_revision: u64,
+        cause: ChangeGapV2,
+    },
+    RoomCreated {
+        revision: u64,
+    },
+    InvitationRecorded {
+        revision: u64,
+    },
+    Joined {
+        revision: u64,
+    },
+    Left {
+        revision: u64,
+    },
+    RoleChanged {
+        revision: u64,
+    },
+    MessageAccepted {
+        revision: u64,
+        sequence: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

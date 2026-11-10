@@ -238,3 +238,57 @@ fn any_accepted_mutation_after_recovery_advances_from_the_recovered_revision() {
         })
     );
 }
+
+#[test]
+fn recovered_change_position_continues_without_snapshot_gap() {
+    let (mut service, alice, _, _) = populated();
+    let revision = service.engine().revision().0;
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        alice,
+        request(
+            20,
+            CommandV2::OpenChanges {
+                room_id: "alpha".to_owned(),
+                observed_revision: revision,
+            },
+        ),
+    ) else {
+        panic!("change position expected");
+    };
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(
+        recovered.execute(
+            alice,
+            request(
+                21,
+                CommandV2::Speak {
+                    room_id: "alpha".to_owned(),
+                    expected_revision: revision,
+                    logical_time: 10,
+                    body: "after recovery".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::MessageAccepted {
+            revision: revision + 1,
+            sequence: 0,
+        })
+    );
+    let ReplyV2::Accepted(OutcomeV2::Changes(page)) = recovered.execute(
+        alice,
+        request(
+            22,
+            CommandV2::Changes {
+                room_id: "alpha".to_owned(),
+                cursor,
+                limit: 4,
+            },
+        ),
+    ) else {
+        panic!("recovered position must continue");
+    };
+    assert_eq!(page.changes.len(), 1);
+    assert_eq!(page.changes[0].revision, revision + 1);
+}

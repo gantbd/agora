@@ -33,6 +33,8 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `07` | Leave | room `text`, expected revision |
 | `08` | SetRole | room `text`, participant `text`, role, expected revision |
 | `09` | Speak | room, expected revision, logical time, body, addressed-participant list |
+| `0a` | OpenChanges | room `text`, exact completed snapshot revision |
+| `0b` | Changes | room `text`, required opaque cursor `u64`, limit |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -42,7 +44,7 @@ Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 An executed protocol reply is Accepted `01` plus an outcome or Refused `02` plus
 a refusal. Outcome tags are Rooms `01`, Members `02`, Messages `03`, RoomCreated
 `04`, InvitationRecorded `05`, Joined `06`, Left `07`, RoleChanged `08`, and
-MessageAccepted `09`.
+MessageAccepted `09`, ChangesOpened `0a`, Changes `0b`, and ChangeGap `0c`.
 
 A room page contains revision, room-summary list, and optional cursor. Each
 summary contains room ID, name, admission, observer role, member count, retained
@@ -55,6 +57,16 @@ list.
 
 Revision-only lifecycle outcomes carry one `u64`. MessageAccepted carries
 revision then room-local sequence.
+
+ChangesOpened carries the snapshot revision and a required opaque cursor.
+Changes carries current revision, a counted list of `(event sequence, accepted
+revision, room event)`, the next required cursor, and a closed `00`/`01`
+has-more byte. Room event tags are RoomCreated `01` (owner, admission),
+InvitationRecorded `02` (participant), ParticipantJoined `03` (participant),
+ParticipantLeft `04` (participant), RoleChanged `05` (participant, role), and
+MessageAccepted `06` (message). ChangeGap carries current revision and either
+Retention `01` plus acknowledged-through sequence or MembershipChanged `02`.
+Unknown event, gap, or Boolean tags refuse.
 
 ## Refusals
 
@@ -83,8 +95,10 @@ Decoding bounds input, fields, text, and lists before reconstruction and require
 complete consumption. Unknown versions, roots, commands, outcomes, refusals,
 admissions, roles, kinds, and optional tags refuse.
 
-Canonical fixtures freeze CreateRoom, a room page with continuation, and a
-message page carrying retention bounds and addressing. Round-trip tests cover
-every command, outcome, and refusal. Truncation, trailing data, version mismatch,
-unknown nested tags, and resource ceilings are adversarially exercised. These
-tests establish a frame codec, not transport security or an authenticated host.
+Canonical fixtures freeze CreateRoom, a room page with continuation, a message
+page carrying retention bounds and addressing, and a change page carrying its
+stable event identity and next cursor. Round-trip tests cover every command,
+outcome, refusal, room-event kind, and gap cause. Truncation, trailing data,
+version mismatch, unknown nested tags, and resource ceilings are adversarially
+exercised. These tests establish a frame codec, not transport security, push
+delivery, or an authenticated host.

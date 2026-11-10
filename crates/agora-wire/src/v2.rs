@@ -5,9 +5,9 @@ use super::{
     read_text, read_u8, read_u64, try_vec,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, ClientIdV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2, MessageV2,
-    OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
-    RoomPageV2, RoomSummaryV2,
+    AdmissionPolicyV2, ChangeGapV2, ClientIdV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2,
+    MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2,
+    RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
 use std::fmt;
 
@@ -211,6 +211,24 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             encode_optional_cursor(sink, *cursor)?;
             sink.u64(u64::from(*limit))
         }
+        CommandV2::OpenChanges {
+            room_id,
+            observed_revision,
+        } => {
+            sink.u8(10)?;
+            sink.text(room_id)?;
+            sink.u64(*observed_revision)
+        }
+        CommandV2::Changes {
+            room_id,
+            cursor,
+            limit,
+        } => {
+            sink.u8(11)?;
+            sink.text(room_id)?;
+            sink.u64(cursor.0)?;
+            sink.u64(u64::from(*limit))
+        }
         CommandV2::CreateRoom {
             room_id,
             name,
@@ -344,6 +362,15 @@ fn decode_command(
                 addressed_to,
             })
         }
+        10 => Ok(CommandV2::OpenChanges {
+            room_id: read_text(decoder)?,
+            observed_revision: read_u64(decoder)?,
+        }),
+        11 => Ok(CommandV2::Changes {
+            room_id: read_text(decoder)?,
+            cursor: PageCursorV2(read_u64(decoder)?),
+            limit: read_u32(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -385,6 +412,31 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
         OutcomeV2::Messages(page) => {
             sink.u8(3)?;
             encode_message_page(sink, page)
+        }
+        OutcomeV2::ChangesOpened { revision, cursor } => {
+            sink.u8(10)?;
+            sink.u64(*revision)?;
+            sink.u64(cursor.0)
+        }
+        OutcomeV2::Changes(page) => {
+            sink.u8(11)?;
+            encode_change_page(sink, page)
+        }
+        OutcomeV2::ChangeGap {
+            current_revision,
+            cause,
+        } => {
+            sink.u8(12)?;
+            sink.u64(*current_revision)?;
+            match cause {
+                ChangeGapV2::Retention {
+                    acknowledged_through,
+                } => {
+                    sink.u8(1)?;
+                    sink.u64(*acknowledged_through)
+                }
+                ChangeGapV2::MembershipChanged => sink.u8(2),
+            }
         }
         OutcomeV2::RoomCreated { revision } => encode_revision_outcome(sink, 4, *revision),
         OutcomeV2::InvitationRecorded { revision } => encode_revision_outcome(sink, 5, *revision),
@@ -435,6 +487,25 @@ fn decode_outcome(
             revision: read_u64(decoder)?,
             sequence: read_u64(decoder)?,
         }),
+        10 => Ok(OutcomeV2::ChangesOpened {
+            revision: read_u64(decoder)?,
+            cursor: PageCursorV2(read_u64(decoder)?),
+        }),
+        11 => Ok(OutcomeV2::Changes(decode_change_page(decoder, limits)?)),
+        12 => {
+            let current_revision = read_u64(decoder)?;
+            let cause = match read_u8(decoder)? {
+                1 => ChangeGapV2::Retention {
+                    acknowledged_through: read_u64(decoder)?,
+                },
+                2 => ChangeGapV2::MembershipChanged,
+                _ => return Err(WireDecodeError::UnknownTag),
+            };
+            Ok(OutcomeV2::ChangeGap {
+                current_revision,
+                cause,
+            })
+        }
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -553,6 +624,99 @@ fn decode_message_page(
         oldest_retained_sequence: read_u64(decoder)?,
         next_message_sequence: read_u64(decoder)?,
         next: decode_optional_cursor(decoder)?,
+    })
+}
+
+fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<(), WireEncodeError> {
+    sink.u64(page.revision)?;
+    sink.list(page.changes.len())?;
+    for change in &page.changes {
+        sink.u64(change.event_sequence)?;
+        sink.u64(change.revision)?;
+        match &change.event {
+            RoomEventV2::RoomCreated { owner, admission } => {
+                sink.u8(1)?;
+                sink.text(owner)?;
+                sink.u8(encode_admission(*admission))?;
+            }
+            RoomEventV2::InvitationRecorded { participant_id } => {
+                sink.u8(2)?;
+                sink.text(participant_id)?;
+            }
+            RoomEventV2::ParticipantJoined { participant_id } => {
+                sink.u8(3)?;
+                sink.text(participant_id)?;
+            }
+            RoomEventV2::ParticipantLeft { participant_id } => {
+                sink.u8(4)?;
+                sink.text(participant_id)?;
+            }
+            RoomEventV2::RoleChanged {
+                participant_id,
+                role,
+            } => {
+                sink.u8(5)?;
+                sink.text(participant_id)?;
+                sink.u8(encode_role(*role))?;
+            }
+            RoomEventV2::MessageAccepted(message) => {
+                sink.u8(6)?;
+                encode_message(sink, message)?;
+            }
+        }
+    }
+    sink.u64(page.next.0)?;
+    sink.u8(u8::from(page.has_more))
+}
+
+fn decode_change_page(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<RoomChangePageV2, WireDecodeError> {
+    let revision = read_u64(decoder)?;
+    let length = read_list(decoder, limits)?;
+    let mut changes = try_vec(length)?;
+    for _ in 0..length {
+        let event_sequence = read_u64(decoder)?;
+        let change_revision = read_u64(decoder)?;
+        let event = match read_u8(decoder)? {
+            1 => RoomEventV2::RoomCreated {
+                owner: read_text(decoder)?,
+                admission: decode_admission(decoder)?,
+            },
+            2 => RoomEventV2::InvitationRecorded {
+                participant_id: read_text(decoder)?,
+            },
+            3 => RoomEventV2::ParticipantJoined {
+                participant_id: read_text(decoder)?,
+            },
+            4 => RoomEventV2::ParticipantLeft {
+                participant_id: read_text(decoder)?,
+            },
+            5 => RoomEventV2::RoleChanged {
+                participant_id: read_text(decoder)?,
+                role: decode_role(decoder)?,
+            },
+            6 => RoomEventV2::MessageAccepted(decode_message(decoder, limits)?),
+            _ => return Err(WireDecodeError::UnknownTag),
+        };
+        changes.push(RoomChangeV2 {
+            event_sequence,
+            revision: change_revision,
+            event,
+        });
+    }
+    let next = PageCursorV2(read_u64(decoder)?);
+    let has_more = match read_u8(decoder)? {
+        0 => false,
+        1 => true,
+        _ => return Err(WireDecodeError::UnknownTag),
+    };
+    Ok(RoomChangePageV2 {
+        revision,
+        changes,
+        next,
+        has_more,
     })
 }
 

@@ -23,7 +23,7 @@ not ready for a network service or crates.io release.
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   ten packages;
 - conservative package and canonical-fixture inventory closure over ten
-  packages and ten fixtures;
+  packages and eleven fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
 - conservative supply inventory closure over twelve locked local components with
@@ -32,7 +32,7 @@ not ready for a network service or crates.io release.
   opaque cursors and explicit retained-history intervals;
 - separately typed volatile Protocol/Service/Client V2 source profile closing
   participant-bound room lifecycle commands and bounded cursor projection;
-- canonical bounded Wire V2 complete-frame grammar with three additional golden
+- canonical bounded Wire V2 complete-frame grammar with four additional golden
   fixtures and closed nested vocabularies;
 - authenticated transport-neutral Host V2 with distinct session/client binding,
   per-frame revalidation, substitution fencing, and cleanup;
@@ -51,6 +51,9 @@ not ready for a network service or crates.io release.
 - exclusive private local Unix directory storage with a frozen checksummed
   record, process lock, pinned resource identities, synchronized atomic replace,
   fail-closed residue/corruption handling, and real authenticated-host restart;
+- snapshot-aligned bounded room pull changes with stable event identity,
+  exclusive continuation, explicit retention/leave-rejoin gaps, durable service
+  cursors, closed Wire V2 values, and a frozen representative frame;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.

@@ -20,7 +20,7 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact ten-package workspace and ten canonical fixtures. These
+closes over the exact ten-package workspace and eleven canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -86,11 +86,11 @@ contents. The client test fixes the independent monotone V2 request namespace.
 No V2 authenticated host, persistence, transport, or uncertainty behavior is
 claimed.
 
-Wire V2 freezes three additional golden frames and round-trips every V2 command,
+Wire V2 freezes four additional golden frames and round-trips every V2 command,
 outcome, and refusal. It independently exercises every truncation of
 representative request and reply frames, trailing data, V1/version mismatch,
 unknown command and cursor tags, text/list ceilings, and content-safe Debug
-surfaces. These six wire fixtures establish only complete-frame codec behavior;
+surfaces. These seven wire fixtures establish only complete-frame codec behavior;
 Host V2 evidence
 is separate below and no transport is claimed.
 The remote-client facade-only scenario also constructs a V2 client request and
@@ -153,6 +153,16 @@ successful temporary-file write and sync, atomic rename, and directory sync on a
 single-owner local Unix profile. No hardware power-loss, controller cache,
 network filesystem, backup/restore, encryption, hostile same-UID process, or
 multi-host availability claim follows.
+
+Room change-feed scenarios bind a position to an exact completed snapshot,
+filter stable outbox events by room, replay the same exclusive prefix, advance
+without overlap, and surface both acknowledged-prefix loss and leave/rejoin
+visibility discontinuity as explicit resnapshot gaps. Foreign client/room use,
+invalid limits, debug redaction, every truncated private position, canonical
+engine recovery, durable service-cursor recovery, every wire command/outcome/
+room-event/gap variant, nested unknown tags, and the eleventh frozen fixture
+close the represented pull path. They do not establish push delivery, per-client
+event retention, read receipts, presence, or transport reconnection policy.
 
 The gate does not establish a credential adapter, transport security,
 multi-host serialization, physical-device power-loss behavior, event delivery,

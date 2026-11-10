@@ -93,8 +93,30 @@ representations contain only revisions, sizes, counts, scalar positions, and
 continuation presence.
 
 This is an in-process engine profile. Protocol V1 remains frozen and does not
-encode these values. A later Protocol V2 must close the service, wire, client,
-host, and SDK projection without reinterpreting V1 bytes.
+encode these values. Protocol V2 separately projects the bounded pages and room
+change feed without reinterpreting V1 bytes.
+
+### Snapshot-aligned room change feed
+
+A current member may capture `RoomChangePosition` only by presenting the exact
+engine revision of a completed bounded room snapshot. Mutation between snapshot
+and capture returns `Stale`, preventing a silent observation window. A position
+binds observer, room, revision, and the exclusive global event sequence. It is a
+correlation value, not authority; every pull rechecks current membership.
+
+`room_change_page` filters the retained outbox to that room and returns at most
+the requested positive bounded count. Reusing a position returns the same
+retained prefix. The returned next position is exclusive, so continuation has no
+overlap; when no room changes remain it advances across unrelated events to the
+current edge. Domain event sequence and accepted revision are stable deduplication
+identities and survive canonical engine recovery.
+
+If outbox acknowledgement removed any required prefix, the result is an explicit
+retention gap with the acknowledged edge. If the observer left and later rejoined
+after the supplied position, the result is a membership-epoch gap even when all
+events remain retained. Either gap requires a new bounded snapshot and position;
+an empty page never implies continuity across lost visibility. This is pull
+observation only, not push delivery, presence, read receipt, or acknowledgement.
 
 ## Replay-safe response publication
 
@@ -173,6 +195,16 @@ The volatile profile by itself makes no cross-restart cursor, request, client,
 or durability claim. The separately versioned service-checkpoint and durable
 publication profiles below may wrap it without changing frozen V1 or V2 wire
 values.
+
+Protocol V2 exposes `OpenChanges` after a client completes a snapshot and
+`Changes` for bounded continuation. Service V2 holds the engine position behind
+the existing client-owned opaque cursor namespace, consumes the old cursor when
+issuing the next, and preserves exact request replay. It projects only room-
+scoped domain events and closed retention/membership gap causes. The private
+cursor checkpoint uses `AGORACUR` kind 4, so a complete Service V2 checkpoint
+preserves the feed position across durable recovery. Wire V2 assigns distinct
+closed command/outcome/event tags; no public value contains the private engine
+position.
 
 ## Service checkpoint profile V2
 

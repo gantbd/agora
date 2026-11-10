@@ -1,7 +1,7 @@
 use agora_protocol::v2::{
-    AdmissionPolicyV2, ClientIdV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2, MessageV2,
-    OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
-    RoomPageV2, RoomSummaryV2,
+    AdmissionPolicyV2, ChangeGapV2, ClientIdV2, CommandV2, MemberPageV2, MemberV2, MessagePageV2,
+    MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2,
+    RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -66,6 +66,25 @@ fn messages_reply() -> WireReplyV2 {
     })))
 }
 
+fn changes_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+        revision: 13,
+        changes: vec![RoomChangeV2 {
+            event_sequence: 12,
+            revision: 13,
+            event: RoomEventV2::MessageAccepted(MessageV2 {
+                sequence: 4,
+                author: "bot".to_owned(),
+                logical_time: 9,
+                body: "change body".to_owned(),
+                addressed_to: vec!["alice".to_owned()],
+            }),
+        }],
+        next: PageCursorV2(43),
+        has_more: false,
+    })))
+}
+
 fn fixture(source: &str) -> Vec<u8> {
     source
         .split_ascii_whitespace()
@@ -88,17 +107,31 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
             encode_reply_v2(&messages_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/messages-reply-v2.hex")),
         ),
+        (
+            encode_reply_v2(&changes_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/changes-reply-v2.hex")),
+        ),
     ];
     for (actual, expected) in cases {
         assert_eq!(actual, expected);
     }
     let rendered = format!(
-        "{:?} {:?} {:?}",
+        "{:?} {:?} {:?} {:?}",
         create_request(),
         rooms_reply(),
-        messages_reply()
+        messages_reply(),
+        changes_reply()
     );
-    for secret in ["private", "Private", "private body", "alice", "bot", "42"] {
+    for secret in [
+        "private",
+        "Private",
+        "private body",
+        "change body",
+        "alice",
+        "bot",
+        "42",
+        "43",
+    ] {
         assert!(!rendered.contains(secret));
     }
 }
@@ -122,6 +155,15 @@ fn every_v2_command_round_trips() {
         CommandV2::Messages {
             room_id: "room".to_owned(),
             cursor: None,
+            limit: 4,
+        },
+        CommandV2::OpenChanges {
+            room_id: "room".to_owned(),
+            observed_revision: 4,
+        },
+        CommandV2::Changes {
+            room_id: "room".to_owned(),
+            cursor: PageCursorV2(3),
             limit: 4,
         },
         CommandV2::CreateRoom {
@@ -202,6 +244,75 @@ fn every_v2_outcome_and_refusal_round_trips() {
             revision: 6,
             sequence: 7,
         },
+        OutcomeV2::ChangesOpened {
+            revision: 7,
+            cursor: PageCursorV2(8),
+        },
+        OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 9,
+            changes: vec![
+                RoomChangeV2 {
+                    event_sequence: 3,
+                    revision: 4,
+                    event: RoomEventV2::RoomCreated {
+                        owner: "alice".to_owned(),
+                        admission: AdmissionPolicyV2::Open,
+                    },
+                },
+                RoomChangeV2 {
+                    event_sequence: 4,
+                    revision: 5,
+                    event: RoomEventV2::InvitationRecorded {
+                        participant_id: "bot".to_owned(),
+                    },
+                },
+                RoomChangeV2 {
+                    event_sequence: 5,
+                    revision: 6,
+                    event: RoomEventV2::ParticipantJoined {
+                        participant_id: "bot".to_owned(),
+                    },
+                },
+                RoomChangeV2 {
+                    event_sequence: 6,
+                    revision: 7,
+                    event: RoomEventV2::RoleChanged {
+                        participant_id: "bot".to_owned(),
+                        role: RoleV2::Moderator,
+                    },
+                },
+                RoomChangeV2 {
+                    event_sequence: 7,
+                    revision: 8,
+                    event: RoomEventV2::ParticipantLeft {
+                        participant_id: "bot".to_owned(),
+                    },
+                },
+                RoomChangeV2 {
+                    event_sequence: 8,
+                    revision: 9,
+                    event: RoomEventV2::MessageAccepted(MessageV2 {
+                        sequence: 1,
+                        author: "bot".to_owned(),
+                        logical_time: 2,
+                        body: "change".to_owned(),
+                        addressed_to: vec!["alice".to_owned()],
+                    }),
+                },
+            ],
+            next: PageCursorV2(9),
+            has_more: false,
+        }),
+        OutcomeV2::ChangeGap {
+            current_revision: 10,
+            cause: ChangeGapV2::Retention {
+                acknowledged_through: 8,
+            },
+        },
+        OutcomeV2::ChangeGap {
+            current_revision: 11,
+            cause: ChangeGapV2::MembershipChanged,
+        },
     ];
     for outcome in outcomes {
         let reply = WireReplyV2::Executed(ReplyV2::Accepted(outcome));
@@ -277,6 +388,29 @@ fn v2_decoding_is_closed_and_version_isolated() {
     ];
     assert_eq!(
         decode_request_v2(&unknown_cursor_tag, limits()),
+        Err(WireDecodeError::UnknownTag)
+    );
+
+    let mut unknown_change_event = encode_reply_v2(&changes_reply(), limits()).unwrap();
+    unknown_change_event[36] = 0x7f;
+    assert_eq!(
+        decode_reply_v2(&unknown_change_event, limits()),
+        Err(WireDecodeError::UnknownTag)
+    );
+    let mut invalid_has_more = encode_reply_v2(&changes_reply(), limits()).unwrap();
+    *invalid_has_more.last_mut().unwrap() = 2;
+    assert_eq!(
+        decode_reply_v2(&invalid_has_more, limits()),
+        Err(WireDecodeError::UnknownTag)
+    );
+    let gap = WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ChangeGap {
+        current_revision: 9,
+        cause: ChangeGapV2::MembershipChanged,
+    }));
+    let mut unknown_gap = encode_reply_v2(&gap, limits()).unwrap();
+    unknown_gap[12] = 0x7f;
+    assert_eq!(
+        decode_reply_v2(&unknown_gap, limits()),
         Err(WireDecodeError::UnknownTag)
     );
 }

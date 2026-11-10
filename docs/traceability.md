@@ -35,6 +35,7 @@ This ledger records current evidence. Open work is not a pass.
 | R29 client uncertainty fence | retained exact pending request in `ClientV2` plus closed `NotSent`/`OutcomeUnknown` port failures | four client scenarios covering monotone identities, exact replay, different-command local fence, not-sent distinction, retained uncertainty, explicit abandonment, and port extraction | Satisfied for process-local V2 client; persistence/reconnect policy open |
 | R30 atomic authenticated recovery | `AGORAHST` canonical Host V2 record and `DurableHostV2` pre-reply store gate over the combined host/service unit | two host checkpoint scenarios plus three durable-host fault scenarios covering exact session/receipt replay, verifier continuity, every truncation, foreign scope, known-refusal rollback, indeterminate-after-commit recovery, and durable revocation cleanup | Satisfied at store-neutral authenticated boundary; R31 qualifies one local composition |
 | R31 exclusive private-directory checkpoint | Unix-only `agora-storage-directory` implementation of the Keystone store port with one exclusive lock, pinned resources, checksummed `AGDIRCP` record, synchronized temporary-file rename, and fail-closed fencing | seven mechanism scenarios plus one real authenticated-host close/reopen scenario covering CAS/reopen, limits/refusals, lock exclusion, modes/symlinks/residue including dangling links, corruption/replacement, frozen bytes, exact replay without another event or store offer | Satisfied for a single-owner private local Unix directory; power-loss hardware, network filesystems, backup/restore, encryption, and multi-host availability are not claimed |
+| R32 snapshot-aligned room change feed | engine `RoomChangePosition` over retained outbox identity; client-owned Service V2 cursor with private kind-4 checkpoint; closed Protocol/Wire V2 commands, room events, and gap causes | four core scenarios plus service, recovery, wire round-trip/closure, redaction, and frozen change-frame evidence covering exact replay, exclusive continuation, room filtering, bounds, foreign cursors, retention gap, leave/rejoin gap, canonical recovery, and durable cursor continuation | Satisfied for member-visible bounded pull over the retained durable outbox; push delivery, independent per-client retention, presence, and read receipts are not claimed |
 
 ## Verification gates
 
@@ -43,7 +44,7 @@ doctests, and warning-denied documentation. This establishes only the in-process
 core, service recovery, and receipt-gated store boundary exercised by those
 checks. It establishes only the explicitly bounded local Unix storage mechanism,
 not hardware power-loss behavior, network-filesystem semantics, transport
-framing/security, distributed ordering, or connector behavior.
+framing/security, push delivery, distributed ordering, or connector behavior.
 
 The external Moira qualification projects an unacknowledged `MessageAccepted`
 event as a participant-neutral read-only fact, then requires explicit Moira

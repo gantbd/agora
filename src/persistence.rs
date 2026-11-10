@@ -718,6 +718,50 @@ impl MessagePageCursor {
         Ok(cursor)
     }
 }
+
+impl RoomChangePosition {
+    pub fn prepare_checkpoint(
+        &self,
+        max_snapshot_bytes: usize,
+    ) -> Result<CursorCheckpointV1, CheckpointError> {
+        let mut writer = Writer {
+            bytes: Vec::new(),
+            max: max_snapshot_bytes,
+        };
+        writer.raw(CURSOR_MAGIC)?;
+        writer.byte(1)?;
+        writer.byte(4)?;
+        writer.number(self.observed_revision.0)?;
+        writer.text(self.observer.as_str())?;
+        writer.text(self.room_id.as_str())?;
+        writer.option(self.after)?;
+        Ok(CursorCheckpointV1(writer.bytes))
+    }
+
+    pub fn recover_checkpoint(
+        bytes: &[u8],
+        bounds: CursorRecoveryLimitsV1,
+    ) -> Result<Self, CheckpointError> {
+        let mut reader = cursor_reader(bytes, bounds, 4)?;
+        let position = Self {
+            observed_revision: Revision(reader.number()?),
+            observer: ParticipantId::new(reader.text(bounds.max_participant_id_bytes)?),
+            room_id: RoomId::new(reader.text(bounds.max_room_id_bytes)?),
+            after: reader.option()?,
+        };
+        finish_cursor(&reader)?;
+        if position.observer.as_str().is_empty()
+            || position.room_id.as_str().is_empty()
+            || match position.after {
+                Some(after) => after.0.checked_add(1) != Some(position.observed_revision.0),
+                None => position.observed_revision != Revision(0),
+            }
+        {
+            return Err(CheckpointError::Invalid);
+        }
+        Ok(position)
+    }
+}
 fn bounded(s: &str, max: usize) -> Result<(), CheckpointError> {
     if s.is_empty() || s.len() > max {
         Err(CheckpointError::Invalid)

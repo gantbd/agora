@@ -151,6 +151,16 @@
   residue. A real close/reopen composition must recover the combined Host V2
   record and exact replay must neither duplicate its engine event nor offer a
   second checkpoint.
+- **R32 — Snapshot-aligned room change feed:** a current member may bind an
+  opaque room change position only to an exact completed snapshot revision, then
+  pull bounded room-scoped events strictly after that position. Reusing a
+  position replays the same retained prefix; advancing to the returned position
+  has no overlap. Event sequence and revision remain stable across engine,
+  service-cursor, and durable service recovery. Outbox-prefix loss and any
+  leave/rejoin visibility-epoch crossing return distinct explicit gaps requiring
+  resnapshot. Protocol V2, Service V2, Wire V2, and the remote-client facade
+  carry the closed commands, events, gap causes, and opaque server cursor without
+  granting cursor authority or defining push delivery.
 
 ## Explicitly open
 

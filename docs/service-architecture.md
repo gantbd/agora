@@ -55,7 +55,17 @@ limits are checked explicitly. Structurally oversized requests are refused befor
 receipt retention. A full receipt index backpressures a new request before the
 engine is called. Disconnect releases that client's volatile receipts and keeps
 a bounded recent tombstone window. Tombstone pressure evicts the oldest record;
-it never blocks security cleanup. The profile makes no cross-restart replay claim.
+it never blocks security cleanup. The V1 volatile profile makes no cross-restart
+replay claim.
+
+After completing bounded room state pages at one revision, a client can open a
+room change position at that exact revision and pull retained room events through
+an opaque client-owned cursor. Pages are exclusive-after and replayable by exact
+request identity. The service consumes each successful cursor into a next cursor;
+foreign, cross-room, or consumed handles share `InvalidCursor`. Outbox retention
+loss and leave/rejoin visibility discontinuity are explicit gap outcomes that
+require resnapshot. The cursor is included in complete service recovery, but the
+feed remains pull observation rather than delivery acknowledgment or presence.
 
 ## Durable state and publication
 

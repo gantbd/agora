@@ -365,6 +365,78 @@ pub struct MessagePage {
     pub next: Option<MessagePageCursor>,
 }
 
+/// Opaque exclusive position in one member-visible room change stream.
+///
+/// Positions are stable across canonical engine recovery. They are not bearer
+/// credentials: every use rechecks the observer's current room membership.
+#[derive(Clone, Eq, PartialEq)]
+pub struct RoomChangePosition {
+    observer: ParticipantId,
+    room_id: RoomId,
+    observed_revision: Revision,
+    after: Option<EventSequence>,
+}
+
+impl RoomChangePosition {
+    pub fn revision(&self) -> Revision {
+        self.observed_revision
+    }
+
+    pub fn is_bound_to(&self, observer: &ParticipantId, room_id: &RoomId) -> bool {
+        &self.observer == observer && &self.room_id == room_id
+    }
+}
+
+impl fmt::Debug for RoomChangePosition {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RoomChangePosition")
+            .field("observer_id_bytes", &self.observer.as_str().len())
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("observed_revision", &self.observed_revision)
+            .field("has_event_position", &self.after.is_some())
+            .finish()
+    }
+}
+
+/// One bounded, exclusive-after page of retained room-scoped domain events.
+#[derive(Clone, Eq, PartialEq)]
+pub struct RoomChangePage {
+    pub revision: Revision,
+    pub changes: Vec<EventEnvelopeV2>,
+    pub next: RoomChangePosition,
+    pub has_more: bool,
+}
+
+impl fmt::Debug for RoomChangePage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RoomChangePage")
+            .field("revision", &self.revision)
+            .field("change_count", &self.changes.len())
+            .field("next", &self.next)
+            .field("has_more", &self.has_more)
+            .finish()
+    }
+}
+
+/// Why a room feed can no longer prove continuous visibility.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RoomChangeGap {
+    Retention { acknowledged_through: EventSequence },
+    MembershipChanged,
+}
+
+/// Pull-feed result. A gap requires a fresh bounded room snapshot and position.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RoomChangeResult {
+    Page(RoomChangePage),
+    Gap {
+        cause: RoomChangeGap,
+        current_revision: Revision,
+    },
+}
+
 impl fmt::Debug for MessagePage {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -661,6 +733,20 @@ pub enum DomainEventV2 {
         room_id: RoomId,
         message: Message,
     },
+}
+
+impl DomainEventV2 {
+    fn room_id(&self) -> Option<&RoomId> {
+        match self {
+            Self::ParticipantRegistered { .. } => None,
+            Self::RoomCreated { room_id, .. }
+            | Self::InvitationRecorded { room_id, .. }
+            | Self::ParticipantJoined { room_id, .. }
+            | Self::ParticipantLeft { room_id, .. }
+            | Self::RoleChanged { room_id, .. }
+            | Self::MessageAccepted { room_id, .. } => Some(room_id),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1009,6 +1095,145 @@ impl Engine {
             next_message_sequence: room.next_message_sequence,
             next,
         })
+    }
+
+    /// Captures the exact stream position corresponding to a completed room
+    /// snapshot at `observed_revision`.
+    ///
+    /// A mutation between snapshot completion and this call is reported as
+    /// stale, allowing the caller to repeat the bounded snapshot without a
+    /// silent observation window.
+    pub fn room_change_position(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        observed_revision: Revision,
+    ) -> Result<RoomChangePosition, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        if observed_revision != self.revision {
+            return Err(ObservationRefusal::Stale {
+                actual_revision: self.revision,
+            });
+        }
+        Ok(RoomChangePosition {
+            observer: observer.clone(),
+            room_id: room_id.clone(),
+            observed_revision,
+            after: self.last_published_event,
+        })
+    }
+
+    /// Pulls retained room-scoped events strictly after `position`.
+    ///
+    /// Reusing the same position returns the same retained prefix. Advancing to
+    /// `page.next` yields no overlap. Global outbox acknowledgement may remove a
+    /// position's required prefix; that is an explicit `Gap`, never an empty
+    /// page that implies continuity.
+    pub fn room_change_page(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        position: &RoomChangePosition,
+        limit: usize,
+    ) -> Result<RoomChangeResult, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        if limit == 0 || limit > self.limits.max_pending_events {
+            return Err(ObservationRefusal::InvalidLimit);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        if !position.is_bound_to(observer, room_id) {
+            return Err(ObservationRefusal::ForeignCursor);
+        }
+        let position_is_canonical = match position.after {
+            Some(after) => after.0.checked_add(1) == Some(position.observed_revision.0),
+            None => position.observed_revision == Revision(0),
+        };
+        if !position_is_canonical || position.observed_revision > self.revision {
+            return Err(ObservationRefusal::InconsistentState);
+        }
+        if let Some(acknowledged_through) = self.acknowledged_through
+            && position
+                .after
+                .is_none_or(|after| after < acknowledged_through)
+        {
+            return Ok(RoomChangeResult::Gap {
+                cause: RoomChangeGap::Retention {
+                    acknowledged_through,
+                },
+                current_revision: self.revision,
+            });
+        }
+
+        let mut changes: Vec<EventEnvelopeV2> = Vec::new();
+        changes
+            .try_reserve_exact(limit)
+            .map_err(|_| ObservationRefusal::Capacity)?;
+        for event in &self.pending_events {
+            if position.after.is_some_and(|after| event.sequence <= after) {
+                continue;
+            }
+            if event.event.room_id() != Some(room_id) {
+                continue;
+            }
+            if matches!(
+                &event.event,
+                DomainEventV2::ParticipantJoined { participant, .. }
+                    | DomainEventV2::ParticipantLeft { participant, .. }
+                    if participant == observer
+            ) {
+                return Ok(RoomChangeResult::Gap {
+                    cause: RoomChangeGap::MembershipChanged,
+                    current_revision: self.revision,
+                });
+            }
+            if changes.len() == limit {
+                let last = changes
+                    .last()
+                    .ok_or(ObservationRefusal::InconsistentState)?;
+                let after = last.sequence;
+                let observed_revision = last.revision;
+                return Ok(RoomChangeResult::Page(RoomChangePage {
+                    revision: self.revision,
+                    changes,
+                    next: RoomChangePosition {
+                        observer: observer.clone(),
+                        room_id: room_id.clone(),
+                        observed_revision,
+                        after: Some(after),
+                    },
+                    has_more: true,
+                }));
+            }
+            changes.push(event.clone());
+        }
+        Ok(RoomChangeResult::Page(RoomChangePage {
+            revision: self.revision,
+            changes,
+            next: RoomChangePosition {
+                observer: observer.clone(),
+                room_id: room_id.clone(),
+                observed_revision: self.revision,
+                after: self.last_published_event,
+            },
+            has_more: false,
+        }))
     }
 
     pub fn revision(&self) -> Revision {
