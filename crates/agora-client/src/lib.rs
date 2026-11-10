@@ -2,6 +2,8 @@
 
 use agora_protocol::{ClientIdV1, CommandV1, ReplyV1, RequestIdV1, RequestV1};
 
+pub mod v2;
+
 pub trait ServicePort {
     type Error;
     fn execute(&mut self, client: ClientIdV1, request: RequestV1) -> Result<ReplyV1, Self::Error>;

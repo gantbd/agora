@@ -74,6 +74,16 @@ Debug output. This establishes an in-process core primitive only. Protocol V1
 remains unchanged, and no service, wire, transport, durable cursor, or cross-
 restart claim follows.
 
+Protocol/Service V2 scenarios exercise the complete participant-bound room
+lifecycle through create, failed uninvited join, invite, join, role delegation,
+moderator invite, human join, agent-authored addressed message, leave, and member
+observation. Separate scenarios prove exact replay, changed-input conflict,
+client-bound one-shot cursors, cross-client non-enumerating refusal, staleness,
+cursor saturation, validation before receipt consumption, and disconnect
+reclamation. Protocol and page Debug tests reject conversation identifiers and
+contents. The client test fixes the independent monotone V2 request namespace.
+No V2 wire, host, persistence, transport, or uncertainty behavior is claimed.
+
 The gate does not establish authentication, transport security, multi-process
 serialization, durable storage, event delivery, distributed availability, or
 orchestrator correctness. Those claims require separate adapters and evidence.

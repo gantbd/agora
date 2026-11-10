@@ -139,6 +139,39 @@ All service state is volatile. Handles are correlation values rather than
 credentials. Authentication, transport binding, persistence, and distributed
 serialization remain host obligations.
 
+## Volatile service source profile V2
+
+`ServiceV2` is a distinct serialized owner rather than a reinterpretation of the
+V1 service. A V2 connection binds a separately typed client handle to one already
+registered participant. Create-room owner, invitation and role actor, joining or
+leaving participant, and message author are always derived from that binding.
+No V2 command may nominate its own actor.
+
+The profile closes the current engine lifecycle commands and bounded room,
+member, and retained-message pages. The service converts engine continuations
+into opaque monotone `PageCursorV2` handles retained in a bounded client-owned
+index. Cross-client, unknown, wrong-page-kind, and wrong-room handles share
+`InvalidCursor`. A successful continuation consumes its old handle and installs
+at most one new handle. Exact request replay returns the retained historical
+reply without consuming or recreating cursor state. Disconnect reclaims that
+client's requests and cursors. Cursor-index saturation refuses a first page that
+would need a continuation before installing one.
+
+V2 request receipts are bounded and keyed by the separately typed
+`(ClientIdV2, RequestIdV2)`. Shape validation and receipt capacity precede engine
+or cursor effects. Matching replay returns the original reply; changed input
+conflicts. Engine revision conflict and observation staleness share a typed
+`Stale` reply with the actual revision. Participant kind never selects a command
+path or authority result.
+
+The transport-neutral `ClientV2` owns a monotone request namespace over an
+abstract V2 service port. It adds no connection lifecycle, authentication,
+transport, retry, cursor traversal, or uncertainty policy.
+
+This source profile has no wire or authenticated-host representation yet and
+makes no cross-restart cursor, request, client, or durability claim. Frozen V1
+values and bytes remain unchanged.
+
 ## Wire profile V1
 
 `agora-wire` canonically encodes passive protocol V1 requests and replies using

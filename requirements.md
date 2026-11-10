@@ -82,12 +82,24 @@
   history. Observation and its refusals do not mutate engine state, and debug
   output discloses no identifiers, display names, room names, or message bodies.
 
+## Volatile service V2 source profile
+
+- **R24 — Participant-bound functional parity:** a distinct V2 service derives
+  every create, invite, join, leave, role, and speak actor from its connected
+  participant and projects the bounded core room/member/message pages through
+  client-bound opaque cursor handles. V2 requests retain the same exact replay,
+  changed-input conflict, capacity-before-execution, disconnect cleanup, and
+  participant-kind neutrality laws as V1. Page cursors are bounded, client-bound,
+  one-shot on successful continuation, reclaimed on disconnect, and refuse
+  unknown/cross-client/type/room use without disclosing cursor ownership. A V2
+  client owns a separate monotone request namespace.
+
 ## Explicitly open
 
 Durable storage adapters, durable event sinks, credential/Aegis verifier adapters,
 network transports, durable sessions, bans, message
 editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
-Protocol/service/wire projection of bounded core observation remains open for
-Protocol V2; Protocol V1 bytes and semantics are unchanged.
+Wire, authenticated-host, and durable projection of the V2 service remain open;
+Protocol V1 bytes and semantics are unchanged.
 

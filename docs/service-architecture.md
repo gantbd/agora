@@ -2,6 +2,11 @@
 
 Status: initial volatile in-process profile.
 
+The repository now carries two source profiles. `Service` preserves frozen
+Protocol V1 Snapshot/Speak behavior. `v2::ServiceV2` is separately typed and adds
+participant-bound room lifecycle parity plus bounded room/member/message pages.
+It has no wire or authenticated-host projection yet; V1 is not reinterpreted.
+
 Agora follows an atomic-evolution layout: domain engine, protocol values,
 serialized service owner, and client interpretation live in one repository but
 remain separate crates. Their normal dependency direction is:
@@ -55,4 +60,9 @@ storage, orchestration, task creation, model invocation, or agent lifecycle
 work. `agora-wire` only maps passive values to canonical bytes. A later
 authenticated host may connect those bytes to a transport. Moira, Chronos, and
 execution harnesses remain separate systems.
+
+The V2 source service additionally excludes durable receipts/cursors, cursor
+resumption across restart, transport feature negotiation, wire framing, and
+authentication. Its cursor handles are bounded correlation values scoped to one
+volatile client, not bearer credentials.
 

@@ -1,0 +1,460 @@
+use agora_engine::{
+    AdmissionPolicy, CommandV2 as EngineCommand, Engine, Participant, ParticipantKind,
+};
+use agora_protocol::v2::{
+    AdmissionPolicyV2, ClientIdV2, CommandV2, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
+    RequestV2, RoleV2,
+};
+use agora_service::v2::{ServiceLimitsV2, ServiceV2};
+
+fn request(id: u64, command: CommandV2) -> RequestV2 {
+    RequestV2 {
+        request_id: RequestIdV2(id),
+        command,
+    }
+}
+
+fn participant_engine() -> Engine {
+    let mut engine = Engine::new();
+    for (id, name, kind) in [
+        ("alice", "Alice", ParticipantKind::Human),
+        ("bot", "Bot", ParticipantKind::Agent),
+        ("carol", "Carol", ParticipantKind::Human),
+        ("outsider", "Outsider", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, name, kind,
+            )))
+            .unwrap();
+    }
+    engine
+}
+
+#[test]
+fn v2_closes_the_participant_bound_room_lifecycle() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let carol = service.connect("carol").unwrap();
+
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                0,
+                CommandV2::CreateRoom {
+                    room_id: "private".to_owned(),
+                    name: "Private".to_owned(),
+                    admission: AdmissionPolicyV2::InviteOnly,
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 5 })
+    );
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                0,
+                CommandV2::Join {
+                    room_id: "private".to_owned(),
+                    expected_revision: 5,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::NotAuthorized)
+    );
+    assert_eq!(service.engine().revision().0, 5);
+
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                1,
+                CommandV2::Invite {
+                    room_id: "private".to_owned(),
+                    participant_id: "bot".to_owned(),
+                    expected_revision: 5,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::InvitationRecorded { revision: 6 })
+    );
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                1,
+                CommandV2::Join {
+                    room_id: "private".to_owned(),
+                    expected_revision: 6,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Joined { revision: 7 })
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                2,
+                CommandV2::SetRole {
+                    room_id: "private".to_owned(),
+                    participant_id: "bot".to_owned(),
+                    role: RoleV2::Moderator,
+                    expected_revision: 7,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoleChanged { revision: 8 })
+    );
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                2,
+                CommandV2::Invite {
+                    room_id: "private".to_owned(),
+                    participant_id: "carol".to_owned(),
+                    expected_revision: 8,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::InvitationRecorded { revision: 9 })
+    );
+    assert_eq!(
+        service.execute(
+            carol,
+            request(
+                0,
+                CommandV2::Join {
+                    room_id: "private".to_owned(),
+                    expected_revision: 9,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Joined { revision: 10 })
+    );
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                3,
+                CommandV2::Speak {
+                    room_id: "private".to_owned(),
+                    expected_revision: 10,
+                    logical_time: 12,
+                    body: "hello".to_owned(),
+                    addressed_to: vec!["alice".to_owned(), "carol".to_owned()],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::MessageAccepted {
+            revision: 11,
+            sequence: 0,
+        })
+    );
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                4,
+                CommandV2::Leave {
+                    room_id: "private".to_owned(),
+                    expected_revision: 11,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Left { revision: 12 })
+    );
+
+    let ReplyV2::Accepted(OutcomeV2::Members(page)) = service.execute(
+        alice,
+        request(
+            3,
+            CommandV2::Members {
+                room_id: "private".to_owned(),
+                cursor: None,
+                limit: 4,
+            },
+        ),
+    ) else {
+        panic!("member page should be accepted");
+    };
+    assert_eq!(
+        page.members
+            .iter()
+            .map(|member| member.participant_id.as_str())
+            .collect::<Vec<_>>(),
+        ["alice", "carol"]
+    );
+}
+
+#[test]
+fn v2_pages_are_client_bound_one_shot_and_replay_safe() {
+    let mut engine = participant_engine();
+    for room in ["alpha", "beta", "gamma"] {
+        engine
+            .apply(EngineCommand::CreateRoom {
+                room_id: room.into(),
+                name: room.to_owned(),
+                owner: "alice".into(),
+                admission: AdmissionPolicy::Open,
+            })
+            .unwrap();
+    }
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let first_request = request(
+        0,
+        CommandV2::Rooms {
+            cursor: None,
+            limit: 2,
+        },
+    );
+    let first_reply = service.execute(alice, first_request.clone());
+    assert_eq!(service.execute(alice, first_request), first_reply);
+    let ReplyV2::Accepted(OutcomeV2::Rooms(first)) = first_reply else {
+        panic!("room page should be accepted");
+    };
+    let cursor = first.next.expect("first page should continue");
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                0,
+                CommandV2::Rooms {
+                    cursor: Some(cursor),
+                    limit: 2,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidCursor)
+    );
+    let ReplyV2::Accepted(OutcomeV2::Rooms(second)) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::Rooms {
+                cursor: Some(cursor),
+                limit: 2,
+            },
+        ),
+    ) else {
+        panic!("continuation should be accepted");
+    };
+    assert_eq!(second.rooms.len(), 1);
+    assert!(second.next.is_none());
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                2,
+                CommandV2::Rooms {
+                    cursor: Some(cursor),
+                    limit: 2,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidCursor)
+    );
+    assert_eq!(service.usage().replayed, 1);
+}
+
+#[test]
+fn v2_cursor_staleness_and_capacity_are_explicit() {
+    let mut engine = participant_engine();
+    for room in ["alpha", "beta"] {
+        engine
+            .apply(EngineCommand::CreateRoom {
+                room_id: room.into(),
+                name: room.to_owned(),
+                owner: "alice".into(),
+                admission: AdmissionPolicy::Open,
+            })
+            .unwrap();
+    }
+    let mut service = ServiceV2::new(
+        engine,
+        ServiceLimitsV2 {
+            max_retained_cursors: 1,
+            ..ServiceLimitsV2::default()
+        },
+    );
+    let alice = service.connect("alice").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::Rooms(first)) = service.execute(
+        alice,
+        request(
+            0,
+            CommandV2::Rooms {
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("room page should be accepted");
+    };
+    let cursor = first.next.unwrap();
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                1,
+                CommandV2::Rooms {
+                    cursor: None,
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::CursorLimit)
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                2,
+                CommandV2::Speak {
+                    room_id: "alpha".to_owned(),
+                    expected_revision: 6,
+                    logical_time: 0,
+                    body: "change".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::MessageAccepted {
+            revision: 7,
+            sequence: 0,
+        })
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                3,
+                CommandV2::Rooms {
+                    cursor: Some(cursor),
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::Stale { actual_revision: 7 })
+    );
+}
+
+#[test]
+fn v2_validation_and_request_conflict_precede_mutation() {
+    let mut service = ServiceV2::new(
+        participant_engine(),
+        ServiceLimitsV2 {
+            max_retained_requests: 1,
+            ..ServiceLimitsV2::default()
+        },
+    );
+    let alice = service.connect("alice").unwrap();
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                0,
+                CommandV2::Rooms {
+                    cursor: None,
+                    limit: 0,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidInput)
+    );
+    let accepted = request(
+        0,
+        CommandV2::CreateRoom {
+            room_id: "room".to_owned(),
+            name: "Room".to_owned(),
+            admission: AdmissionPolicyV2::Open,
+            expected_revision: 4,
+        },
+    );
+    assert_eq!(
+        service.execute(alice, accepted.clone()),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 5 })
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                0,
+                CommandV2::CreateRoom {
+                    room_id: "changed".to_owned(),
+                    name: "Changed".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 5,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::RequestConflict)
+    );
+    assert_eq!(service.engine().revision().0, 5);
+    assert_eq!(
+        service.execute(alice, accepted),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 5 })
+    );
+}
+
+#[test]
+fn v2_disconnect_reclaims_requests_and_cursors() {
+    let mut engine = participant_engine();
+    for room in ["alpha", "beta"] {
+        engine
+            .apply(EngineCommand::CreateRoom {
+                room_id: room.into(),
+                name: room.to_owned(),
+                owner: "alice".into(),
+                admission: AdmissionPolicy::Open,
+            })
+            .unwrap();
+    }
+    let mut service = ServiceV2::new(
+        engine,
+        ServiceLimitsV2 {
+            max_clients: 1,
+            max_retained_requests: 1,
+            max_retained_cursors: 1,
+            ..ServiceLimitsV2::default()
+        },
+    );
+    let first = service.connect("alice").unwrap();
+    assert_eq!(first, ClientIdV2(0));
+    assert!(matches!(
+        service.execute(
+            first,
+            request(
+                0,
+                CommandV2::Rooms {
+                    cursor: None,
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Rooms(_))
+    ));
+    assert_eq!(service.disconnect(first), Ok(true));
+    assert_eq!(service.disconnect(first), Ok(false));
+    let second = service.connect("alice").unwrap();
+    assert_eq!(second, ClientIdV2(1));
+    assert!(matches!(
+        service.execute(
+            second,
+            request(
+                0,
+                CommandV2::Rooms {
+                    cursor: None,
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Rooms(_))
+    ));
+}

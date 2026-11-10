@@ -29,6 +29,8 @@ or crates.io release.
   missing, changed-version, and empty-inventory mutants;
 - membership-filtered, revision-bound in-process room/member/message pages with
   opaque cursors and explicit retained-history intervals;
+- separately typed volatile Protocol/Service/Client V2 source profile closing
+  participant-bound room lifecycle commands and bounded cursor projection;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.
@@ -40,8 +42,8 @@ or crates.io release.
 - SDK facades are not approved or configured for registry publication;
 - no qualified credential/Aegis verifier, network transport, or connector
   conformance package;
-- no Protocol V2 projection of bounded observation through service, wire, host,
-  client, or SDK;
+- no Protocol V2 wire or authenticated-host projection, capability negotiation,
+  transport, or durable cursor/request recovery;
 - no independently qualified durable Agora store;
 - no performance or fuzzing qualification, coverage-guided mutation, advisory
   lookup, legal compatibility review, binary SBOM, or artifact provenance;
