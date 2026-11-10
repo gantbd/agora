@@ -22,6 +22,8 @@ follow Semantic Versioning once a public release contract is selected.
   kinds, all scope variants, and every three-step ordering of three targets.
 - Added a 216-schedule Service V2 model covering human/agent symmetry, stale
   revisions, membership authority changes, disconnects, and reconnects.
+- Added an opt-in 5,000-cycle service soak for replay, paging, retention,
+  leave/kick/rejoin lifecycle, reconnect, and checkpoint recovery.
 - Added audience-specific embedded and remote-client SDK facades.
 - Added exact package and canonical-fixture compatibility inventories with
   adversarial drift checks.

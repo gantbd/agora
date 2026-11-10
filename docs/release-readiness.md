@@ -35,6 +35,9 @@ not ready for a network service or crates.io release.
 - exhaustive 216-schedule Service V2 model covering human/agent symmetry,
   current and stale mutations, leave/join authority, retired clients, and
   reconnect namespace reset;
+- opt-in deterministic 5,000-cycle Service V2 soak covering exact replay,
+  bounded paging and retention, leave/kick/rejoin lifecycle, reconnect, and
+  repeated canonical checkpoint recovery;
 - canonical bounded Wire V2 complete-frame grammar with four additional golden
   fixtures and closed nested vocabularies;
 - deterministic bounded mutation of every canonical V1/V2 wire fixture across

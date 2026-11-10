@@ -1,4 +1,4 @@
-.PHONY: check check-baseline check-boundaries check-release-contract check-supply-chain fmt lint test doc
+.PHONY: check check-baseline check-boundaries check-release-contract check-supply-chain fmt lint test doc soak
 
 check: check-release-contract check-baseline check-supply-chain check-boundaries fmt lint test doc
 
@@ -29,4 +29,7 @@ test:
 doc:
 	cargo test --workspace --doc --locked --offline
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked --offline
+
+soak:
+	cargo test -p agora-service --test service_v2_soak --locked --offline -- --ignored --nocapture
 

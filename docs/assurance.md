@@ -68,6 +68,15 @@ membership authority, stale fencing, retired-client refusal, and reconnect
 namespace reset must match the explicit reference state after every step. This
 is serialized bounded exploration, not thread-parallel linearizability proof.
 
+`make soak` runs an opt-in deterministic 5,000-cycle Service V2 campaign. Every
+cycle performs identified speaking plus exact replay, bounded history paging,
+leave or owner kick, open rejoin, and retention checks; actor clients reconnect
+periodically and the complete service checkpoint is recovered and required to
+re-encode exactly every seventeen cycles. The default campaign completed under
+the qualified toolchain. `AGORA_SOAK_CYCLES` may select a different positive
+cycle count for diagnostics. This is repeated serialized behavior, not a
+latency/throughput benchmark, crash-durability proof, or concurrency proof.
+
 Wire scenarios freeze representative request/reply bytes, round-trip every
 closed protocol variant, refuse every truncation and trailing byte, and exercise
 frame/text/field/list ceilings, strict UTF-8, unsupported versions, and unknown
