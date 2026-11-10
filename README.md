@@ -22,7 +22,9 @@ An additive Protocol V2 now has a separately typed serialized service, client,
 and canonical version-2 complete-frame codec. It closes participant-bound room creation, invitation, joining,
 leaving, role change, speaking, and bounded page projection with client-scoped
 opaque cursors and exact volatile request replay. It deliberately has no V2
-authenticated-host or transport composition yet; V1 remains unchanged.
+credential adapter or network transport yet. Its separately typed authenticated
+host applies current-context revalidation and exact session/client binding. V1
+remains unchanged.
 
 The repository also contains an initial transport-neutral operational profile:
 

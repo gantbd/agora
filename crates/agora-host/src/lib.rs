@@ -12,6 +12,8 @@ use agora_wire::{
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
+pub mod v2;
+
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
 pub struct HostSessionIdV1([u8; 16]);
 

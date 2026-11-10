@@ -99,6 +99,12 @@
   reconstruction, consumes all input, and refuses V1, unknown nested tags,
   malformed text, overflow, truncation, and trailing bytes. Canonical V2 fixtures
   must not change without compatibility review.
+- **R26 — Authenticated Host V2:** a separately typed V2 host applies the same
+  exact Connect authentication, per-frame current-context revalidation, monotone
+  host-time, dual host-session/service-client binding, client-substitution fence,
+  non-enumerating external refusal, and unconditional transport-loss cleanup laws
+  to Wire/Service V2. V1 frames refuse before authentication and V2 failures
+  cannot operate on another session.
 
 ## Explicitly open
 
@@ -106,6 +112,6 @@ Durable storage adapters, durable event sinks, credential/Aegis verifier adapter
 network transports, durable sessions, bans, message
 editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
-Authenticated-host and durable projection of the V2 service remain open;
+Credential/Aegis adapters, transport, and durable V2 recovery remain open;
 Protocol V1 bytes and semantics are unchanged.
 

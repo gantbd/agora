@@ -90,11 +90,20 @@ outcome, and refusal. It independently exercises every truncation of
 representative request and reply frames, trailing data, V1/version mismatch,
 unknown command and cursor tags, text/list ceilings, and content-safe Debug
 surfaces. Together the compatibility gate now closes over seven canonical
-fixtures. This establishes only complete-frame codec behavior; no V2 host or
-transport is claimed.
+fixtures. This establishes only complete-frame codec behavior; Host V2 evidence
+is separate below and no transport is claimed.
 The remote-client facade-only scenario also constructs a V2 client request and
 round-trips a V2 Connect frame using only the facade's existing three-package
 closure.
+
+Host V2 scenarios authenticate and bind a participant-derived CreateRoom actor,
+prove exact replay, erase registered versus unknown authentication failure,
+retire only a substituting or revoked caller, preflight capacity and V1/version
+mismatch before verifier invocation, and exercise both protocol disconnect and
+unconditional transport-close cleanup. The embedded-facade scenario constructs
+the complete V2 engine/service/host stack without direct package dependencies.
+The verifier remains a trusted test double; no credential, Aegis, network, or
+durable-session adapter is qualified.
 
 The gate does not establish authentication, transport security, multi-process
 serialization, durable storage, event delivery, distributed availability, or

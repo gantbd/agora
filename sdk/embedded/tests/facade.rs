@@ -34,3 +34,12 @@ fn facade_alone_constructs_the_embedded_stack() {
 
     assert_eq!(host.service().usage(), service::Usage::default());
 }
+
+#[test]
+fn facade_alone_constructs_the_embedded_v2_stack() {
+    let engine = engine::Engine::new();
+    let service = service::v2::ServiceV2::new(engine, service::v2::ServiceLimitsV2::default());
+    let host = host::v2::HostV2::new(service, Verifier, host::HostLimits::default());
+
+    assert_eq!(host.service().usage(), service::v2::UsageV2::default());
+}

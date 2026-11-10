@@ -33,6 +33,8 @@ or crates.io release.
   participant-bound room lifecycle commands and bounded cursor projection;
 - canonical bounded Wire V2 complete-frame grammar with three additional golden
   fixtures and closed nested vocabularies;
+- authenticated transport-neutral Host V2 with distinct session/client binding,
+  per-frame revalidation, substitution fencing, and cleanup;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.
@@ -44,8 +46,8 @@ or crates.io release.
 - SDK facades are not approved or configured for registry publication;
 - no qualified credential/Aegis verifier, network transport, or connector
   conformance package;
-- no Protocol V2 authenticated-host projection, capability negotiation,
-  transport, or durable cursor/request recovery;
+- no qualified V2 credential/Aegis adapter, capability negotiation, network
+  transport, or durable session/cursor/request recovery;
 - no independently qualified durable Agora store;
 - no performance or fuzzing qualification, coverage-guided mutation, advisory
   lookup, legal compatibility review, binary SBOM, or artifact provenance;

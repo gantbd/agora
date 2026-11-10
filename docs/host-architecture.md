@@ -1,10 +1,17 @@
 # Authenticated host architecture
 
-Status: qualified transport-neutral host profile V1.
+Status: qualified transport-neutral host profiles V1 and V2.
 
 `agora-host` is a composition boundary over exact `agora-wire` frames and one
 serialized `agora-service`. It performs no socket I/O and understands no
 password, token, certificate, OAuth, or Aegis grant format.
+
+`Host` binds frozen Wire/Service V1. `v2::HostV2` binds Wire/Service V2 through a
+distinct `HostSessionIdV2`. Both use the same verifier, explicit time, limits,
+generic refusal, usage, revocation, and cleanup contracts. The verifier evidence
+is transport and credential attribution, not a wire-version-specific value;
+V2's reuse of `VerifiedSubjectV1` and `HostTimeV1` does not make V1 frames valid
+for a V2 host.
 
 ## Trusted verifier port
 
@@ -37,6 +44,9 @@ A successful Connect creates two distinct identities:
 - the service allocates a sequential `ClientIdV1` used in protocol frames;
 - the host allocates an opaque `HostSessionIdV1` returned only to the trusted
   transport adapter.
+
+The V2 profile creates the analogous separately typed `ClientIdV2` and
+`HostSessionIdV2`; identities cannot be substituted across versions.
 
 The transport must bind the host session to its connection state and must not
 accept a session ID from the wire payload. On Execute or Disconnect, the host

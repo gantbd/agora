@@ -5,8 +5,8 @@ Status: initial volatile in-process profile.
 The repository now carries two source profiles. `Service` preserves frozen
 Protocol V1 Snapshot/Speak behavior. `v2::ServiceV2` is separately typed and adds
 participant-bound room lifecycle parity plus bounded room/member/message pages.
-It has a separately versioned canonical wire codec but no authenticated-host
-projection yet; V1 is not reinterpreted.
+It has a separately versioned canonical wire codec. `agora-host::v2` supplies the
+separately qualified authenticated composition; V1 is not reinterpreted.
 
 Agora follows an atomic-evolution layout: domain engine, protocol values,
 serialized service owner, and client interpretation live in one repository but

@@ -24,6 +24,8 @@ volatile service, and the authenticated host. The application must still provide
 the trusted `PrincipalVerifier`, explicit host time, transport-bound context,
 transport framing/lifecycle, persistence, and runtime policy. The facade does not
 select adapters and does not authenticate credentials itself.
+The same three-package closure exposes the separately typed V2 service and host
+modules without adding another dependency or authority source.
 
 ## Remote-client distribution
 

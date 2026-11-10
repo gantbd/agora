@@ -41,6 +41,12 @@ This treatment still trusts the verifier and transport binding; a verifier that
 accepts forged context, or an adapter that accepts host session IDs from payloads,
 reintroduces spoofing and confused-deputy risk.
 
+The separately typed V2 host applies the same authentication, monotone-time,
+dual-binding, non-enumeration, revocation, and cleanup treatment to V2 frames and
+clients. A V1 frame is rejected before verifier invocation. This closes no new
+credential, authorization, confidentiality, durable-session, or network threat;
+those external obligations remain unchanged.
+
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.
 The qualified local Moira receiver therefore exposes only a passive pending

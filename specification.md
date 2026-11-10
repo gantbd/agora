@@ -185,9 +185,31 @@ list before owned reconstruction and requires complete consumption. V1 bytes,
 unknown root or nested tags, invalid UTF-8, truncation, trailing data, and ceiling
 violations refuse. The normative grammar is in `docs/wire-protocol-v2.md`.
 
-This is a frame codec only. V2 stream framing, feature negotiation,
-authentication, transport binding, confidentiality, replay protection beyond
-service request identity, and host session lifecycle remain open.
+This codec alone supplies no stream framing, feature negotiation, authentication,
+transport binding, confidentiality, or replay protection beyond service request
+identity. The transport-neutral authenticated host is specified separately below.
+
+## Authenticated host profile V2
+
+`agora-host::v2::HostV2` composes exact Wire V2 frames with one `ServiceV2` while
+reusing the qualified transport-neutral `PrincipalVerifier`, explicit host time,
+host limits, refusal, and passive usage contracts. The authentication evidence
+contract is independent of wire version; V2 nevertheless uses a distinct opaque
+`HostSessionIdV2` and separately typed V2 service client.
+
+Connect decoding and host/session capacity precede verifier invocation. Exact
+participant authentication precedes service connection. Every later frame
+requires nonregressing host time, current subject/participant/context
+revalidation, and exact equality between the frame client and the service client
+retained for that host session. Any revalidation or substitution failure retires
+only the caller session and disconnects its client before returning the shared
+Unavailable class. Transport close remains an unconditional cleanup path.
+
+V1 frames refuse at V2 decode before authentication. Authentication failures do
+not query or reveal participant registration. V2 host sessions and clients are
+non-reused within the volatile lifetime, and bounded retirement pressure never
+blocks cleanup. The host still performs no network I/O, credential verification,
+authorization-policy evaluation, durable session recovery, or encryption.
 
 ## Wire profile V1
 

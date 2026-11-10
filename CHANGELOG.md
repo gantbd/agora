@@ -19,6 +19,8 @@ follow Semantic Versioning once a public release contract is selected.
   room lifecycle parity, bounded client cursor handles, and exact volatile replay.
 - Added a canonical bounded Wire V2 grammar with golden create-room, room-page,
   and retained-message-page fixtures.
+- Added a separately typed authenticated Host V2 with current-context
+  revalidation, client-substitution fencing, and revocation-safe cleanup.
 
 ### Changed
 
