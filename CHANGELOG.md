@@ -13,6 +13,8 @@ follow Semantic Versioning once a public release contract is selected.
   adversarial drift checks.
 - Added a pinned Rust toolchain, source release contract, security policy, dual
   license files, and conservative locked-component supply inventory.
+- Added membership-filtered, revision-bound room, member, and retained-message
+  pages with opaque cursors and explicit retention-gap evidence.
 
 ### Changed
 

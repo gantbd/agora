@@ -71,10 +71,23 @@
   distribution labels that add no transport, credentials, authority, storage,
   orchestration, retry, or runtime policy.
 
+## Bounded core observation v0.1
+
+- **R23 — Revision-bound pages:** a registered participant may observe only rooms
+  in which it is a current member, and a current member may page that room's
+  members and retained messages. Every page is nonempty-limit bounded; a
+  continuation is opaque, bound to observer, room where applicable, and exact
+  engine revision; foreign and stale continuations refuse distinctly. Message
+  pages expose the retained sequence interval rather than implying complete
+  history. Observation and its refusals do not mutate engine state, and debug
+  output discloses no identifiers, display names, room names, or message bodies.
+
 ## Explicitly open
 
 Durable storage adapters, durable event sinks, credential/Aegis verifier adapters,
 network transports, durable sessions, bans, message
 editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
+Protocol/service/wire projection of bounded core observation remains open for
+Protocol V2; Protocol V1 bytes and semantics are unchanged.
 

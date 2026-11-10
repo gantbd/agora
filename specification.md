@@ -68,6 +68,34 @@ names, and bodies. Empty identifiers, names, and bodies are refused. Arithmetic
 overflow is refused. Message and publication debug output reports sizes and
 closed metadata without message bodies or idempotency keys.
 
+### Bounded core observation profile v0.1
+
+`room_page` returns only rooms in which the exact observer is a current member.
+`member_page` and `message_page` additionally require current membership in the
+named room. Page limits are positive and cannot exceed the corresponding engine
+collection ceiling.
+
+Continuations are opaque Rust values issued only by the engine. Each binds the
+exact engine revision, observer, room where applicable, and final ordering key.
+Using a continuation for another observer or room refuses as foreign. Any
+accepted mutation makes the continuation stale, even when the mutation affected
+another room; this conservative rule prevents a page sequence from silently
+mixing revisions. Page order is canonical room ID, participant ID, or retained
+message sequence order. A continuation is present exactly when another visible
+item existed at that revision.
+
+Message pages expose both `oldest_retained_sequence` and
+`next_message_sequence`. The half-open interval identifies retention loss even
+when a page is empty; it is not a complete-history or durable-history claim.
+Pages clone bounded observations only, perform no mutation, consume no engine
+revision or event sequence, and publish no outbox event. Their custom Debug
+representations contain only revisions, sizes, counts, scalar positions, and
+continuation presence.
+
+This is an in-process engine profile. Protocol V1 remains frozen and does not
+encode these values. A later Protocol V2 must close the service, wire, client,
+host, and SDK projection without reinterpreting V1 bytes.
+
 ## Replay-safe response publication
 
 `PublicationCommandV2` is an adapter profile over plain `Speak`. One opaque

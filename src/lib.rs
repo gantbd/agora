@@ -187,6 +187,190 @@ pub struct RoomView {
     pub next_message_sequence: u64,
 }
 
+/// Bounded room-directory entry visible to one current room member.
+#[derive(Clone, Eq, PartialEq)]
+pub struct RoomSummary {
+    pub id: RoomId,
+    pub name: String,
+    pub admission: AdmissionPolicy,
+    pub observer_role: Role,
+    pub member_count: usize,
+    pub retained_message_count: usize,
+    pub next_message_sequence: u64,
+}
+
+impl fmt::Debug for RoomSummary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RoomSummary")
+            .field("room_id_bytes", &self.id.as_str().len())
+            .field("room_name_bytes", &self.name.len())
+            .field("admission", &self.admission)
+            .field("observer_role", &self.observer_role)
+            .field("member_count", &self.member_count)
+            .field("retained_message_count", &self.retained_message_count)
+            .field("next_message_sequence", &self.next_message_sequence)
+            .finish()
+    }
+}
+
+/// Opaque continuation for one participant's room-directory observation.
+#[derive(Clone, Eq, PartialEq)]
+pub struct RoomPageCursor {
+    revision: Revision,
+    observer: ParticipantId,
+    after: RoomId,
+}
+
+impl fmt::Debug for RoomPageCursor {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RoomPageCursor")
+            .field("revision", &self.revision)
+            .field("observer_id_bytes", &self.observer.as_str().len())
+            .field("after_room_id_bytes", &self.after.as_str().len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct RoomPage {
+    pub revision: Revision,
+    pub rooms: Vec<RoomSummary>,
+    pub next: Option<RoomPageCursor>,
+}
+
+impl fmt::Debug for RoomPage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RoomPage")
+            .field("revision", &self.revision)
+            .field("room_count", &self.rooms.len())
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
+}
+
+/// One bounded member projection. Registration is not authentication.
+#[derive(Clone, Eq, PartialEq)]
+pub struct MemberView {
+    pub participant_id: ParticipantId,
+    pub display_name: String,
+    pub kind: ParticipantKind,
+    pub role: Role,
+}
+
+impl fmt::Debug for MemberView {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemberView")
+            .field("participant_id_bytes", &self.participant_id.as_str().len())
+            .field("display_name_bytes", &self.display_name.len())
+            .field("kind", &self.kind)
+            .field("role", &self.role)
+            .finish()
+    }
+}
+
+/// Opaque continuation for one participant's observation of one member set.
+#[derive(Clone, Eq, PartialEq)]
+pub struct MemberPageCursor {
+    revision: Revision,
+    observer: ParticipantId,
+    room_id: RoomId,
+    after: ParticipantId,
+}
+
+impl fmt::Debug for MemberPageCursor {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemberPageCursor")
+            .field("revision", &self.revision)
+            .field("observer_id_bytes", &self.observer.as_str().len())
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("after_participant_id_bytes", &self.after.as_str().len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MemberPage {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub members: Vec<MemberView>,
+    pub next: Option<MemberPageCursor>,
+}
+
+impl fmt::Debug for MemberPage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemberPage")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("member_count", &self.members.len())
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
+}
+
+/// Opaque continuation for one participant's retained-message observation.
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessagePageCursor {
+    revision: Revision,
+    observer: ParticipantId,
+    room_id: RoomId,
+    after_sequence: u64,
+}
+
+impl fmt::Debug for MessagePageCursor {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessagePageCursor")
+            .field("revision", &self.revision)
+            .field("observer_id_bytes", &self.observer.as_str().len())
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("after_sequence", &self.after_sequence)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessagePage {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub messages: Vec<Message>,
+    pub oldest_retained_sequence: u64,
+    pub next_message_sequence: u64,
+    pub next: Option<MessagePageCursor>,
+}
+
+impl fmt::Debug for MessagePage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessagePage")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("message_count", &self.messages.len())
+            .field("oldest_retained_sequence", &self.oldest_retained_sequence)
+            .field("next_message_sequence", &self.next_message_sequence)
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
+}
+
+/// Refusal vocabulary for bounded observation. Refusals expose no foreign IDs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ObservationRefusal {
+    UnknownParticipant,
+    UnknownRoom,
+    NotMember,
+    InvalidLimit,
+    ForeignCursor,
+    Stale { actual_revision: Revision },
+    Capacity,
+    InconsistentState,
+}
+
 #[derive(Debug)]
 struct Room {
     id: RoomId,
@@ -569,6 +753,241 @@ impl Engine {
     }
     pub fn room_ids(&self) -> impl ExactSizeIterator<Item = &RoomId> {
         self.rooms.keys()
+    }
+
+    /// Returns one revision-bound page of rooms containing `observer`.
+    ///
+    /// The cursor is intentionally opaque and is valid only for the same
+    /// observer at the exact engine revision that produced it.
+    pub fn room_page(
+        &self,
+        observer: &ParticipantId,
+        cursor: Option<&RoomPageCursor>,
+        limit: usize,
+    ) -> Result<RoomPage, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        if limit == 0 || limit > self.limits.max_rooms {
+            return Err(ObservationRefusal::InvalidLimit);
+        }
+        let after = if let Some(cursor) = cursor {
+            if &cursor.observer != observer {
+                return Err(ObservationRefusal::ForeignCursor);
+            }
+            if cursor.revision != self.revision {
+                return Err(ObservationRefusal::Stale {
+                    actual_revision: self.revision,
+                });
+            }
+            Some(&cursor.after)
+        } else {
+            None
+        };
+
+        let mut rooms = Vec::new();
+        rooms
+            .try_reserve_exact(limit)
+            .map_err(|_| ObservationRefusal::Capacity)?;
+        let mut has_more = false;
+        for room in self.rooms.values() {
+            if after.is_some_and(|after| &room.id <= after) {
+                continue;
+            }
+            let Some(role) = room.members.get(observer).copied() else {
+                continue;
+            };
+            if rooms.len() == limit {
+                has_more = true;
+                break;
+            }
+            rooms.push(RoomSummary {
+                id: room.id.clone(),
+                name: room.name.clone(),
+                admission: room.admission,
+                observer_role: role,
+                member_count: room.members.len(),
+                retained_message_count: room.messages.len(),
+                next_message_sequence: room.next_message_sequence,
+            });
+        }
+        let next = if has_more {
+            Some(RoomPageCursor {
+                revision: self.revision,
+                observer: observer.clone(),
+                after: rooms
+                    .last()
+                    .ok_or(ObservationRefusal::InconsistentState)?
+                    .id
+                    .clone(),
+            })
+        } else {
+            None
+        };
+        Ok(RoomPage {
+            revision: self.revision,
+            rooms,
+            next,
+        })
+    }
+
+    /// Returns one revision-bound page of members in canonical participant-ID
+    /// order. Only a current room member may observe the page.
+    pub fn member_page(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        cursor: Option<&MemberPageCursor>,
+        limit: usize,
+    ) -> Result<MemberPage, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        if limit == 0 || limit > self.limits.max_members_per_room {
+            return Err(ObservationRefusal::InvalidLimit);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        let after = if let Some(cursor) = cursor {
+            if &cursor.observer != observer || &cursor.room_id != room_id {
+                return Err(ObservationRefusal::ForeignCursor);
+            }
+            if cursor.revision != self.revision {
+                return Err(ObservationRefusal::Stale {
+                    actual_revision: self.revision,
+                });
+            }
+            Some(&cursor.after)
+        } else {
+            None
+        };
+
+        let mut members = Vec::new();
+        members
+            .try_reserve_exact(limit)
+            .map_err(|_| ObservationRefusal::Capacity)?;
+        let mut has_more = false;
+        for (participant_id, role) in &room.members {
+            if after.is_some_and(|after| participant_id <= after) {
+                continue;
+            }
+            if members.len() == limit {
+                has_more = true;
+                break;
+            }
+            let participant = self
+                .participants
+                .get(participant_id)
+                .ok_or(ObservationRefusal::InconsistentState)?;
+            members.push(MemberView {
+                participant_id: participant_id.clone(),
+                display_name: participant.display_name.clone(),
+                kind: participant.kind,
+                role: *role,
+            });
+        }
+        let next = if has_more {
+            Some(MemberPageCursor {
+                revision: self.revision,
+                observer: observer.clone(),
+                room_id: room_id.clone(),
+                after: members
+                    .last()
+                    .ok_or(ObservationRefusal::InconsistentState)?
+                    .participant_id
+                    .clone(),
+            })
+        } else {
+            None
+        };
+        Ok(MemberPage {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            members,
+            next,
+        })
+    }
+
+    /// Returns one revision-bound page of retained messages in sequence order.
+    /// The page is a retained suffix observation, not a complete-history claim.
+    pub fn message_page(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        cursor: Option<&MessagePageCursor>,
+        limit: usize,
+    ) -> Result<MessagePage, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        if limit == 0 || limit > self.limits.max_messages_per_room {
+            return Err(ObservationRefusal::InvalidLimit);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        let after_sequence = if let Some(cursor) = cursor {
+            if &cursor.observer != observer || &cursor.room_id != room_id {
+                return Err(ObservationRefusal::ForeignCursor);
+            }
+            if cursor.revision != self.revision {
+                return Err(ObservationRefusal::Stale {
+                    actual_revision: self.revision,
+                });
+            }
+            Some(cursor.after_sequence)
+        } else {
+            None
+        };
+
+        let mut messages = Vec::new();
+        messages
+            .try_reserve_exact(limit)
+            .map_err(|_| ObservationRefusal::Capacity)?;
+        let mut has_more = false;
+        for message in &room.messages {
+            if after_sequence.is_some_and(|after| message.sequence <= after) {
+                continue;
+            }
+            if messages.len() == limit {
+                has_more = true;
+                break;
+            }
+            messages.push(message.clone());
+        }
+        let next = if has_more {
+            Some(MessagePageCursor {
+                revision: self.revision,
+                observer: observer.clone(),
+                room_id: room_id.clone(),
+                after_sequence: messages
+                    .last()
+                    .ok_or(ObservationRefusal::InconsistentState)?
+                    .sequence,
+            })
+        } else {
+            None
+        };
+        Ok(MessagePage {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            messages,
+            oldest_retained_sequence: room
+                .next_message_sequence
+                .checked_sub(room.messages.len() as u64)
+                .ok_or(ObservationRefusal::InconsistentState)?,
+            next_message_sequence: room.next_message_sequence,
+            next,
+        })
     }
 
     pub fn revision(&self) -> Revision {

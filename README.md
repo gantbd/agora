@@ -12,6 +12,12 @@ bounded outbox, replay-safe response publication, and canonical V2 checkpoints.
 Messages may explicitly address a canonical bounded list of current room members.
 Participant kind never changes admission, role, speaking, or addressing behavior.
 
+The core also provides membership-filtered, bounded room, member, and retained-
+message pages. Their opaque cursors are bound to the exact observer, room where
+applicable, and engine revision; message pages expose the retained sequence
+interval rather than claiming complete history. This profile is not yet projected
+through the frozen Protocol V1 service or wire surface.
+
 The repository also contains an initial transport-neutral operational profile:
 
 - `agora-protocol` owns closed request, reply, snapshot, and refusal values;

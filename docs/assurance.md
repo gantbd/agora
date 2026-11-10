@@ -66,6 +66,14 @@ closure to be exactly engine/service/host and the client facade's direct closure
 to be exactly client/protocol/wire. These checks establish packaging and audience
 separation only; they add no runtime, transport, or release-provenance claim.
 
+The bounded observation scenarios concatenate room, member, and retained-message
+pages; distinguish foreign from stale cursors; enforce membership filtering and
+positive configured limits; preserve human/agent kind as non-authoritative data;
+surface the retained message interval after eviction; and assert content-safe
+Debug output. This establishes an in-process core primitive only. Protocol V1
+remains unchanged, and no service, wire, transport, durable cursor, or cross-
+restart claim follows.
+
 The gate does not establish authentication, transport security, multi-process
 serialization, durable storage, event delivery, distributed availability, or
 orchestrator correctness. Those claims require separate adapters and evidence.
