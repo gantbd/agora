@@ -4,14 +4,20 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 required_files=(
+  CHANGELOG.md
   Cargo.lock
+  LICENSE-APACHE
+  LICENSE-MIT
   README.md
+  SECURITY.md
   requirements.md
   specification.md
   rust-toolchain.toml
   docs/assurance.md
   docs/compatibility.md
+  docs/release-policy.md
   docs/release-readiness.md
+  docs/supply-chain.md
   docs/threat-model.md
   docs/traceability.md
 )
@@ -22,6 +28,13 @@ for required in "${required_files[@]}"; do
     exit 1
   fi
 done
+
+if ! rg -q '^license = "MIT OR Apache-2\.0"$' Cargo.toml \
+  || ! rg -q 'Apache License' LICENSE-APACHE \
+  || ! rg -q 'Permission is hereby granted' LICENSE-MIT; then
+  echo 'declared dual-license contract and repository license texts disagree' >&2
+  exit 1
+fi
 
 if ! rg -q '^channel = "1\.95\.0"$' rust-toolchain.toml \
   || ! rg -q '^components = \["clippy", "rustfmt"\]$' rust-toolchain.toml; then

@@ -23,6 +23,10 @@ or crates.io release.
   eight packages;
 - conservative package and canonical-fixture inventory closure over eight
   packages and four fixtures;
+- repository license texts, private security reporting, a changelog, and an
+  explicit source-distribution policy;
+- conservative supply inventory closure over nine locked local components with
+  missing, changed-version, and empty-inventory mutants;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.
@@ -35,7 +39,8 @@ or crates.io release.
 - no qualified credential/Aegis verifier, network transport, or connector
   conformance package;
 - no independently qualified durable Agora store;
-- no performance, fuzzing, mutation, or supply-chain qualification;
+- no performance or fuzzing qualification, coverage-guided mutation, advisory
+  lookup, legal compatibility review, binary SBOM, or artifact provenance;
 - no production privacy, deletion, moderation, or abuse policy.
 
 Passing `make check` establishes only the source profile above.

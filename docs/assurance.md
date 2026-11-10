@@ -9,7 +9,8 @@ remain unchanged. Persistence scenarios compare canonical bytes after recovery.
 
 The active `make check` gate contains:
 
-1. fail-closed release-contract and conservative compatibility-baseline checks;
+1. fail-closed release-contract, conservative compatibility-baseline, and locked
+   local-component supply checks with adversarial inventory mutants;
 2. dependency and effect-boundary checks;
 3. formatting and warning-denied lint;
 4. all unit, integration, and bounded-model tests offline;
@@ -21,6 +22,9 @@ explicit sibling-Keystone source-layout assumption. The compatibility gate
 closes over the exact eight-package workspace and four canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
+The supply gate closes over nine local locked components and exact local-path
+dependency declarations. It is not an advisory scan, legal conclusion, binary
+SBOM, remote source proof, or artifact provenance claim.
 
 The addressing model exhausts every author, recipient subset, and human/agent
 kind assignment for a three-participant room. This establishes symmetry only for

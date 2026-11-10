@@ -1,6 +1,6 @@
-.PHONY: check check-baseline check-boundaries check-release-contract fmt lint test doc
+.PHONY: check check-baseline check-boundaries check-release-contract check-supply-chain fmt lint test doc
 
-check: check-release-contract check-baseline check-boundaries fmt lint test doc
+check: check-release-contract check-baseline check-supply-chain check-boundaries fmt lint test doc
 
 check-release-contract:
 	./scripts/check-release-contract.sh
@@ -8,6 +8,10 @@ check-release-contract:
 check-baseline:
 	./scripts/check-compatibility-baseline.sh
 	./scripts/check-compatibility-baseline-mutants.sh
+
+check-supply-chain:
+	./scripts/check-supply-chain.sh
+	./scripts/check-supply-chain-mutants.sh
 
 check-boundaries:
 	./scripts/check-boundaries.sh
