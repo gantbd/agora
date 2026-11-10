@@ -8,8 +8,15 @@ if rg -n 'AgentActivation|activate_agents|max_agent_activations' src tests; then
   exit 1
 fi
 
-if rg -n 'std::(fs|net|process)::|tokio|async_std|reqwest|rusqlite' src crates/*/src sdk/*/src; then
+if rg -n 'std::(fs|net|process)::|tokio|async_std|reqwest|rusqlite' \
+  src crates sdk -g '*.rs' -g '!crates/agora-storage-directory/**'; then
   echo 'effectful runtime dependency crossed an Agora semantic boundary' >&2
+  exit 1
+fi
+
+if sed '/^#\[cfg(test)\]/,$d' crates/agora-storage-directory/src/lib.rs \
+  | rg -n 'std::(net|process)::|tokio|async_std|reqwest|rusqlite'; then
+  echo 'unqualified effect entered the private-directory adapter' >&2
   exit 1
 fi
 
@@ -57,6 +64,15 @@ if ! printf '%s\n' "$durable_tree" | rg -q 'agora-service' \
   exit 1
 fi
 
+directory_tree=$(cargo tree -p agora-storage-directory --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$directory_tree" | wc -l | tr -d ' ') != 2 ]] \
+  || ! printf '%s\n' "$directory_tree" | rg -q 'keystone-storage' \
+  || printf '%s\n' "$directory_tree" | rg -q 'agora-(engine|host|service|wire|client)'; then
+  printf '%s\n' "$directory_tree" >&2
+  echo 'Agora directory adapter escaped its storage-port-only runtime closure' >&2
+  exit 1
+fi
+
 embedded_sdk_tree=$(cargo tree -p agora-sdk-embedded --edges normal --depth 1 --locked --offline)
 if [[ $(printf '%s\n' "$embedded_sdk_tree" | wc -l | tr -d ' ') != 4 ]] \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-engine' \
@@ -86,4 +102,4 @@ for sdk_manifest in sdk/embedded/Cargo.toml sdk/client/Cargo.toml; do
   fi
 done
 
-echo 'Agora dependency direction closed; no effects or activation semantics'
+echo 'Agora dependency direction closed; filesystem effects isolated to the qualified adapter'

@@ -1,7 +1,7 @@
 # Operational service architecture
 
-Status: volatile in-process source profiles plus a store-neutral durable V2
-publication boundary.
+Status: volatile in-process source profiles, a store-neutral durable V2
+publication boundary, and one qualified local Unix checkpoint-store adapter.
 
 The repository now carries two source profiles. `Service` preserves frozen
 Protocol V1 Snapshot/Speak behavior. `v2::ServiceV2` is separately typed and adds
@@ -18,6 +18,7 @@ agora-client  -> agora-protocol <- agora-service -> agora-engine
                                 <- agora-wire -> keystone-codec
 agora-host -----> agora-wire + agora-service + trusted verifier port
 agora-durable --> agora-host + agora-service + keystone-storage port
+agora-storage-directory --> keystone-storage port + local Unix filesystem
 ```
 
 `agora-engine` and `agora-protocol` have no normal dependencies. The protocol
@@ -69,7 +70,15 @@ suppresses changed-state results until the store returns the exact next revision
 with durable acknowledgement strength. Known refusal reconstructs the pre-offer
 service. Unknown outcome, store error, weak acknowledgement, or malformed receipt
 fences the owner. No mutable service access is exposed while fenced. This closes
-the semantic pre-reply gate, not the physical store adapter.
+the semantic pre-reply gate independently of any store implementation.
+
+`agora-storage-directory` is the one qualified physical composition. It owns no
+Agora semantics: it implements the Keystone store port for one key using a
+private directory, exclusive process lock, checksummed canonical record, and
+file-sync/atomic-rename/directory-sync commit. Its filesystem effects are
+isolated by the dependency gate. The mechanism is local Unix only and does not
+claim hardware power-loss, network-filesystem, backup/restore, encryption, or
+multi-host behavior.
 
 `ClientV2` mirrors that uncertainty boundary without assuming a transport. A
 port reports either definitely-not-sent or outcome-unknown. Unknown retains the
@@ -86,8 +95,10 @@ revalidate current context before the retained session can act.
 
 ## Deliberate exclusions
 
-The profile performs no network I/O, encryption, physical storage,
-orchestration, task creation, model invocation, or agent lifecycle work.
+The semantic profiles perform no network I/O, encryption, direct physical
+storage, orchestration, task creation, model invocation, or agent lifecycle
+work. The separate directory adapter performs only its documented local
+filesystem I/O.
 `agora-wire` only maps passive values to canonical bytes. A later
 authenticated host may connect those bytes to a transport. Moira, Chronos, and
 execution harnesses remain separate systems.

@@ -6,11 +6,13 @@ package|crates/agora-durable/Cargo.toml|agora-durable|0.1.0
 package|crates/agora-host/Cargo.toml|agora-host|0.1.0
 package|crates/agora-protocol/Cargo.toml|agora-protocol|0.1.0
 package|crates/agora-service/Cargo.toml|agora-service|0.1.0
+package|crates/agora-storage-directory/Cargo.toml|agora-storage-directory|0.1.0
 package|crates/agora-wire/Cargo.toml|agora-wire|0.1.0
 package|sdk/client/Cargo.toml|agora-sdk-client|0.1.0
 package|sdk/embedded/Cargo.toml|agora-sdk-embedded|0.1.0
 fixture|crates/agora-host/tests/fixtures/host-checkpoint-v1.hex|802|36132d156b3cc521c0987666af5d44e910eb42ed0b1c94b6f882b1d7925718f1
 fixture|crates/agora-service/tests/fixtures/service-checkpoint-v1.hex|1093|3faf099328a29ba189ff5a62972354276b8c7394bf39b1d8f43e66f8323deacf
+fixture|crates/agora-storage-directory/tests/fixtures/directory-record-v1.hex|52|377cc1e927daa46ec954c5ad419ca762da86a18ee18b7e2d2169262aa0e70b16
 fixture|crates/agora-wire/tests/fixtures/connect-request-v1.hex|11|4c13512cfcb29d053b6e56610b4693ac9ad5f6cd88650349bfb2df13c75c5fe4
 fixture|crates/agora-wire/tests/fixtures/create-room-request-v2.hex|50|3941c9e17887deddf2bf1e20c6446f3f0510390db656581cffadd0d01cdd9000
 fixture|crates/agora-wire/tests/fixtures/messages-reply-v2.hex|104|ef10c0a4aacca3be9317207eec8bc9fd5f2403a1a64379fbfee961331cfcbb79

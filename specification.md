@@ -256,6 +256,31 @@ indeterminate, erroneous, weak, or malformed evidence fences the host. Recovery
 therefore cannot expose a durable service receipt whose authenticated session
 binding was lost, or a durable session whose service client was absent.
 
+## Exclusive private-directory checkpoint profile V1
+
+`agora-storage-directory` implements the Keystone checkpoint-store port for one
+key and one process owner on a local Unix filesystem. Creation makes a private
+mode-0700 directory and mode-0600 owner lock. Open refuses symlinks, permissive
+resources, an unavailable lock, malformed head bytes, and a surviving
+`.pending` file. The live owner pins device/inode identity for its directory and
+lock and the full metadata stamp for its current head; disappearance, mutation,
+or replacement fences later access.
+
+The `AGDIRCP` version-1 record contains the store revision, UTF-8 key, bounded
+checkpoint bytes, declared lengths, and CRC32C binding the header and payload.
+Compare-and-exchange writes a new mode-0600 `.pending` file, synchronizes the
+file, atomically renames it to `checkpoint.bin`, and synchronizes the directory.
+Only completion of that exact sequence returns the mechanism
+`agora-private-directory-v1` with durable acknowledgement strength. A failure
+after the temporary file is created is indeterminate and fences the owner.
+
+“Durable” here means the specified operating-system synchronization mechanism
+completed on the qualified local profile. It does not prove storage-controller
+power-loss behavior, network filesystem semantics, disk integrity, encryption,
+rollback resistance against the trusted same-UID environment, backup/restore,
+or disaster recovery. The parent directory and same-UID processes remain in the
+trusted computing base.
+
 ## Wire profile V2
 
 `agora-wire::v2` maps only Protocol V2 passive values to a distinct version-2

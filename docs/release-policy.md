@@ -9,7 +9,8 @@ authorized.
 - Agora may be cloned, built, and tested from source under the repository's MIT
   or Apache-2.0 licenses.
 - The current checkout requires a sibling `keystone` checkout at the relative
-  path used by `agora-wire`. This is a source-layout dependency, not evidence
+paths used by `agora-wire` and `agora-storage-directory`. This is a
+source-layout dependency, not evidence
   that a lone source archive, Git URL, or registry package builds.
 - No remote, tag, commit availability, signed source bundle, binary artifact,
   installer, or support lifetime is qualified.
@@ -26,7 +27,7 @@ publication, replacing the pinned toolchain with `stable`, and removing the
 security policy must all fail.
 
 `make check-baseline` closes over the exact package and canonical-fixture
-inventories. `make check-supply-chain` closes over the current eleven locked local
+inventories. `make check-supply-chain` closes over the current twelve locked local
 components and refuses source/checksum registry records or dependency edges that
 do not use an exact version plus a local path. These gates detect reviewed source
 contract drift. They do not perform an advisory lookup, legal conclusion,

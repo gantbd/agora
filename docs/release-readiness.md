@@ -1,8 +1,9 @@
 # Release readiness
 
 Status: source-ready for the declared v0.3 core, volatile service v0.1,
-authenticated host profile v0.1, and store-neutral durable service/host boundary
-on 2026-11-10; not ready for a network service or crates.io release.
+authenticated host profile v0.1, store-neutral durable service/host boundary,
+and single-owner local Unix directory-store profile on 2026-11-10;
+not ready for a network service or crates.io release.
 
 ## Established
 
@@ -20,12 +21,12 @@ on 2026-11-10; not ready for a network service or crates.io release.
 - unpublished trusted-host and remote-client SDK facades with executable
   facade-only construction and closed dependency evidence;
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
-  nine packages;
-- conservative package and canonical-fixture inventory closure over nine
-  packages and nine fixtures;
+  ten packages;
+- conservative package and canonical-fixture inventory closure over ten
+  packages and ten fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
-- conservative supply inventory closure over eleven locked local components with
+- conservative supply inventory closure over twelve locked local components with
   missing, changed-version, and empty-inventory mutants;
 - membership-filtered, revision-bound in-process room/member/message pages with
   opaque cursors and explicit retained-history intervals;
@@ -47,6 +48,9 @@ on 2026-11-10; not ready for a network service or crates.io release.
 - canonical authenticated Host V2 recovery and durable combined host/service
   publication, preserving session/client/subject/time bindings and committing
   revocation cleanup before its external refusal;
+- exclusive private local Unix directory storage with a frozen checksummed
+  record, process lock, pinned resource identities, synchronized atomic replace,
+  fail-closed residue/corruption handling, and real authenticated-host restart;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.
@@ -60,7 +64,9 @@ on 2026-11-10; not ready for a network service or crates.io release.
   conformance package;
 - no qualified V2 credential/Aegis adapter, capability negotiation, or network
   transport; the recovered verifier remains an injected trusted port;
-- no independently qualified durable Agora store;
+- no qualified store beyond the single-owner local Unix directory profile; no
+  hardware power-loss, network-filesystem, backup/restore, encryption, or
+  multi-host availability qualification;
 - no performance or fuzzing qualification, coverage-guided mutation, advisory
   lookup, legal compatibility review, binary SBOM, or artifact provenance;
 - no production privacy, deletion, moderation, or abuse policy.

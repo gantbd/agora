@@ -5,7 +5,7 @@ Status: initial STRIDE/LINDDUN analysis for the v0.3 core boundary.
 | Concern | Core treatment | External obligation |
 | --- | --- | --- |
 | Spoofing | IDs grant no authentication; room authority is checked against explicit actor IDs | host binds authenticated principals to IDs |
-| Tampering | optimistic revisions, scope-bound canonical engine/service/cursor checkpoints, and typed validation refuse malformed state | physical storage protects bytes and trusted scope selection |
+| Tampering | optimistic revisions, scope-bound canonical engine/service/cursor checkpoints, typed validation, and the local adapter's checksummed record/resource pinning refuse accidental or observed mutation | trusted scope selection and stronger hostile-storage integrity remain deployment obligations |
 | Repudiation | ordered events and exact service receipts preserve attribution while retained or checkpointed | durable audit and non-repudiation are not claimed |
 | Information disclosure | message/publication debug output redacts content and keys | transport, logs, and storage protect content |
 | Denial of service | retained state, bytes, fan-out, and outbox are bounded with backpressure | host bounds connections, request rate, and CPU |
@@ -57,6 +57,16 @@ the pre-offer state; indeterminate, erroneous, weak, or malformed store evidence
 fences access. Scope is separation evidence, not a secret or MAC. A physical
 adapter must protect record origin, exclusive ownership, rollback, crash residue,
 backup/restore, and actual acknowledgement strength.
+
+The qualified private-directory adapter narrows that obligation for a local Unix
+deployment. It requires mode-0700/0600 resources, an exclusive process lock,
+pinned directory/lock/head identities, CRC32C-bound canonical bytes, and a
+file-sync/atomic-rename/directory-sync commit. Symlinks, permissive modes,
+replacement, malformed records, and `.pending` crash residue fail closed. The
+parent directory and same-UID processes remain trusted; CRC32C is corruption
+detection, not authentication. Hardware power-loss behavior, controller caches,
+network filesystems, rollback by a trusted process, encryption, backup/restore,
+and disaster recovery remain unqualified.
 
 Host persistence binds the verified subject, claimed participant, opaque host
 session, service client and monotone verification time in the same record as all

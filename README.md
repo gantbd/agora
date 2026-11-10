@@ -29,8 +29,11 @@ remains unchanged.
 An independently versioned Service V2 checkpoint preserves the engine, pending
 outbox, client namespace, exact request replies, and live cursor consequences.
 `agora-durable` gates changed service state on a durable compare-and-exchange
-receipt, restores known refusals, and fences indeterminate outcomes. A physical
-store adapter is still a separate qualification.
+receipt, restores known refusals, and fences indeterminate outcomes.
+`agora-storage-directory` supplies one separately qualified physical profile:
+an exclusive private local Unix directory with a synchronized atomic checkpoint
+replace. Its claim does not extend to hardware power-loss behavior, network
+filesystems, backup/restore, encryption, or multi-host availability.
 
 The V2 client separately fences an outcome-unknown transmission: only the exact
 same command may reuse the retained request identity until a reply resolves it
@@ -49,6 +52,8 @@ The repository also contains an initial transport-neutral operational profile:
   registered participant, and provides bounded replay-safe requests;
 - `agora-durable` owns the store-neutral pre-reply durability and uncertainty
   fence for complete Service V2 checkpoints;
+- `agora-storage-directory` owns the one qualified local Unix checkpoint-store
+  mechanism and no semantic state;
 - `agora-host` binds exact wire frames and server-owned clients to a current
   externally verified principal/transport context;
 - `agora-client` owns a monotone request namespace over an abstract service port.

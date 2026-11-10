@@ -68,7 +68,9 @@ if ! rg -q 'not ready for a network service' docs/release-readiness.md \
   exit 1
 fi
 
-if ! rg -q 'path = "\.\./\.\./\.\./keystone/' crates/agora-wire/Cargo.toml; then
+if ! rg -q 'path = "\.\./\.\./\.\./keystone/' crates/agora-wire/Cargo.toml \
+  || ! rg -q 'path = "\.\./\.\./\.\./keystone/' \
+    crates/agora-storage-directory/Cargo.toml; then
   echo 'Keystone source-layout assumption changed without release-contract review' >&2
   exit 1
 fi

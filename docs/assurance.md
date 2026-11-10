@@ -1,7 +1,7 @@
 # Assurance plan
 
-Status: active for the v0.3 core, volatile service v0.1, and store-neutral
-durable Service V2 boundary.
+Status: active for the v0.3 core, volatile service v0.1, store-neutral durable
+Service/Host V2 boundary, and exclusive local Unix directory-store profile.
 
 Agora uses a requirements-to-scenario-to-invariant evidence chain. A behavior is
 claimed only when its requirement, closed public value, adversarial scenario, and
@@ -20,13 +20,13 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact nine-package workspace and nine canonical fixtures. These
+closes over the exact ten-package workspace and ten canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
 publication, weakening the toolchain pin, or removing the security policy is
 refused.
-The supply gate closes over eleven local locked components and exact local-path
+The supply gate closes over twelve local locked components and exact local-path
 dependency declarations. It is not an advisory scan, legal conclusion, binary
 SBOM, remote source proof, or artifact provenance claim.
 
@@ -103,8 +103,8 @@ retire only a substituting or revoked caller, preflight capacity and V1/version
 mismatch before verifier invocation, and exercise both protocol disconnect and
 unconditional transport-close cleanup. The embedded-facade scenario constructs
 the complete V2 engine/service/host stack without direct package dependencies.
-The verifier remains a trusted test double; no credential, Aegis, network, or
-physical durable-store adapter is qualified.
+The verifier remains a trusted test double; no credential, Aegis, or network
+adapter is qualified. Physical storage is separate and narrowly qualified below.
 
 Service V2 persistence scenarios recover byte-identical engine state and pending
 outbox, active clients, retained exact replies, and live room-page continuation.
@@ -115,14 +115,15 @@ and trailing data. The service record and its private cursor subrecords have
 content-safe Debug surfaces. A representative complete service checkpoint is
 frozen as the eighth canonical fixture.
 
-The durable boundary scenarios use a deterministic checkpoint-store fault model.
+The store-neutral durable boundary scenarios use a deterministic
+checkpoint-store fault model.
 They prove a fresh mutation is not published before a durable next-revision
 receipt, a committed lost reply recovers as exact replay without another event
 or store call, a known store refusal reconstructs the pre-offer service, and
 indeterminate-before versus indeterminate-after commitment both fence until load
 resolves the store. Weak acknowledgement and store error never publish. This is
-store-port and crash-point evidence, not qualification of a filesystem, database,
-cloud service, power-loss boundary, backup, restore, or multi-process owner.
+store-port and crash-point evidence. The local directory profile below is a
+separate, deliberately narrow physical composition qualification.
 
 Client V2 scenarios distinguish definitely-not-sent from outcome-unknown,
 retain and resend the exact request identity only for an equal command, fence a
@@ -141,8 +142,20 @@ rolls back both namespaces, and revoked-session cleanup is durable before the
 Unavailable result is visible. The ninth canonical fixture pins the combined
 record.
 
+The private-directory scenarios exercise a real Unix filesystem: initialization,
+two CAS revisions, close/reopen recovery, wrong-revision and capacity refusal,
+exclusive locking, private modes, lock symlinks, crash residue, header corruption,
+and live head replacement. The tenth fixture freezes the `AGDIRCP` bytes. A full
+`DurableHostV2` composition then closes and reopens the store, recovers the
+authenticated host/service unit, and proves same-time exact replay adds neither
+an engine event nor a store offer. The adapter's durable claim is limited to
+successful temporary-file write and sync, atomic rename, and directory sync on a
+single-owner local Unix profile. No hardware power-loss, controller cache,
+network filesystem, backup/restore, encryption, hostile same-UID process, or
+multi-host availability claim follows.
+
 The gate does not establish a credential adapter, transport security,
-multi-process serialization, physical durable storage, event delivery,
+multi-host serialization, physical-device power-loss behavior, event delivery,
 distributed availability, or orchestrator correctness. Those claims require
 separate adapters and evidence.
 

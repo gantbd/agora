@@ -139,13 +139,26 @@
   fresh verifier revalidation on the next frame, and exact request replay cannot
   duplicate the domain transition.
 
+## Qualified local durable storage V1
+
+- **R31 — Exclusive private-directory checkpoint:** the Unix-only local profile
+  owns one checkpoint key under an exclusive process lock in a mode-0700
+  directory. A commit writes one bounded checksummed canonical record to a
+  mode-0600 temporary file, synchronizes it, atomically renames it over the
+  head, and synchronizes the directory before returning durable-strength
+  evidence. The adapter pins the directory, lock, and head identities and fails
+  closed on symlinks, permissive modes, replacement, malformed bytes, or crash
+  residue. A real close/reopen composition must recover the combined Host V2
+  record and exact replay must neither duplicate its engine event nor offer a
+  second checkpoint.
+
 ## Explicitly open
 
-Physical durable storage adapters, durable event sinks, credential/Aegis verifier
-adapters, network transports, bans, message
+Additional physical durable storage adapters, durable event sinks,
+credential/Aegis verifier adapters, network transports, bans, message
 editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
-Credential/Aegis adapters, transport, and a qualified physical durable-store
-composition remain open;
+Credential/Aegis adapters, transport, backup/restore qualification, and durable
+profiles beyond the qualified single-owner local Unix directory remain open;
 Protocol V1 bytes and semantics are unchanged.
 

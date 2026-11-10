@@ -24,6 +24,7 @@ members = [
     "crates/agora-wire",
     "crates/agora-service",
     "crates/agora-durable",
+    "crates/agora-storage-directory",
     "crates/agora-host",
     "crates/agora-client",
     "sdk/embedded",

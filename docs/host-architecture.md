@@ -1,7 +1,7 @@
 # Authenticated host architecture
 
 Status: qualified transport-neutral host profiles V1 and V2 plus canonical,
-store-neutral authenticated V2 recovery.
+store-neutral authenticated V2 recovery and one local Unix store composition.
 
 `agora-host` is a composition boundary over exact `agora-wire` frames and one
 serialized `agora-service`. It performs no socket I/O and understands no
@@ -68,6 +68,11 @@ the retained session cannot act until current context is revalidated again.
 `DurableHostV2` publishes any changed host result only after a durable-strength
 receipt for that combined record.
 
+The separate `agora-storage-directory` package can supply that receipt for the
+qualified single-owner local Unix profile. End-to-end restart evidence closes
+and reopens its real filesystem record, recovers this combined host checkpoint,
+and proves exact replay adds neither another engine event nor store offer.
+
 ## Revocation and cleanup
 
 Failed revalidation retires the host session and disconnects its service client
@@ -85,8 +90,8 @@ opaque identities and aggregate counts.
 ## Deliberate exclusions
 
 The host is not a network server, credential verifier, authorization-policy
-engine, secret store, physical durable store, rate limiter, TLS terminator, or
-audit sink. A production composition root must supply those effects and define
-transport replay, credential rotation, backup/restore, and operational abuse
-policy.
+engine, secret store, rate limiter, TLS terminator, or audit sink. A production
+composition root may pair it with the qualified directory adapter, but must still
+define transport replay, credential rotation, backup/restore, power-loss
+expectations, and operational abuse policy.
 

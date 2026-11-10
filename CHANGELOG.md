@@ -29,6 +29,9 @@ follow Semantic Versioning once a public release contract is selected.
 - Added canonical authenticated Host V2 recovery and a durable combined
   host/service gate so session binding, service receipt, and security cleanup
   commit as one pre-reply unit.
+- Added an exclusive private local Unix directory checkpoint adapter with a
+  frozen checksummed record, synchronized atomic replace, resource pinning,
+  fail-closed corruption/residue handling, and authenticated-host restart proof.
 
 ### Changed
 
