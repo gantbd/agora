@@ -30,6 +30,17 @@ authenticate frames, hide metadata/content, prevent replay, establish stream
 boundaries, or protect transport availability. In particular, Connect's
 participant ID remains attacker-controlled until the host verifies it.
 
+The authenticated host prevents a wire client ID from becoming ambient authority:
+each frame is coupled to an opaque transport-bound host session, a retained
+verified subject/participant, current verifier acceptance, and the exact service
+client. Authentication failures erase verifier detail and do not query participant
+registration. Client substitution and revocation retire only the caller's session.
+Per-session time regression also retires before verifier invocation, fencing
+expiry rollback.
+This treatment still trusts the verifier and transport binding; a verifier that
+accepts forged context, or an adapter that accepts host session IDs from payloads,
+reintroduces spoofing and confused-deputy risk.
+
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.
 

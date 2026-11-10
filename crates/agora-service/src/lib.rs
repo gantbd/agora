@@ -8,7 +8,7 @@ use agora_protocol::{
     ClientIdV1, CommandV1, MemberV1, MessageV1, OutcomeV1, ParticipantKindV1, RefusalV1, ReplyV1,
     RequestIdV1, RequestV1, RoleV1, RoomSnapshotV1,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ServiceLimits {
@@ -71,7 +71,7 @@ pub struct Service {
     engine: Engine,
     limits: ServiceLimits,
     clients: BTreeMap<ClientIdV1, ParticipantId>,
-    retired_clients: BTreeSet<ClientIdV1>,
+    retired_clients: VecDeque<ClientIdV1>,
     retained: BTreeMap<(ClientIdV1, RequestIdV1), RetainedRequest>,
     next_client: u64,
     usage: Usage,
@@ -83,7 +83,7 @@ impl Service {
             engine,
             limits,
             clients: BTreeMap::new(),
-            retired_clients: BTreeSet::new(),
+            retired_clients: VecDeque::new(),
             retained: BTreeMap::new(),
             next_client: 0,
             usage: Usage::default(),
@@ -127,11 +127,13 @@ impl Service {
         if !self.clients.contains_key(&client) {
             return Err(RefusalV1::UnknownClient);
         }
-        if self.retired_clients.len() >= self.limits.max_retired_clients {
-            return Err(RefusalV1::RetiredClientLimit);
-        }
         self.clients.remove(&client);
-        self.retired_clients.insert(client);
+        if self.limits.max_retired_clients > 0 {
+            if self.retired_clients.len() >= self.limits.max_retired_clients {
+                self.retired_clients.pop_front();
+            }
+            self.retired_clients.push_back(client);
+        }
         self.retained.retain(|(owner, _), _| *owner != client);
         count(&mut self.usage.disconnected, &mut self.usage.overflowed);
         Ok(true)

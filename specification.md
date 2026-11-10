@@ -99,8 +99,10 @@ requires current room membership.
 The key `(ClientIdV1, RequestIdV1)` binds to one exact request and retained
 reply. Matching replay returns the reply without invoking the engine. Changed
 content conflicts. New requests backpressure before invocation when the bounded
-receipt index is full. Disconnect is idempotent through a bounded retired-client
-tombstone and releases that client's receipts.
+receipt index is full. Disconnect is idempotent within a bounded recent
+retired-client tombstone window and releases that client's receipts. A full or
+disabled tombstone window never prevents disconnect; the oldest evidence is
+evicted instead.
 
 All service state is volatile. Handles are correlation values rather than
 credentials. Authentication, transport binding, persistence, and distributed
@@ -120,3 +122,26 @@ Connect carries a claimed participant ID but grants no identity. Wire client IDs
 remain correlation handles. Authentication, stream framing, replay protection
 outside service request identity, encryption, and transport binding remain host
 obligations.
+
+## Authenticated host profile V1
+
+The host consumes a complete Connect frame plus a trusted adapter-owned context
+and explicit host time. Its injected verifier either returns an opaque verified
+subject for that exact participant claim or refuses. Authentication error detail
+is not projected; refusal uses `ConnectRefused(Unavailable)` before participant
+registration is queried.
+
+Successful connection retains `(host session, verified subject, participant,
+service client)`. The host session is allocated outside the wire protocol and
+must be bound to transport state by the adapter. Every later frame first
+revalidates the retained subject/participant against the current context, then
+requires its client field to match the retained service client. Failure retires
+the host session and disconnects its own client before returning the generic
+Unavailable class. Host time is monotone within a session; regression retires
+before verifier invocation.
+
+Transport close is an unconditional cleanup operation. Retired-session and
+retired-client evidence is a bounded recent window; saturation evicts the oldest
+tombstone and cannot block cleanup. Matching Execute replay preserves the
+service's existing exact request/reply semantics. The host performs neither
+credential verification nor network I/O and imports no authority-engine types.

@@ -18,10 +18,17 @@ The repository also contains an initial transport-neutral operational profile:
 - `agora-wire` owns their canonical bounded V1 binary representation;
 - `agora-service` serially owns one engine, binds each connected client to one
   registered participant, and provides bounded replay-safe requests;
+- `agora-host` binds exact wire frames and server-owned clients to a current
+  externally verified principal/transport context;
 - `agora-client` owns a monotone request namespace over an abstract service port.
 
 These crates add no authentication, network transport, durable execution, or
 agent behavior. See the [service architecture](docs/service-architecture.md).
+
+`agora-host` performs authentication composition but does not authenticate any
+credential itself. A trusted injected verifier may consume Aegis decision
+evidence or another credential system. See the
+[host architecture](docs/host-architecture.md).
 
 The wire grammar and tag assignments are frozen in the
 [wire protocol](docs/wire-protocol.md) and executable golden fixtures. A connect

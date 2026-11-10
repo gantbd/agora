@@ -30,6 +30,13 @@ closed protocol variant, refuse every truncation and trailing byte, and exercise
 frame/text/field/list ceilings, strict UTF-8, unsupported versions, and unknown
 root and nested tags. This establishes codec behavior, not transport security.
 
+Host scenarios exercise exact verified Connect, per-frame context revalidation,
+service-derived authorship, matching replay, non-enumerating authentication
+failure, client-handle substitution, context revocation, transport close,
+host-time regression, capacity/malformed preflight, and tombstone-pressure
+cleanup. The verifier is a trusted test double; no credential system or Aegis
+adapter is qualified.
+
 The gate does not establish authentication, transport security, multi-process
 serialization, durable storage, event delivery, distributed availability, or
 orchestrator correctness. Those claims require separate adapters and evidence.

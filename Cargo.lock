@@ -16,6 +16,16 @@ name = "agora-engine"
 version = "0.3.0"
 
 [[package]]
+name = "agora-host"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+ "agora-protocol",
+ "agora-service",
+ "agora-wire",
+]
+
+[[package]]
 name = "agora-protocol"
 version = "0.1.0"
 

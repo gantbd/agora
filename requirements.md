@@ -48,10 +48,25 @@
   with explicit version and tag refusal, strict UTF-8, checked preflight sizing,
   independent frame/text/field/list ceilings, and complete-input decoding.
 
+## Authenticated host v0.1
+
+- **R18 — External authentication:** a trusted verifier authenticates the exact
+  Connect participant claim and revalidates the current transport/credential
+  context before every later frame. Per-session host time cannot regress. Agora
+  retains no credential material.
+- **R19 — Dual binding:** a server-owned host session binds one opaque verified
+  subject, participant, and service client. A frame naming another client retires
+  only the offending session and cannot operate on the named target.
+- **R20 — Revocation-safe cleanup:** failed revalidation and transport loss release
+  service clients even when retirement windows are disabled or saturated.
+- **R21 — Disclosure-safe authentication:** unauthenticated participant claims do
+  not reveal registration state, and unknown/revoked/mismatched sessions share one
+  external refusal class. Host diagnostics redact subjects, sessions, and frames.
+
 ## Explicitly open
 
-Durable storage adapters, durable event sinks, authenticated connection/session
-capabilities, network transports, bans, message
+Durable storage adapters, durable event sinks, credential/Aegis verifier adapters,
+network transports, durable sessions, bans, message
 editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
 

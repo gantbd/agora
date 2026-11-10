@@ -21,6 +21,10 @@ This ledger records current evidence. Open work is not a pass.
 | R15 replay-safe service calls | bounded exact request/reply receipt map | matching replay, changed-request conflict, disconnect reclamation, and receipt saturation scenarios | Satisfied for volatile service lifetime |
 | R16 layered dependencies | workspace crate split and normal dependency checks | boundary script plus workspace build | Satisfied for current crates |
 | R17 canonical bounded wire | `agora-wire` over `agora-protocol` and `keystone-codec` | golden fixtures, full round trips, every truncation, trailing bytes, limits, UTF-8, versions, and nested unknown tags | Satisfied for protocol V1 values |
+| R18 external authentication | injected `PrincipalVerifier`, explicit monotone context/time, per-frame revalidation | verified connect, malformed/capacity preflight, time regression, and context revocation scenarios | Satisfied for trusted verifier composition; credential adapter open |
+| R19 dual binding | opaque host session mapped to subject, participant, and service client | client substitution and unaffected target-session scenario | Satisfied for volatile host lifetime |
+| R20 revocation-safe cleanup | unconditional close plus eviction-based host/service tombstone windows | revocation replacement, explicit close, zero/full tombstone scenarios | Satisfied for volatile cleanup |
+| R21 disclosure-safe authentication | erased verifier errors, shared Unavailable projection, redacted debug | registered/unregistered authentication refusal equality and debug scenario | Satisfied at host API boundary |
 
 ## Verification gates
 

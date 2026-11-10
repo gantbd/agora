@@ -22,6 +22,7 @@ members = [
     "crates/agora-protocol",
     "crates/agora-wire",
     "crates/agora-service",
+    "crates/agora-host",
     "crates/agora-client",
 ]
 

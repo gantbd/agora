@@ -2,10 +2,10 @@
 
 1. Add cross-version and malformed compatibility fixtures around the now-frozen
    canonical V2 checkpoint fixture.
-2. Define an authenticated host adapter that binds verified principals and
-   exact transport frames to service-owned client handles.
-3. Qualify the Moira receiver against participant-neutral addressed messages and
+2. Qualify the Moira receiver against participant-neutral addressed messages and
    lost-reply recovery.
+3. Add a separately qualified credential or Aegis verifier adapter and one local
+   transport composition without importing either into Agora semantics.
 4. Add a separately qualified durable store adapter with atomic engine and
    service-receipt recovery semantics.
 5. Add bounded observation using a separately qualified Keystone mechanism.

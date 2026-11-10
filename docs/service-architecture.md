@@ -9,12 +9,15 @@ remain separate crates. Their normal dependency direction is:
 ```text
 agora-client  -> agora-protocol <- agora-service -> agora-engine
                                 <- agora-wire -> keystone-codec
+agora-host -----> agora-wire + agora-service + trusted verifier port
 ```
 
 `agora-engine` and `agora-protocol` have no normal dependencies. The protocol
 does not import engine internals, and the client does not import the service.
 The wire crate depends only on passive protocol values and the shared bounded
 Keystone codec primitive. Transport types never become authoritative domain state.
+The host composes wire and service through an injected principal-verification
+port; it imports no credential or Aegis vocabulary.
 
 ## Connection and identity
 
@@ -41,8 +44,9 @@ same request ID conflicts.
 Client, retired-client, request-receipt, identifier, input, fan-out, and snapshot
 limits are checked explicitly. Structurally oversized requests are refused before
 receipt retention. A full receipt index backpressures a new request before the
-engine is called. Disconnect creates a bounded tombstone and releases that
-client's volatile receipts. The profile makes no cross-restart replay claim.
+engine is called. Disconnect releases that client's volatile receipts and keeps
+a bounded recent tombstone window. Tombstone pressure evicts the oldest record;
+it never blocks security cleanup. The profile makes no cross-restart replay claim.
 
 ## Deliberate exclusions
 

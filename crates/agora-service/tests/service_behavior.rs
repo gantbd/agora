@@ -191,6 +191,32 @@ fn disconnect_is_tombstoned_and_reclaims_request_receipts() {
 }
 
 #[test]
+fn tombstone_pressure_never_blocks_disconnect() {
+    let limits = ServiceLimits {
+        max_clients: 2,
+        max_retired_clients: 0,
+        ..ServiceLimits::default()
+    };
+    let mut service = Service::new(engine(), limits);
+    let client = service.connect("alice").unwrap();
+    assert_eq!(service.disconnect(client), Ok(true));
+    assert_eq!(service.disconnect(client), Err(RefusalV1::UnknownClient));
+
+    let limits = ServiceLimits {
+        max_clients: 2,
+        max_retired_clients: 1,
+        ..ServiceLimits::default()
+    };
+    let mut service = Service::new(engine(), limits);
+    let first = service.connect("alice").unwrap();
+    assert_eq!(service.disconnect(first), Ok(true));
+    let second = service.connect("bot").unwrap();
+    assert_eq!(service.disconnect(second), Ok(true));
+    assert_eq!(service.disconnect(first), Err(RefusalV1::UnknownClient));
+    assert_eq!(service.disconnect(second), Ok(false));
+}
+
+#[test]
 fn snapshots_do_not_cross_membership_boundary() {
     let mut engine = engine();
     engine
