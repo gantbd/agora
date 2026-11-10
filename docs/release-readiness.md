@@ -34,6 +34,9 @@ not ready for a network service or crates.io release.
   participant-bound room lifecycle commands and bounded cursor projection;
 - canonical bounded Wire V2 complete-frame grammar with four additional golden
   fixtures and closed nested vocabularies;
+- deterministic bounded mutation of every canonical V1/V2 wire fixture across
+  all strict prefixes, trailing framing, and every single-bit change, with exact
+  re-encoding required for every accepted candidate;
 - bounded reaction set transitions and aggregates with participant-bound
   authority, tombstone/archive preservation, retention cleanup, exact recovery,
   all-feed attribution, and two canonical wire fixtures;
@@ -94,7 +97,7 @@ not ready for a network service or crates.io release.
 - no qualified store beyond the single-owner local Unix directory profile; no
   hardware power-loss, network-filesystem, backup/restore, encryption, or
   multi-host availability qualification;
-- no performance or fuzzing qualification, coverage-guided mutation, advisory
+- no performance or coverage-guided fuzzing qualification, advisory
   lookup, legal compatibility review, binary SBOM, or artifact provenance;
 - no production privacy, deletion, moderation, or abuse policy.
 

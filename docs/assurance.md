@@ -30,6 +30,13 @@ The supply gate closes over twelve local locked components and exact local-path
 dependency declarations. It is not an advisory scan, legal conclusion, binary
 SBOM, remote source proof, or artifact provenance claim.
 
+Every frozen V1 and V2 wire frame is also a deterministic mutation corpus. The
+offline suite checks every strict prefix, a trailing-byte framing violation, and
+every single-bit mutation. A refused candidate remains closed; any accepted
+candidate must re-encode to the exact candidate bytes. This bounded campaign
+proves reproducibility and canonical acceptance for that corpus, not coverage
+completeness or parser correctness for every possible byte string.
+
 The addressing model exhausts every author, recipient subset, and human/agent
 kind assignment for a three-participant room. This establishes symmetry only for
 that finite profile; it is executable counterexample search, not an unbounded

@@ -21,6 +21,8 @@ follow Semantic Versioning once a public release contract is selected.
 - Added audience-specific embedded and remote-client SDK facades.
 - Added exact package and canonical-fixture compatibility inventories with
   adversarial drift checks.
+- Added reproducible bounded mutation over every canonical V1/V2 wire fixture,
+  requiring exact re-encoding for every accepted single-bit mutation.
 - Added a pinned Rust toolchain, source release contract, security policy, dual
   license files, and conservative locked-component supply inventory.
 - Added membership-filtered, revision-bound room, member, and retained-message
