@@ -41,6 +41,9 @@ The facade contains a transport-neutral client, closed DTOs, and the canonical
 bounded wire codec. It supplies no socket or stream transport, connection
 lifecycle, credentials, retry loop, service discovery, or engine access. A
 Connect participant ID remains an unauthenticated claim until a host verifies it.
+The same dependency closure exposes the separately typed V2 client, protocol,
+and wire modules; it does not imply that a V2 authenticated host or transport is
+available.
 
 ## Laws and evidence
 

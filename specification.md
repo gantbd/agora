@@ -168,9 +168,26 @@ The transport-neutral `ClientV2` owns a monotone request namespace over an
 abstract V2 service port. It adds no connection lifecycle, authentication,
 transport, retry, cursor traversal, or uncertainty policy.
 
-This source profile has no wire or authenticated-host representation yet and
-makes no cross-restart cursor, request, client, or durability claim. Frozen V1
-values and bytes remain unchanged.
+The profile makes no cross-restart cursor, request, client, or durability claim.
+Frozen V1 values and bytes remain unchanged.
+
+## Wire profile V2
+
+`agora-wire::v2` maps only Protocol V2 passive values to a distinct version-2
+complete-frame grammar. It covers every V2 command, outcome, refusal, page,
+cursor, admission, role, and participant kind. Optional cursors are closed tagged
+values. Page limits and counts use bounded `u64` wire scalars with checked `u32`
+projection where required.
+
+Like V1, encoding measures the complete frame with checked arithmetic before
+exact reservation. Decoding bounds the frame, each text, field count, and each
+list before owned reconstruction and requires complete consumption. V1 bytes,
+unknown root or nested tags, invalid UTF-8, truncation, trailing data, and ceiling
+violations refuse. The normative grammar is in `docs/wire-protocol-v2.md`.
+
+This is a frame codec only. V2 stream framing, feature negotiation,
+authentication, transport binding, confidentiality, replay protection beyond
+service request identity, and host session lifecycle remain open.
 
 ## Wire profile V1
 

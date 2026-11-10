@@ -19,7 +19,7 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact eight-package workspace and four canonical fixtures. These
+closes over the exact eight-package workspace and seven canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -82,7 +82,19 @@ client-bound one-shot cursors, cross-client non-enumerating refusal, staleness,
 cursor saturation, validation before receipt consumption, and disconnect
 reclamation. Protocol and page Debug tests reject conversation identifiers and
 contents. The client test fixes the independent monotone V2 request namespace.
-No V2 wire, host, persistence, transport, or uncertainty behavior is claimed.
+No V2 authenticated host, persistence, transport, or uncertainty behavior is
+claimed.
+
+Wire V2 freezes three additional golden frames and round-trips every V2 command,
+outcome, and refusal. It independently exercises every truncation of
+representative request and reply frames, trailing data, V1/version mismatch,
+unknown command and cursor tags, text/list ceilings, and content-safe Debug
+surfaces. Together the compatibility gate now closes over seven canonical
+fixtures. This establishes only complete-frame codec behavior; no V2 host or
+transport is claimed.
+The remote-client facade-only scenario also constructs a V2 client request and
+round-trips a V2 Connect frame using only the facade's existing three-package
+closure.
 
 The gate does not establish authentication, transport security, multi-process
 serialization, durable storage, event delivery, distributed availability, or

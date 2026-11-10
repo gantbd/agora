@@ -18,11 +18,11 @@ applicable, and engine revision; message pages expose the retained sequence
 interval rather than claiming complete history. This profile is not yet projected
 through the frozen Protocol V1 service or wire surface.
 
-An additive source-only Protocol V2 now has a separately typed serialized service
-and client. It closes participant-bound room creation, invitation, joining,
+An additive Protocol V2 now has a separately typed serialized service, client,
+and canonical version-2 complete-frame codec. It closes participant-bound room creation, invitation, joining,
 leaving, role change, speaking, and bounded page projection with client-scoped
-opaque cursors and exact volatile request replay. It deliberately has no V2 wire
-or authenticated-host representation yet; V1 remains unchanged.
+opaque cursors and exact volatile request replay. It deliberately has no V2
+authenticated-host or transport composition yet; V1 remains unchanged.
 
 The repository also contains an initial transport-neutral operational profile:
 

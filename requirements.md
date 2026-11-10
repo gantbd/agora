@@ -93,6 +93,12 @@
   one-shot on successful continuation, reclaimed on disconnect, and refuse
   unknown/cross-client/type/room use without disclosing cursor ownership. A V2
   client owns a separate monotone request namespace.
+- **R25 — Canonical Wire V2:** Protocol V2 has a separate version-2 complete-frame
+  grammar covering every command, outcome, refusal, page, cursor, role, kind, and
+  admission value. Encoding preflights exact bounded size; decoding bounds before
+  reconstruction, consumes all input, and refuses V1, unknown nested tags,
+  malformed text, overflow, truncation, and trailing bytes. Canonical V2 fixtures
+  must not change without compatibility review.
 
 ## Explicitly open
 
@@ -100,6 +106,6 @@ Durable storage adapters, durable event sinks, credential/Aegis verifier adapter
 network transports, durable sessions, bans, message
 editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
-Wire, authenticated-host, and durable projection of the V2 service remain open;
+Authenticated-host and durable projection of the V2 service remain open;
 Protocol V1 bytes and semantics are unchanged.
 

@@ -22,7 +22,7 @@ or crates.io release.
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   eight packages;
 - conservative package and canonical-fixture inventory closure over eight
-  packages and four fixtures;
+  packages and seven fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
 - conservative supply inventory closure over nine locked local components with
@@ -31,6 +31,8 @@ or crates.io release.
   opaque cursors and explicit retained-history intervals;
 - separately typed volatile Protocol/Service/Client V2 source profile closing
   participant-bound room lifecycle commands and bounded cursor projection;
+- canonical bounded Wire V2 complete-frame grammar with three additional golden
+  fixtures and closed nested vocabularies;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.
@@ -42,7 +44,7 @@ or crates.io release.
 - SDK facades are not approved or configured for registry publication;
 - no qualified credential/Aegis verifier, network transport, or connector
   conformance package;
-- no Protocol V2 wire or authenticated-host projection, capability negotiation,
+- no Protocol V2 authenticated-host projection, capability negotiation,
   transport, or durable cursor/request recovery;
 - no independently qualified durable Agora store;
 - no performance or fuzzing qualification, coverage-guided mutation, advisory

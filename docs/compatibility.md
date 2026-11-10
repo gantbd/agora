@@ -23,10 +23,10 @@ malformed text, limit violations, and trailing bytes. Golden request/reply
 fixtures freeze representative bytes. The codec defines complete message frames,
 not stream boundaries; transport framing remains separate.
 
-Protocol, Service, and Client V2 currently form an additive Rust source profile
-only. Their separately typed values do not alter V1 tags or bytes and have no
-canonical wire representation yet. Adding that representation requires a
-complete V2 grammar and new fixtures rather than assigning new meanings to V1.
+Protocol, Service, Client, and Wire V2 form an additive profile with a separate
+version byte, closed grammar, and three canonical fixtures. Their separately
+typed values and V2 bytes do not alter V1 tags or bytes. V2 has no authenticated
+host representation yet.
 
 ## Conservative baseline gate
 

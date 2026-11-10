@@ -9,6 +9,9 @@ package|crates/agora-wire/Cargo.toml|agora-wire|0.1.0
 package|sdk/client/Cargo.toml|agora-sdk-client|0.1.0
 package|sdk/embedded/Cargo.toml|agora-sdk-embedded|0.1.0
 fixture|crates/agora-wire/tests/fixtures/connect-request-v1.hex|11|4c13512cfcb29d053b6e56610b4693ac9ad5f6cd88650349bfb2df13c75c5fe4
+fixture|crates/agora-wire/tests/fixtures/create-room-request-v2.hex|50|3941c9e17887deddf2bf1e20c6446f3f0510390db656581cffadd0d01cdd9000
+fixture|crates/agora-wire/tests/fixtures/messages-reply-v2.hex|104|ef10c0a4aacca3be9317207eec8bc9fd5f2403a1a64379fbfee961331cfcbb79
+fixture|crates/agora-wire/tests/fixtures/rooms-reply-v2.hex|77|7628d1c11bfab1dbacee136357ee73acd0431cd90c3355b8aed478f9921b1710
 fixture|crates/agora-wire/tests/fixtures/snapshot-reply-v1.hex|137|10efdc44b693253f645c64ace2e3f458bf7d1ece9eb6d82bb8faa553702de12c
 fixture|crates/agora-wire/tests/fixtures/speak-request-v1.hex|77|9a623df28a992a3af0235bd7cfe4c31bb746397ca8d28f8b32378d7961a878ed
 fixture|tests/fixtures/checkpoint-v2.hex|638|d64db1b3c69b7d1f51fdbabea13f51dd4fdae6f2695bf960f9e9945207b60c40

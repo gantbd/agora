@@ -10,6 +10,8 @@ use agora_protocol::{
 use keystone_codec::{DecodeError, DecodeLimits, Decoder, encode_bytes};
 use std::fmt;
 
+pub mod v2;
+
 const VERSION_V1: u8 = 1;
 const CONNECT_REQUEST: u8 = 0x01;
 const EXECUTE_REQUEST: u8 = 0x02;
