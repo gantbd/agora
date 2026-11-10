@@ -5,8 +5,8 @@ Status: initial STRIDE/LINDDUN analysis for the v0.3 core boundary.
 | Concern | Core treatment | External obligation |
 | --- | --- | --- |
 | Spoofing | IDs grant no authentication; room authority is checked against explicit actor IDs | host binds authenticated principals to IDs |
-| Tampering | optimistic revisions, canonical checkpoints, and typed validation refuse malformed state | storage authenticates origin and protects bytes |
-| Repudiation | ordered volatile events preserve attribution while retained | durable audit and non-repudiation are not claimed |
+| Tampering | optimistic revisions, scope-bound canonical engine/service/cursor checkpoints, and typed validation refuse malformed state | physical storage protects bytes and trusted scope selection |
+| Repudiation | ordered events and exact service receipts preserve attribution while retained or checkpointed | durable audit and non-repudiation are not claimed |
 | Information disclosure | message/publication debug output redacts content and keys | transport, logs, and storage protect content |
 | Denial of service | retained state, bytes, fan-out, and outbox are bounded with backpressure | host bounds connections, request rate, and CPU |
 | Elevation of privilege | participant kind grants no authority; addressing grants no execution | Aegis/host authority guards cross-engine effects |
@@ -46,6 +46,15 @@ dual-binding, non-enumeration, revocation, and cleanup treatment to V2 frames an
 clients. A V1 frame is rejected before verifier invocation. This closes no new
 credential, authorization, confidentiality, durable-session, or network threat;
 those external obligations remain unchanged.
+
+The service checkpoint binds one caller-selected store scope and refuses foreign
+scope, malformed structure, noncanonical ordering, invalid attribution, and host
+ceiling violations. The durable owner never exposes a changed semantic result
+without a matching durable-strength next-revision receipt. Known refusal restores
+the pre-offer state; indeterminate, erroneous, weak, or malformed store evidence
+fences access. Scope is separation evidence, not a secret or MAC. A physical
+adapter must protect record origin, exclusive ownership, rollback, crash residue,
+backup/restore, and actual acknowledgement strength.
 
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.

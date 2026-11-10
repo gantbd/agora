@@ -28,6 +28,32 @@ impl CheckpointV2 {
         &self.0
     }
 }
+
+/// Bounds for restoring an opaque observation cursor from durable service state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CursorRecoveryLimitsV1 {
+    pub max_snapshot_bytes: usize,
+    pub max_participant_id_bytes: usize,
+    pub max_room_id_bytes: usize,
+}
+
+/// Canonical private-state representation of one opaque observation cursor.
+///
+/// The bytes are suitable for an Agora service checkpoint. They are not a wire
+/// cursor, credential, or authority token.
+pub struct CursorCheckpointV1(Vec<u8>);
+
+impl CursorCheckpointV1 {
+    pub fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for CursorCheckpointV1 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("CursorCheckpointV1(<redacted>)")
+    }
+}
 impl fmt::Debug for CheckpointV2 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("CheckpointV2(<redacted>)")
@@ -540,6 +566,156 @@ impl Engine {
         }
         validate(&e)?;
         Ok(e)
+    }
+}
+
+const CURSOR_MAGIC: &[u8; 8] = b"AGORACUR";
+
+fn prepare_cursor(
+    kind: u8,
+    revision: Revision,
+    observer: &ParticipantId,
+    room_id: Option<&RoomId>,
+    after_text: Option<&str>,
+    after_sequence: Option<u64>,
+    max_snapshot_bytes: usize,
+) -> Result<CursorCheckpointV1, CheckpointError> {
+    let mut w = Writer {
+        bytes: Vec::new(),
+        max: max_snapshot_bytes,
+    };
+    w.raw(CURSOR_MAGIC)?;
+    w.byte(1)?;
+    w.byte(kind)?;
+    w.number(revision.0)?;
+    w.text(observer.as_str())?;
+    if let Some(room_id) = room_id {
+        w.text(room_id.as_str())?;
+    }
+    if let Some(after) = after_text {
+        w.text(after)?;
+    }
+    if let Some(after) = after_sequence {
+        w.number(after)?;
+    }
+    Ok(CursorCheckpointV1(w.bytes))
+}
+
+fn cursor_reader<'a>(
+    bytes: &'a [u8],
+    bounds: CursorRecoveryLimitsV1,
+    kind: u8,
+) -> Result<Reader<'a>, CheckpointError> {
+    if bytes.len() > bounds.max_snapshot_bytes {
+        return Err(CheckpointError::Limit);
+    }
+    let mut r = Reader { bytes, pos: 0 };
+    if r.raw(CURSOR_MAGIC.len())? != CURSOR_MAGIC || r.byte()? != 1 || r.byte()? != kind {
+        return Err(CheckpointError::Profile);
+    }
+    Ok(r)
+}
+
+fn finish_cursor(r: &Reader<'_>) -> Result<(), CheckpointError> {
+    if r.pos == r.bytes.len() {
+        Ok(())
+    } else {
+        Err(CheckpointError::Trailing)
+    }
+}
+
+impl RoomPageCursor {
+    pub fn prepare_checkpoint(
+        &self,
+        max_snapshot_bytes: usize,
+    ) -> Result<CursorCheckpointV1, CheckpointError> {
+        prepare_cursor(
+            1,
+            self.revision,
+            &self.observer,
+            None,
+            Some(self.after.as_str()),
+            None,
+            max_snapshot_bytes,
+        )
+    }
+
+    pub fn recover_checkpoint(
+        bytes: &[u8],
+        bounds: CursorRecoveryLimitsV1,
+    ) -> Result<Self, CheckpointError> {
+        let mut r = cursor_reader(bytes, bounds, 1)?;
+        let cursor = Self {
+            revision: Revision(r.number()?),
+            observer: ParticipantId::new(r.text(bounds.max_participant_id_bytes)?),
+            after: RoomId::new(r.text(bounds.max_room_id_bytes)?),
+        };
+        finish_cursor(&r)?;
+        Ok(cursor)
+    }
+}
+
+impl MemberPageCursor {
+    pub fn prepare_checkpoint(
+        &self,
+        max_snapshot_bytes: usize,
+    ) -> Result<CursorCheckpointV1, CheckpointError> {
+        prepare_cursor(
+            2,
+            self.revision,
+            &self.observer,
+            Some(&self.room_id),
+            Some(self.after.as_str()),
+            None,
+            max_snapshot_bytes,
+        )
+    }
+
+    pub fn recover_checkpoint(
+        bytes: &[u8],
+        bounds: CursorRecoveryLimitsV1,
+    ) -> Result<Self, CheckpointError> {
+        let mut r = cursor_reader(bytes, bounds, 2)?;
+        let cursor = Self {
+            revision: Revision(r.number()?),
+            observer: ParticipantId::new(r.text(bounds.max_participant_id_bytes)?),
+            room_id: RoomId::new(r.text(bounds.max_room_id_bytes)?),
+            after: ParticipantId::new(r.text(bounds.max_participant_id_bytes)?),
+        };
+        finish_cursor(&r)?;
+        Ok(cursor)
+    }
+}
+
+impl MessagePageCursor {
+    pub fn prepare_checkpoint(
+        &self,
+        max_snapshot_bytes: usize,
+    ) -> Result<CursorCheckpointV1, CheckpointError> {
+        prepare_cursor(
+            3,
+            self.revision,
+            &self.observer,
+            Some(&self.room_id),
+            None,
+            Some(self.after_sequence),
+            max_snapshot_bytes,
+        )
+    }
+
+    pub fn recover_checkpoint(
+        bytes: &[u8],
+        bounds: CursorRecoveryLimitsV1,
+    ) -> Result<Self, CheckpointError> {
+        let mut r = cursor_reader(bytes, bounds, 3)?;
+        let cursor = Self {
+            revision: Revision(r.number()?),
+            observer: ParticipantId::new(r.text(bounds.max_participant_id_bytes)?),
+            room_id: RoomId::new(r.text(bounds.max_room_id_bytes)?),
+            after_sequence: r.number()?,
+        };
+        finish_cursor(&r)?;
+        Ok(cursor)
     }
 }
 fn bounded(s: &str, max: usize) -> Result<(), CheckpointError> {

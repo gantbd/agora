@@ -46,6 +46,16 @@ if printf '%s\n' "$host_tree" | rg 'agora-client|aegis|chronos|moira|daimon|herm
   exit 1
 fi
 
+durable_tree=$(cargo tree -p agora-durable --edges normal --depth 1 --locked --offline)
+if ! printf '%s\n' "$durable_tree" | rg -q 'agora-service' \
+  || ! printf '%s\n' "$durable_tree" | rg -q 'agora-protocol' \
+  || ! printf '%s\n' "$durable_tree" | rg -q 'keystone-storage' \
+  || printf '%s\n' "$durable_tree" | rg -q 'agora-(client|host|wire)'; then
+  printf '%s\n' "$durable_tree" >&2
+  echo 'Agora durable boundary escaped its service-protocol-storage-port closure' >&2
+  exit 1
+fi
+
 embedded_sdk_tree=$(cargo tree -p agora-sdk-embedded --edges normal --depth 1 --locked --offline)
 if [[ $(printf '%s\n' "$embedded_sdk_tree" | wc -l | tr -d ' ') != 4 ]] \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-engine' \

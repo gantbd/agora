@@ -1,5 +1,6 @@
 # Exact Cargo.lock component inventory for the local source profile.
 component|agora-client|0.1.0
+component|agora-durable|0.1.0
 component|agora-engine|0.3.0
 component|agora-host|0.1.0
 component|agora-protocol|0.1.0
@@ -8,3 +9,4 @@ component|agora-sdk-embedded|0.1.0
 component|agora-service|0.1.0
 component|agora-wire|0.1.0
 component|keystone-codec|0.0.1
+component|keystone-storage|0.0.1

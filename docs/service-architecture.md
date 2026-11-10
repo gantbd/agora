@@ -1,6 +1,7 @@
 # Operational service architecture
 
-Status: initial volatile in-process profile.
+Status: volatile in-process source profiles plus a store-neutral durable V2
+publication boundary.
 
 The repository now carries two source profiles. `Service` preserves frozen
 Protocol V1 Snapshot/Speak behavior. `v2::ServiceV2` is separately typed and adds
@@ -16,6 +17,7 @@ remain separate crates. Their normal dependency direction is:
 agora-client  -> agora-protocol <- agora-service -> agora-engine
                                 <- agora-wire -> keystone-codec
 agora-host -----> agora-wire + agora-service + trusted verifier port
+agora-durable --> agora-service + keystone-storage port
 ```
 
 `agora-engine` and `agora-protocol` have no normal dependencies. The protocol
@@ -54,16 +56,32 @@ engine is called. Disconnect releases that client's volatile receipts and keeps
 a bounded recent tombstone window. Tombstone pressure evicts the oldest record;
 it never blocks security cleanup. The profile makes no cross-restart replay claim.
 
+## Durable state and publication
+
+`ServiceV2::prepare_checkpoint` captures the complete semantic service owner,
+including private cursor state and exact request replies, under an independent
+record version and store-scope binding. Recovery is bounded, canonical, and
+fail-closed. Process-local usage counters are excluded so exact replay does not
+manufacture a state change.
+
+`agora-durable` owns one service and one revisioned checkpoint-store port. It
+suppresses changed-state results until the store returns the exact next revision
+with durable acknowledgement strength. Known refusal reconstructs the pre-offer
+service. Unknown outcome, store error, weak acknowledgement, or malformed receipt
+fences the owner. No mutable service access is exposed while fenced. This closes
+the semantic pre-reply gate, not the physical store adapter.
+
 ## Deliberate exclusions
 
-The profile performs no network I/O, authentication, encryption, durable
-storage, orchestration, task creation, model invocation, or agent lifecycle
-work. `agora-wire` only maps passive values to canonical bytes. A later
+The profile performs no network I/O, encryption, physical storage,
+orchestration, task creation, model invocation, or agent lifecycle work.
+`agora-wire` only maps passive values to canonical bytes. A later
 authenticated host may connect those bytes to a transport. Moira, Chronos, and
 execution harnesses remain separate systems.
 
-The V2 source service additionally excludes durable receipts/cursors, cursor
-resumption across restart, transport feature negotiation, wire framing, and
-authentication. Its cursor handles are bounded correlation values scoped to one
-volatile client, not bearer credentials.
+The V2 source service alone excludes durable receipts/cursors and restart. Its
+checkpoint profile preserves those values when used through an independently
+qualified store composition. Transport feature negotiation and wire framing
+remain absent. Cursor handles are bounded correlation values, not bearer
+credentials.
 

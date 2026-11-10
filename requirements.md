@@ -106,12 +106,30 @@
   to Wire/Service V2. V1 frames refuse before authentication and V2 failures
   cannot operate on another session.
 
+## Store-neutral durable service V2
+
+- **R27 — Complete service recovery:** a separately versioned, scope-bound,
+  bounded service checkpoint captures the canonical engine checkpoint, exact
+  active and retired client namespace, request/reply receipts, live cursor
+  consequences, and non-reused identifier frontiers. Recovery refuses foreign,
+  malformed, future, noncanonical, over-limit, and semantically inconsistent
+  records before exposing a service owner. Operational counters are deliberately
+  process-local and do not change the semantic checkpoint.
+- **R28 — Receipt-gated publication:** a fresh service-state change is externally
+  publishable only after a matching durable-strength compare-and-exchange
+  receipt. Matching replay and state-inert refusal reuse the current durable
+  revision without touching storage. Known store refusal restores the exact
+  pre-offer checkpoint; store error, indeterminate commitment, weak
+  acknowledgement, or invalid receipt suppresses the semantic result and fences
+  the owner until recovery.
+
 ## Explicitly open
 
-Durable storage adapters, durable event sinks, credential/Aegis verifier adapters,
-network transports, durable sessions, bans, message
+Physical durable storage adapters, durable event sinks, credential/Aegis verifier
+adapters, network transports, bans, message
 editing/deletion, threads, reactions, end-to-end encryption, federation, delivery
 acknowledgment, and durable audit are not part of the v0.3 claim.
-Credential/Aegis adapters, transport, and durable V2 recovery remain open;
+Credential/Aegis adapters, transport, and a qualified physical durable-store
+composition remain open;
 Protocol V1 bytes and semantics are unchanged.
 

@@ -26,12 +26,20 @@ credential adapter or network transport yet. Its separately typed authenticated
 host applies current-context revalidation and exact session/client binding. V1
 remains unchanged.
 
+An independently versioned Service V2 checkpoint preserves the engine, pending
+outbox, client namespace, exact request replies, and live cursor consequences.
+`agora-durable` gates changed service state on a durable compare-and-exchange
+receipt, restores known refusals, and fences indeterminate outcomes. A physical
+store adapter is still a separate qualification.
+
 The repository also contains an initial transport-neutral operational profile:
 
 - `agora-protocol` owns closed request, reply, snapshot, and refusal values;
 - `agora-wire` owns their canonical bounded V1 binary representation;
 - `agora-service` serially owns one engine, binds each connected client to one
   registered participant, and provides bounded replay-safe requests;
+- `agora-durable` owns the store-neutral pre-reply durability and uncertainty
+  fence for complete Service V2 checkpoints;
 - `agora-host` binds exact wire frames and server-owned clients to a current
   externally verified principal/transport context;
 - `agora-client` owns a monotone request namespace over an abstract service port.

@@ -12,6 +12,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "agora-durable"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+ "agora-protocol",
+ "agora-service",
+ "keystone-storage",
+]
+
+[[package]]
 name = "agora-engine"
 version = "0.3.0"
 
@@ -53,6 +63,7 @@ version = "0.1.0"
 dependencies = [
  "agora-engine",
  "agora-protocol",
+ "agora-wire",
 ]
 
 [[package]]
@@ -65,4 +76,8 @@ dependencies = [
 
 [[package]]
 name = "keystone-codec"
+version = "0.0.1"
+
+[[package]]
+name = "keystone-storage"
 version = "0.0.1"

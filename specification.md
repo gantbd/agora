@@ -168,8 +168,50 @@ The transport-neutral `ClientV2` owns a monotone request namespace over an
 abstract V2 service port. It adds no connection lifecycle, authentication,
 transport, retry, cursor traversal, or uncertainty policy.
 
-The profile makes no cross-restart cursor, request, client, or durability claim.
-Frozen V1 values and bytes remain unchanged.
+The volatile profile by itself makes no cross-restart cursor, request, client,
+or durability claim. The separately versioned service-checkpoint and durable
+publication profiles below may wrap it without changing frozen V1 or V2 wire
+values.
+
+## Service checkpoint profile V2
+
+The `AGORASV` version-1 record is independent of public wire versioning and is
+bound to an exact caller-supplied 16-byte store scope. It contains the canonical
+engine checkpoint, configured service limits, active client-to-participant
+bindings, ordered retired tombstones, exact request/reply receipts, private
+engine cursor checkpoints, service cursor ownership, and next client/cursor
+frontiers. Embedded request and reply values use the already canonical bounded
+Wire V2 payload grammar, while the outer record owns durable migration and may
+advance independently.
+
+Recovery applies host ceilings before allocation, reconstructs the engine under
+its own ceiling, checks client and cursor attribution, validates identifier
+frontiers and request shapes, refuses duplicate or noncanonical ordering, and
+requires byte-identical re-encoding. Opaque engine cursors have their own private
+`AGORACUR` version-1 profile and remain observer/room/revision bound. Process-local
+usage counters reset on recovery and are intentionally absent from semantic
+checkpoint bytes.
+
+## Receipt-gated durable service V2
+
+`agora-durable` wraps exactly one `ServiceV2` and one Keystone checkpoint-store
+port. Initialization commits a complete service checkpoint at an empty store;
+recovery requires an existing scope-matching checkpoint carrying durable
+acknowledgement strength. For connect, disconnect, or execute, the wrapper
+captures the pre-offer record, applies the serialized operation, and compares
+the candidate bytes. Equal bytes publish against the already committed store
+revision and perform no store call. Changed bytes are published only after a
+matching next-revision durable receipt.
+
+A known compare-and-exchange refusal establishes that the store did not change,
+so the wrapper reconstructs the exact pre-offer service before suppressing the
+semantic result. Indeterminate commitment or store error cannot support safe
+rollback; weak or malformed success evidence cannot establish durability. Each
+case suppresses the result and fences all later access until a fresh owner loads
+the store and resolves which checkpoint exists. This makes exact same-request
+replay the only safe resolution after transmission uncertainty. It does not make
+the abstract store durable: a physical adapter and its crash evidence are a
+separate qualification obligation.
 
 ## Wire profile V2
 

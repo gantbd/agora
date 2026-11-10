@@ -233,6 +233,13 @@ impl fmt::Debug for RoomPageCursor {
     }
 }
 
+impl RoomPageCursor {
+    /// Checks a recovered private cursor binding without exposing its contents.
+    pub fn is_bound_to(&self, observer: &ParticipantId) -> bool {
+        &self.observer == observer
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct RoomPage {
     pub revision: Revision,
@@ -293,6 +300,13 @@ impl fmt::Debug for MemberPageCursor {
     }
 }
 
+impl MemberPageCursor {
+    /// Checks a recovered private cursor binding without exposing its contents.
+    pub fn is_bound_to(&self, observer: &ParticipantId, room_id: &RoomId) -> bool {
+        &self.observer == observer && &self.room_id == room_id
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct MemberPage {
     pub revision: Revision,
@@ -331,6 +345,13 @@ impl fmt::Debug for MessagePageCursor {
             .field("room_id_bytes", &self.room_id.as_str().len())
             .field("after_sequence", &self.after_sequence)
             .finish()
+    }
+}
+
+impl MessagePageCursor {
+    /// Checks a recovered private cursor binding without exposing its contents.
+    pub fn is_bound_to(&self, observer: &ParticipantId, room_id: &RoomId) -> bool {
+        &self.observer == observer && &self.room_id == room_id
     }
 }
 

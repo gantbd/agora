@@ -21,6 +21,9 @@ follow Semantic Versioning once a public release contract is selected.
   and retained-message-page fixtures.
 - Added a separately typed authenticated Host V2 with current-context
   revalidation, client-substitution fencing, and revocation-safe cleanup.
+- Added complete scope-bound Service V2 and private cursor checkpoints plus a
+  receipt-gated durable owner with rollback, uncertainty fencing, and exact
+  replay recovery over the Keystone storage port.
 
 ### Changed
 

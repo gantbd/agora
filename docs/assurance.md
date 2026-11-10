@@ -1,6 +1,7 @@
 # Assurance plan
 
-Status: active for the v0.3 core and volatile service v0.1.
+Status: active for the v0.3 core, volatile service v0.1, and store-neutral
+durable Service V2 boundary.
 
 Agora uses a requirements-to-scenario-to-invariant evidence chain. A behavior is
 claimed only when its requirement, closed public value, adversarial scenario, and
@@ -19,13 +20,13 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact eight-package workspace and seven canonical fixtures. These
+closes over the exact nine-package workspace and eight canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
 publication, weakening the toolchain pin, or removing the security policy is
 refused.
-The supply gate closes over nine local locked components and exact local-path
+The supply gate closes over eleven local locked components and exact local-path
 dependency declarations. It is not an advisory scan, legal conclusion, binary
 SBOM, remote source proof, or artifact provenance claim.
 
@@ -89,8 +90,8 @@ Wire V2 freezes three additional golden frames and round-trips every V2 command,
 outcome, and refusal. It independently exercises every truncation of
 representative request and reply frames, trailing data, V1/version mismatch,
 unknown command and cursor tags, text/list ceilings, and content-safe Debug
-surfaces. Together the compatibility gate now closes over seven canonical
-fixtures. This establishes only complete-frame codec behavior; Host V2 evidence
+surfaces. These six wire fixtures establish only complete-frame codec behavior;
+Host V2 evidence
 is separate below and no transport is claimed.
 The remote-client facade-only scenario also constructs a V2 client request and
 round-trips a V2 Connect frame using only the facade's existing three-package
@@ -105,7 +106,26 @@ the complete V2 engine/service/host stack without direct package dependencies.
 The verifier remains a trusted test double; no credential, Aegis, network, or
 durable-session adapter is qualified.
 
-The gate does not establish authentication, transport security, multi-process
-serialization, durable storage, event delivery, distributed availability, or
-orchestrator correctness. Those claims require separate adapters and evidence.
+Service V2 persistence scenarios recover byte-identical engine state and pending
+outbox, active clients, retained exact replies, and live room-page continuation.
+They replay a committed mutation without advancing the engine, preserve
+changed-input conflict, continue mutation from the recovered revision, and
+refuse every truncation plus foreign scope, reduced host ceiling, future profile,
+and trailing data. The service record and its private cursor subrecords have
+content-safe Debug surfaces. A representative complete service checkpoint is
+frozen as the eighth canonical fixture.
+
+The durable boundary scenarios use a deterministic checkpoint-store fault model.
+They prove a fresh mutation is not published before a durable next-revision
+receipt, a committed lost reply recovers as exact replay without another event
+or store call, a known store refusal reconstructs the pre-offer service, and
+indeterminate-before versus indeterminate-after commitment both fence until load
+resolves the store. Weak acknowledgement and store error never publish. This is
+store-port and crash-point evidence, not qualification of a filesystem, database,
+cloud service, power-loss boundary, backup, restore, or multi-process owner.
+
+The gate does not establish a credential adapter, transport security,
+multi-process serialization, physical durable storage, event delivery,
+distributed availability, or orchestrator correctness. Those claims require
+separate adapters and evidence.
 

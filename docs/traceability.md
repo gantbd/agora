@@ -30,14 +30,16 @@ This ledger records current evidence. Open work is not a pass.
 | R24 participant-bound functional parity | separately typed Protocol/Service/Client V2 source modules with actor-derived engine commands, bounded cursor registry, and exact request receipts | Protocol V2 redaction; five service scenarios covering full invite-only lifecycle, paging/replay, cursor isolation/one-shot/staleness/capacity, validation/conflict atomicity, and disconnect reclamation; client namespace scenario | Satisfied for volatile source profile; host is tracked by R26 and durability remains open |
 | R25 canonical Wire V2 | separately versioned `agora-wire::v2` complete-frame codec | three golden fixtures; every command/outcome/refusal round trip; truncation, trailing, version, unknown nested-tag, limit, and Debug-redaction scenarios | Satisfied for canonical frame profile; Host V2 is tracked by R26 and transport remains open |
 | R26 authenticated Host V2 | separately typed `HostV2` over Wire/Service V2 with shared trusted verifier contract and distinct session identity | five scenarios covering actor binding/replay, non-enumerating authentication, substitution/revocation isolation, capacity/version preflight, explicit disconnect, and transport close; embedded-facade construction | Satisfied for transport-neutral volatile host; credential adapter/transport/durability open |
+| R27 complete service recovery | `AGORASV` service checkpoint plus private `AGORACUR` cursor checkpoint profiles | three service persistence scenarios covering exact round trip, outbox/client/receipt/cursor continuation, truncation, scope, ceiling, future profile, trailing bytes, replay/conflict, and post-recovery mutation | Satisfied for canonical semantic state; physical store qualification remains open |
+| R28 receipt-gated publication | generic `agora-durable::DurableServiceV2` over the Keystone checkpoint-store port | six scenarios covering commit-before-publication, lost reply replay without duplicate event/store call, known-refusal rollback, indeterminate-before/after recovery, weak/error fencing, and content-safe diagnostics | Satisfied at store-neutral boundary; no physical adapter durability claim |
 
 ## Verification gates
 
 `make check` runs formatting, Clippy with warnings denied, all tests offline,
 doctests, and warning-denied documentation. This establishes only the in-process
-core and volatile service behavior exercised by those checks. It does not establish host authentication,
-transport framing/security, persistence durability, distributed ordering, or connector
-behavior.
+core, service recovery, and receipt-gated store boundary exercised by those
+checks. It does not establish a physical store's durability, transport
+framing/security, distributed ordering, or connector behavior.
 
 The external Moira qualification projects an unacknowledged `MessageAccepted`
 event as a participant-neutral read-only fact, then requires explicit Moira

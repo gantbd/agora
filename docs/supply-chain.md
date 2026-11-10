@@ -2,10 +2,10 @@
 
 Status: conservative local-source inventory; not a release SBOM or legal review.
 
-The current locked graph contains nine components: eight Agora packages and the
-sibling `keystone-codec` path package. It contains no registry or Git source and
-no Cargo checksum records. Every manifest dependency uses an exact version and a
-local path.
+The current locked graph contains eleven components: nine Agora packages and the
+sibling `keystone-codec` and `keystone-storage` path packages. It contains no
+registry or Git source and no Cargo checksum records. Every manifest dependency
+uses an exact version and a local path.
 
 `make check-supply-chain` compares `Cargo.lock` with the exact component
 inventory in `supply-chain-baseline.txt`, rejects source/checksum records and

@@ -12,6 +12,8 @@ use agora_protocol::v2::{
 };
 use std::collections::{BTreeMap, VecDeque};
 
+pub mod persistence;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ServiceLimitsV2 {
     pub max_clients: usize,

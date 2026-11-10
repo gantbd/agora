@@ -1,8 +1,8 @@
 # Release readiness
 
-Status: source-ready for the declared v0.3 core, volatile service v0.1, and
-authenticated host profile v0.1 on 2026-11-10; not ready for a network service
-or crates.io release.
+Status: source-ready for the declared v0.3 core, volatile service v0.1,
+authenticated host profile v0.1, and store-neutral durable-service boundary on
+2026-11-10; not ready for a network service or crates.io release.
 
 ## Established
 
@@ -20,12 +20,12 @@ or crates.io release.
 - unpublished trusted-host and remote-client SDK facades with executable
   facade-only construction and closed dependency evidence;
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
-  eight packages;
-- conservative package and canonical-fixture inventory closure over eight
-  packages and seven fixtures;
+  nine packages;
+- conservative package and canonical-fixture inventory closure over nine
+  packages and eight fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
-- conservative supply inventory closure over nine locked local components with
+- conservative supply inventory closure over eleven locked local components with
   missing, changed-version, and empty-inventory mutants;
 - membership-filtered, revision-bound in-process room/member/message pages with
   opaque cursors and explicit retained-history intervals;
@@ -35,6 +35,12 @@ or crates.io release.
   fixtures and closed nested vocabularies;
 - authenticated transport-neutral Host V2 with distinct session/client binding,
   per-frame revalidation, substitution fencing, and cleanup;
+- independently versioned, scope-bound Service V2 checkpoints preserving engine,
+  outbox, clients, retired tombstones, exact request replies, and live cursor
+  consequences across semantic recovery;
+- `agora-durable` pre-reply compare-and-exchange gating with durable-strength
+  receipt validation, known-refusal rollback, replay-without-store, and
+  indeterminate-outcome fencing;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.
@@ -46,8 +52,8 @@ or crates.io release.
 - SDK facades are not approved or configured for registry publication;
 - no qualified credential/Aegis verifier, network transport, or connector
   conformance package;
-- no qualified V2 credential/Aegis adapter, capability negotiation, network
-  transport, or durable session/cursor/request recovery;
+- no qualified V2 credential/Aegis adapter, capability negotiation, or network
+  transport;
 - no independently qualified durable Agora store;
 - no performance or fuzzing qualification, coverage-guided mutation, advisory
   lookup, legal compatibility review, binary SBOM, or artifact provenance;

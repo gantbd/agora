@@ -25,8 +25,14 @@ not stream boundaries; transport framing remains separate.
 
 Protocol, Service, Client, and Wire V2 form an additive profile with a separate
 version byte, closed grammar, and three canonical fixtures. Their separately
-typed values and V2 bytes do not alter V1 tags or bytes. V2 has no authenticated
-host representation yet.
+typed values and V2 bytes do not alter V1 tags or bytes. Authenticated Host V2
+uses the same canonical frames without reinterpreting V1.
+
+Service persistence is versioned independently. `AGORASV` version 1 captures
+the complete V2 service owner and embeds private `AGORACUR` version-1 cursor
+records. A representative complete service record is pinned by
+`service-checkpoint-v1.hex`. Public wire compatibility neither implies nor migrates durable state;
+future durable schema changes require a bounded explicit migration profile.
 
 ## Conservative baseline gate
 
