@@ -43,7 +43,8 @@ no I/O, reads no clock, starts no participant, and authenticates no principal.
 Addressing is conversation data only. Agora never turns an addressed participant
 into a task or execution request. An adapter may offer accepted messages to Moira;
 Moira decides whether workflow exists, Chronos schedules it, and Daimon executes
-already-authorized work.
+already-authorized work. The qualified local boundary is recorded in the
+[Moira integration profile](docs/moira-integration.md).
 
 Commands publish one event and advance one revision. Concurrent hosts use
 `apply_revisioned`; the core still requires one serialized publication owner and

@@ -42,6 +42,9 @@ Participant kind is descriptive metadata and is not consulted by addressing,
 admission, role, or speaking transitions. Agora does not wake a participant,
 create work, select a harness, or infer that an addressed participant responded.
 An adapter may offer accepted message facts to Moira; orchestration belongs there.
+The qualified local profile exposes a pending event as a read-only fact and
+requires a separate explicit Moira admission decision; it never projects an
+Agora address into execution authority.
 
 ## Event outbox
 

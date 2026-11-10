@@ -43,4 +43,8 @@ reintroduces spoofing and confused-deputy risk.
 
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.
+The qualified local Moira receiver therefore exposes only a passive pending
+message fact. Host policy must separately map an Agora participant to an opaque
+Moira participant reference and explicitly admit the message before workflow
+state exists. Acknowledgment follows durable accounting for that decision.
 

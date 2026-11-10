@@ -19,6 +19,12 @@ that finite profile; it is executable counterexample search, not an unbounded
 proof. Checkpoint mutation tests cover truncation, trailing data, profile tags,
 host ceilings, and accepted single-bit changes.
 
+The separately qualified local Moira receiver preserves the same participant
+neutrality while projecting pending addressed events as passive facts. Its gate
+proves explicit admission, changed-mapping conflict, restart and retention-
+eviction recovery, and replay after a lost admission reply. That evidence belongs
+to Moira and establishes composition behavior, not an Agora orchestration API.
+
 The service scenarios exercise participant-derived authorship, member-only
 snapshots, per-client request namespaces, matching retry, changed-request
 conflict, disconnect tombstones, and receipt saturation before engine mutation.

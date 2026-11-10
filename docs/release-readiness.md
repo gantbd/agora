@@ -17,6 +17,8 @@ or crates.io release.
 - canonical bounded V1 wire codec with executable golden compatibility fixtures;
 - transport-neutral authenticated host composition with bounded volatile
   sessions, current-context revalidation, and revocation-safe cleanup;
+- separately qualified local Moira ingress/publication composition in which
+  addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.
 
 ## Open release blockers
@@ -29,4 +31,6 @@ or crates.io release.
 - no production privacy, deletion, moderation, or abuse policy.
 
 Passing `make check` establishes only the source profile above.
+The Moira composition evidence runs in that repository and does not establish a
+durable Agora service or broaden this repository's release claim.
 

@@ -15,7 +15,7 @@ This ledger records current evidence. Open work is not a pass.
 | R9 effect isolation | dependency-free library core | source boundary and build graph | Satisfied for core; adapters open |
 | R10 optimistic publication | `Revision`, `RevisionedCommandV2`, checked counters | stale-writer and ordered transition scenarios | Satisfied for serial in-process owner |
 | R11 bounded delivery | bounded `EventEnvelopeV2` queue and monotone acknowledgment cursor | saturation, release, beyond-edge, and regression scenarios | Satisfied for volatile outbox; durability open |
-| R12 neutral addressing | `SpeakAddressed`, canonical member list retained in `Message` | kind-symmetry, order, membership, capacity, redaction, checkpoint, and bounded-model scenarios | Satisfied for represented message addressing; execution intentionally excluded |
+| R12 neutral addressing | `SpeakAddressed`, canonical member list retained in `Message` | kind-symmetry, order, membership, capacity, redaction, checkpoint, bounded-model scenarios, and external Moira passive-fact qualification | Satisfied for represented message addressing; execution intentionally excluded |
 | R13 replay-safe publication | opaque fixed-width key and bounded exact-content transition index | matching lost-reply replay, key conflict, saturation atomicity, and debug-redaction scenarios | Satisfied for volatile in-process profile; durable persistence open |
 | R14 participant-bound requests | service-side client-to-participant binding and member-gated snapshot | author derivation, kind symmetry, addressing, and outsider snapshot scenarios | Satisfied for trusted in-process connections |
 | R15 replay-safe service calls | bounded exact request/reply receipt map | matching replay, changed-request conflict, disconnect reclamation, and receipt saturation scenarios | Satisfied for volatile service lifetime |
@@ -33,4 +33,9 @@ doctests, and warning-denied documentation. This establishes only the in-process
 core and volatile service behavior exercised by those checks. It does not establish host authentication,
 transport framing/security, persistence durability, distributed ordering, or connector
 behavior.
+
+The external Moira qualification projects an unacknowledged `MessageAccepted`
+event as a participant-neutral read-only fact, then requires explicit Moira
+admission. Its restart, eviction, replay, and conflict evidence is maintained by
+Moira's own gate; it is not part of Agora's `make check`.
 
