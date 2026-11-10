@@ -104,6 +104,7 @@ impl Writer {
         Ok(())
     }
     fn message(&mut self, m: &Message) -> Result<(), CheckpointError> {
+        self.raw(&m.id.0)?;
         self.number(m.sequence)?;
         self.text(m.author.as_str())?;
         self.number(m.at.0)?;
@@ -289,6 +290,7 @@ impl<'a> Reader<'a> {
         }
     }
     fn message(&mut self, l: Limits) -> Result<Message, CheckpointError> {
+        let id = MessageId(self.fixed()?);
         let sequence = self.number()?;
         let author = self.participant(l)?;
         let at = LogicalTime(self.number()?);
@@ -302,6 +304,7 @@ impl<'a> Reader<'a> {
             addressed_to.push(self.participant(l)?)
         }
         Ok(Message {
+            id,
             sequence,
             author,
             at,
@@ -480,7 +483,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(4)?;
+        w.byte(5)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -499,6 +502,8 @@ impl Engine {
             w.text(id.as_str())?;
             w.text(&room.name)?;
             w.byte(admission_tag(room.admission))?;
+            w.number(room.message_identity_incarnation)?;
+            w.number(room.next_message_identity)?;
             w.number(room.next_message_sequence)?;
             w.count(room.members.len())?;
             for (id, role) in &room.members {
@@ -550,7 +555,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 4 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 5 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -574,6 +579,8 @@ impl Engine {
             let id = r.room(l)?;
             let name = r.text(l.max_room_name_bytes)?;
             let admission = read_admission(r.byte()?)?;
+            let message_identity_incarnation = r.number()?;
+            let next_message_identity = r.number()?;
             let next_message_sequence = r.number()?;
             let mut members = BTreeMap::new();
             let n = r.count(l.max_members_per_room)?;
@@ -622,6 +629,8 @@ impl Engine {
                     invitations,
                     bans,
                     messages,
+                    message_identity_incarnation,
+                    next_message_identity,
                     next_message_sequence,
                 },
             )?;
@@ -918,7 +927,7 @@ fn owner(room: &Room) -> Result<&ParticipantId, CheckpointError> {
     Ok(id)
 }
 fn valid_message(e: &Engine, room: &Room, m: &Message) -> Result<(), CheckpointError> {
-    valid_message_parts(e, room, m.sequence, &m.author, m.at, &m.body)?;
+    valid_message_parts(e, room, m.id, m.sequence, &m.author, m.at, &m.body)?;
     validate_addressing(e, &m.addressed_to)
 }
 fn validate_addressing(e: &Engine, addressed_to: &[ParticipantId]) -> Result<(), CheckpointError> {
@@ -935,13 +944,17 @@ fn validate_addressing(e: &Engine, addressed_to: &[ParticipantId]) -> Result<(),
 fn valid_message_parts(
     e: &Engine,
     room: &Room,
+    message_id: MessageId,
     sequence: u64,
     author: &ParticipantId,
     at: LogicalTime,
     body: &str,
 ) -> Result<(), CheckpointError> {
     bounded(body, e.limits.max_message_body_bytes)?;
-    if !e.participants.contains_key(author) || sequence >= room.next_message_sequence {
+    if !e.participants.contains_key(author)
+        || sequence >= room.next_message_sequence
+        || message_id != MessageId::allocated(room.message_identity_incarnation, sequence)
+    {
         return Err(CheckpointError::Invalid);
     }
     let start = room
@@ -953,7 +966,8 @@ fn valid_message_parts(
             .try_into()
             .map_err(|_| CheckpointError::Invalid)?;
         let current = room.messages.get(index).ok_or(CheckpointError::Invalid)?;
-        if current.sequence != sequence
+        if current.id != message_id
+            || current.sequence != sequence
             || &current.author != author
             || current.at != at
             || current.body != body
@@ -999,6 +1013,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         bounded(id.as_str(), l.max_participant_id_bytes)?;
         bounded(&p.display_name, l.max_display_name_bytes)?
     }
+    let mut room_incarnations = BTreeSet::new();
     for (id, room) in &e.rooms {
         if id != &room.id
             || room.members.len() > l.max_members_per_room
@@ -1028,6 +1043,12 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         {
             return Err(CheckpointError::Invalid);
         }
+        if room.message_identity_incarnation >= e.revision.0
+            || !room_incarnations.insert(room.message_identity_incarnation)
+            || room.next_message_identity != room.next_message_sequence
+        {
+            return Err(CheckpointError::Invalid);
+        }
         if l.max_messages_per_room == 0 && room.next_message_sequence != 0 {
             return Err(CheckpointError::Invalid);
         }
@@ -1043,7 +1064,9 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             .checked_sub(room.messages.len() as u64)
             .ok_or(CheckpointError::Invalid)?;
         for (i, m) in room.messages.iter().enumerate() {
-            if m.sequence != start + i as u64 {
+            if m.sequence != start + i as u64
+                || m.id != MessageId::allocated(room.message_identity_incarnation, m.sequence)
+            {
                 return Err(CheckpointError::Invalid);
             }
             valid_message(e, room, m)?
@@ -1065,16 +1088,17 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         let OutcomeV2::MessageAccepted { room_id, sequence } = &p.transition.outcome else {
             return Err(CheckpointError::Invalid);
         };
+        let message_id = MessageId::allocated(room.message_identity_incarnation, *sequence);
         if room_id != &p.room_id
             || p.transition.revision.0 == 0
             || p.transition.revision > e.revision
             || p.transition.event_sequence.0.checked_add(1) != Some(p.transition.revision.0)
             || revisions.insert(p.transition.revision, p).is_some()
-            || !messages.insert((room_id, *sequence))
+            || !messages.insert((room_id, message_id))
         {
             return Err(CheckpointError::Invalid);
         }
-        valid_message_parts(e, room, *sequence, &p.author, p.at, &p.body)?;
+        valid_message_parts(e, room, message_id, *sequence, &p.author, p.at, &p.body)?;
         if e.message(room_id, *sequence)
             .is_some_and(|message| !message.addressed_to.is_empty())
         {
@@ -1097,7 +1121,15 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             let OutcomeV2::MessageAccepted { sequence, .. } = &p.transition.outcome else {
                 return Err(CheckpointError::Invalid);
             };
+            let expected_message_id = MessageId::allocated(
+                e.rooms
+                    .get(room_id)
+                    .ok_or(CheckpointError::Invalid)?
+                    .message_identity_incarnation,
+                *sequence,
+            );
             if room_id != &p.room_id
+                || message.id != expected_message_id
                 || message.sequence != *sequence
                 || message.author != p.author
                 || message.at != p.at

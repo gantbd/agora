@@ -861,9 +861,110 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 6);
+    assert_eq!(capabilities.len(), 7);
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
+}
+
+#[test]
+fn v2_identified_messages_preserve_identity_without_reinterpreting_legacy_pages() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let speak = request(
+        1,
+        CommandV2::SpeakIdentified {
+            room_id: "room".to_owned(),
+            expected_revision: 2,
+            logical_time: 1,
+            body: "first".to_owned(),
+            addressed_to: vec![],
+        },
+    );
+    let first = service.execute(alice, speak.clone());
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        message_id,
+        sequence: 0,
+        ..
+    }) = &first
+    else {
+        panic!("identified acceptance expected");
+    };
+    assert_eq!(service.execute(alice, speak), first);
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                2,
+                CommandV2::SpeakIdentified {
+                    room_id: "room".to_owned(),
+                    expected_revision: 3,
+                    logical_time: 2,
+                    body: "second".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted { sequence: 1, .. })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(page)) = service.execute(
+        alice,
+        request(
+            3,
+            CommandV2::IdentifiedMessages {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("identified page expected");
+    };
+    assert_eq!(page.messages[0].message_id, *message_id);
+    assert_eq!(page.messages[0].sequence, 0);
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                4,
+                CommandV2::Messages {
+                    room_id: "room".to_owned(),
+                    cursor: page.next,
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidCursor)
+    );
+    let ReplyV2::Accepted(OutcomeV2::Messages(legacy)) = service.execute(
+        alice,
+        request(
+            5,
+            CommandV2::Messages {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("legacy page expected");
+    };
+    assert_eq!(legacy.messages[0].sequence, 0);
 }
 
 #[test]

@@ -6,9 +6,10 @@ use super::{
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
-    CommandV2, MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2,
-    ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2,
-    RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
+    CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, MemberPageV2, MemberV2, MessageIdV1,
+    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
+    RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
+    RoomSummaryV2,
 };
 use std::fmt;
 
@@ -223,6 +224,16 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             encode_optional_cursor(sink, *cursor)?;
             sink.u64(u64::from(*limit))
         }
+        CommandV2::IdentifiedMessages {
+            room_id,
+            cursor,
+            limit,
+        } => {
+            sink.u8(18)?;
+            sink.text(room_id)?;
+            encode_optional_cursor(sink, *cursor)?;
+            sink.u64(u64::from(*limit))
+        }
         CommandV2::OpenChanges {
             room_id,
             observed_revision,
@@ -364,6 +375,24 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             }
             Ok(())
         }
+        CommandV2::SpeakIdentified {
+            room_id,
+            expected_revision,
+            logical_time,
+            body,
+            addressed_to,
+        } => {
+            sink.u8(19)?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            sink.u64(*logical_time)?;
+            sink.text(body)?;
+            sink.list(addressed_to.len())?;
+            for participant in addressed_to {
+                sink.text(participant)?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -452,6 +481,29 @@ fn decode_command(
             limit: read_u32(decoder)?,
         }),
         17 => Ok(CommandV2::Capabilities),
+        18 => Ok(CommandV2::IdentifiedMessages {
+            room_id: read_text(decoder)?,
+            cursor: decode_optional_cursor(decoder)?,
+            limit: read_u32(decoder)?,
+        }),
+        19 => {
+            let room_id = read_text(decoder)?;
+            let expected_revision = read_u64(decoder)?;
+            let logical_time = read_u64(decoder)?;
+            let body = read_text(decoder)?;
+            let length = read_list(decoder, limits)?;
+            let mut addressed_to = try_vec(length)?;
+            for _ in 0..length {
+                addressed_to.push(read_text(decoder)?);
+            }
+            Ok(CommandV2::SpeakIdentified {
+                room_id,
+                expected_revision,
+                logical_time,
+                body,
+                addressed_to,
+            })
+        }
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -554,6 +606,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::ModerationV1 => 4,
                     CapabilityV2::RoomPolicyV1 => 5,
                     CapabilityV2::BanObservationV1 => 6,
+                    CapabilityV2::IdentifiedMessagesV1 => 7,
                 })?;
             }
             Ok(())
@@ -573,6 +626,10 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
         OutcomeV2::Messages(page) => {
             sink.u8(3)?;
             encode_message_page(sink, page)
+        }
+        OutcomeV2::IdentifiedMessages(page) => {
+            sink.u8(19)?;
+            encode_identified_message_page(sink, page)
         }
         OutcomeV2::ChangesOpened { revision, cursor } => {
             sink.u8(10)?;
@@ -607,6 +664,16 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
         OutcomeV2::MessageAccepted { revision, sequence } => {
             sink.u8(9)?;
             sink.u64(*revision)?;
+            sink.u64(*sequence)
+        }
+        OutcomeV2::IdentifiedMessageAccepted {
+            revision,
+            message_id,
+            sequence,
+        } => {
+            sink.u8(20)?;
+            sink.u64(*revision)?;
+            encode_message_id(sink, *message_id)?;
             sink.u64(*sequence)
         }
         OutcomeV2::Kicked { revision } => encode_revision_outcome(sink, 13, *revision),
@@ -695,6 +762,7 @@ fn decode_outcome(
                     4 => CapabilityV2::ModerationV1,
                     5 => CapabilityV2::RoomPolicyV1,
                     6 => CapabilityV2::BanObservationV1,
+                    7 => CapabilityV2::IdentifiedMessagesV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -703,6 +771,14 @@ fn decode_outcome(
             }
             Ok(OutcomeV2::Capabilities(capabilities))
         }
+        19 => Ok(OutcomeV2::IdentifiedMessages(
+            decode_identified_message_page(decoder, limits)?,
+        )),
+        20 => Ok(OutcomeV2::IdentifiedMessageAccepted {
+            revision: read_u64(decoder)?,
+            message_id: decode_message_id(decoder)?,
+            sequence: read_u64(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -859,6 +935,99 @@ fn decode_message_page(
         messages.push(decode_message(decoder, limits)?);
     }
     Ok(MessagePageV2 {
+        revision,
+        room_id,
+        messages,
+        oldest_retained_sequence: read_u64(decoder)?,
+        next_message_sequence: read_u64(decoder)?,
+        next: decode_optional_cursor(decoder)?,
+    })
+}
+
+fn encode_message_id(sink: &mut dyn Sink, message_id: MessageIdV1) -> Result<(), WireEncodeError> {
+    for byte in message_id.into_bytes() {
+        sink.u8(byte)?;
+    }
+    Ok(())
+}
+
+fn decode_message_id(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<MessageIdV1, WireDecodeError> {
+    let mut bytes = [0; 16];
+    for byte in &mut bytes {
+        *byte = read_u8(decoder)?;
+    }
+    Ok(MessageIdV1::new(bytes))
+}
+
+fn encode_identified_message(
+    sink: &mut dyn Sink,
+    message: &IdentifiedMessageV1,
+) -> Result<(), WireEncodeError> {
+    encode_message_id(sink, message.message_id)?;
+    sink.u64(message.sequence)?;
+    sink.text(&message.author)?;
+    sink.u64(message.logical_time)?;
+    sink.text(&message.body)?;
+    sink.list(message.addressed_to.len())?;
+    for participant in &message.addressed_to {
+        sink.text(participant)?;
+    }
+    Ok(())
+}
+
+fn decode_identified_message(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<IdentifiedMessageV1, WireDecodeError> {
+    let message_id = decode_message_id(decoder)?;
+    let sequence = read_u64(decoder)?;
+    let author = read_text(decoder)?;
+    let logical_time = read_u64(decoder)?;
+    let body = read_text(decoder)?;
+    let length = read_list(decoder, limits)?;
+    let mut addressed_to = try_vec(length)?;
+    for _ in 0..length {
+        addressed_to.push(read_text(decoder)?);
+    }
+    Ok(IdentifiedMessageV1 {
+        message_id,
+        sequence,
+        author,
+        logical_time,
+        body,
+        addressed_to,
+    })
+}
+
+fn encode_identified_message_page(
+    sink: &mut dyn Sink,
+    page: &IdentifiedMessagePageV1,
+) -> Result<(), WireEncodeError> {
+    sink.u64(page.revision)?;
+    sink.text(&page.room_id)?;
+    sink.list(page.messages.len())?;
+    for message in &page.messages {
+        encode_identified_message(sink, message)?;
+    }
+    sink.u64(page.oldest_retained_sequence)?;
+    sink.u64(page.next_message_sequence)?;
+    encode_optional_cursor(sink, page.next)
+}
+
+fn decode_identified_message_page(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<IdentifiedMessagePageV1, WireDecodeError> {
+    let revision = read_u64(decoder)?;
+    let room_id = read_text(decoder)?;
+    let length = read_list(decoder, limits)?;
+    let mut messages = try_vec(length)?;
+    for _ in 0..length {
+        messages.push(decode_identified_message(decoder, limits)?);
+    }
+    Ok(IdentifiedMessagePageV1 {
         revision,
         room_id,
         messages,

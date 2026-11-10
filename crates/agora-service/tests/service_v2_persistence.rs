@@ -96,7 +96,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v5.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v6.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -204,7 +204,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 6;
+    future[8] = 7;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -423,6 +423,92 @@ fn ban_page_cursor_survives_recovery_without_widening_authority() {
     assert_eq!(second.banned.len(), 1);
     assert_eq!(second.banned[0].participant_id, "carol");
     assert!(second.next.is_none());
+}
+
+#[test]
+fn identified_message_receipt_and_cursor_survive_recovery_exactly() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let first_request = request(
+        1,
+        CommandV2::SpeakIdentified {
+            room_id: "room".to_owned(),
+            expected_revision: 2,
+            logical_time: 1,
+            body: "first".to_owned(),
+            addressed_to: vec![],
+        },
+    );
+    let first_reply = service.execute(alice, first_request.clone());
+    assert!(matches!(
+        &first_reply,
+        ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted { .. })
+    ));
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                2,
+                CommandV2::SpeakIdentified {
+                    room_id: "room".to_owned(),
+                    expected_revision: 3,
+                    logical_time: 2,
+                    body: "second".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted { .. })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(first_page)) = service.execute(
+        alice,
+        request(
+            3,
+            CommandV2::IdentifiedMessages {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("identified page expected");
+    };
+    let first_id = first_page.messages[0].message_id;
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(alice, first_request), first_reply);
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(second_page)) = recovered.execute(
+        alice,
+        request(
+            4,
+            CommandV2::IdentifiedMessages {
+                room_id: "room".to_owned(),
+                cursor: first_page.next,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("continued identified page expected");
+    };
+    assert_ne!(second_page.messages[0].message_id, first_id);
+    assert_eq!(second_page.messages[0].sequence, 1);
+    assert!(second_page.next.is_none());
 }
 
 #[test]

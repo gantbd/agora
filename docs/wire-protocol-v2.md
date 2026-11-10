@@ -41,6 +41,8 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `0f` | SetAdmissionPolicy | room, admission, expected revision |
 | `10` | Bans | room `text`, optional cursor, limit |
 | `11` | Capabilities | no fields |
+| `12` | IdentifiedMessages | room `text`, optional cursor, limit |
+| `13` | SpeakIdentified | room, expected revision, logical time, body, addressed-participant list |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -52,7 +54,8 @@ a refusal. Outcome tags are Rooms `01`, Members `02`, Messages `03`, RoomCreated
 `04`, InvitationRecorded `05`, Joined `06`, Left `07`, RoleChanged `08`, and
 MessageAccepted `09`, ChangesOpened `0a`, Changes `0b`, ChangeGap `0c`, Kicked
 `0d`, Banned `0e`, Unbanned `0f`, RoomPolicyChanged `10`, Bans `11`, and
-Capabilities `12`. The capability outcome is a canonical strictly increasing
+Capabilities `12`, IdentifiedMessages `13`, and IdentifiedMessageAccepted `14`.
+The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
 
@@ -64,6 +67,12 @@ display name, kind, and role. A message page contains revision, room ID, message
 list, oldest retained sequence, next message sequence, and optional cursor. Each
 message contains sequence, author, logical time, body, and addressed-participant
 list.
+
+An identified-message page has the same bounds and retention interval as the
+legacy page, but each message begins with a 16-byte opaque message ID before its
+sequence. IdentifiedMessageAccepted carries revision, the 16-byte ID, then
+sequence. The ID is reference identity, not order or authority. These are new
+tags; legacy message pages and acceptance outcomes remain byte-identical.
 
 A ban page contains revision, room ID, a bounded list, and optional cursor. Each
 entry contains participant ID, display name, descriptive kind, and prior room
@@ -119,7 +128,8 @@ Canonical fixtures freeze CreateRoom, a room page with continuation, a message
 page carrying retention bounds and addressing, a change page carrying its
 stable event identity and next cursor, a moderation change preserving evidence,
 an admission-policy change, and a ban page preserving its authority-relevant
-prior role, plus a complete canonical capability inventory. Round-trip tests cover every command,
+prior role, a complete canonical capability inventory, and an identified-message
+page. Round-trip tests cover every command,
 outcome, refusal, room-event kind, and gap cause. Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push

@@ -1,6 +1,6 @@
 use agora_engine::{
-    AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, Participant, ParticipantId,
-    ParticipantKind, Refusal, Role, RoomId,
+    AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, MessageId, OutcomeV2, Participant,
+    ParticipantId, ParticipantKind, Refusal, Role, RoomId,
 };
 
 fn register(engine: &mut Engine, id: &str, kind: ParticipantKind) {
@@ -35,7 +35,7 @@ fn human_and_agent_join_and_speak_under_the_same_rules() {
             participant: ParticipantId::from("bot"),
         })
         .unwrap();
-    engine
+    let first = engine
         .apply(CommandV2::Speak {
             room_id: RoomId::from("commons"),
             author: ParticipantId::from("alice"),
@@ -43,7 +43,7 @@ fn human_and_agent_join_and_speak_under_the_same_rules() {
             body: "question".into(),
         })
         .unwrap();
-    engine
+    let second = engine
         .apply(CommandV2::Speak {
             room_id: RoomId::from("commons"),
             author: ParticipantId::from("bot"),
@@ -52,11 +52,38 @@ fn human_and_agent_join_and_speak_under_the_same_rules() {
         })
         .unwrap();
 
+    assert!(matches!(
+        first,
+        OutcomeV2::MessageAccepted { sequence: 0, .. }
+    ));
+    assert!(matches!(
+        second,
+        OutcomeV2::MessageAccepted { sequence: 1, .. }
+    ));
+
     let room = engine.room(&RoomId::from("commons")).unwrap();
+    let first_id = room.messages[0].id();
+    let second_id = room.messages[1].id();
+    assert_ne!(first_id, second_id);
+    assert_eq!(format!("{first_id:?}"), "MessageId(<opaque>)");
     assert_eq!(room.messages.len(), 2);
     assert_eq!(room.messages[0].sequence(), 0);
     assert_eq!(room.messages[1].sequence(), 1);
     assert_eq!(room.messages[1].author(), &ParticipantId::from("bot"));
+    assert_eq!(room.messages[0].id(), first_id);
+    assert_eq!(room.messages[1].id(), second_id);
+    assert_eq!(
+        engine
+            .message_by_id(&RoomId::from("commons"), second_id)
+            .unwrap()
+            .body(),
+        "answer"
+    );
+    assert!(
+        engine
+            .message_by_id(&RoomId::from("commons"), MessageId::from_bytes([0xff; 16]))
+            .is_none()
+    );
 }
 
 #[test]

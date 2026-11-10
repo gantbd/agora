@@ -382,7 +382,8 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::MessageRetentionDisabled
         | EngineRefusal::AddressedParticipantLimit
         | EngineRefusal::EventOutboxFull => RefusalV1::Capacity,
-        EngineRefusal::MessageSequenceExhausted
+        EngineRefusal::MessageIdentityExhausted
+        | EngineRefusal::MessageSequenceExhausted
         | EngineRefusal::RevisionExhausted
         | EngineRefusal::EventSequenceExhausted => RefusalV1::Exhausted,
         EngineRefusal::InvalidParticipantId

@@ -133,9 +133,38 @@ pub enum Role {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LogicalTime(pub u64);
 
+/// Stable room-local message reference. The byte representation is opaque and
+/// carries no ordering contract; use message sequence or event position to order.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MessageId([u8; 16]);
+
+impl MessageId {
+    pub const fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn into_bytes(self) -> [u8; 16] {
+        self.0
+    }
+
+    fn allocated(room_incarnation: u64, room_counter: u64) -> Self {
+        let mut bytes = [0; 16];
+        bytes[..8].copy_from_slice(&room_incarnation.to_be_bytes());
+        bytes[8..].copy_from_slice(&room_counter.to_be_bytes());
+        Self(bytes)
+    }
+}
+
+impl fmt::Debug for MessageId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MessageId(<opaque>)")
+    }
+}
+
 /// A retained room message. Debug output deliberately redacts the body.
 #[derive(Clone, Eq, PartialEq)]
 pub struct Message {
+    id: MessageId,
     sequence: u64,
     author: ParticipantId,
     at: LogicalTime,
@@ -144,6 +173,10 @@ pub struct Message {
 }
 
 impl Message {
+    pub fn id(&self) -> MessageId {
+        self.id
+    }
+
     pub fn sequence(&self) -> u64 {
         self.sequence
     }
@@ -170,6 +203,7 @@ impl Message {
 impl fmt::Debug for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Message")
+            .field("id", &self.id)
             .field("sequence", &self.sequence)
             .field("author", &self.author)
             .field("at", &self.at)
@@ -547,6 +581,8 @@ struct Room {
     invitations: BTreeSet<ParticipantId>,
     bans: BTreeMap<ParticipantId, Role>,
     messages: VecDeque<Message>,
+    message_identity_incarnation: u64,
+    next_message_identity: u64,
     next_message_sequence: u64,
 }
 
@@ -788,6 +824,7 @@ pub enum Refusal {
     InvitationLimit,
     BanLimit,
     MessageRetentionDisabled,
+    MessageIdentityExhausted,
     MessageSequenceExhausted,
     EventOutboxFull,
     RevisionExhausted,
@@ -1097,6 +1134,16 @@ impl Engine {
             .checked_sub(room.messages.len() as u64)?;
         let index: usize = sequence.checked_sub(start)?.try_into().ok()?;
         room.messages.get(index).filter(|m| m.sequence == sequence)
+    }
+
+    /// Finds a retained message by stable identity without interpreting its
+    /// opaque bytes as an ordering coordinate.
+    pub fn message_by_id(&self, room_id: &RoomId, message_id: MessageId) -> Option<&Message> {
+        self.rooms
+            .get(room_id)?
+            .messages
+            .iter()
+            .find(|message| message.id == message_id)
     }
 
     pub fn rooms(&self) -> impl Iterator<Item = RoomView> + '_ {
@@ -1918,6 +1965,10 @@ impl Engine {
             ) => DomainEventV2::MessageAccepted {
                 room_id: room_id.clone(),
                 message: Message {
+                    id: self
+                        .message(room_id, *sequence)
+                        .expect("accepted message remains retained")
+                        .id(),
                     sequence: *sequence,
                     author: author.clone(),
                     at: *at,
@@ -1937,6 +1988,10 @@ impl Engine {
             ) => DomainEventV2::MessageAccepted {
                 room_id: room_id.clone(),
                 message: Message {
+                    id: self
+                        .message(room_id, *sequence)
+                        .expect("accepted message remains retained")
+                        .id(),
                     sequence: *sequence,
                     author: author.clone(),
                     at: *at,
@@ -2011,6 +2066,8 @@ impl Engine {
                 invitations: BTreeSet::new(),
                 bans: BTreeMap::new(),
                 messages: VecDeque::new(),
+                message_identity_incarnation: self.next_event_sequence.0,
+                next_message_identity: 0,
                 next_message_sequence: 0,
             },
         );
@@ -2327,6 +2384,14 @@ impl Engine {
         {
             return Err(Refusal::NotMember(id.clone()));
         }
+        let message_id = MessageId::allocated(
+            room.message_identity_incarnation,
+            room.next_message_identity,
+        );
+        let next_message_identity = room
+            .next_message_identity
+            .checked_add(1)
+            .ok_or(Refusal::MessageIdentityExhausted)?;
         let sequence = room.next_message_sequence;
         let next = sequence
             .checked_add(1)
@@ -2339,12 +2404,14 @@ impl Engine {
             room.messages.pop_front();
         }
         room.messages.push_back(Message {
+            id: message_id,
             sequence,
             author,
             at,
             body,
             addressed_to,
         });
+        room.next_message_identity = next_message_identity;
         room.next_message_sequence = next;
         Ok(OutcomeV2::MessageAccepted { room_id, sequence })
     }

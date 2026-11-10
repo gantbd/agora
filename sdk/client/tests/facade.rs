@@ -75,4 +75,21 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
         wire::v2::decode_request_v2(&encoded, limits).unwrap(),
         request
     );
+
+    let identified = wire::v2::WireRequestV2::Execute {
+        client: protocol::v2::ClientIdV2(7),
+        request: protocol::v2::RequestV2 {
+            request_id: protocol::v2::RequestIdV2(9),
+            command: protocol::v2::CommandV2::IdentifiedMessages {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 2,
+            },
+        },
+    };
+    let encoded = wire::v2::encode_request_v2(&identified, limits).unwrap();
+    assert_eq!(
+        wire::v2::decode_request_v2(&encoded, limits).unwrap(),
+        identified
+    );
 }

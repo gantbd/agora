@@ -44,6 +44,12 @@ and reveals the service profile to an already connected participant. Deployments
 that consider profile fingerprinting sensitive must constrain connection access;
 they must not falsify the advertised list after admitting the request.
 
+Message IDs are stable linkable conversation metadata. They are opaque but not
+secret, do not grant read or mutation authority, and must not be interpreted as
+chronology. Identified history still rechecks current membership; legacy and
+identified cursor kinds are isolated so a handle cannot silently change the
+shape or disclosure contract of its continuation.
+
 The authenticated host prevents a wire client ID from becoming ambient authority:
 each frame is coupled to an opaque transport-bound host session, a retained
 verified subject/participant, current verifier acceptance, and the exact service

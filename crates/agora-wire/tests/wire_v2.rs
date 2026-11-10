@@ -1,8 +1,9 @@
 use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
-    CommandV2, MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2,
-    ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2,
-    RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
+    CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, MemberPageV2, MemberV2, MessageIdV1,
+    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
+    RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
+    RoomSummaryV2,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -143,7 +144,28 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::ModerationV1,
         CapabilityV2::RoomPolicyV1,
         CapabilityV2::BanObservationV1,
+        CapabilityV2::IdentifiedMessagesV1,
     ])))
+}
+
+fn identified_messages_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(
+        IdentifiedMessagePageV1 {
+            revision: 19,
+            room_id: "private".to_owned(),
+            messages: vec![IdentifiedMessageV1 {
+                message_id: MessageIdV1::new([0x5a; 16]),
+                sequence: 4,
+                author: "bot".to_owned(),
+                logical_time: 9,
+                body: "identified body".to_owned(),
+                addressed_to: vec!["alice".to_owned()],
+            }],
+            oldest_retained_sequence: 4,
+            next_message_sequence: 5,
+            next: None,
+        },
+    )))
 }
 
 fn fixture(source: &str) -> Vec<u8> {
@@ -187,6 +209,10 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
         (
             encode_reply_v2(&capabilities_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/capabilities-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&identified_messages_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/identified-messages-reply-v2.hex")),
         ),
     ];
     for (actual, expected) in cases {
@@ -239,6 +265,11 @@ fn every_v2_command_round_trips() {
             room_id: "room".to_owned(),
             cursor: None,
             limit: 4,
+        },
+        CommandV2::IdentifiedMessages {
+            room_id: "room".to_owned(),
+            cursor: Some(PageCursorV2(2)),
+            limit: 3,
         },
         CommandV2::OpenChanges {
             room_id: "room".to_owned(),
@@ -307,6 +338,13 @@ fn every_v2_command_round_trips() {
             body: "body".to_owned(),
             addressed_to: vec!["alice".to_owned(), "bot".to_owned()],
         },
+        CommandV2::SpeakIdentified {
+            room_id: "room".to_owned(),
+            expected_revision: 7,
+            logical_time: 8,
+            body: "identified".to_owned(),
+            addressed_to: vec!["alice".to_owned()],
+        },
     ];
     for (index, command) in commands.into_iter().enumerate() {
         let request = WireRequestV2::Execute {
@@ -352,6 +390,10 @@ fn every_v2_outcome_and_refusal_round_trips() {
             WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
             _ => unreachable!(),
         },
+        match identified_messages_reply() {
+            WireReplyV2::Executed(ReplyV2::Accepted(outcome)) => outcome,
+            _ => unreachable!(),
+        },
         OutcomeV2::RoomCreated { revision: 1 },
         OutcomeV2::InvitationRecorded { revision: 2 },
         OutcomeV2::Joined { revision: 3 },
@@ -359,6 +401,11 @@ fn every_v2_outcome_and_refusal_round_trips() {
         OutcomeV2::RoleChanged { revision: 5 },
         OutcomeV2::MessageAccepted {
             revision: 6,
+            sequence: 7,
+        },
+        OutcomeV2::IdentifiedMessageAccepted {
+            revision: 6,
+            message_id: MessageIdV1::new([0x33; 16]),
             sequence: 7,
         },
         OutcomeV2::ChangesOpened {

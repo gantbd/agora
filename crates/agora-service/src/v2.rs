@@ -9,9 +9,10 @@ use agora_engine::{
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
-    CommandV2, MemberPageV2, MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2,
-    ParticipantKindV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2,
-    RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
+    CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, MemberPageV2, MemberV2, MessageIdV1,
+    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, RefusalV2, ReplyV2,
+    RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
+    RoomSummaryV2,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -87,6 +88,10 @@ enum CursorPage {
         cursor: BanPageCursor,
     },
     Messages {
+        room_id: RoomId,
+        cursor: MessagePageCursor,
+    },
+    IdentifiedMessages {
         room_id: RoomId,
         cursor: MessagePageCursor,
     },
@@ -250,6 +255,7 @@ impl ServiceV2 {
                 CapabilityV2::ModerationV1,
                 CapabilityV2::RoomPolicyV1,
                 CapabilityV2::BanObservationV1,
+                CapabilityV2::IdentifiedMessagesV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -267,6 +273,11 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.messages(client, participant, room_id, *cursor, *limit),
+            CommandV2::IdentifiedMessages {
+                room_id,
+                cursor,
+                limit,
+            } => self.identified_messages(client, participant, room_id, *cursor, *limit),
             CommandV2::OpenChanges {
                 room_id,
                 observed_revision,
@@ -421,7 +432,59 @@ impl ServiceV2 {
                 };
                 self.mutate(*expected_revision, command)
             }
+            CommandV2::SpeakIdentified {
+                room_id,
+                expected_revision,
+                logical_time,
+                body,
+                addressed_to,
+            } => {
+                let command = if addressed_to.is_empty() {
+                    EngineCommand::Speak {
+                        room_id: RoomId::new(room_id),
+                        author: participant.clone(),
+                        at: agora_engine::LogicalTime(*logical_time),
+                        body: body.clone(),
+                    }
+                } else {
+                    EngineCommand::SpeakAddressed {
+                        room_id: RoomId::new(room_id),
+                        author: participant.clone(),
+                        at: agora_engine::LogicalTime(*logical_time),
+                        body: body.clone(),
+                        addressed_to: addressed_to.iter().map(ParticipantId::new).collect(),
+                    }
+                };
+                self.mutate_identified(*expected_revision, command)
+            }
         }
+    }
+
+    fn mutate_identified(
+        &mut self,
+        expected_revision: u64,
+        command: EngineCommand,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let transition = self
+            .engine
+            .apply_revisioned(RevisionedCommandV2 {
+                expected_revision: Revision(expected_revision),
+                command,
+            })
+            .map_err(map_engine_refusal)?;
+        let EngineOutcome::MessageAccepted { room_id, sequence } = transition.outcome else {
+            return Err(RefusalV2::Unavailable);
+        };
+        let message_id = self
+            .engine
+            .message(&room_id, sequence)
+            .ok_or(RefusalV2::Unavailable)?
+            .id();
+        Ok(OutcomeV2::IdentifiedMessageAccepted {
+            revision: transition.revision.0,
+            message_id: MessageIdV1::new(message_id.into_bytes()),
+            sequence,
+        })
     }
 
     fn mutate(
@@ -600,6 +663,49 @@ impl ServiceV2 {
             })
             .collect();
         Ok(OutcomeV2::Messages(MessagePageV2 {
+            revision: page.revision.0,
+            room_id: page.room_id.as_str().to_owned(),
+            messages,
+            oldest_retained_sequence: page.oldest_retained_sequence,
+            next_message_sequence: page.next_message_sequence,
+            next,
+        }))
+    }
+
+    fn identified_messages(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        cursor_id: Option<PageCursorV2>,
+        limit: u32,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let cursor = match cursor_id {
+            Some(id) => match self.cursor_for(client, id)? {
+                CursorPage::IdentifiedMessages {
+                    room_id: bound_room,
+                    cursor,
+                } if bound_room == room => Some(cursor),
+                _ => return Err(RefusalV2::InvalidCursor),
+            },
+            None => None,
+        };
+        let page = self
+            .engine
+            .message_page(observer, &room, cursor.as_ref(), limit as usize)
+            .map_err(map_observation_refusal)?;
+        let next_page = page.next.map(|cursor| CursorPage::IdentifiedMessages {
+            room_id: room.clone(),
+            cursor,
+        });
+        let next = self.replace_cursor(client, cursor_id, next_page)?;
+        let messages = page
+            .messages
+            .into_iter()
+            .map(map_identified_message_from_engine)
+            .collect();
+        Ok(OutcomeV2::IdentifiedMessages(IdentifiedMessagePageV1 {
             revision: page.revision.0,
             room_id: page.room_id.as_str().to_owned(),
             messages,
@@ -895,7 +1001,8 @@ impl ServiceV2 {
             CommandV2::Rooms { limit, .. } => valid_page(*limit),
             CommandV2::Members { room_id, limit, .. }
             | CommandV2::Bans { room_id, limit, .. }
-            | CommandV2::Messages { room_id, limit, .. } => {
+            | CommandV2::Messages { room_id, limit, .. }
+            | CommandV2::IdentifiedMessages { room_id, limit, .. } => {
                 valid_room(room_id) && valid_page(*limit)
             }
             CommandV2::OpenChanges { room_id, .. } => valid_room(room_id),
@@ -944,6 +1051,12 @@ impl ServiceV2 {
                 body,
                 addressed_to,
                 ..
+            }
+            | CommandV2::SpeakIdentified {
+                room_id,
+                body,
+                addressed_to,
+                ..
             } => {
                 valid_room(room_id)
                     && valid_text(body, self.limits.max_message_body_bytes)
@@ -962,6 +1075,21 @@ fn valid_text(value: &str, maximum: usize) -> bool {
 
 fn map_message_from_engine(message: agora_engine::Message) -> MessageV2 {
     MessageV2 {
+        sequence: message.sequence(),
+        author: message.author().as_str().to_owned(),
+        logical_time: message.at().0,
+        body: message.body().to_owned(),
+        addressed_to: message
+            .addressed_to()
+            .iter()
+            .map(|participant| participant.as_str().to_owned())
+            .collect(),
+    }
+}
+
+fn map_identified_message_from_engine(message: agora_engine::Message) -> IdentifiedMessageV1 {
+    IdentifiedMessageV1 {
+        message_id: MessageIdV1::new(message.id().into_bytes()),
         sequence: message.sequence(),
         author: message.author().as_str().to_owned(),
         logical_time: message.at().0,
@@ -1040,7 +1168,8 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::MessageRetentionDisabled
         | EngineRefusal::AddressedParticipantLimit
         | EngineRefusal::EventOutboxFull => RefusalV2::Capacity,
-        EngineRefusal::MessageSequenceExhausted
+        EngineRefusal::MessageIdentityExhausted
+        | EngineRefusal::MessageSequenceExhausted
         | EngineRefusal::RevisionExhausted
         | EngineRefusal::EventSequenceExhausted => RefusalV2::Exhausted,
         EngineRefusal::InvalidParticipantId

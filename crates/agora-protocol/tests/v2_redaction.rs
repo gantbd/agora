@@ -1,13 +1,26 @@
 use agora_protocol::v2::{
-    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, CommandV2, MemberPageV2,
-    MemberV2, MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReplyV2,
-    RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
+    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, CommandV2,
+    IdentifiedMessagePageV1, IdentifiedMessageV1, MemberPageV2, MemberV2, MessageIdV1,
+    MessagePageV2, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReplyV2, RoleV2,
+    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
 };
 
 #[test]
 fn v2_debug_output_is_content_safe() {
     let commands = [
         CommandV2::Capabilities,
+        CommandV2::IdentifiedMessages {
+            room_id: "secret-room".to_owned(),
+            cursor: Some(PageCursorV2(48)),
+            limit: 1,
+        },
+        CommandV2::SpeakIdentified {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 1,
+            logical_time: 2,
+            body: "secret-body".to_owned(),
+            addressed_to: vec!["secret-recipient".to_owned()],
+        },
         CommandV2::Speak {
             room_id: "secret-room".to_owned(),
             expected_revision: 1,
@@ -38,6 +51,26 @@ fn v2_debug_output_is_content_safe() {
             CapabilityV2::RoomLifecycleV2,
             CapabilityV2::BanObservationV1,
         ])),
+        ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(IdentifiedMessagePageV1 {
+            revision: 1,
+            room_id: "secret-room".to_owned(),
+            messages: vec![IdentifiedMessageV1 {
+                message_id: MessageIdV1::new([0x5a; 16]),
+                sequence: 0,
+                author: "secret-author".to_owned(),
+                logical_time: 2,
+                body: "secret-body".to_owned(),
+                addressed_to: vec!["secret-recipient".to_owned()],
+            }],
+            oldest_retained_sequence: 0,
+            next_message_sequence: 1,
+            next: Some(PageCursorV2(49)),
+        })),
+        ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+            revision: 2,
+            message_id: MessageIdV1::new([0x5b; 16]),
+            sequence: 0,
+        }),
         ReplyV2::Accepted(OutcomeV2::Rooms(RoomPageV2 {
             revision: 1,
             rooms: vec![RoomSummaryV2 {
@@ -151,6 +184,8 @@ fn v2_debug_output_is_content_safe() {
         "45",
         "46",
         "47",
+        "48",
+        "49",
     ] {
         assert!(!rendered.contains(secret));
     }

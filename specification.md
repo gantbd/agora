@@ -128,9 +128,9 @@ before message mutation at capacity. Publication deliberately addresses nobody;
 an orchestrator must use an explicit conversation command if addressing is part
 of the response semantics.
 
-## Checkpoint profile V4
+## Checkpoint profile V5
 
-The closed `AGORACP` version-4 codec captures limits, participants, rooms,
+The closed `AGORACP` version-5 codec captures limits, participants, rooms,
 membership, invitations, bans, retained message suffixes and addressing, complete publication
 records, revision/event frontiers, acknowledgment cursor, and pending events.
 Host byte/cardinality ceilings apply before checkpoint-owned limits or allocation.
@@ -223,7 +223,7 @@ position.
 
 ## Service checkpoint profile V2
 
-The `AGORASV` version-5 record is independent of public wire versioning and is
+The `AGORASV` version-6 record is independent of public wire versioning and is
 bound to an exact caller-supplied 16-byte store scope. It contains the canonical
 engine checkpoint, configured service limits, active client-to-participant
 bindings, ordered retired tombstones, exact request/reply receipts, private
@@ -237,7 +237,9 @@ its own ceiling, checks client and cursor attribution, validates identifier
 frontiers and request shapes, refuses duplicate or noncanonical ordering, and
 requires byte-identical re-encoding. Opaque engine cursors have their own private
 `AGORACUR` version-1 profile and remain observer/room/revision bound. Cursor kind
-5 is the authority-scoped ban page. Process-local
+5 is the authority-scoped ban page. The service profile uses outer page-kind 6
+for identified-message continuation while nesting the unchanged engine message
+cursor kind 3; this prevents legacy/identified handle substitution. Process-local
 usage counters reset on recovery and are intentionally absent from semantic
 checkpoint bytes.
 
@@ -245,11 +247,27 @@ checkpoint bytes.
 
 `Capabilities` returns one canonical strictly increasing list from a closed
 feature vocabulary: room lifecycle V2, retained history V2, room changes V1,
-moderation V1, room policy V1, and ban observation V1. The request is retained
+moderation V1, room policy V1, ban observation V1, and identified messages V1. The request is retained
 and replayed under ordinary service request identity but performs no engine
 mutation. A listed capability means that this service implements the named
 syntax and semantics; it is not authentication, authorization, room membership,
 or evidence that any particular request will be admitted.
+
+### Identified messages V1
+
+Every accepted engine message receives a 128-bit `MessageId` built from a
+restart-stable room incarnation and a room-local allocation counter. The bytes
+are opaque reference identity, not an ordering promise; room message sequence
+and global event position remain the specified order coordinates. Identity is
+retained with the message and accepted event and survives engine, service, and
+host recovery.
+
+Protocol V2 exposes this fact only through additive parallel operations:
+`SpeakIdentified`, `IdentifiedMessages`, `IdentifiedMessageAccepted`, and
+`IdentifiedMessagePageV1`. Legacy `Speak`, `Messages`, `MessageAccepted`, and
+`MessageV2` retain their exact prior grammar. Identified and legacy page cursors
+are different service cursor kinds and cannot be substituted. Neither profile
+changes membership, authority, addressing, retention, or delivery semantics.
 
 ## Receipt-gated durable service V2
 
@@ -290,7 +308,7 @@ requests, reconnect a host session, or prove server durability.
 
 ## Authenticated host checkpoint and durable publication V2
 
-The `AGORAHST` version-5 record is independently versioned and bound to an exact
+The `AGORAHST` version-6 record is independently versioned and bound to an exact
 16-byte store scope. It contains Host V2 limits, the next non-reused session
 frontier, every active mapping from opaque host session to verified subject,
 participant, service client and last verification time, the bounded retired

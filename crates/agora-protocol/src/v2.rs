@@ -19,6 +19,25 @@ impl fmt::Debug for PageCursorV2 {
     }
 }
 
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MessageIdV1([u8; 16]);
+
+impl MessageIdV1 {
+    pub const fn new(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn into_bytes(self) -> [u8; 16] {
+        self.0
+    }
+}
+
+impl fmt::Debug for MessageIdV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MessageIdV1(<opaque>)")
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdmissionPolicyV2 {
     Open,
@@ -56,6 +75,11 @@ pub enum CommandV2 {
         limit: u32,
     },
     Messages {
+        room_id: String,
+        cursor: Option<PageCursorV2>,
+        limit: u32,
+    },
+    IdentifiedMessages {
         room_id: String,
         cursor: Option<PageCursorV2>,
         limit: u32,
@@ -127,6 +151,13 @@ pub enum CommandV2 {
         body: String,
         addressed_to: Vec<String>,
     },
+    SpeakIdentified {
+        room_id: String,
+        expected_revision: u64,
+        logical_time: u64,
+        body: String,
+        addressed_to: Vec<String>,
+    },
 }
 
 impl fmt::Debug for CommandV2 {
@@ -164,6 +195,16 @@ impl fmt::Debug for CommandV2 {
                 limit,
             } => formatter
                 .debug_struct("Messages")
+                .field("room_id_bytes", &room_id.len())
+                .field("has_cursor", &cursor.is_some())
+                .field("limit", limit)
+                .finish(),
+            Self::IdentifiedMessages {
+                room_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("IdentifiedMessages")
                 .field("room_id_bytes", &room_id.len())
                 .field("has_cursor", &cursor.is_some())
                 .field("limit", limit)
@@ -280,6 +321,13 @@ impl fmt::Debug for CommandV2 {
                 logical_time,
                 body,
                 addressed_to,
+            }
+            | Self::SpeakIdentified {
+                room_id,
+                expected_revision,
+                logical_time,
+                body,
+                addressed_to,
             } => formatter
                 .debug_struct("Speak")
                 .field("room_id_bytes", &room_id.len())
@@ -302,6 +350,7 @@ pub enum CapabilityV2 {
     ModerationV1,
     RoomPolicyV1,
     BanObservationV1,
+    IdentifiedMessagesV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -409,6 +458,30 @@ impl fmt::Debug for MessageV2 {
 }
 
 #[derive(Clone, Eq, PartialEq)]
+pub struct IdentifiedMessageV1 {
+    pub message_id: MessageIdV1,
+    pub sequence: u64,
+    pub author: String,
+    pub logical_time: u64,
+    pub body: String,
+    pub addressed_to: Vec<String>,
+}
+
+impl fmt::Debug for IdentifiedMessageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("IdentifiedMessageV1")
+            .field("message_id", &self.message_id)
+            .field("sequence", &self.sequence)
+            .field("author_bytes", &self.author.len())
+            .field("logical_time", &self.logical_time)
+            .field("body_bytes", &self.body.len())
+            .field("addressed_count", &self.addressed_to.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct RoomPageV2 {
     pub revision: u64,
     pub rooms: Vec<RoomSummaryV2>,
@@ -436,6 +509,16 @@ pub struct MessagePageV2 {
     pub revision: u64,
     pub room_id: String,
     pub messages: Vec<MessageV2>,
+    pub oldest_retained_sequence: u64,
+    pub next_message_sequence: u64,
+    pub next: Option<PageCursorV2>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct IdentifiedMessagePageV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub messages: Vec<IdentifiedMessageV1>,
     pub oldest_retained_sequence: u64,
     pub next_message_sequence: u64,
     pub next: Option<PageCursorV2>,
@@ -601,6 +684,12 @@ page_debug!(RoomPageV2, "RoomPageV2", rooms, "room_count");
 page_debug!(MemberPageV2, "MemberPageV2", members, "member_count");
 page_debug!(BanPageV2, "BanPageV2", banned, "banned_count");
 page_debug!(MessagePageV2, "MessagePageV2", messages, "message_count");
+page_debug!(
+    IdentifiedMessagePageV1,
+    "IdentifiedMessagePageV1",
+    messages,
+    "message_count"
+);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OutcomeV2 {
@@ -609,6 +698,7 @@ pub enum OutcomeV2 {
     Members(MemberPageV2),
     Bans(BanPageV2),
     Messages(MessagePageV2),
+    IdentifiedMessages(IdentifiedMessagePageV1),
     ChangesOpened {
         revision: u64,
         cursor: PageCursorV2,
@@ -647,6 +737,11 @@ pub enum OutcomeV2 {
     },
     MessageAccepted {
         revision: u64,
+        sequence: u64,
+    },
+    IdentifiedMessageAccepted {
+        revision: u64,
+        message_id: MessageIdV1,
         sequence: u64,
     },
 }
