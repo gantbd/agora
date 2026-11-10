@@ -9,9 +9,18 @@ remain unchanged. Persistence scenarios compare canonical bytes after recovery.
 
 The active `make check` gate contains:
 
-1. formatting and warning-denied lint;
-2. all unit, integration, and bounded-model tests offline;
-3. doctests and warning-denied documentation.
+1. fail-closed release-contract and conservative compatibility-baseline checks;
+2. dependency and effect-boundary checks;
+3. formatting and warning-denied lint;
+4. all unit, integration, and bounded-model tests offline;
+5. doctests and warning-denied documentation.
+
+The release-contract gate requires every current package to deny registry
+publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
+explicit sibling-Keystone source-layout assumption. The compatibility gate
+closes over the exact eight-package workspace and four canonical fixtures. These
+are source-drift controls: they do not establish artifact provenance, registry
+readiness, semantic compatibility, or a self-contained source archive.
 
 The addressing model exhausts every author, recipient subset, and human/agent
 kind assignment for a three-participant room. This establishes symmetry only for

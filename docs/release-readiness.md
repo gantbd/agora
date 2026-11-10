@@ -19,13 +19,18 @@ or crates.io release.
   sessions, current-context revalidation, and revocation-safe cleanup;
 - unpublished trusted-host and remote-client SDK facades with executable
   facade-only construction and closed dependency evidence;
+- exact non-publication and Rust 1.95.0 source-contract enforcement across all
+  eight packages;
+- conservative package and canonical-fixture inventory closure over eight
+  packages and four fixtures;
 - separately qualified local Moira ingress/publication composition in which
   addressed events remain passive facts until explicit workflow admission;
 - offline format, lint, test, doctest, and documentation gate.
 
 ## Open release blockers
 
-- no published dependency/release provenance or remote CI;
+- no self-contained dependency/release provenance or remote CI; the source
+  profile still requires the documented sibling Keystone checkout;
 - SDK facades are not approved or configured for registry publication;
 - no qualified credential/Aegis verifier, network transport, or connector
   conformance package;

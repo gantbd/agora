@@ -1,0 +1,14 @@
+# Exact conservative Agora package and canonical-fixture inventory.
+# Format is deliberately line-oriented for the offline shell gate.
+package|Cargo.toml|agora-engine|0.3.0
+package|crates/agora-client/Cargo.toml|agora-client|0.1.0
+package|crates/agora-host/Cargo.toml|agora-host|0.1.0
+package|crates/agora-protocol/Cargo.toml|agora-protocol|0.1.0
+package|crates/agora-service/Cargo.toml|agora-service|0.1.0
+package|crates/agora-wire/Cargo.toml|agora-wire|0.1.0
+package|sdk/client/Cargo.toml|agora-sdk-client|0.1.0
+package|sdk/embedded/Cargo.toml|agora-sdk-embedded|0.1.0
+fixture|crates/agora-wire/tests/fixtures/connect-request-v1.hex|11|4c13512cfcb29d053b6e56610b4693ac9ad5f6cd88650349bfb2df13c75c5fe4
+fixture|crates/agora-wire/tests/fixtures/snapshot-reply-v1.hex|137|10efdc44b693253f645c64ace2e3f458bf7d1ece9eb6d82bb8faa553702de12c
+fixture|crates/agora-wire/tests/fixtures/speak-request-v1.hex|77|9a623df28a992a3af0235bd7cfe4c31bb746397ca8d28f8b32378d7961a878ed
+fixture|tests/fixtures/checkpoint-v2.hex|638|d64db1b3c69b7d1f51fdbabea13f51dd4fdae6f2695bf960f9e9945207b60c40
