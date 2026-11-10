@@ -37,6 +37,8 @@ not ready for a network service or crates.io release.
 - deterministic bounded mutation of every canonical V1/V2 wire fixture across
   all strict prefixes, trailing framing, and every single-bit change, with exact
   re-encoding required for every accepted candidate;
+- fixed-seed bounded mutation of canonical service and host recovery records,
+  requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound
   authority, tombstone/archive preservation, retention cleanup, exact recovery,
   all-feed attribution, and two canonical wire fixtures;

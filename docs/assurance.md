@@ -36,12 +36,17 @@ every single-bit mutation. A refused candidate remains closed; any accepted
 candidate must re-encode to the exact candidate bytes. This bounded campaign
 proves reproducibility and canonical acceptance for that corpus, not coverage
 completeness or parser correctness for every possible byte string.
+The frozen service and host checkpoints additionally receive 512 fixed-seed
+single-bit mutations per profile. Each candidate must refuse recovery or recover
+and re-encode byte-for-byte, extending the no-silent-normalization law through
+nested private state, receipts, cursors, and authenticated sessions.
 
 The addressing model exhausts every author, recipient subset, and human/agent
 kind assignment for a three-participant room. This establishes symmetry only for
 that finite profile; it is executable counterexample search, not an unbounded
 proof. Checkpoint mutation tests cover truncation, trailing data, profile tags,
-host ceilings, and accepted single-bit changes.
+host ceilings, exhaustive engine-fixture bit changes, and fixed-seed enclosing
+service/host changes.
 
 The separately qualified local Moira receiver preserves the same participant
 neutrality while projecting pending addressed events as passive facts. Its gate

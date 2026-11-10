@@ -118,6 +118,25 @@ fn connect_frame(participant: &str) -> Vec<u8> {
     .unwrap()
 }
 
+fn decode_hex(source: &str) -> Vec<u8> {
+    let compact: String = source
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect();
+    assert_eq!(compact.len() % 2, 0);
+    (0..compact.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&compact[index..index + 2], 16).unwrap())
+        .collect()
+}
+
+fn next_mutation_bit(state: &mut u64, byte_len: usize) -> usize {
+    *state ^= *state << 13;
+    *state ^= *state >> 7;
+    *state ^= *state << 17;
+    (*state as usize) % (byte_len * 8)
+}
+
 fn open(
     host: &mut HostV2<Verifier>,
     participant: &'static str,
@@ -574,4 +593,33 @@ fn v2_host_checkpoint_is_scope_bound_bounded_and_closed_to_partial_state() {
             .unwrap_err(),
         HostCheckpointErrorV2::Invalid
     );
+}
+
+#[test]
+fn fixed_seed_host_checkpoint_mutations_refuse_or_remain_canonical() {
+    let checkpoint = decode_hex(include_str!("fixtures/host-checkpoint-v15.hex"));
+    let mut seed = 0x7057_c4ae_c0de_0015u64;
+
+    for sample in 0..512 {
+        let bit = next_mutation_bit(&mut seed, checkpoint.len());
+        let mut candidate = checkpoint.clone();
+        candidate[bit / 8] ^= 1 << (bit % 8);
+        if let Ok(recovered) = HostV2::recover_checkpoint(
+            &candidate,
+            CHECKPOINT_SCOPE,
+            recovery_limits(),
+            Verifier {
+                calls: Rc::new(Cell::new(0)),
+            },
+        ) {
+            assert_eq!(
+                recovered
+                    .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+                    .unwrap()
+                    .bytes(),
+                candidate,
+                "accepted mutation must remain canonical at sample {sample} bit {bit}"
+            );
+        }
+    }
 }

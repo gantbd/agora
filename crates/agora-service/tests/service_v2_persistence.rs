@@ -31,6 +31,13 @@ fn request(request_id: u64, command: CommandV2) -> RequestV2 {
     }
 }
 
+fn next_mutation_bit(state: &mut u64, byte_len: usize) -> usize {
+    *state ^= *state << 13;
+    *state ^= *state >> 7;
+    *state ^= *state << 17;
+    (*state as usize) % (byte_len * 8)
+}
+
 fn populated() -> (
     ServiceV2,
     ClientIdV2,
@@ -362,6 +369,29 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Profile
     );
     assert_eq!(format!("{checkpoint:?}"), "ServiceCheckpointV2(<redacted>)");
+}
+
+#[test]
+fn fixed_seed_service_checkpoint_mutations_refuse_or_remain_canonical() {
+    let (service, _, _, _) = populated();
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut seed = 0x5e12_71ce_d15c_a11eu64;
+
+    for sample in 0..512 {
+        let bit = next_mutation_bit(&mut seed, checkpoint.bytes().len());
+        let mut candidate = checkpoint.bytes().to_vec();
+        candidate[bit / 8] ^= 1 << (bit % 8);
+        if let Ok(recovered) = ServiceV2::recover_checkpoint(&candidate, SCOPE, bounds()) {
+            assert_eq!(
+                recovered
+                    .prepare_checkpoint(SCOPE, MAX_CHECKPOINT)
+                    .unwrap()
+                    .bytes(),
+                candidate,
+                "accepted mutation must remain canonical at sample {sample} bit {bit}"
+            );
+        }
+    }
 }
 
 #[test]
