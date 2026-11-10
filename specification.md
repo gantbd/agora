@@ -128,9 +128,9 @@ before message mutation at capacity. Publication deliberately addresses nobody;
 an orchestrator must use an explicit conversation command if addressing is part
 of the response semantics.
 
-## Checkpoint profile V6
+## Checkpoint profile V7
 
-The closed `AGORACP` version-6 codec captures limits, participants, rooms,
+The closed `AGORACP` version-7 codec captures limits, participants, rooms,
 membership, invitations, bans, retained message suffixes and addressing, complete publication
 records, revision/event frontiers, acknowledgment cursor, and pending events.
 Host byte/cardinality ceilings apply before checkpoint-owned limits or allocation.
@@ -223,7 +223,7 @@ position.
 
 ## Service checkpoint profile V2
 
-The `AGORASV` version-7 record is independent of public wire versioning and is
+The `AGORASV` version-8 record is independent of public wire versioning and is
 bound to an exact caller-supplied 16-byte store scope. It contains the canonical
 engine checkpoint, configured service limits, active client-to-participant
 bindings, ordered retired tombstones, exact request/reply receipts, private
@@ -248,7 +248,7 @@ checkpoint bytes.
 `Capabilities` returns one canonical strictly increasing list from a closed
 feature vocabulary: room lifecycle V2, retained history V2, room changes V1,
 moderation V1, room policy V1, ban observation V1, identified messages V1, and
-author withdrawal V1. The request is retained
+author withdrawal V1, and moderator redaction V1. The request is retained
 and replayed under ordinary service request identity but performs no engine
 mutation. A listed capability means that this service implements the named
 syntax and semantics; it is not authentication, authorization, room membership,
@@ -291,6 +291,23 @@ delivered copies, client caches, connectors, backups, indexes, and model context
 may retain content. Bounded request/publication replay records may also retain
 the submitted body until their owning retention policy removes them.
 
+### Moderator redaction V1
+
+`RedactMessage` is distinct from author withdrawal and carries a bounded
+nonempty moderation reason plus fixed opaque causation. The service derives the
+actor. The engine applies the existing role hierarchy to the retained message's
+author: an owner may redact a non-owner; a moderator may redact a current member
+or departed author; an actor cannot use redaction on their own message, another
+moderator, or an owner. Participant kind grants no privilege.
+
+Acceptance produces the same reference-preserving empty-body tombstone and
+scrubs any retained acceptance-event body, then appends `MessageRedacted` with
+actor, author, message ID, sequence, reason, and causation. The accepted reply
+contains revision, message ID, and sequence and replays exactly. Unknown,
+evicted, already-tombstoned, unauthorized, stale, malformed, and over-bound
+requests are inert. The author, addressing, identity, and order remain visible;
+the withdrawal non-erasure boundaries apply equally to redaction.
+
 ## Receipt-gated durable service V2
 
 `agora-durable` wraps exactly one `ServiceV2` and one Keystone checkpoint-store
@@ -330,7 +347,7 @@ requests, reconnect a host session, or prove server durability.
 
 ## Authenticated host checkpoint and durable publication V2
 
-The `AGORAHST` version-7 record is independently versioned and bound to an exact
+The `AGORAHST` version-8 record is independently versioned and bound to an exact
 16-byte store scope. It contains Host V2 limits, the next non-reused session
 frontier, every active mapping from opaque host session to verified subject,
 participant, service client and last verification time, the bounded retired

@@ -232,6 +232,24 @@ impl Writer {
                 self.raw(&message_id.into_bytes())?;
                 self.number(*sequence)
             }
+            DomainEventV2::MessageRedacted {
+                room_id,
+                actor,
+                author,
+                message_id,
+                sequence,
+                reason,
+                causation,
+            } => {
+                self.byte(12)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.text(author.as_str())?;
+                self.raw(&message_id.into_bytes())?;
+                self.number(*sequence)?;
+                self.text(reason.as_str())?;
+                self.raw(&causation.into_bytes())
+            }
         }
     }
 }
@@ -399,6 +417,15 @@ impl<'a> Reader<'a> {
                 message_id: MessageId::from_bytes(self.fixed()?),
                 sequence: self.number()?,
             },
+            12 => DomainEventV2::MessageRedacted {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                author: self.participant(l)?,
+                message_id: MessageId::from_bytes(self.fixed()?),
+                sequence: self.number()?,
+                reason: ModerationReasonV1::new(self.text(l.max_moderation_reason_bytes)?),
+                causation: ModerationCausationV1::new(self.fixed()?),
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -501,7 +528,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(6)?;
+        w.byte(7)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -573,7 +600,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 6 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 7 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -1304,6 +1331,33 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             if let Some(message) = e.message_by_id(room_id, *message_id)
                 && (message.sequence != *sequence
                     || message.author != *actor
+                    || !message.is_withdrawn())
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::MessageRedacted {
+            room_id,
+            actor,
+            author,
+            message_id,
+            sequence,
+            reason,
+            ..
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            participant(author)?;
+            bounded(reason.as_str(), e.limits.max_moderation_reason_bytes)?;
+            if actor == author
+                || *sequence >= r.next_message_sequence
+                || *message_id != MessageId::allocated(r.message_identity_incarnation, *sequence)
+            {
+                return Err(CheckpointError::Invalid);
+            }
+            if let Some(message) = e.message_by_id(room_id, *message_id)
+                && (message.sequence != *sequence
+                    || message.author != *author
                     || !message.is_withdrawn())
             {
                 return Err(CheckpointError::Invalid);

@@ -396,7 +396,7 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::InvalidRoleChange
         | EngineRefusal::InvalidPolicyChange
         | EngineRefusal::UnknownMessage
-        | EngineRefusal::MessageAlreadyWithdrawn
+        | EngineRefusal::MessageAlreadyTombstoned
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)
         | EngineRefusal::UnknownParticipant(_)

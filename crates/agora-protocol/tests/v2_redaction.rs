@@ -33,6 +33,13 @@ fn v2_debug_output_is_content_safe() {
             expected_revision: 2,
             message_id: MessageIdV1::new([0x5c; 16]),
         },
+        CommandV2::RedactMessage {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 3,
+            message_id: MessageIdV1::new([0x5d; 16]),
+            reason: "secret-reason".to_owned(),
+            causation: *b"secret-cause-123",
+        },
         CommandV2::Ban {
             room_id: "secret-room".to_owned(),
             participant_id: "secret-participant".to_owned(),
@@ -80,6 +87,11 @@ fn v2_debug_output_is_content_safe() {
             revision: 3,
             message_id: MessageIdV1::new([0x5c; 16]),
             sequence: 0,
+        }),
+        ReplyV2::Accepted(OutcomeV2::MessageRedacted {
+            revision: 4,
+            message_id: MessageIdV1::new([0x5d; 16]),
+            sequence: 1,
         }),
         ReplyV2::Accepted(OutcomeV2::Rooms(RoomPageV2 {
             revision: 1,
@@ -147,6 +159,23 @@ fn v2_debug_output_is_content_safe() {
             has_more: false,
         })),
         ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 6,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 5,
+                revision: 6,
+                event: RoomEventV2::MessageRedacted {
+                    actor_id: "secret-actor".to_owned(),
+                    author_id: "secret-author".to_owned(),
+                    message_id: MessageIdV1::new([0x5d; 16]),
+                    sequence: 1,
+                    reason: "secret-reason".to_owned(),
+                    causation: *b"secret-cause-123",
+                },
+            }],
+            next: PageCursorV2(51),
+            has_more: false,
+        })),
+        ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
             revision: 5,
             changes: vec![RoomChangeV2 {
                 event_sequence: 4,
@@ -211,6 +240,7 @@ fn v2_debug_output_is_content_safe() {
         "48",
         "49",
         "50",
+        "51",
     ] {
         assert!(!rendered.contains(secret));
     }

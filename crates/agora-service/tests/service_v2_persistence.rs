@@ -96,7 +96,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v7.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v8.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -204,7 +204,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 8;
+    future[8] = 9;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -569,6 +569,88 @@ fn author_withdrawal_tombstone_and_exact_receipt_survive_recovery() {
         alice,
         request(
             3,
+            CommandV2::IdentifiedMessages {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("identified page expected");
+    };
+    assert_eq!(page.messages[0].message_id, message_id);
+    assert!(page.messages[0].body.is_empty());
+}
+
+#[test]
+fn moderator_redaction_evidence_and_tombstone_survive_recovery() {
+    let mut engine = Engine::new();
+    for id in ["owner", "member"] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id,
+                id,
+                ParticipantKind::Human,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "owner".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "member".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let owner = service.connect("owner").unwrap();
+    let member = service.connect("member").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted { message_id, .. }) = service
+        .execute(
+            member,
+            request(
+                1,
+                CommandV2::SpeakIdentified {
+                    room_id: "room".to_owned(),
+                    expected_revision: 4,
+                    logical_time: 1,
+                    body: "redacted after recovery".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        )
+    else {
+        panic!("identified acceptance expected");
+    };
+    let redaction = request(
+        1,
+        CommandV2::RedactMessage {
+            room_id: "room".to_owned(),
+            expected_revision: 5,
+            message_id,
+            reason: "policy".to_owned(),
+            causation: [0x44; 16],
+        },
+    );
+    let reply = service.execute(owner, redaction.clone());
+    assert!(matches!(
+        reply,
+        ReplyV2::Accepted(OutcomeV2::MessageRedacted { revision: 6, .. })
+    ));
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(owner, redaction), reply);
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessages(page)) = recovered.execute(
+        owner,
+        request(
+            2,
             CommandV2::IdentifiedMessages {
                 room_id: "room".to_owned(),
                 cursor: None,

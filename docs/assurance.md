@@ -20,7 +20,7 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact ten-package workspace and seventeen canonical fixtures. These
+closes over the exact ten-package workspace and eighteen canonical fixtures. These
 are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root

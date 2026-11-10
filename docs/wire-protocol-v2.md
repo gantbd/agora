@@ -44,6 +44,7 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `12` | IdentifiedMessages | room `text`, optional cursor, limit |
 | `13` | SpeakIdentified | room, expected revision, logical time, body, addressed-participant list |
 | `14` | WithdrawMessage | room, expected revision, 16-byte opaque message ID |
+| `15` | RedactMessage | room, expected revision, message ID, reason, 16-byte opaque causation |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -56,7 +57,7 @@ a refusal. Outcome tags are Rooms `01`, Members `02`, Messages `03`, RoomCreated
 MessageAccepted `09`, ChangesOpened `0a`, Changes `0b`, ChangeGap `0c`, Kicked
 `0d`, Banned `0e`, Unbanned `0f`, RoomPolicyChanged `10`, Bans `11`, and
 Capabilities `12`, IdentifiedMessages `13`, IdentifiedMessageAccepted `14`, and
-MessageWithdrawn `15`.
+MessageWithdrawn `15`, and MessageRedacted `16`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -81,6 +82,11 @@ Room-change event tag `0b` carries actor text, message ID, and sequence. The
 retained message and any still-retained acceptance event use an empty body as a
 reference-preserving tombstone; admitted bodies cannot be empty. This profile
 does not claim physical erasure or removal from replay records and prior copies.
+
+MessageRedacted carries revision, message ID, then sequence. Room-change event
+tag `0c` carries actor text, author text, message ID, sequence, bounded reason,
+and 16-byte opaque causation. The same empty-body tombstone and non-erasure
+boundaries apply, while authorization follows the room role hierarchy.
 
 A ban page contains revision, room ID, a bounded list, and optional cursor. Each
 entry contains participant ID, display name, descriptive kind, and prior room
@@ -137,7 +143,7 @@ page carrying retention bounds and addressing, a change page carrying its
 stable event identity and next cursor, a moderation change preserving evidence,
 an admission-policy change, and a ban page preserving its authority-relevant
 prior role, a complete canonical capability inventory, an identified-message
-page, and an author-withdrawal change. Round-trip tests cover every command,
+page, an author-withdrawal change, and a moderator-redaction change. Round-trip tests cover every command,
 outcome, refusal, room-event kind, and gap cause. Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push

@@ -701,6 +701,138 @@ fn v2_author_withdrawal_tombstones_history_and_retained_change_content() {
 }
 
 #[test]
+fn v2_moderator_redaction_is_role_scoped_attributable_and_replayable() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let carol = service.connect("carol").unwrap();
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                0,
+                CommandV2::CreateRoom {
+                    room_id: "room".to_owned(),
+                    name: "Room".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 5 })
+    ));
+    for (client, expected_revision) in [(bot, 5), (carol, 6)] {
+        assert!(matches!(
+            service.execute(
+                client,
+                request(
+                    0,
+                    CommandV2::Join {
+                        room_id: "room".to_owned(),
+                        expected_revision,
+                    },
+                ),
+            ),
+            ReplyV2::Accepted(OutcomeV2::Joined { .. })
+        ));
+    }
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                1,
+                CommandV2::SetRole {
+                    room_id: "room".to_owned(),
+                    participant_id: "bot".to_owned(),
+                    role: RoleV2::Moderator,
+                    expected_revision: 7,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoleChanged { revision: 8 })
+    );
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 8,
+            },
+        ),
+    ) else {
+        panic!("change position expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted { message_id, .. }) = service
+        .execute(
+            carol,
+            request(
+                1,
+                CommandV2::SpeakIdentified {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                    logical_time: 3,
+                    body: "moderate me".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        )
+    else {
+        panic!("identified acceptance expected");
+    };
+    let redaction = request(
+        1,
+        CommandV2::RedactMessage {
+            room_id: "room".to_owned(),
+            expected_revision: 9,
+            message_id,
+            reason: "room policy".to_owned(),
+            causation: [0x33; 16],
+        },
+    );
+    let reply = ReplyV2::Accepted(OutcomeV2::MessageRedacted {
+        revision: 10,
+        message_id,
+        sequence: 0,
+    });
+    assert_eq!(service.execute(bot, redaction.clone()), reply);
+    assert_eq!(service.execute(bot, redaction), reply);
+
+    let ReplyV2::Accepted(OutcomeV2::Changes(changes)) = service.execute(
+        alice,
+        request(
+            3,
+            CommandV2::Changes {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 4,
+            },
+        ),
+    ) else {
+        panic!("change page expected");
+    };
+    assert!(matches!(
+        &changes.changes[0].event,
+        RoomEventV2::MessageAccepted(message) if message.body.is_empty()
+    ));
+    assert!(matches!(
+        &changes.changes[1].event,
+        RoomEventV2::MessageRedacted {
+            actor_id,
+            author_id,
+            message_id: id,
+            sequence: 0,
+            reason,
+            causation,
+        } if actor_id == "bot"
+            && author_id == "carol"
+            && id == &message_id
+            && reason == "room policy"
+            && causation == &[0x33; 16]
+    ));
+}
+
+#[test]
 fn v2_change_feed_requires_resnapshot_after_leave_and_rejoin() {
     let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
     let alice = service.connect("alice").unwrap();
@@ -1001,8 +1133,11 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 8);
-    assert_eq!(capabilities.last(), Some(&CapabilityV2::AuthorWithdrawalV1));
+    assert_eq!(capabilities.len(), 9);
+    assert_eq!(
+        capabilities.last(),
+        Some(&CapabilityV2::ModeratorRedactionV1)
+    );
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

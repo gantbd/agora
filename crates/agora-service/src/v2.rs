@@ -257,6 +257,7 @@ impl ServiceV2 {
                 CapabilityV2::BanObservationV1,
                 CapabilityV2::IdentifiedMessagesV1,
                 CapabilityV2::AuthorWithdrawalV1,
+                CapabilityV2::ModeratorRedactionV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -470,6 +471,22 @@ impl ServiceV2 {
                     message_id: MessageId::from_bytes(message_id.into_bytes()),
                 },
             ),
+            CommandV2::RedactMessage {
+                room_id,
+                expected_revision,
+                message_id,
+                reason,
+                causation,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::RedactMessage {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    message_id: MessageId::from_bytes(message_id.into_bytes()),
+                    reason: ModerationReasonV1::new(reason),
+                    causation: ModerationCausationV1::new(*causation),
+                },
+            ),
         }
     }
 
@@ -535,6 +552,15 @@ impl ServiceV2 {
                 sequence,
                 ..
             } => Ok(OutcomeV2::MessageWithdrawn {
+                revision,
+                message_id: MessageIdV1::new(message_id.into_bytes()),
+                sequence,
+            }),
+            EngineOutcome::MessageRedacted {
+                message_id,
+                sequence,
+                ..
+            } => Ok(OutcomeV2::MessageRedacted {
                 revision,
                 message_id: MessageIdV1::new(message_id.into_bytes()),
                 sequence,
@@ -958,6 +984,22 @@ impl ServiceV2 {
                                 message_id: MessageIdV1::new(message_id.into_bytes()),
                                 sequence,
                             },
+                            agora_engine::DomainEventV2::MessageRedacted {
+                                actor,
+                                author,
+                                message_id,
+                                sequence,
+                                reason,
+                                causation,
+                                ..
+                            } => RoomEventV2::MessageRedacted {
+                                actor_id: actor.as_str().to_owned(),
+                                author_id: author.as_str().to_owned(),
+                                message_id: MessageIdV1::new(message_id.into_bytes()),
+                                sequence,
+                                reason: reason.as_str().to_owned(),
+                                causation: causation.into_bytes(),
+                            },
                         };
                         Ok(RoomChangeV2 {
                             event_sequence: change.sequence.0,
@@ -1079,6 +1121,9 @@ impl ServiceV2 {
             }
             CommandV2::SetAdmissionPolicy { room_id, .. } => valid_room(room_id),
             CommandV2::WithdrawMessage { room_id, .. } => valid_room(room_id),
+            CommandV2::RedactMessage {
+                room_id, reason, ..
+            } => valid_room(room_id) && valid_text(reason, self.limits.max_moderation_reason_bytes),
             CommandV2::Speak {
                 room_id,
                 body,
@@ -1215,7 +1260,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidRoleChange
         | EngineRefusal::InvalidPolicyChange
         | EngineRefusal::UnknownMessage
-        | EngineRefusal::MessageAlreadyWithdrawn
+        | EngineRefusal::MessageAlreadyTombstoned
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)
         | EngineRefusal::AlreadyMember(_)

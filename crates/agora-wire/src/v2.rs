@@ -403,6 +403,23 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             sink.u64(*expected_revision)?;
             encode_message_id(sink, *message_id)
         }
+        CommandV2::RedactMessage {
+            room_id,
+            expected_revision,
+            message_id,
+            reason,
+            causation,
+        } => {
+            sink.u8(21)?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            encode_message_id(sink, *message_id)?;
+            sink.text(reason)?;
+            for byte in causation {
+                sink.u8(*byte)?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -519,6 +536,23 @@ fn decode_command(
             expected_revision: read_u64(decoder)?,
             message_id: decode_message_id(decoder)?,
         }),
+        21 => {
+            let room_id = read_text(decoder)?;
+            let expected_revision = read_u64(decoder)?;
+            let message_id = decode_message_id(decoder)?;
+            let reason = read_text(decoder)?;
+            let mut causation = [0; 16];
+            for byte in &mut causation {
+                *byte = read_u8(decoder)?;
+            }
+            Ok(CommandV2::RedactMessage {
+                room_id,
+                expected_revision,
+                message_id,
+                reason,
+                causation,
+            })
+        }
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -623,6 +657,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::BanObservationV1 => 6,
                     CapabilityV2::IdentifiedMessagesV1 => 7,
                     CapabilityV2::AuthorWithdrawalV1 => 8,
+                    CapabilityV2::ModeratorRedactionV1 => 9,
                 })?;
             }
             Ok(())
@@ -698,6 +733,16 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             sequence,
         } => {
             sink.u8(21)?;
+            sink.u64(*revision)?;
+            encode_message_id(sink, *message_id)?;
+            sink.u64(*sequence)
+        }
+        OutcomeV2::MessageRedacted {
+            revision,
+            message_id,
+            sequence,
+        } => {
+            sink.u8(22)?;
             sink.u64(*revision)?;
             encode_message_id(sink, *message_id)?;
             sink.u64(*sequence)
@@ -790,6 +835,7 @@ fn decode_outcome(
                     6 => CapabilityV2::BanObservationV1,
                     7 => CapabilityV2::IdentifiedMessagesV1,
                     8 => CapabilityV2::AuthorWithdrawalV1,
+                    9 => CapabilityV2::ModeratorRedactionV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -807,6 +853,11 @@ fn decode_outcome(
             sequence: read_u64(decoder)?,
         }),
         21 => Ok(OutcomeV2::MessageWithdrawn {
+            revision: read_u64(decoder)?,
+            message_id: decode_message_id(decoder)?,
+            sequence: read_u64(decoder)?,
+        }),
+        22 => Ok(OutcomeV2::MessageRedacted {
             revision: read_u64(decoder)?,
             message_id: decode_message_id(decoder)?,
             sequence: read_u64(decoder)?,
@@ -1143,6 +1194,24 @@ fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<()
                 encode_message_id(sink, *message_id)?;
                 sink.u64(*sequence)?;
             }
+            RoomEventV2::MessageRedacted {
+                actor_id,
+                author_id,
+                message_id,
+                sequence,
+                reason,
+                causation,
+            } => {
+                sink.u8(12)?;
+                sink.text(actor_id)?;
+                sink.text(author_id)?;
+                encode_message_id(sink, *message_id)?;
+                sink.u64(*sequence)?;
+                sink.text(reason)?;
+                for byte in causation {
+                    sink.u8(*byte)?;
+                }
+            }
         }
     }
     sink.u64(page.next.0)?;
@@ -1191,6 +1260,25 @@ fn decode_change_page(
                 message_id: decode_message_id(decoder)?,
                 sequence: read_u64(decoder)?,
             },
+            12 => {
+                let actor_id = read_text(decoder)?;
+                let author_id = read_text(decoder)?;
+                let message_id = decode_message_id(decoder)?;
+                let sequence = read_u64(decoder)?;
+                let reason = read_text(decoder)?;
+                let mut causation = [0; 16];
+                for byte in &mut causation {
+                    *byte = read_u8(decoder)?;
+                }
+                RoomEventV2::MessageRedacted {
+                    actor_id,
+                    author_id,
+                    message_id,
+                    sequence,
+                    reason,
+                    causation,
+                }
+            }
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(RoomChangeV2 {

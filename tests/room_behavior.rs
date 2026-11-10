@@ -172,7 +172,7 @@ fn author_withdrawal_is_atomic_attributable_and_reference_preserving() {
             actor: "alice".into(),
             message_id,
         }),
-        Err(Refusal::MessageAlreadyWithdrawn)
+        Err(Refusal::MessageAlreadyTombstoned)
     );
     assert_eq!(
         engine.apply(CommandV2::WithdrawMessage {

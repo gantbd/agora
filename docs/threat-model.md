@@ -60,6 +60,14 @@ boundary, and model context may retain the submitted body. Repeated and unknown
 references share no accepted effect, and service mapping avoids exposing engine
 identifier detail beyond the caller's existing room visibility.
 
+Moderator redaction is a separate, more privileged action. The engine rechecks
+the actor's current room role against the retained author's current role (or the
+member-level treatment of a departed author), rejects self/peer/owner
+escalation, and retains bounded reason plus opaque causation. A compromised
+owner can redact non-owner visible content by design; no Agora role can erase
+prior copies or external systems. Reason, actor, author, timing, identity, and
+addressing remain sensitive audit metadata even after the body is tombstoned.
+
 The authenticated host prevents a wire client ID from becoming ambient authority:
 each frame is coupled to an opaque transport-bound host session, a retained
 verified subject/participant, current verifier acceptance, and the exact service

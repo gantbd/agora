@@ -146,6 +146,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::BanObservationV1,
         CapabilityV2::IdentifiedMessagesV1,
         CapabilityV2::AuthorWithdrawalV1,
+        CapabilityV2::ModeratorRedactionV1,
     ])))
 }
 
@@ -182,6 +183,26 @@ fn withdrawal_change_reply() -> WireReplyV2 {
             },
         }],
         next: PageCursorV2(20),
+        has_more: false,
+    })))
+}
+
+fn redaction_change_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+        revision: 21,
+        changes: vec![RoomChangeV2 {
+            event_sequence: 20,
+            revision: 21,
+            event: RoomEventV2::MessageRedacted {
+                actor_id: "alice".to_owned(),
+                author_id: "bot".to_owned(),
+                message_id: MessageIdV1::new([0x7c; 16]),
+                sequence: 4,
+                reason: "policy".to_owned(),
+                causation: [0x5d; 16],
+            },
+        }],
+        next: PageCursorV2(21),
         has_more: false,
     })))
 }
@@ -235,6 +256,10 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
         (
             encode_reply_v2(&withdrawal_change_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/withdrawal-change-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&redaction_change_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/redaction-change-reply-v2.hex")),
         ),
     ];
     for (actual, expected) in cases {
@@ -372,6 +397,13 @@ fn every_v2_command_round_trips() {
             expected_revision: 8,
             message_id: MessageIdV1::new([0x44; 16]),
         },
+        CommandV2::RedactMessage {
+            room_id: "room".to_owned(),
+            expected_revision: 9,
+            message_id: MessageIdV1::new([0x45; 16]),
+            reason: "policy".to_owned(),
+            causation: [0x46; 16],
+        },
     ];
     for (index, command) in commands.into_iter().enumerate() {
         let request = WireRequestV2::Execute {
@@ -439,6 +471,11 @@ fn every_v2_outcome_and_refusal_round_trips() {
             revision: 7,
             message_id: MessageIdV1::new([0x44; 16]),
             sequence: 8,
+        },
+        OutcomeV2::MessageRedacted {
+            revision: 8,
+            message_id: MessageIdV1::new([0x45; 16]),
+            sequence: 9,
         },
         OutcomeV2::ChangesOpened {
             revision: 7,
@@ -541,6 +578,18 @@ fn every_v2_outcome_and_refusal_round_trips() {
                         actor_id: "bot".to_owned(),
                         message_id: MessageIdV1::new([0x44; 16]),
                         sequence: 1,
+                    },
+                },
+                RoomChangeV2 {
+                    event_sequence: 14,
+                    revision: 15,
+                    event: RoomEventV2::MessageRedacted {
+                        actor_id: "alice".to_owned(),
+                        author_id: "bot".to_owned(),
+                        message_id: MessageIdV1::new([0x45; 16]),
+                        sequence: 1,
+                        reason: "policy".to_owned(),
+                        causation: [0x46; 16],
                     },
                 },
             ],

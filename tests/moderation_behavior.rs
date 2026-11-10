@@ -1,5 +1,5 @@
 use agora_engine::{
-    AdmissionPolicy, CommandV2, DomainEventV2, Engine, Limits, ModerationCausationV1,
+    AdmissionPolicy, CommandV2, DomainEventV2, Engine, Limits, LogicalTime, ModerationCausationV1,
     ModerationReasonV1, OutcomeV2, Participant, ParticipantKind, Refusal, Role,
 };
 
@@ -132,6 +132,98 @@ fn kick_and_ban_have_distinct_reentry_semantics() {
                 participant: "member".into(),
             })
             .is_ok()
+    );
+}
+
+#[test]
+fn moderator_redaction_obeys_role_hierarchy_and_preserves_evidence() {
+    let mut engine = configured(
+        Limits::default(),
+        ParticipantKind::Agent,
+        ParticipantKind::Human,
+    );
+    engine
+        .apply(CommandV2::Speak {
+            room_id: "room".into(),
+            author: "member".into(),
+            at: LogicalTime(7),
+            body: "remove this".to_owned(),
+        })
+        .unwrap();
+    let message_id = engine.message(&"room".into(), 0).unwrap().id();
+    let (reason, causation) = moderation(11);
+    let outcome = engine
+        .apply(CommandV2::RedactMessage {
+            room_id: "room".into(),
+            actor: "moderator".into(),
+            message_id,
+            reason: reason.clone(),
+            causation,
+        })
+        .unwrap();
+    assert_eq!(
+        outcome,
+        OutcomeV2::MessageRedacted {
+            room_id: "room".into(),
+            actor: "moderator".into(),
+            author: "member".into(),
+            message_id,
+            sequence: 0,
+            reason: reason.clone(),
+            causation,
+        }
+    );
+    assert!(
+        engine
+            .message_by_id(&"room".into(), message_id)
+            .unwrap()
+            .is_withdrawn()
+    );
+    assert!(engine.pending_events().any(|envelope| matches!(
+        &envelope.event,
+        DomainEventV2::MessageRedacted {
+            actor,
+            author,
+            message_id: id,
+            sequence: 0,
+            reason: event_reason,
+            causation: event_cause,
+            ..
+        } if actor.as_str() == "moderator"
+            && author.as_str() == "member"
+            && id == &message_id
+            && event_reason == &reason
+            && event_cause == &causation
+    )));
+
+    engine
+        .apply(CommandV2::Speak {
+            room_id: "room".into(),
+            author: "owner".into(),
+            at: LogicalTime(8),
+            body: "owner content".to_owned(),
+        })
+        .unwrap();
+    let owner_message = engine.message(&"room".into(), 1).unwrap().id();
+    let before = engine.revision();
+    let (reason, causation) = moderation(12);
+    assert_eq!(
+        engine.apply(CommandV2::RedactMessage {
+            room_id: "room".into(),
+            actor: "moderator".into(),
+            message_id: owner_message,
+            reason,
+            causation,
+        }),
+        Err(Refusal::NotAuthorized("moderator".into()))
+    );
+    assert_eq!(engine.revision(), before);
+    assert_eq!(
+        engine
+            .message_by_id(&"room".into(), owner_message)
+            .unwrap()
+            .body(),
+        "owner content"
     );
 }
 

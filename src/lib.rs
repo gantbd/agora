@@ -663,6 +663,7 @@ pub enum RoomActionV1 {
     Leave,
     Speak,
     WithdrawOwn,
+    RedactAny,
     ManageRole,
     ManageRoomPolicy,
     Kick,
@@ -688,6 +689,7 @@ impl CommandV2 {
             Self::Unban { .. } => Some(RoomActionV1::Unban),
             Self::Speak { .. } | Self::SpeakAddressed { .. } => Some(RoomActionV1::Speak),
             Self::WithdrawMessage { .. } => Some(RoomActionV1::WithdrawOwn),
+            Self::RedactMessage { .. } => Some(RoomActionV1::RedactAny),
         }
     }
 }
@@ -767,6 +769,13 @@ pub enum CommandV2 {
         actor: ParticipantId,
         message_id: MessageId,
     },
+    RedactMessage {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -827,6 +836,15 @@ pub enum OutcomeV2 {
         message_id: MessageId,
         sequence: u64,
     },
+    MessageRedacted {
+        room_id: RoomId,
+        actor: ParticipantId,
+        author: ParticipantId,
+        message_id: MessageId,
+        sequence: u64,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
 }
 
 /// Typed refusal reasons. Every refusal preserves authoritative state.
@@ -865,7 +883,7 @@ pub enum Refusal {
     InvalidRoleChange,
     InvalidPolicyChange,
     UnknownMessage,
-    MessageAlreadyWithdrawn,
+    MessageAlreadyTombstoned,
     RevisionConflict {
         expected: Revision,
         actual: Revision,
@@ -1037,6 +1055,15 @@ pub enum DomainEventV2 {
         message_id: MessageId,
         sequence: u64,
     },
+    MessageRedacted {
+        room_id: RoomId,
+        actor: ParticipantId,
+        author: ParticipantId,
+        message_id: MessageId,
+        sequence: u64,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
 }
 
 impl DomainEventV2 {
@@ -1053,7 +1080,8 @@ impl DomainEventV2 {
             | Self::ParticipantBanned { room_id, .. }
             | Self::ParticipantUnbanned { room_id, .. }
             | Self::MessageAccepted { room_id, .. }
-            | Self::MessageWithdrawn { room_id, .. } => Some(room_id),
+            | Self::MessageWithdrawn { room_id, .. }
+            | Self::MessageRedacted { room_id, .. } => Some(room_id),
         }
     }
 }
@@ -1861,6 +1889,13 @@ impl Engine {
                 actor,
                 message_id,
             } => self.withdraw_message(room_id, actor, message_id),
+            CommandV2::RedactMessage {
+                room_id,
+                actor,
+                message_id,
+                reason,
+                causation,
+            } => self.redact_message(room_id, actor, message_id, reason, causation),
         }
     }
 
@@ -2045,6 +2080,26 @@ impl Engine {
                 actor: actor.clone(),
                 message_id: *message_id,
                 sequence: *sequence,
+            },
+            (
+                CommandV2::RedactMessage { .. },
+                OutcomeV2::MessageRedacted {
+                    room_id,
+                    actor,
+                    author,
+                    message_id,
+                    sequence,
+                    reason,
+                    causation,
+                },
+            ) => DomainEventV2::MessageRedacted {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                author: author.clone(),
+                message_id: *message_id,
+                sequence: *sequence,
+                reason: reason.clone(),
+                causation: *causation,
             },
             _ => unreachable!("command and outcome are produced by one exhaustive transition"),
         }
@@ -2482,13 +2537,59 @@ impl Engine {
             return Err(Refusal::NotAuthorized(actor));
         }
         if message.is_withdrawn() {
-            return Err(Refusal::MessageAlreadyWithdrawn);
+            return Err(Refusal::MessageAlreadyTombstoned);
         }
         let sequence = message.sequence;
 
+        self.tombstone_message(&room_id, message_id);
+        Ok(OutcomeV2::MessageWithdrawn {
+            room_id,
+            actor,
+            message_id,
+            sequence,
+        })
+    }
+
+    fn redact_message(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_moderation_reason(&reason)?;
+        let room = self.room_ref(&room_id)?;
+        let message = room
+            .messages
+            .iter()
+            .find(|message| message.id == message_id)
+            .ok_or(Refusal::UnknownMessage)?;
+        let author = message.author.clone();
+        if !Self::moderation_authorized(room, &actor, &author) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        if message.is_withdrawn() {
+            return Err(Refusal::MessageAlreadyTombstoned);
+        }
+        let sequence = message.sequence;
+
+        self.tombstone_message(&room_id, message_id);
+        Ok(OutcomeV2::MessageRedacted {
+            room_id,
+            actor,
+            author,
+            message_id,
+            sequence,
+            reason,
+            causation,
+        })
+    }
+
+    fn tombstone_message(&mut self, room_id: &RoomId, message_id: MessageId) {
         let room = self
             .rooms
-            .get_mut(&room_id)
+            .get_mut(room_id)
             .expect("room established by validation");
         room.messages
             .iter_mut()
@@ -2501,18 +2602,12 @@ impl Engine {
                 room_id: event_room,
                 message,
             } = &mut envelope.event
-                && event_room == &room_id
+                && event_room == room_id
                 && message.id == message_id
             {
                 message.body.clear();
             }
         }
-        Ok(OutcomeV2::MessageWithdrawn {
-            room_id,
-            actor,
-            message_id,
-            sequence,
-        })
     }
 
     fn room_ref(&self, room_id: &RoomId) -> Result<&Room, Refusal> {

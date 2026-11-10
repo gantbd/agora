@@ -109,4 +109,23 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
         wire::v2::decode_request_v2(&encoded, limits).unwrap(),
         withdrawal
     );
+
+    let redaction = wire::v2::WireRequestV2::Execute {
+        client: protocol::v2::ClientIdV2(7),
+        request: protocol::v2::RequestV2 {
+            request_id: protocol::v2::RequestIdV2(11),
+            command: protocol::v2::CommandV2::RedactMessage {
+                room_id: "room".to_owned(),
+                expected_revision: 10,
+                message_id: protocol::v2::MessageIdV1::new([0x45; 16]),
+                reason: "policy".to_owned(),
+                causation: [0x46; 16],
+            },
+        },
+    };
+    let encoded = wire::v2::encode_request_v2(&redaction, limits).unwrap();
+    assert_eq!(
+        wire::v2::decode_request_v2(&encoded, limits).unwrap(),
+        redaction
+    );
 }

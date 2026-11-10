@@ -163,6 +163,13 @@ pub enum CommandV2 {
         expected_revision: u64,
         message_id: MessageIdV1,
     },
+    RedactMessage {
+        room_id: String,
+        expected_revision: u64,
+        message_id: MessageIdV1,
+        reason: String,
+        causation: [u8; 16],
+    },
 }
 
 impl fmt::Debug for CommandV2 {
@@ -351,6 +358,20 @@ impl fmt::Debug for CommandV2 {
                 .field("expected_revision", expected_revision)
                 .field("message_id", message_id)
                 .finish(),
+            Self::RedactMessage {
+                room_id,
+                expected_revision,
+                message_id,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("RedactMessage")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("message_id", message_id)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
         }
     }
 }
@@ -367,6 +388,7 @@ pub enum CapabilityV2 {
     BanObservationV1,
     IdentifiedMessagesV1,
     AuthorWithdrawalV1,
+    ModeratorRedactionV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -588,6 +610,14 @@ pub enum RoomEventV2 {
         message_id: MessageIdV1,
         sequence: u64,
     },
+    MessageRedacted {
+        actor_id: String,
+        author_id: String,
+        message_id: MessageIdV1,
+        sequence: u64,
+        reason: String,
+        causation: [u8; 16],
+    },
 }
 
 impl fmt::Debug for RoomEventV2 {
@@ -658,6 +688,22 @@ impl fmt::Debug for RoomEventV2 {
                 .field("actor_id_bytes", &actor_id.len())
                 .field("message_id", message_id)
                 .field("sequence", sequence)
+                .finish(),
+            Self::MessageRedacted {
+                actor_id,
+                author_id,
+                message_id,
+                sequence,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("MessageRedacted")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("author_id_bytes", &author_id.len())
+                .field("message_id", message_id)
+                .field("sequence", sequence)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
                 .finish(),
         }
     }
@@ -776,6 +822,11 @@ pub enum OutcomeV2 {
         sequence: u64,
     },
     MessageWithdrawn {
+        revision: u64,
+        message_id: MessageIdV1,
+        sequence: u64,
+    },
+    MessageRedacted {
         revision: u64,
         message_id: MessageIdV1,
         sequence: u64,

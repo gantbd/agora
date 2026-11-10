@@ -8,7 +8,7 @@ behavior, or wall-clock access.
 
 The v0.3 core provides bounded deterministic transitions, typed atomic refusal,
 room-local message ordering and retention, optimistic revisions, an ordered
-bounded outbox, replay-safe response publication, and canonical profile-6 checkpoints.
+bounded outbox, replay-safe response publication, and canonical profile-7 checkpoints.
 Messages may explicitly address a canonical bounded list of current room members.
 Participant kind never changes admission, role, speaking, or addressing behavior.
 
@@ -41,6 +41,9 @@ legacy V2 message frame byte-for-byte.
 The `AuthorWithdrawalV1` capability lets a current member withdraw only their
 own retained message by opaque ID. History and retained feed copies become a
 reference-preserving empty-body tombstone; this is not a physical-erasure claim.
+The distinct `ModeratorRedactionV1` capability applies the room role hierarchy
+to another author's retained message and preserves bounded reason, opaque
+causation, actor, author, identity, and order in an attributable event.
 
 An independently versioned Service V2 checkpoint preserves the engine, pending
 outbox, client namespace, exact request replies, and live cursor consequences.
@@ -118,7 +121,7 @@ key. Matching replay returns the original transition without another message or
 revision. Changed content conflicts. The bounded volatile receipt index becomes
 durable only when a host persists it atomically with Agora state.
 
-The `AGORACP` version-6 codec validates bounds, canonical order, ownership/references,
+The `AGORACP` version-7 codec validates bounds, canonical order, ownership/references,
 message and event frontiers, addressed membership, bans, moderation evidence, publication attribution, and
 the exact unacknowledged outbox suffix. V1 bytes are refused because their agent
 activation state has no neutral interpretation. The codec proves neither origin
