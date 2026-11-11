@@ -42,9 +42,26 @@ remotely reachable: the authenticated Host binds the exact service client and
 retires search state on revocation, substitution, close, or conversation
 mutation, while the client fences outcome-unknown retry to an opaque exact
 session/server epoch. The qualified private local profile selects search
-explicitly and rejects cross-profile routes; restart/recovery closure remains
-required before deployment, and indexed content remains a separate sensitive
-memory copy.
+explicitly and rejects cross-profile routes. Recovery deliberately reconstructs
+the volatile search runtime empty, rejects old continuations, starts a fresh
+request namespace under a distinct connection epoch, and retires adapter
+cursors before returning the port. Indexed content remains a separate sensitive
+memory copy; no durable or production-scale index is qualified.
+
+Attachment references add linkable external-object metadata without making
+Agora an object authority. Store namespaces, object keys, labels, media types,
+declared lengths, and digests are attacker-controlled assertions until a
+separate adapter verifies them; none may be interpreted as a URL, path,
+credential, malware verdict, or proof of availability. The accepted R89 design
+bounds descriptor counts and bytes, requires closed canonical shapes, and makes
+message acceptance atomic without object-store I/O. Knowledge of a reference
+grants no download authority. Future attachment-aware projections must scrub
+every locator and metadata field on withdrawal/redaction, keep diagnostics
+content-safe, and force a resolver to rederive current membership and message
+visibility before disclosing or fetching bytes. Upload orphans, mutable external
+retention, byte substitution, cross-message linkability, scanning, deletion,
+and cross-engine recovery remain product/adapter threats rather than implied
+Agora guarantees.
 
 Room change positions are observer/room-bound correlation state, not bearer
 authority. Every pull rechecks current membership, cross-client and cross-room

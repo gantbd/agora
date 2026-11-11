@@ -1,7 +1,6 @@
 # ADR: participant-bound derived search profile
 
-Status: implementation in progress; protocol values and participant-bound service
-owner implemented, wire/host/client/SDK/transport closure pending
+Status: implemented and qualified for the bounded volatile profile
 
 Date: 2026-11-11
 
@@ -65,6 +64,14 @@ Durable index and search-session recovery require a later separately qualified
 profile. Capability discovery and the local transport handshake advertise the
 profile only once protocol, wire, host, client, SDK, and transport routing are
 closed together.
+
+The implemented profile uses canonical Search Wire V1, an authenticated Host
+wrapper over the single authoritative Service V2, an epoch-bound uncertainty
+client, both audience SDK facades, and additive private local handshake profile
+3. Recovery reconstructs the search runtime empty and retires adapter cursors
+before returning the port. Revision
+`1781d3a156a35caee9551c0924ba5554c540050a` passed the complete commit-pinned
+R53 qualification.
 
 ## Consequences
 

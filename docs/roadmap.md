@@ -16,6 +16,10 @@
 4. Extend the implemented exact key/scope/revision operator authority and Aegis
    decision-correlation evidence only with a separately defined coordinated
    recovery protocol; the current mechanism is explicitly non-atomic.
+5. Implement the accepted bounded immutable attachment-reference profile across
+   core, protocol, wire, service, host, client, SDK, recovery, and private local
+   transport without importing blob bytes, bearer locators, scanning, download
+   authority, external retention, or Vellum document semantics into Agora.
 
 Agent harness selection, prompting, retries, and execution remain out of scope.
 
