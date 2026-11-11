@@ -14,6 +14,7 @@ follow Semantic Versioning once a public release contract is selected.
   connection, frozen wire fixtures, SDK/fuzz reachability, and real-socket
   reconnect/restart privacy evidence. The conversation-only profile and durable
   capability list remain unchanged.
+
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque
   session sources, exact snapshot cursors, atomic capacity, lifecycle cleanup,
@@ -185,6 +186,15 @@ follow Semantic Versioning once a public release contract is selected.
 - Added stable room-local topics with opaque identity, role-bound kind-neutral
   creation, immutable message relation and reply inheritance, bounded pages, a
   parallel topic-aware feed, and canonical whole-stack recovery.
+
+### Fixed
+
+- Closed the fuzz workspace lock over every current target dependency, changed
+  the ordinary fuzz contract from metadata-only inspection to locked offline
+  compilation of all targets, and made release qualification refuse tracked
+  drift after execution as well as before it. Revision
+  `1ca5bb741f646dce7fe428482c49eb9e97454c7d` passed the corrected profile with
+  10,000 soak cycles and 1,000,000 cases on each fuzz target.
 
 ### Changed
 

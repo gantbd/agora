@@ -157,8 +157,8 @@ the twenty-nine complete-frame protocol seeds (the five fixed-width local
 control fixtures are deliberately excluded). An accepted
 candidate must re-encode exactly, and an accepted frame prefix must preserve its
 unconsumed stream suffix. The qualified smoke ran 20,000 fixed-seed cases on all
-three targets. The integrated local release-candidate campaign for revision
-`2e1bd48cd8c6b385d0e1564bf3f29cb0ff8cc1cb` then ran 1,000,000 fixed-seed
+three targets. The latest integrated local release-candidate campaign, for
+revision `1ca5bb741f646dce7fe428482c49eb9e97454c7d`, ran 1,000,000 fixed-seed
 cases on each of those three targets. All campaigns use a 64-KiB input,
 10-second per-input, and 2-GiB memory ceiling on Apple Silicon. This is bounded
 coverage-guided counterexample search, not a coverage threshold, parser proof,
@@ -226,9 +226,10 @@ latency/throughput benchmark, crash-durability proof, or concurrency proof.
 `make qualify-release-candidate` refuses staged or unstaged tracked drift and
 records the exact HEAD before running the complete ordinary gate, all workspace
 targets in release mode, the soak in release mode, and all three pinned fuzz
-targets. Revision `2e1bd48cd8c6b385d0e1564bf3f29cb0ff8cc1cb` completed the
-expanded profile with 10,000 soak cycles and 1,000,000 fuzz cases on each target
-on Darwin 25.6.0 arm64 / macOS 26.6.2. A pass qualifies one source revision on
+targets and verifies the tracked tree is unchanged afterward. Revision
+`1ca5bb741f646dce7fe428482c49eb9e97454c7d` completed the expanded profile
+with 10,000 soak cycles and 1,000,000 fuzz cases on each target on Darwin
+25.6.0 arm64 / macOS 26.6.2. A pass qualifies one source revision on
 one host. It does not create
 or qualify a distributable archive, checksum, signature, attestation,
 reproducible binary, performance threshold, remote workflow, or other
