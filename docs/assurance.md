@@ -183,7 +183,7 @@ control fixtures are deliberately excluded). An accepted
 candidate must re-encode exactly, and an accepted frame prefix must preserve its
 unconsumed stream suffix. The qualified smoke ran 20,000 fixed-seed cases on all
 three targets. The latest integrated local release-candidate campaign, for
-revision `eacc767bcb27560372036de940f3f98b773200bc`, ran 1,000,000 fixed-seed
+revision `4b19524fd21208487ca8f512257e7663e2354d71`, ran 1,000,000 fixed-seed
 cases on each of those three targets. All campaigns use a 64-KiB input,
 10-second per-input, and 2-GiB memory ceiling on Apple Silicon. This is bounded
 coverage-guided counterexample search, not a coverage threshold, parser proof,
@@ -622,9 +622,9 @@ state is projected by a separate participant-bound status observation; actor,
 source, prior successor, and new successor are retained in all four feeds.
 Frozen supersede, receipt, and change frames, closed capability/refusal tags,
 Debug/SDK construction, and profile-17/19/19 nested checkpoints close the
-bounded implementation. Exact R53 revision qualification remains pending; no
-move, copy, deletion, erasure, aliasing, implicit routing, connector state, or
-workflow truth is claimed.
+bounded implementation. Revision `4b19524fd21208487ca8f512257e7663e2354d71`
+passed the complete R53 qualification; no move, copy, deletion, erasure,
+aliasing, implicit routing, connector state, or workflow truth is claimed.
 
 Private read-position core scenarios prove room/thread/topic scope validation,
 human/agent-neutral self-state, monotone and idempotent advancement, atomic
