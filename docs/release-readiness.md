@@ -154,6 +154,11 @@ not ready for a network service or crates.io release.
 
 ## Open release blockers
 
+- R62 fixes the architecture for transient presence and typing, but no public
+  capability is implemented or advertised. A separate bounded transient owner,
+  qualified Host clock composition, full lifecycle retirement, closed wire/SDK
+  surface, privacy evidence, and restart-to-`Unknown` evidence remain required.
+
 - no remote origin provenance or remote CI; the qualified local source candidate
   is content-addressed, but its selected Aegis and Keystone inputs were unclean
   and are not proven to correspond to remotely available commits;

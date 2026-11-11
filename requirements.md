@@ -371,6 +371,22 @@
   implicitly. I/O failure may leave operator-requiring residue and must never be
   reported as successful recovery. This grants no automatic restart, entropy
   generation, durable Host restoration, migration, or multi-process handoff.
+- **R62 — Bounded transient collaboration boundary:** presence and typing must
+  be owned outside the durable conversation engine, room revision, event
+  streams, and canonical checkpoints. Any advertised profile must use current
+  engine membership and retained-target authority, opaque active-session
+  sources, a qualified Host-supplied monotone clock, bounded requested
+  lifetimes, explicit `Unknown`, atomic capacity refusal, and cursors bound to
+  observer, room, engine revision, transient generation, and exact as-of time.
+  Disconnect, revocation, substitution, and transport close must retire a
+  source; leave, kick, and ban must retire that participant's room signals so a
+  later rejoin cannot resurrect them. Restart begins `Unknown`, expiry is
+  checked at final observation, humans and agents remain symmetric, and no
+  signal implies membership, authority, delivery, attention, consent, agent
+  activation, execution, or work completion. Protocol, wire, service, Host,
+  SDK, compatibility, privacy, model, mutation, and restart evidence must close
+  before capability advertisement. The selected architecture is detailed in
+  [`docs/transient-collaboration.md`](docs/transient-collaboration.md).
 
 ## Explicitly open
 
