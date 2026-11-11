@@ -182,7 +182,8 @@ not ready for a network service or crates.io release.
   profile 2 multiplexes conversation and transient frames, supplies an exact
   connection/server replay epoch, retires sources on close, and restarts empty.
   R64 additionally qualifies a combined durable-conversation plus volatile
-  collaboration owner with suppression cleanup and clean physical restart.
+  collaboration owner with suppression cleanup and physical-store recovery;
+  R65 composes that caller-recovered owner with exact endpoint-residue rotation.
   Network transport and a production credential authenticator remain open and
   are not inferred from these profiles.
 
@@ -194,9 +195,11 @@ not ready for a network service or crates.io release.
   connector conformance package; Aegis context provenance remains trusted
   wiring;
 - no qualified server-incarnation generator or automatic/crash-coupled restart;
-  clean durable Host/directory-store restart is qualified, but there is no
+  clean durable Host/directory-store restart and explicit endpoint-residue
+  recovery are qualified, but there is no
   concurrent admission, in-flight drain,
-  signal/socket-activation/crash-residue qualification, reconnect resumption, or
+  signal/socket-activation automation, exhaustive recovery fault injection,
+  reconnect resumption, or
   cross-disconnect replay; recovered Aegis and Agora state do not share one
   atomic commit boundary;
 - no qualified store beyond the single-owner local Unix directory profile; no

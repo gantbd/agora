@@ -621,6 +621,15 @@ volatile. Known store refusal restores Host state and retires affected signals;
 uncertain durability fences access. Recovery retains conversation state but
 reconstructs presence and typing empty.
 
+When exact unlocked endpoint residue is present, the combined owner has a
+separate caller-selected recovery constructor. The caller first supplies an
+already recovered `DurableTransientHostV1`; the daemon then applies the same
+prior-incarnation-checked locked record/socket rotation as ordinary explicit
+residue recovery and binds collaboration handshake profile 2 under the distinct
+next incarnation. This composes semantic recovery with endpoint recovery but
+does not make either automatic or atomic, and it never restores the prior
+transport session.
+
 EOF is a clean transport close. EOF, write failure (including the initial
 connected reply), malformed framing, request-budget exhaustion, and Host refusal
 all converge on unconditional idempotent `HostV2::close` after a session has

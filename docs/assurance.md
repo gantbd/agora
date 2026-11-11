@@ -130,8 +130,8 @@ resets the volatile request namespace, and exposes no signal; an indeterminate
 post-commit outcome fences the owner and also retires the signal. A twelfth
 real-socket scenario composes the physical directory store, commits a room and
 publishes both signal families, then reconstructs under a distinct server
-incarnation: the room remains while presence is `Unknown`, typing is inactive,
-and the replay epoch differs.
+incarnation through exact unlocked endpoint-residue rotation: the room remains
+while presence is `Unknown`, typing is inactive, and the replay epoch differs.
 
 Six transient-client scenarios prove exact equal-command retry after an
 outcome-unknown failure, definitely-not-sent progression, same-epoch state

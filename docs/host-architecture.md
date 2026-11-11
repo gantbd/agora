@@ -128,9 +128,10 @@ collaboration owner stores only the Host checkpoint and reconstructs presence
 and typing empty; suppression retires volatile sources before fencing or
 returning control. Qualification proves clean
 owner teardown/reopen and retained state through a fresh authenticated
-connection, not old-session resumption or lost-reply replay. Exact stale endpoint
-cleanup remains an explicit prior-incarnation-checked operation, not automatic
-restart. See
+connection, not old-session resumption or lost-reply replay. A specialized
+constructor composes the caller-recovered combined owner with exact
+prior-incarnation-checked endpoint-residue rotation; it remains explicit, not
+automatic restart. See
 [`local-daemon.md`](local-daemon.md).
 
 ## Deliberate exclusions

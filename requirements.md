@@ -399,6 +399,16 @@
   presence begins `Unknown`, typing begins inactive, and the replay epoch changes.
   The private local collaboration transport must compose this owner without
   weakening its framing, authority, lifetime, or readiness fences.
+- **R65 — Explicit durable-collaboration residue recovery:** the private local
+  collaboration transport must offer a separate stale-endpoint recovery path
+  that accepts a caller-selected, already recovered `DurableTransientHostV1`,
+  requires the exact prior and distinct next server incarnations, and reuses
+  R61's locked record/socket validation and rotation before binding handshake
+  profile 2. A fresh authenticated connection must observe retained
+  conversation state, empty presence/typing, and a next-incarnation replay
+  epoch. The path must not invent durable state, restore a transport session,
+  replay a disconnected request, automate restart, or claim atomic recovery
+  with Aegis.
 
 ## Explicitly open
 

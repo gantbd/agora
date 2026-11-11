@@ -45,6 +45,11 @@ nonzero next incarnation, and a newly supplied Host composition. It acquires the
 old record lock, validates the exact record and stale socket, removes only that
 socket, rotates the locked record, and then uses the ordinary bind path. Live,
 foreign, malformed, missing, or unsafe residue refuses without adoption.
+For the combined durable-collaboration owner,
+`recover_stale_durable_collaboration` accepts a caller-selected owner already
+recovered from its checkpoint store, applies that same exact residue rotation,
+and binds collaboration handshake profile 2. The daemon neither selects the
+store nor restores an old transport session.
 
 ## Connection state machine
 
@@ -167,16 +172,18 @@ and typing publication, proves EOF retirement through `Unknown`/inactive
 observation on a second connection, observes distinct per-connection epochs,
 and reconstructs empty transient owners under a distinct restart incarnation.
 The combined durable-collaboration scenario repeats that boundary through the
-physical directory store: the room survives reconstruction while presence and
-typing do not.
+physical directory store and exact unlocked endpoint residue: the record and
+incarnation rotate, the room survives reconstruction, and presence and typing
+do not.
 
 The recovery scenario separately proves live-owner exclusion; equal, wrong, and
 malformed prior-incarnation refusal without mutation; exact locked rotation to a
 new record; a fresh Host with zero prior offers; next-incarnation handshake; and
 clean teardown. It does not exercise every filesystem interruption point or
 claim that a failed endpoint recovery is safe to retry. Durable Host restoration
-is independently selected and qualified by the clean restart scenario; endpoint
-residue recovery never invents or adopts semantic state.
+remains independently caller-selected; the combined scenario qualifies its
+explicit composition with endpoint residue recovery, which never invents or
+adopts semantic state.
 
 The outer length prefix is also a pure bounded codec used by the socket path.
 Ordinary tests close empty, incomplete, over-limit, exact-prefix, remainder, and

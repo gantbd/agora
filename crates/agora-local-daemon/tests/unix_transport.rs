@@ -803,8 +803,9 @@ fn durable_daemon_reopens_conversation_state_through_the_same_transport_profile(
 }
 
 #[test]
-fn durable_collaboration_recovers_conversation_but_restarts_transients_empty() {
+fn durable_collaboration_recovers_from_exact_residue_with_transients_empty() {
     let path = socket_path();
+    let lock_path = lifetime_path(&path);
     let store_path = path.parent().unwrap().join("collaboration-checkpoint");
     let store =
         DirectoryCheckpointStoreV1::create_new(&store_path, DirectoryLimitsV1::default()).unwrap();
@@ -903,6 +904,16 @@ fn durable_collaboration_recovers_conversation_but_restarts_transients_empty() {
     drop(daemon);
     assert!(!path.exists());
 
+    let stale_listener = UnixListener::bind(&path).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    drop(stale_listener);
+    fs::write(
+        &lock_path,
+        fixture(include_str!("fixtures/lifetime-record-v1.hex")),
+    )
+    .unwrap();
+    fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
+
     let reopened =
         DirectoryCheckpointStoreV1::open_existing(&store_path, DirectoryLimitsV1::default())
             .unwrap();
@@ -915,11 +926,12 @@ fn durable_collaboration_recovers_conversation_but_restarts_transients_empty() {
         10,
     )
     .unwrap();
-    let daemon = DaemonV1::bind_new_durable_collaboration(
+    let daemon = DaemonV1::recover_stale_durable_collaboration(
         &path,
         durable,
         Authentication,
         Clock(100),
+        incarnation(),
         next_incarnation(),
         daemon_limits(),
     )

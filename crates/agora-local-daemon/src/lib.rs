@@ -962,6 +962,43 @@ where
         )
     }
 
+    /// Rebinds an explicitly recovered durable collaboration owner after exact
+    /// unlocked endpoint residue validation.
+    ///
+    /// The caller recovers and selects the durable owner; this path only
+    /// rotates the daemon lifetime and preserves collaboration handshake
+    /// profile 2. It never resumes a prior transport session.
+    #[allow(clippy::too_many_arguments)]
+    pub fn recover_stale_durable_collaboration(
+        socket_path: impl AsRef<Path>,
+        host: DurableTransientHostV1<AegisVerifierV1<P>, S>,
+        authenticator: A,
+        clock: C,
+        previous_incarnation: ServerIncarnationV1,
+        next_incarnation: ServerIncarnationV1,
+        limits: DaemonLimitsV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        validate_daemon_configuration(next_incarnation, limits)?;
+        let socket_path = socket_path.as_ref().to_path_buf();
+        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
+        let lifetime = LifetimeLeaseV1::recover_stale(
+            parent,
+            &socket_path,
+            previous_incarnation,
+            next_incarnation,
+        )?;
+        Self::bind_owned(
+            socket_path,
+            lifetime,
+            host,
+            authenticator,
+            clock,
+            next_incarnation,
+            limits,
+            DaemonTransportProfileV1::Collaboration,
+        )
+    }
+
     pub fn observation(&self) -> Option<DaemonObservationV1> {
         self.host
             .host()

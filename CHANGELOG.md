@@ -21,6 +21,10 @@ follow Semantic Versioning once a public release contract is selected.
   transient state empty. Revision
   `c4cad484d6dec38123b7270f7f11848519d65fd3` passed the integrated release
   profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
+- Added explicit durable-collaboration endpoint-residue recovery: the caller
+  supplies the recovered owner, exact prior incarnation, and distinct next
+  incarnation; the daemon rotates only validated residue and preserves
+  collaboration handshake profile 2 without resuming an old session.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque
