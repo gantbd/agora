@@ -217,6 +217,12 @@ outcome-class counts, and fidelity loss; they contain no store key, checkpoint,
 frame, identity, room, credential, or detailed refusal. After a fence the
 Host/Service projection is withheld, and reading the remaining facts cannot
 trigger a retry or store access.
+Daemon lifecycle and stop receipts are likewise content-free. A fenced owner
+cannot be relabeled draining, and ambiguous endpoint ownership produces a
+residue-preserved outcome without deleting attacker-replaced resources. Clean
+is reported only after exact pinned socket and lifetime-record removal plus
+parent synchronization; incomplete cleanup remains visible rather than being
+reported as stopped-clean.
 
 This does not defend a same-UID attacker controlling the private socket parent,
 authenticate Unix peer credentials, hide socket metadata or

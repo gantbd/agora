@@ -141,6 +141,9 @@ not ready for a network service or crates.io release.
 - explicit irreversible idle drain fencing that withdraws readiness and refuses
   before accept or authority work while retaining endpoint ownership until
   pinned teardown;
+- a closed sequential daemon lifecycle with noncontradictory ready, draining,
+  fenced, and terminal stopped evidence plus clean, residue-preserved, or
+  incomplete explicit teardown outcomes;
 - independently versioned, scope-bound Service V2 checkpoints preserving engine,
   outbox, recent-change journal, clients, retired tombstones, exact request
   replies, and live cursor consequences across semantic recovery;

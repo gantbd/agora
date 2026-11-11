@@ -419,6 +419,18 @@
   withholding the untrustworthy Host/Service projection. Reading observations
   must perform no store, authority, retry, semantic, or transport effect and
   must disclose no key, checkpoint, participant, room, frame, or credential.
+- **R67 — Closed sequential daemon lifecycle and terminal evidence:** the local
+  daemon must represent starting, ready, draining, stopped, and fenced as one
+  closed state rather than independent flags. Successful construction may
+  return only ready; idle drain may transition only ready to draining; an
+  ownership, replay-epoch, or durability fence must not later become draining.
+  Because the sequential owner is exclusively borrowed while serving, draining
+  with zero active connections is exact completion for this profile. Explicit
+  stop must consume the owner and return content-free terminal health plus a
+  closed clean, residue-preserved, or incomplete cleanup outcome. Clean may be
+  reported only after the pinned socket and lifetime record are removed and the
+  parent synchronization succeeds. This makes no concurrent drain, signal,
+  service-manager, crash-shutdown, or process-exit cleanup claim.
 
 ## Explicitly open
 
@@ -426,7 +438,7 @@ Additional physical durable storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,
 federation, delivery acknowledgment, and durable audit are not part of the
 current v0.3 claim.
-Credential authentication, network transport, operational daemon lifecycle,
+Credential authentication, network transport, concurrent daemon lifecycle,
 backup/restore qualification, and durable profiles beyond the qualified
 single-owner local Unix directory remain open;
 Protocol V1 bytes and semantics are unchanged.

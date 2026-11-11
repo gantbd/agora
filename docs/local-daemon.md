@@ -92,8 +92,8 @@ new connection can safely repeat it.
 
 ## Observable operations
 
-`DaemonHealthV1` is deliberately content-free. It reports readiness, current
-drain and ownership-fenced state, connections, accepted and refused handshakes, cleanly completed
+`DaemonHealthV1` is deliberately content-free. It reports one closed lifecycle
+state, connections, accepted and refused handshakes, cleanly completed
 connections, refused connections, transport errors, and counter saturation. It
 exposes no incarnation bytes, participant, subject, grant, room, message, or
 frame data.
@@ -107,12 +107,20 @@ cannot change a request result. The snapshot contains no identifiers, content,
 credentials, frame bytes, timings, or refusal detail; it is process-local and
 excluded from semantic recovery.
 
-`begin_drain` is an irreversible, idempotent idle transition. It clears
-readiness and sets the drain fact; every later `serve_next` refuses before
+`begin_drain` is an irreversible, idempotent Ready-to-Draining transition; every
+later `serve_next` refuses before
 accepting a socket or invoking authentication, authority, Host V2, or Service
-V2. The endpoint remains pinned and owned until normal drop. Since the method
+V2. A prior fence remains fenced rather than becoming contradictory drain
+state. The endpoint remains pinned and owned until teardown. Since the method
 requires exclusive mutable access to this sequential owner, it cannot overlap an
 in-flight connection and is not a concurrent graceful-drain mechanism.
+
+`stop` consumes that exclusive owner and returns a content-free terminal
+receipt: prior lifecycle, Stopped health, and `Clean`, `ResiduePreserved`, or
+`Incomplete` cleanup. Clean requires removal of the exact pinned socket and
+lifetime record plus parent synchronization. Ambiguous ownership preserves
+evidence. Draining with zero active connections is exact completion only because
+this profile is sequential and exclusively borrowed while serving.
 
 ## Trust boundary and non-claims
 

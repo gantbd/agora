@@ -140,6 +140,14 @@ unit evidence proves durability and transport facts remain available after a
 fence while the Host/Service runtime projection is absent. Successful durable
 socket scenarios check the exact commit count including terminal cleanup.
 
+The idle lifecycle scenario covers every externally relevant sequential state:
+construction returns Ready, drain reaches exact zero-obligation completion,
+later service refuses before accept, and explicit stop returns Stopped plus
+Clean only after both pinned resources disappear. The ownership-replacement
+scenario proves Fenced cannot be relabeled Draining and explicit stop returns
+ResiduePreserved while all ambiguous endpoint evidence remains in place. A unit
+check fixes default pre-construction health at Starting.
+
 Six transient-client scenarios prove exact equal-command retry after an
 outcome-unknown failure, definitely-not-sent progression, same-epoch state
 restoration, malformed-tail and changed-epoch refusal, explicit reconnect/restart
@@ -372,9 +380,9 @@ The idle-drain scenario uses a real bound endpoint and proves that the first
 transition clears readiness, records draining, and is irreversible; repeated
 transition is inert; and every later serve attempt returns before socket accept,
 authenticator/Aegis invocation, Host V2 open, or Service V2 connect. The daemon
-retains its pinned endpoint until drop removes it. Exclusive sequential
-ownership excludes concurrent in-flight drain, deadlines, signals, and
-service-manager behavior from this evidence.
+retains its pinned endpoint until explicit stop removes it and returns clean
+terminal evidence. Exclusive sequential ownership excludes concurrent in-flight
+drain, deadlines, signals, and service-manager behavior from this evidence.
 
 Service V2 persistence scenarios recover byte-identical engine state and pending
 outbox, active clients, retained exact replies, and live room-page continuation.

@@ -67,10 +67,33 @@ impl Default for DaemonLimitsV1 {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DaemonLifecycleV1 {
+    /// Construction is not yet complete and no endpoint may be advertised.
+    #[default]
+    Starting,
+    Ready,
+    Draining,
+    Stopped,
+    Fenced,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DaemonCleanupV1 {
+    Clean,
+    ResiduePreserved,
+    Incomplete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DaemonStoppedV1 {
+    pub prior_lifecycle: DaemonLifecycleV1,
+    pub health: DaemonHealthV1,
+    pub cleanup: DaemonCleanupV1,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DaemonHealthV1 {
-    pub ready: bool,
-    pub draining: bool,
-    pub fenced: bool,
+    pub lifecycle: DaemonLifecycleV1,
     pub active_connections: u64,
     pub accepted_connections: u64,
     pub handshake_accepted: u64,
@@ -79,6 +102,16 @@ pub struct DaemonHealthV1 {
     pub refused_connections: u64,
     pub transport_errors: u64,
     pub saturated: bool,
+}
+
+impl DaemonHealthV1 {
+    pub const fn ready(self) -> bool {
+        matches!(self.lifecycle, DaemonLifecycleV1::Ready)
+    }
+
+    pub const fn drain_complete(self) -> bool {
+        matches!(self.lifecycle, DaemonLifecycleV1::Draining) && self.active_connections == 0
+    }
 }
 
 /// Content-free, point-in-time operational facts from each owned runtime layer.
@@ -605,7 +638,7 @@ where
             limits,
             server_incarnation,
             health: DaemonHealthV1 {
-                ready: true,
+                lifecycle: DaemonLifecycleV1::Ready,
                 ..DaemonHealthV1::default()
             },
             transport_profile,
@@ -620,19 +653,29 @@ where
     /// Irreversibly fences this sequential daemon from accepting more work.
     ///
     /// The mutable borrow means no connection can be in flight through this
-    /// owner when the transition occurs. The endpoint remains owned until drop.
+    /// owner when the transition occurs. The endpoint remains owned until teardown.
     pub fn begin_drain(&mut self) -> bool {
-        if self.health.draining {
-            return false;
+        match self.health.lifecycle {
+            DaemonLifecycleV1::Ready => {
+                self.health.lifecycle = DaemonLifecycleV1::Draining;
+                true
+            }
+            DaemonLifecycleV1::Starting
+            | DaemonLifecycleV1::Draining
+            | DaemonLifecycleV1::Stopped
+            | DaemonLifecycleV1::Fenced => false,
         }
-        self.health.ready = false;
-        self.health.draining = true;
-        true
     }
 
     pub fn serve_next(&mut self) -> Result<(), DaemonErrorV1> {
-        if self.health.draining {
-            return Err(DaemonErrorV1::Draining);
+        match self.health.lifecycle {
+            DaemonLifecycleV1::Ready => {}
+            DaemonLifecycleV1::Draining | DaemonLifecycleV1::Stopped => {
+                return Err(DaemonErrorV1::Draining);
+            }
+            DaemonLifecycleV1::Starting | DaemonLifecycleV1::Fenced => {
+                return Err(DaemonErrorV1::Fenced);
+            }
         }
         self.check_ownership()?;
         let (mut stream, _) = self.listener.accept().map_err(DaemonErrorV1::Io)?;
@@ -678,8 +721,7 @@ where
         if socket_owned && self.lifetime.intact() {
             return Ok(());
         }
-        self.health.ready = false;
-        self.health.fenced = true;
+        self.health.lifecycle = DaemonLifecycleV1::Fenced;
         self.lifetime.preserve();
         Err(DaemonErrorV1::Fenced)
     }
@@ -846,8 +888,7 @@ where
     fn allocate_replay_epoch(&mut self) -> Result<LocalReplayEpochV1, DaemonErrorV1> {
         let sequence = self.next_connection_epoch;
         let Some(next) = sequence.checked_add(1) else {
-            self.health.ready = false;
-            self.health.fenced = true;
+            self.health.lifecycle = DaemonLifecycleV1::Fenced;
             return Err(DaemonErrorV1::ReplayEpochExhausted);
         };
         self.next_connection_epoch = next;
@@ -855,8 +896,7 @@ where
         bytes[..16].copy_from_slice(&self.server_incarnation.as_bytes());
         bytes[16..].copy_from_slice(&sequence.to_be_bytes());
         LocalReplayEpochV1::new(bytes).ok_or_else(|| {
-            self.health.ready = false;
-            self.health.fenced = true;
+            self.health.lifecycle = DaemonLifecycleV1::Fenced;
             DaemonErrorV1::ReplayEpochExhausted
         })
     }
@@ -865,8 +905,7 @@ where
         match error {
             DaemonHostErrorV1::Host(error) => DaemonErrorV1::Host(error),
             DaemonHostErrorV1::Durability => {
-                self.health.ready = false;
-                self.health.fenced = true;
+                self.health.lifecycle = DaemonLifecycleV1::Fenced;
                 DaemonErrorV1::Durability
             }
         }
@@ -883,6 +922,46 @@ where
 
     pub const fn host(&self) -> &HostV2<AegisVerifierV1<P>> {
         &self.host
+    }
+}
+
+impl<H, A, C> DaemonV1<H, A, C> {
+    /// Consumes the exclusive sequential owner and returns terminal teardown facts.
+    ///
+    /// Because the owner is mutably inaccessible while `serve_next` runs, a
+    /// caller can obtain this receipt only with no admitted connection in flight.
+    pub fn stop(mut self) -> DaemonStoppedV1 {
+        let prior_lifecycle = self.health.lifecycle;
+        debug_assert_eq!(self.health.active_connections, 0);
+        let cleanup = self.teardown();
+        self.health.lifecycle = DaemonLifecycleV1::Stopped;
+        DaemonStoppedV1 {
+            prior_lifecycle,
+            health: self.health,
+            cleanup,
+        }
+    }
+
+    fn teardown(&mut self) -> DaemonCleanupV1 {
+        let endpoint_owned = fs::symlink_metadata(&self.socket_path).is_ok_and(|metadata| {
+            metadata.file_type().is_socket()
+                && metadata.nlink() == 1
+                && metadata.dev() == self.socket_device
+                && metadata.ino() == self.socket_inode
+        });
+        if !endpoint_owned || !self.lifetime.intact() {
+            self.lifetime.preserve();
+            return DaemonCleanupV1::ResiduePreserved;
+        }
+        if fs::remove_file(&self.socket_path).is_err() {
+            self.lifetime.preserve();
+            return DaemonCleanupV1::Incomplete;
+        }
+        if self.lifetime.release() {
+            DaemonCleanupV1::Clean
+        } else {
+            DaemonCleanupV1::Incomplete
+        }
     }
 }
 
@@ -1084,19 +1163,9 @@ fn validate_daemon_configuration(
 
 impl<H, A, C> Drop for DaemonV1<H, A, C> {
     fn drop(&mut self) {
-        self.health.ready = false;
-        let endpoint_owned = fs::symlink_metadata(&self.socket_path).is_ok_and(|metadata| {
-            metadata.file_type().is_socket()
-                && metadata.nlink() == 1
-                && metadata.dev() == self.socket_device
-                && metadata.ino() == self.socket_inode
-        });
-        if endpoint_owned && self.lifetime.intact() {
-            if fs::remove_file(&self.socket_path).is_err() {
-                self.lifetime.preserve();
-            }
-        } else {
-            self.lifetime.preserve();
+        if self.health.lifecycle != DaemonLifecycleV1::Stopped {
+            let _ = self.teardown();
+            self.health.lifecycle = DaemonLifecycleV1::Stopped;
         }
     }
 }
@@ -1156,11 +1225,19 @@ fn increment(value: &mut u64, saturated: &mut bool) {
 #[cfg(test)]
 mod tests {
     use super::{
-        DaemonHealthV1, HostUsage, OuterFrameErrorV1, ServiceObservationV1,
+        DaemonHealthV1, DaemonLifecycleV1, HostUsage, OuterFrameErrorV1, ServiceObservationV1,
         decode_outer_frame_prefix_v1, durable_observation, encode_outer_frame_v1, increment,
         observation_fidelity_lost,
     };
     use agora_durable::{DurableHostObservationV2, DurableOwnerStateV2};
+
+    #[test]
+    fn default_health_is_starting_and_cannot_claim_readiness_or_drain_completion() {
+        let health = DaemonHealthV1::default();
+        assert_eq!(health.lifecycle, DaemonLifecycleV1::Starting);
+        assert!(!health.ready());
+        assert!(!health.drain_complete());
+    }
 
     #[test]
     fn counter_saturation_is_sticky_and_value_preserving() {

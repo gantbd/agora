@@ -663,12 +663,23 @@ normal teardown. Exclusive mutable ownership means this profile cannot overlap
 an active connection; concurrent in-flight drain requires a different runtime
 composition.
 
+Daemon lifecycle is one closed value: `Starting`, `Ready`, `Draining`,
+`Stopped`, or `Fenced`. Starting is construction-local and a constructor returns
+an owner only after reaching Ready. Drain is permitted only from Ready, so it
+cannot mask a prior fence. `drain_complete` is true only for Draining with zero
+active connections; exclusive ownership makes that exact for this sequential
+profile. Explicit `stop` consumes the owner and returns Stopped health, the
+prior lifecycle, and one cleanup outcome. Clean requires successful removal of
+the exact pinned socket and lifetime record plus parent synchronization;
+ambiguous ownership preserves residue, while an attempted but incomplete
+cleanup is reported separately.
+
 This profile is deliberately sequential: one caller of `serve_next` accepts and
 serves one connection at a time. It does not authenticate an OS peer or
 credential, protect against a same-UID process controlling the private parent,
 encrypt content, generate the incarnation, automatically repair residue, preserve request
 receipts across disconnect, automatically recover a crashed endpoint, implement concurrent
-admission, in-flight draining, signals, socket activation, installation, or
+admission, concurrent in-flight draining, signals, socket activation, installation, or
 atomically recover Aegis and Agora. Those are separate composition and
 operational qualifications.
 

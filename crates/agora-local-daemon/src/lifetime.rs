@@ -226,6 +226,11 @@ impl LifetimeLeaseV1 {
     pub(crate) fn preserve(&mut self) {
         self.remove_on_drop = false;
     }
+
+    pub(crate) fn release(&mut self) -> bool {
+        self.remove_on_drop = false;
+        self.intact() && fs::remove_file(&self.lock_path).is_ok() && self.parent.sync_all().is_ok()
+    }
 }
 
 fn record(incarnation: ServerIncarnationV1) -> [u8; RECORD_BYTES_V1] {

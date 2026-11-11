@@ -14,11 +14,11 @@ use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
 use agora_host::{HostLimits, HostTimeV1, VerifiedSubjectV1};
 use agora_local_daemon::{
     AuthenticatorV1, COLLABORATION_SERVER_HELLO_BYTES_V1, CollaborationServerHelloV1,
-    DaemonErrorV1, DaemonLimitsV1, DaemonV1, HostClockV1, LOCAL_SESSION_HELLO_BYTES_V1,
-    LocalReplayEpochV1, LocalRouteV1, SERVER_HELLO_BYTES_V1, ServerHelloV1, ServerIncarnationV1,
-    decode_collaboration_server_hello_v1, decode_local_routed_frame_v1,
-    decode_local_session_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
-    encode_collaboration_client_hello_v1, encode_local_routed_frame_v1,
+    DaemonCleanupV1, DaemonErrorV1, DaemonLifecycleV1, DaemonLimitsV1, DaemonV1, HostClockV1,
+    LOCAL_SESSION_HELLO_BYTES_V1, LocalReplayEpochV1, LocalRouteV1, SERVER_HELLO_BYTES_V1,
+    ServerHelloV1, ServerIncarnationV1, decode_collaboration_server_hello_v1,
+    decode_local_routed_frame_v1, decode_local_session_hello_v1, decode_server_hello_v1,
+    encode_client_hello_v1, encode_collaboration_client_hello_v1, encode_local_routed_frame_v1,
 };
 use agora_protocol::transient::{
     PresenceStateV1, PresenceViewStateV1, TransientCommandV1, TransientOutcomeV1, TransientReplyV1,
@@ -328,6 +328,7 @@ fn connect_frame(participant_id: &str) -> Vec<u8> {
 #[test]
 fn idle_drain_is_irreversible_and_refuses_before_accept_or_authority() {
     let path = socket_path();
+    let lock_path = lifetime_path(&path);
     let port = Port::default();
     let calls = port.calls.clone();
     let mut daemon = DaemonV1::bind_new(
@@ -340,12 +341,12 @@ fn idle_drain_is_irreversible_and_refuses_before_accept_or_authority() {
     )
     .unwrap();
 
-    assert!(daemon.health().ready);
-    assert!(!daemon.health().draining);
+    assert_eq!(daemon.health().lifecycle, DaemonLifecycleV1::Ready);
+    assert!(daemon.health().ready());
     assert!(daemon.begin_drain());
     assert!(!daemon.begin_drain(), "drain transition must be idempotent");
-    assert!(!daemon.health().ready);
-    assert!(daemon.health().draining);
+    assert_eq!(daemon.health().lifecycle, DaemonLifecycleV1::Draining);
+    assert!(daemon.health().drain_complete());
     assert!(matches!(daemon.serve_next(), Err(DaemonErrorV1::Draining)));
 
     let observation = daemon.observation();
@@ -355,8 +356,13 @@ fn idle_drain_is_irreversible_and_refuses_before_accept_or_authority() {
     assert!(calls.lock().unwrap().is_empty());
     assert!(path.exists(), "drain retains endpoint ownership until drop");
 
-    drop(daemon);
+    let stopped = daemon.stop();
+    assert_eq!(stopped.prior_lifecycle, DaemonLifecycleV1::Draining);
+    assert_eq!(stopped.health.lifecycle, DaemonLifecycleV1::Stopped);
+    assert_eq!(stopped.cleanup, DaemonCleanupV1::Clean);
+    assert_eq!(stopped.health.active_connections, 0);
     assert!(!path.exists());
+    assert!(!lock_path.exists());
     remove_parent(&path);
 }
 
@@ -1133,7 +1139,10 @@ fn incompatible_handshake_refuses_before_authentication_authority_or_host() {
     assert_eq!(daemon.health().handshake_accepted, 0);
     assert_eq!(daemon.health().handshake_refused, 1);
     drop(stream);
-    drop(daemon);
+    let stopped = daemon.stop();
+    assert_eq!(stopped.prior_lifecycle, DaemonLifecycleV1::Ready);
+    assert_eq!(stopped.health.lifecycle, DaemonLifecycleV1::Stopped);
+    assert_eq!(stopped.cleanup, DaemonCleanupV1::Clean);
     remove_parent(&path);
 }
 
@@ -1216,15 +1225,22 @@ fn lifetime_record_excludes_live_and_stale_owners_and_fences_replacement() {
         (result, daemon)
     });
     let stream = UnixStream::connect(&path).unwrap();
-    let (result, daemon) = server.join().unwrap();
+    let (result, mut daemon) = server.join().unwrap();
     assert!(matches!(result, Err(DaemonErrorV1::Fenced)));
     assert_eq!(authentication_calls.load(Ordering::Relaxed), 0);
-    assert!(daemon.health().fenced);
-    assert!(!daemon.health().ready);
+    assert_eq!(daemon.health().lifecycle, DaemonLifecycleV1::Fenced);
+    assert!(!daemon.health().ready());
+    assert!(
+        !daemon.begin_drain(),
+        "a fence must not be relabeled draining"
+    );
     assert_eq!(daemon.health().accepted_connections, 0);
     assert_eq!(daemon.health().refused_connections, 0);
     drop(stream);
-    drop(daemon);
+    let stopped = daemon.stop();
+    assert_eq!(stopped.prior_lifecycle, DaemonLifecycleV1::Fenced);
+    assert_eq!(stopped.health.lifecycle, DaemonLifecycleV1::Stopped);
+    assert_eq!(stopped.cleanup, DaemonCleanupV1::ResiduePreserved);
     assert!(
         path.exists(),
         "fenced teardown must preserve endpoint residue"

@@ -28,6 +28,10 @@ follow Semantic Versioning once a public release contract is selected.
   fenced-state reporting without exposing the Host/Service projection. Revision
   `5c2770e1a45d4a02b7cd9262c2d5eb6ba4ea794f` passed the integrated release
   profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
+- Replaced independent daemon readiness, drain, and fence flags with one closed
+  sequential lifecycle and added explicit terminal stop evidence that
+  distinguishes clean teardown, preserved ambiguous residue, and incomplete
+  cleanup.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque
