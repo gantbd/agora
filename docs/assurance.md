@@ -133,6 +133,13 @@ publishes both signal families, then reconstructs under a distinct server
 incarnation through exact unlocked endpoint-residue rotation: the room remains
 while presence is `Unknown`, typing is inactive, and the replay epoch differs.
 
+The same focused schedule checks exact passive durability counts across four
+commits, one known store refusal, and one outcome-unknown fence. Saturation unit
+evidence proves counters preserve `u64::MAX` and set sticky fidelity loss; daemon
+unit evidence proves durability and transport facts remain available after a
+fence while the Host/Service runtime projection is absent. Successful durable
+socket scenarios check the exact commit count including terminal cleanup.
+
 Six transient-client scenarios prove exact equal-command retry after an
 outcome-unknown failure, definitely-not-sent progression, same-epoch state
 restoration, malformed-tail and changed-epoch refusal, explicit reconnect/restart

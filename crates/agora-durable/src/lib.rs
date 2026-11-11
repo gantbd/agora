@@ -71,6 +71,101 @@ pub enum DurableOwnerStateV2 {
     Fenced,
 }
 
+/// Passive content-free publication facts for an authenticated durable Host.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DurableHostObservationV2 {
+    pub state: DurableOwnerStateV2,
+    pub store_revision: u64,
+    pub offers: u64,
+    pub committed: u64,
+    pub previously_committed: u64,
+    pub checkpoint_suppressed: u64,
+    pub store_refused: u64,
+    pub outcome_unknown: u64,
+    pub not_durable: u64,
+    pub invalid_receipt: u64,
+    pub fenced: u64,
+    pub saturated: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct DurableHostCountersV2 {
+    offers: u64,
+    committed: u64,
+    previously_committed: u64,
+    checkpoint_suppressed: u64,
+    store_refused: u64,
+    outcome_unknown: u64,
+    not_durable: u64,
+    invalid_receipt: u64,
+    fenced: u64,
+    saturated: bool,
+}
+
+impl DurableHostCountersV2 {
+    fn record<T>(&mut self, publication: &DurableHostPublicationV2<T>) {
+        increment_counter(&mut self.offers, &mut self.saturated);
+        let counter = match publication {
+            DurableHostPublicationV2::Published {
+                evidence: DurableEvidenceV2::Committed { .. },
+                ..
+            } => &mut self.committed,
+            DurableHostPublicationV2::Published {
+                evidence: DurableEvidenceV2::PreviouslyCommitted { .. },
+                ..
+            } => &mut self.previously_committed,
+            DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::Checkpoint(_)) => {
+                &mut self.checkpoint_suppressed
+            }
+            DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::StoreRefused(_)) => {
+                &mut self.store_refused
+            }
+            DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::OutcomeUnknown) => {
+                &mut self.outcome_unknown
+            }
+            DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::NotDurable) => {
+                &mut self.not_durable
+            }
+            DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::InvalidReceipt) => {
+                &mut self.invalid_receipt
+            }
+            DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::Fenced) => {
+                &mut self.fenced
+            }
+        };
+        increment_counter(counter, &mut self.saturated);
+    }
+}
+
+fn increment_counter(counter: &mut u64, saturated: &mut bool) {
+    if *counter == u64::MAX {
+        *saturated = true;
+    } else {
+        *counter += 1;
+    }
+}
+
+fn host_observation(
+    state: DurableOwnerStateV2,
+    store_revision: Revision,
+    counters: DurableHostCountersV2,
+) -> DurableHostObservationV2 {
+    DurableHostObservationV2 {
+        state,
+        store_revision: store_revision.0,
+        offers: counters.offers,
+        committed: counters.committed,
+        previously_committed: counters.previously_committed,
+        checkpoint_suppressed: counters.checkpoint_suppressed,
+        store_refused: counters.store_refused,
+        outcome_unknown: counters.outcome_unknown,
+        not_durable: counters.not_durable,
+        invalid_receipt: counters.invalid_receipt,
+        fenced: counters.fenced,
+        saturated: counters.saturated,
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct DurableConfigV2 {
     key: String,
@@ -397,6 +492,7 @@ pub struct DurableHostV2<V, S> {
     config: DurableHostConfigV2,
     store_revision: Revision,
     state: DurableOwnerStateV2,
+    counters: DurableHostCountersV2,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -421,6 +517,7 @@ pub struct DurableTransientHostV1<V, S> {
     config: DurableHostConfigV2,
     store_revision: Revision,
     state: DurableOwnerStateV2,
+    counters: DurableHostCountersV2,
 }
 
 impl<V, S> fmt::Debug for DurableTransientHostV1<V, S> {
@@ -475,6 +572,7 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableTransientHostV1<V, S> {
             config,
             store_revision: revision,
             state: DurableOwnerStateV2::Active,
+            counters: DurableHostCountersV2::default(),
         })
     }
 
@@ -505,11 +603,16 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableTransientHostV1<V, S> {
             config,
             store_revision: stored.revision,
             state: DurableOwnerStateV2::Active,
+            counters: DurableHostCountersV2::default(),
         })
     }
 
     pub const fn state(&self) -> DurableOwnerStateV2 {
         self.state
+    }
+
+    pub fn observation(&self) -> DurableHostObservationV2 {
+        host_observation(self.state, self.store_revision, self.counters)
     }
 
     pub fn host(&self) -> Option<&TransientHostV1<V>> {
@@ -526,7 +629,9 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableTransientHostV1<V, S> {
         context: &V::Context,
         now: HostTimeV1,
     ) -> DurableHostPublicationV2<Result<OpenReplyV2, HostRefusal>> {
-        self.publish(|host| host.open(frame, context, now))
+        let publication = self.publish(|host| host.open(frame, context, now));
+        self.counters.record(&publication);
+        publication
     }
 
     pub fn handle(
@@ -537,6 +642,7 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableTransientHostV1<V, S> {
         now: HostTimeV1,
     ) -> DurableHostPublicationV2<Result<Vec<u8>, HostRefusal>> {
         let publication = self.publish(|host| host.handle(session, frame, context, now));
+        self.counters.record(&publication);
         if matches!(publication, DurableHostPublicationV2::Suppressed(_)) {
             self.host.retire_transient_session(session);
         }
@@ -551,6 +657,7 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableTransientHostV1<V, S> {
         now: HostTimeV1,
     ) -> DurableHostPublicationV2<Result<Vec<u8>, HostRefusal>> {
         let publication = self.publish(|host| host.handle_transient(session, frame, context, now));
+        self.counters.record(&publication);
         if matches!(publication, DurableHostPublicationV2::Suppressed(_)) {
             self.host.retire_transient_session(session);
         }
@@ -559,6 +666,7 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableTransientHostV1<V, S> {
 
     pub fn close(&mut self, session: HostSessionIdV2) -> DurableHostPublicationV2<bool> {
         let publication = self.publish(|host| host.close(session));
+        self.counters.record(&publication);
         if matches!(publication, DurableHostPublicationV2::Suppressed(_)) {
             self.host.retire_transient_session(session);
         }
@@ -722,6 +830,7 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
             config,
             store_revision: revision,
             state: DurableOwnerStateV2::Active,
+            counters: DurableHostCountersV2::default(),
         })
     }
 
@@ -746,11 +855,16 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
             config,
             store_revision: stored.revision,
             state: DurableOwnerStateV2::Active,
+            counters: DurableHostCountersV2::default(),
         })
     }
 
     pub fn state(&self) -> DurableOwnerStateV2 {
         self.state
+    }
+
+    pub fn observation(&self) -> DurableHostObservationV2 {
+        host_observation(self.state, self.store_revision, self.counters)
     }
 
     pub fn host(&self) -> Option<&HostV2<V>> {
@@ -767,7 +881,9 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
         context: &V::Context,
         now: HostTimeV1,
     ) -> DurableHostPublicationV2<Result<OpenReplyV2, HostRefusal>> {
-        self.publish(|host| host.open(frame, context, now))
+        let publication = self.publish(|host| host.open(frame, context, now));
+        self.counters.record(&publication);
+        publication
     }
 
     pub fn handle(
@@ -777,11 +893,15 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
         context: &V::Context,
         now: HostTimeV1,
     ) -> DurableHostPublicationV2<Result<Vec<u8>, HostRefusal>> {
-        self.publish(|host| host.handle(session, frame, context, now))
+        let publication = self.publish(|host| host.handle(session, frame, context, now));
+        self.counters.record(&publication);
+        publication
     }
 
     pub fn close(&mut self, session: HostSessionIdV2) -> DurableHostPublicationV2<bool> {
-        self.publish(|host| host.close(session))
+        let publication = self.publish(|host| host.close(session));
+        self.counters.record(&publication);
+        publication
     }
 
     fn publish<T>(
@@ -891,5 +1011,35 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
             self.config.scope,
             self.config.recovery,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn durable_observation_saturation_is_sticky_and_value_preserving() {
+        let mut counters = DurableHostCountersV2 {
+            offers: u64::MAX,
+            committed: u64::MAX,
+            ..DurableHostCountersV2::default()
+        };
+        counters.record(&DurableHostPublicationV2::Published {
+            value: (),
+            evidence: DurableEvidenceV2::Committed {
+                revision: Revision(1),
+            },
+        });
+        assert_eq!(counters.offers, u64::MAX);
+        assert_eq!(counters.committed, u64::MAX);
+        assert!(counters.saturated);
+
+        counters.record(&DurableHostPublicationV2::<()>::Suppressed(
+            DurableHostSuppressionV2::Fenced,
+        ));
+        assert_eq!(counters.offers, u64::MAX);
+        assert_eq!(counters.fenced, 1);
+        assert!(counters.saturated);
     }
 }

@@ -151,6 +151,14 @@ service. Unknown outcome, store error, weak acknowledgement, or malformed receip
 fences the owner. No mutable service access is exposed while fenced. This closes
 the semantic pre-reply gate independently of any store implementation.
 
+Authenticated durable Host owners additionally expose passive publication
+observations. They distinguish durable commits, already-committed results,
+checkpoint suppression, known refusal, uncertainty, weak or invalid receipts,
+and calls after fencing with saturating content-free counters. Daemon
+composition preserves the transport and durability groups after a fence but
+omits the no-longer-trustworthy Host/Service projection. These process-local
+facts are excluded from checkpoints and cannot affect a result.
+
 `agora-storage-directory` is the one qualified physical composition. It owns no
 Agora semantics: it implements the Keystone store port for one key using a
 private directory, exclusive process lock, checksummed canonical record, and

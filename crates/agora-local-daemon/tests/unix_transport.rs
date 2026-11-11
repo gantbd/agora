@@ -725,7 +725,11 @@ fn durable_daemon_reopens_conversation_state_through_the_same_transport_profile(
     drop(stream);
     let (result, daemon) = server.join().unwrap();
     result.unwrap();
-    assert!(daemon.observation().is_some());
+    let observation = daemon.observation();
+    assert!(observation.runtime.is_some());
+    assert_eq!(observation.durability.offers, 3);
+    assert_eq!(observation.durability.committed, 3);
+    assert!(!observation.fidelity_lost);
     assert!(
         daemon
             .host()
@@ -900,7 +904,11 @@ fn durable_collaboration_recovers_from_exact_residue_with_transients_empty() {
     drop(stream);
     let (result, daemon) = server.join().unwrap();
     result.unwrap();
-    assert!(daemon.observation().is_some());
+    let observation = daemon.observation();
+    assert!(observation.runtime.is_some());
+    assert_eq!(observation.durability.offers, 5);
+    assert_eq!(observation.durability.committed, 5);
+    assert!(!observation.fidelity_lost);
     drop(daemon);
     assert!(!path.exists());
 

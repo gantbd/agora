@@ -646,6 +646,15 @@ part of semantic recovery. These counters are operational facts, not proof of
 delivery, attention, authorization success beyond the named boundary, or an
 SLO.
 
+Durable Host selections add a separate publication group containing only owner
+state, numeric store revision, and saturating counts for offers, commits,
+already-committed publication, checkpoint failure, known store refusal,
+uncertain outcome, weak acknowledgement, invalid receipt, and calls suppressed
+after fencing. If durability fences, transport and durability facts remain
+observable while the Host/Service projection becomes absent. The aggregate
+fidelity bit includes durability saturation. Observation never reads the store,
+retries an operation, or affects readiness, authority, or semantic results.
+
 While idle, the sequential daemon owner may irreversibly enter draining state.
 That transition clears readiness and every later `serve_next` returns a typed
 draining refusal before socket accept or any authentication, authority, host, or
@@ -658,7 +667,7 @@ This profile is deliberately sequential: one caller of `serve_next` accepts and
 serves one connection at a time. It does not authenticate an OS peer or
 credential, protect against a same-UID process controlling the private parent,
 encrypt content, generate the incarnation, automatically repair residue, preserve request
-receipts across disconnect, recover a crashed endpoint, implement concurrent
+receipts across disconnect, automatically recover a crashed endpoint, implement concurrent
 admission, in-flight draining, signals, socket activation, installation, or
 atomically recover Aegis and Agora. Those are separate composition and
 operational qualifications.

@@ -409,6 +409,16 @@
   epoch. The path must not invent durable state, restore a transport session,
   replay a disconnected request, automate restart, or claim atomic recovery
   with Aegis.
+- **R66 — Passive durability publication observation:** authenticated durable
+  Host owners must expose a content-free, point-in-time observation separating
+  offers, durable commits, already-committed publication, checkpoint
+  suppression, known store refusal, outcome uncertainty, weak acknowledgement,
+  invalid receipt, and already-fenced suppression. Counters must saturate
+  without wraparound and report sticky fidelity loss. The durable local daemon
+  must retain transport and durability observations after fencing while
+  withholding the untrustworthy Host/Service projection. Reading observations
+  must perform no store, authority, retry, semantic, or transport effect and
+  must disclose no key, checkpoint, participant, room, frame, or credential.
 
 ## Explicitly open
 

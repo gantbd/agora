@@ -555,6 +555,10 @@ fn authenticated_host_commits_session_service_and_reply_as_one_recoverable_unit(
         DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::OutcomeUnknown)
     );
     assert_eq!(durable.state(), DurableOwnerStateV2::Fenced);
+    let observation = durable.observation();
+    assert_eq!(observation.offers, 2);
+    assert_eq!(observation.committed, 1);
+    assert_eq!(observation.outcome_unknown, 1);
     drop(durable.into_store());
 
     let mut recovered = DurableHostV2::recover(store.clone(), host_config(), Verifier).unwrap();
@@ -576,6 +580,15 @@ fn authenticated_host_commits_session_service_and_reply_as_one_recoverable_unit(
         WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 2 }))
     );
     assert_eq!(store.commit_calls(), 3, "exact same-time replay is inert");
+    let observation = recovered.observation();
+    assert_eq!(observation.state, DurableOwnerStateV2::Active);
+    assert_eq!(observation.store_revision, 2);
+    assert_eq!(observation.offers, 1);
+    assert_eq!(observation.previously_committed, 1);
+    assert_eq!(observation.committed, 0);
+    let diagnostic = format!("{observation:?}");
+    assert!(!diagnostic.contains("Alice"));
+    assert!(!diagnostic.contains("room"));
 }
 
 #[test]
@@ -718,6 +731,19 @@ fn durable_transient_refusal_restores_host_and_never_leaks_a_signal() {
     );
     assert_eq!(durable.state(), DurableOwnerStateV2::Fenced);
     assert!(durable.host().is_none());
+    let observation = durable.observation();
+    assert_eq!(observation.state, DurableOwnerStateV2::Fenced);
+    assert_eq!(observation.store_revision, 4);
+    assert_eq!(observation.offers, 6);
+    assert_eq!(observation.committed, 4);
+    assert_eq!(observation.previously_committed, 0);
+    assert_eq!(observation.store_refused, 1);
+    assert_eq!(observation.outcome_unknown, 1);
+    assert_eq!(observation.checkpoint_suppressed, 0);
+    assert_eq!(observation.not_durable, 0);
+    assert_eq!(observation.invalid_receipt, 0);
+    assert_eq!(observation.fenced, 0);
+    assert!(!observation.saturated);
     let diagnostic = format!("{durable:?}");
     assert!(diagnostic.contains("presence_signal_count: 0"));
     assert!(!diagnostic.contains("alice"));

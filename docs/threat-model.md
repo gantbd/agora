@@ -212,6 +212,11 @@ has been selected and the trusted connection
 authenticator supplies its Aegis context and Host V2 authorizes it, and every
 later frame is reauthorized. Shared connect refusal avoids participant
 enumeration, while content-free health avoids adding conversation telemetry.
+Durability observations expose only owner state, numeric revision, bounded
+outcome-class counts, and fidelity loss; they contain no store key, checkpoint,
+frame, identity, room, credential, or detailed refusal. After a fence the
+Host/Service projection is withheld, and reading the remaining facts cannot
+trigger a retry or store access.
 
 This does not defend a same-UID attacker controlling the private socket parent,
 authenticate Unix peer credentials, hide socket metadata or

@@ -147,6 +147,9 @@ not ready for a network service or crates.io release.
 - `agora-durable` pre-reply compare-and-exchange gating with durable-strength
   receipt validation, known-refusal rollback, replay-without-store, and
   indeterminate-outcome fencing;
+- passive saturating durable-publication observations separating commit,
+  already-committed, checkpoint, refusal, uncertainty, receipt, and fenced
+  outcomes while withholding fenced Host/Service state;
 - V2 client uncertainty fencing with exact-request replay, not-sent versus
   outcome-unknown distinction, different-command suppression, and explicit
   abandonment evidence;

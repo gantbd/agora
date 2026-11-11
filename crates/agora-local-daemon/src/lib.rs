@@ -11,7 +11,8 @@ mod lifetime;
 
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
 use agora_durable::{
-    DurableHostPublicationV2, DurableHostSuppressionV2, DurableHostV2, DurableTransientHostV1,
+    DurableHostObservationV2, DurableHostPublicationV2, DurableHostSuppressionV2, DurableHostV2,
+    DurableTransientHostV1,
 };
 use agora_host::transient::TransientHostV1;
 use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
@@ -92,6 +93,15 @@ pub struct DaemonObservationV1 {
     pub host: HostUsage,
     pub service: ServiceObservationV1,
     /// Sticky loss of counter fidelity in any represented layer.
+    pub fidelity_lost: bool,
+}
+
+/// Passive durable-daemon facts without exposing an untrustworthy fenced Host.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DurableDaemonObservationV1 {
+    pub transport: DaemonHealthV1,
+    pub runtime: Option<DaemonObservationV1>,
+    pub durability: DurableHostObservationV2,
     pub fidelity_lost: bool,
 }
 
@@ -920,10 +930,12 @@ where
     AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
     S: CheckpointStore,
 {
-    /// Returns no semantic observation once the durable owner is fenced and no
-    /// trustworthy live Host projection remains available.
-    pub fn observation(&self) -> Option<DaemonObservationV1> {
-        self.host.host().map(|host| observation(self.health, host))
+    pub fn observation(&self) -> DurableDaemonObservationV1 {
+        durable_observation(
+            self.health,
+            self.host.host().map(|host| observation(self.health, host)),
+            self.host.observation(),
+        )
     }
 
     pub const fn host(&self) -> &DurableHostV2<AegisVerifierV1<P>, S> {
@@ -999,10 +1011,14 @@ where
         )
     }
 
-    pub fn observation(&self) -> Option<DaemonObservationV1> {
-        self.host
-            .host()
-            .map(|host| observation(self.health, host.host()))
+    pub fn observation(&self) -> DurableDaemonObservationV1 {
+        durable_observation(
+            self.health,
+            self.host
+                .host()
+                .map(|host| observation(self.health, host.host())),
+            self.host.observation(),
+        )
     }
 
     pub const fn host(&self) -> &DurableTransientHostV1<AegisVerifierV1<P>, S> {
@@ -1032,6 +1048,21 @@ fn observation<V: PrincipalVerifier>(
         host,
         service,
         fidelity_lost: observation_fidelity_lost(transport, host, service),
+    }
+}
+
+fn durable_observation(
+    transport: DaemonHealthV1,
+    runtime: Option<DaemonObservationV1>,
+    durability: DurableHostObservationV2,
+) -> DurableDaemonObservationV1 {
+    DurableDaemonObservationV1 {
+        transport,
+        runtime,
+        durability,
+        fidelity_lost: transport.saturated
+            || runtime.is_some_and(|observation| observation.fidelity_lost)
+            || durability.saturated,
     }
 }
 
@@ -1126,8 +1157,10 @@ fn increment(value: &mut u64, saturated: &mut bool) {
 mod tests {
     use super::{
         DaemonHealthV1, HostUsage, OuterFrameErrorV1, ServiceObservationV1,
-        decode_outer_frame_prefix_v1, encode_outer_frame_v1, increment, observation_fidelity_lost,
+        decode_outer_frame_prefix_v1, durable_observation, encode_outer_frame_v1, increment,
+        observation_fidelity_lost,
     };
+    use agora_durable::{DurableHostObservationV2, DurableOwnerStateV2};
 
     #[test]
     fn counter_saturation_is_sticky_and_value_preserving() {
@@ -1172,6 +1205,28 @@ mod tests {
                 ..ServiceObservationV1::default()
             }
         ));
+    }
+
+    #[test]
+    fn fenced_durability_remains_observable_without_runtime_projection() {
+        let durability = DurableHostObservationV2 {
+            state: DurableOwnerStateV2::Fenced,
+            store_revision: 4,
+            offers: 6,
+            committed: 4,
+            previously_committed: 0,
+            checkpoint_suppressed: 0,
+            store_refused: 1,
+            outcome_unknown: 1,
+            not_durable: 0,
+            invalid_receipt: 0,
+            fenced: 0,
+            saturated: true,
+        };
+        let observation = durable_observation(DaemonHealthV1::default(), None, durability);
+        assert!(observation.runtime.is_none());
+        assert_eq!(observation.durability, durability);
+        assert!(observation.fidelity_lost);
     }
 
     #[test]

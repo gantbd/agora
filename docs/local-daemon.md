@@ -160,7 +160,10 @@ Dependency and effect gates keep the adapter limited to the Aegis verifier,
 Host V2, Wire V2, and Unix filesystem/socket effects. The successful path
 additionally verifies exact layer-separated observation, repeated-read
 passivity, content-safe diagnostics, and sticky counter saturation without
-wraparound. A separate real-endpoint scenario verifies the idle drain
+wraparound. Durable selections add a separate passive publication group for
+commit, already-committed, checkpoint, store-refusal, uncertainty, weak/invalid
+receipt, and fenced outcomes. After a durability fence, transport and durability
+facts remain available but the Host/Service projection is absent. A separate real-endpoint scenario verifies the idle drain
 transition, zero downstream work after its fence, endpoint retention, and
 pinned teardown. The durable scenario composes `DurableHostV2` with the physical private
 directory store, commits a room through the socket, tears down both owners,

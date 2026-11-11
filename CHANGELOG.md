@@ -25,6 +25,9 @@ follow Semantic Versioning once a public release contract is selected.
   supplies the recovered owner, exact prior incarnation, and distinct next
   incarnation; the daemon rotates only validated residue and preserves
   collaboration handshake profile 2 without resuming an old session.
+- Added passive saturating durability-publication observations for both
+  authenticated durable Host owners and daemon composition, including truthful
+  fenced-state reporting without exposing the Host/Service projection.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque
