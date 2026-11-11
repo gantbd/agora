@@ -525,6 +525,16 @@
   owner. Transient configuration must validate before this commit and transient
   signals restart empty. Daemon-incarnation rotation, credential reissue, and
   cross-engine restore coordination remain separate composition obligations.
+- **R77 — Local operator-restore startup composition:** the qualified local
+  profile must compose exact physical restore, R76 semantic sanitization,
+  bounded generation of an incarnation distinct from the endpoint's recorded
+  prior value, and R61/R65 locked endpoint-residue rotation in that order. A
+  fresh collaboration handshake and replay epoch must carry the generated
+  incarnation, the restored client frontier must not rewind, retained
+  conversation state must remain readable, and the old session must remain
+  unavailable without authority I/O. This is an explicit ordered operator
+  procedure, not an atomic store/endpoint transaction, automatic restart,
+  credential renewal, or coordinated Aegis recovery.
 
 ## Explicitly open
 

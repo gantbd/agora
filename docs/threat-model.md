@@ -200,6 +200,12 @@ that sanitized checkpoint before activation. A crash immediately afterward
 reopens the sanitized state. This does not authenticate the operator's choice
 of recovery mode, rotate endpoint incarnation, renew credentials, or coordinate
 restores with Aegis or another engine.
+The qualified local composition then generates an incarnation distinct from the
+exact prior endpoint record and performs locked stale-endpoint rotation only
+after Host sanitization commits. Its fresh handshake cannot revive the retired
+session, but a failure between the store and endpoint steps can leave one step
+complete without the other. Operators must inspect and retry from truthful
+state; no cross-resource rollback or atomicity is claimed.
 
 Host persistence binds the verified subject, claimed participant, opaque host
 session, service client and monotone verification time in the same record as all

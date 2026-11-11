@@ -6,21 +6,23 @@ use aegis_protocol::{
     ReplyV1, SessionHandleV1,
 };
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
-use agora_durable::{DurableHostConfigV2, DurableHostV2, DurableTransientHostV1};
+use agora_durable::{
+    DurableHostConfigV2, DurableHostPublicationV2, DurableHostV2, DurableTransientHostV1,
+};
 use agora_engine::{CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind};
 use agora_host::transient::TransientHostV1;
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
-use agora_host::{HostLimits, HostTimeV1, VerifiedSubjectV1};
+use agora_host::{HostLimits, HostRefusal, HostTimeV1, VerifiedSubjectV1};
 use agora_local_daemon::{
     AuthenticatorV1, COLLABORATION_SERVER_HELLO_BYTES_V1, CollaborationServerHelloV1,
     DaemonCleanupV1, DaemonErrorV1, DaemonLifecycleV1, DaemonLimitsV1, DaemonV1, HostClockV1,
     LOCAL_SESSION_HELLO_BYTES_V1, LocalReplayEpochV1, LocalRouteV1, OsServerIncarnationEntropyV1,
-    SERVER_HELLO_BYTES_V1, ServerHelloV1, ServerIncarnationV1,
+    SERVER_HELLO_BYTES_V1, ServerHelloV1, ServerIncarnationEntropyV1, ServerIncarnationV1,
     decode_collaboration_server_hello_v1, decode_local_routed_frame_v1,
     decode_local_session_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
     encode_collaboration_client_hello_v1, encode_local_routed_frame_v1,
-    generate_server_incarnation_v1,
+    generate_distinct_server_incarnation_v1, generate_server_incarnation_v1,
 };
 use agora_protocol::transient::{
     PresenceStateV1, PresenceViewStateV1, TransientCommandV1, TransientOutcomeV1, TransientReplyV1,
@@ -34,12 +36,15 @@ use agora_service::transient::TransientLimitsV1;
 use agora_service::typing::TypingLimitsV1;
 use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
-use agora_storage_directory::{DirectoryCheckpointStoreV1, DirectoryLimitsV1};
+use agora_storage_directory::{
+    DirectoryCheckpointStoreV1, DirectoryLimitsV1, export_directory_backup_v1,
+    restore_directory_backup_v1,
+};
 use agora_wire::WireLimits;
 use agora_wire::transient::{decode_transient_reply_v1, encode_transient_request_v1};
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -127,6 +132,15 @@ impl AuthenticatorV1 for RejectingAuthentication {
 }
 
 struct Clock(u64);
+
+struct FixedEntropy([u8; 16]);
+
+impl ServerIncarnationEntropyV1 for FixedEntropy {
+    fn fill(&mut self, output: &mut [u8; 16]) -> io::Result<()> {
+        output.copy_from_slice(&self.0);
+        Ok(())
+    }
+}
 
 impl HostClockV1 for Clock {
     fn now(&mut self) -> HostTimeV1 {
@@ -1101,6 +1115,171 @@ fn durable_collaboration_recovers_from_exact_residue_with_transients_empty() {
     result.unwrap();
     drop(daemon);
     fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn operator_restore_sanitizes_before_generated_incarnation_endpoint_rotation() {
+    let path = socket_path();
+    let parent = path.parent().unwrap();
+    let lock_path = lifetime_path(&path);
+    let source_path = parent.join("source-checkpoint");
+    let backup_path = parent.join("backup.bin");
+    let restored_path = parent.join("restored-checkpoint");
+    let store =
+        DirectoryCheckpointStoreV1::create_new(&source_path, DirectoryLimitsV1::default()).unwrap();
+    let transient = TransientHostV1::new_with_typing(
+        host(Port::default()),
+        TransientLimitsV1::default(),
+        TypingLimitsV1::default(),
+        10,
+    )
+    .unwrap();
+    let mut durable =
+        DurableTransientHostV1::initialize(transient, store, durable_config()).unwrap();
+    let context = AegisContextV1::new(
+        "alice",
+        VerifiedSubjectV1::from_verifier([7; 16]),
+        SessionHandleV1(3),
+        aegis_protocol::GrantHandleV1(4),
+    );
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame("alice"), &context, HostTimeV1(1))
+    else {
+        panic!("durable source connection expected");
+    };
+    let old_session = opened.session().unwrap();
+    let WireReplyV2::Connected(old_client) =
+        decode_reply_v2(opened.frame(), wire_limits()).unwrap()
+    else {
+        panic!("connected source frame expected");
+    };
+    let create = encode_request_v2(
+        &WireRequestV2::Execute {
+            client: old_client,
+            request: RequestV2 {
+                request_id: RequestIdV2(0),
+                command: ProtocolCommand::CreateRoom {
+                    room_id: "restored-collaboration".to_owned(),
+                    name: "Restored Collaboration".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 2,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    assert!(matches!(
+        durable.handle(old_session, &create, &context, HostTimeV1(2)),
+        DurableHostPublicationV2::Published { value: Ok(_), .. }
+    ));
+    drop(durable.into_store());
+
+    export_directory_backup_v1(&source_path, &backup_path, DirectoryLimitsV1::default()).unwrap();
+    let restored_store =
+        restore_directory_backup_v1(&backup_path, &restored_path, DirectoryLimitsV1::default())
+            .unwrap();
+
+    let stale_listener = UnixListener::bind(&path).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    drop(stale_listener);
+    fs::write(
+        &lock_path,
+        fixture(include_str!("fixtures/lifetime-record-v1.hex")),
+    )
+    .unwrap();
+    fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let restored_port = Port::default();
+    let restored_calls = restored_port.calls.clone();
+    let mut restored = DurableTransientHostV1::recover_after_restore(
+        restored_store,
+        durable_config(),
+        AegisVerifierV1::new(restored_port, [0x55; 16]),
+        TransientLimitsV1::default(),
+        TypingLimitsV1::default(),
+        10,
+    )
+    .unwrap();
+    assert_eq!(restored.observation().store_revision, 3);
+    assert_eq!(
+        restored
+            .host()
+            .unwrap()
+            .host()
+            .service()
+            .active_client_count(),
+        0
+    );
+    assert_eq!(
+        restored.handle(old_session, &create, &context, HostTimeV1(3)),
+        DurableHostPublicationV2::Published {
+            value: Err(HostRefusal::Unavailable),
+            evidence: agora_durable::DurableEvidenceV2::PreviouslyCommitted {
+                revision: keystone_storage::Revision(3),
+            },
+        }
+    );
+    assert!(
+        restored_calls.lock().unwrap().is_empty(),
+        "invalidated restored session must not reach authority"
+    );
+
+    let mut entropy = FixedEntropy([0xb6; 16]);
+    let generated = generate_distinct_server_incarnation_v1(&mut entropy, incarnation()).unwrap();
+    let daemon = DaemonV1::recover_stale_durable_collaboration(
+        &path,
+        restored,
+        Authentication,
+        Clock(100),
+        incarnation(),
+        generated,
+        daemon_limits(),
+    )
+    .unwrap();
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let result = daemon.serve_next();
+        (result, daemon)
+    });
+    let mut stream = UnixStream::connect(&path).unwrap();
+    assert_eq!(
+        collaboration_handshake(&mut stream).server_incarnation(),
+        generated
+    );
+    let (new_client, replay_epoch) = collaboration_connect(&mut stream);
+    assert_eq!(new_client.0, 1, "restored client frontier must not rewind");
+    assert_eq!(&replay_epoch.into_bytes()[..16], &generated.as_bytes());
+    let rooms = encode_request_v2(
+        &WireRequestV2::Execute {
+            client: new_client,
+            request: RequestV2 {
+                request_id: RequestIdV2(0),
+                command: ProtocolCommand::Rooms {
+                    cursor: None,
+                    limit: 4,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_routed(&mut stream, LocalRouteV1::Conversation, &rooms);
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Rooms(page))) = decode_reply_v2(
+        &read_routed(&mut stream, LocalRouteV1::Conversation),
+        wire_limits(),
+    )
+    .unwrap() else {
+        panic!("restored room page expected");
+    };
+    assert_eq!(page.rooms.len(), 1);
+    assert_eq!(page.rooms[0].room_id, "restored-collaboration");
+    drop(stream);
+    let (result, daemon) = server.join().unwrap();
+    result.unwrap();
+    drop(daemon);
+    fs::remove_dir_all(parent).unwrap();
 }
 
 #[test]

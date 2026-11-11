@@ -52,6 +52,14 @@ recovered from its checkpoint store, applies that same exact residue rotation,
 and binds collaboration handshake profile 2. The daemon neither selects the
 store nor restores an old transport session.
 
+The qualified operator-restore procedure composes those existing boundaries in
+one explicit order: exact directory restore, durable Host session sanitization,
+bounded distinct-incarnation generation, then exact stale-endpoint rotation.
+The resulting handshake and replay epoch carry the generated incarnation, while
+a fresh connection advances the restored client frontier and reads retained
+conversation state. Store recovery and endpoint rotation remain separate
+failure domains; this procedure is not atomic or automatic.
+
 ## Connection state machine
 
 1. Revalidate the parent, lifetime record, and socket, then accept one connection.

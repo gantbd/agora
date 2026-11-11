@@ -501,6 +501,14 @@ variant proves invalid configuration performs no store offer. A real directory
 composition exports, restores, commits the sanitized checkpoint, reopens it,
 proves the old session remains inert after another process restart, and admits a
 fresh higher-identity connection.
+The local operator-startup composition adds an exact backup/restore, retained
+pre-restore session, durable transient Host sanitization, deterministic bounded
+distinct-incarnation generation, exact unlocked endpoint-residue rotation, and
+a real collaboration handshake. It proves the old session causes no authority
+I/O, the new client identity advances, the replay epoch embeds the generated
+incarnation, and the retained room remains readable. It does not inject failure
+between these independently recoverable steps or establish cross-resource
+atomicity.
 
 Room change-feed scenarios bind a position to an exact completed snapshot,
 filter the independent recent-change journal by room, replay the same exclusive

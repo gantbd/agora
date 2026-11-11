@@ -27,6 +27,9 @@ follow Semantic Versioning once a public release contract is selected.
   commits the sanitized checkpoint before returning an active owner. Revision
   `25c12f3c6f8526ba98dd490c7835b8c1cca9c05a` passed the integrated release
   profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
+- Composed physical restore and durable session sanitization with bounded
+  distinct-incarnation generation, exact endpoint-residue rotation, and a fresh
+  collaboration handshake as an explicit non-atomic local operator procedure.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,

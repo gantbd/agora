@@ -11,9 +11,9 @@
    retention and rollback policy, then qualify upgrade/rollback and an
    additional physical store only when a deployment profile requires broader
    claims.
-4. Compose the qualified operator-restore Host invalidation with fresh daemon
-   incarnation generation and endpoint-residue rotation, then define any
-   cross-engine restore evidence without implying atomic Aegis/Agora recovery.
+4. Add inter-step interruption classification to the qualified ordered local
+   operator-restore procedure, then define any cross-engine restore evidence
+   without implying atomic Aegis/Agora recovery.
 
 Agent harness selection, prompting, retries, and execution remain out of scope.
 

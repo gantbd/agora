@@ -555,6 +555,15 @@ The transient composition additionally validates its empty-runtime limits
 before the CAS. Ordinary `recover` retains sessions and exact replay semantics;
 callers must select the recovery mode from truthful operator context.
 
+For the qualified local operator procedure, physical restore completes first,
+the durable transient Host commits that semantic sanitization, bounded entropy
+generation selects a nonzero incarnation distinct from the exact prior endpoint
+record, and stale-endpoint recovery rotates the locked lifetime record/socket
+before binding collaboration profile 2. The next handshake and replay epoch use
+that generated incarnation; a fresh authenticated connection continues the
+preserved client frontier and can read retained conversation state. These are
+ordered independently recoverable boundaries, not one atomic transaction.
+
 “Durable” here means the specified operating-system synchronization mechanism
 completed on the qualified local profile. It does not prove storage-controller
 power-loss behavior, network filesystem semantics, disk integrity, encryption,

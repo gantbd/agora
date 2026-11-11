@@ -175,6 +175,9 @@ not ready for a network service or crates.io release.
 - explicit durable operator-restore Host recovery that commits invalidation of
   every recovered session and private Service client/cursor/receipt before
   activation while preserving conversation state and monotone identities;
+- ordered local operator-restore startup composition through exact physical
+  restore, durable semantic sanitization, bounded distinct-incarnation
+  generation, locked endpoint rotation, and a fresh collaboration handshake;
 - snapshot-aligned bounded room pull changes with stable event identity,
   exclusive continuation, explicit retention/leave-rejoin gaps, durable service
   cursors, closed Wire V2 values, and a frozen representative frame;
