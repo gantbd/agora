@@ -106,7 +106,7 @@ not ready for a network service or crates.io release.
   engine/service/host recovery, and the production outer-frame prefix codec,
   with immutable canonical seeds and exact re-encoding oracles;
 - commit-pinned integrated local qualification of revision
-  `65230442b1bc71e1ab6342677446ad10071cf948` on Darwin 25.6.0 arm64 / macOS
+  `c4aa492e094a896390adb26b183dadca0039b45b` on Darwin 25.6.0 arm64 / macOS
   26.6.2 across the ordinary gate, all release-mode targets, 10,000 deterministic
   soak cycles, and 1,000,000 fixed-seed cases on each of the three fuzz targets,
   with locked fuzz-target compilation and unchanged tracked bytes afterward;
@@ -147,6 +147,14 @@ not ready for a network service or crates.io release.
   status, four-feed attribution, exact replay/recovery, and profile-19/21/21
   checkpoints and exact-revision integrated qualification at
   `c656e25983720b0008e689fb788f2571dcb53d59`;
+- effect-free identity-only derived-search contract plus a bounded volatile
+  reference adapter with revision-monotone projection replacement, exact
+  source-revision/index-generation evidence, query/generation-bound one-shot
+  cursors, explicit available/incomplete/stale/unavailable states, content-safe
+  diagnostics, closed dependency/SBOM/package inventories, and exact-revision
+  integrated qualification at
+  `c4aa492e094a896390adb26b183dadca0039b45b`; participant-bound service/wire
+  composition and durable production indexing remain open;
 - independent delivery and pull retention: acknowledgment drains only the
   backpressured outbox, journal eviction carries its own exact gap, and both
   suffixes recover canonically with live service cursors;
@@ -243,7 +251,9 @@ not ready for a network service or crates.io release.
 
 - no remote origin provenance or remote CI; the qualified local source candidate
   is content-addressed, but its selected Aegis and Keystone inputs were unclean
-  and are not proven to correspond to remotely available commits;
+  and are not proven to correspond to remotely available commits; that artifact
+  also predates the current nineteen-component search-expanded graph, which has
+  not received a new source-candidate/archive qualification;
 - SDK facades are not approved or configured for registry publication;
 - no qualified credential/Unix-peer authenticator, network transport, or
   connector conformance package; Aegis context provenance remains trusted

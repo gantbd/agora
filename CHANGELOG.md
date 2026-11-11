@@ -295,9 +295,18 @@ follow Semantic Versioning once a public release contract is selected.
   kind-neutral authority, an eight-tag per-topic ceiling, explicit add/remove,
   canonical participant-bound status, all-feed attribution, exact
   replay/recovery, and no hierarchy, routing, workflow, or execution meaning.
+- Added an effect-free derived-search port and bounded volatile reference
+  adapter. Searches return identity and sequence only, distinguish exact source
+  revision/index generation plus available, incomplete, stale, and unavailable
+  states, bind one-shot cursors to the exact query and generation, and carry no
+  participant authority or history claim.
 
 ### Fixed
 
+- Qualified the derived-search port/reference implementation at revision
+  `c4aa492e094a896390adb26b183dadca0039b45b` across the ordinary gate, all
+  release-mode targets, 10,000 deterministic soak cycles, and 1,000,000
+  fixed-seed cases on each of the three fuzz targets.
 - Qualified bounded topic tags at revision
   `c656e25983720b0008e689fb788f2571dcb53d59` across the ordinary gate, all
   release-mode targets, 10,000 deterministic soak cycles, and 1,000,000
