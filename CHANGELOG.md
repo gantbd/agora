@@ -11,6 +11,9 @@ follow Semantic Versioning once a public release contract is selected.
 - Added pinned, opt-in cargo-fuzz targets for every public wire decoder and the
   engine/service/host recovery stack, with immutable canonical seeds, exact
   re-encoding oracles, a stable contract gate, and bounded campaign runner.
+- Added an exhaustive four-step core lifecycle model spanning 4,096 schedules
+  for both human and agent actors across speech, stale revisions, membership,
+  moderation, retention, and dual event-copy invariants.
 - Separated the lossless acknowledged delivery outbox from a bounded recent
   change journal, with independent eviction evidence, participant-bound pull
   gaps, canonical profile-14/16/16 recovery, a closed capability, and frozen

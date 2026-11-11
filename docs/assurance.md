@@ -83,6 +83,16 @@ membership authority, stale fencing, retired-client refusal, and reconnect
 namespace reset must match the explicit reference state after every step. This
 is serialized bounded exploration, not thread-parallel linearizability proof.
 
+A separate core lifecycle model enumerates all 4,096 four-step schedules over
+owner/member speaking, deliberately stale member speaking, leave, rejoin, kick,
+ban, and unban, then repeats each schedule with the member represented as human
+and agent. After every command it compares exact normalized acceptance/refusal,
+membership, ban state, revision, event count/order, message sequence, and the
+two-message retained suffix against an independent model. Refusals additionally
+preserve the complete room view plus both retained event copies. This covers
+only the represented two-participant open-room vocabulary and schedule depth;
+it is not an unbounded state or concurrency proof.
+
 `make soak` runs an opt-in deterministic 5,000-cycle Service V2 campaign. Every
 cycle performs identified speaking plus exact replay, bounded history paging,
 leave or owner kick, open rejoin, and retention checks; actor clients reconnect

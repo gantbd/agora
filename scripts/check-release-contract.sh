@@ -57,10 +57,8 @@ while IFS= read -r manifest; do
     echo "$manifest names an allowed publication target" >&2
     exit 1
   fi
-done < <(find . -name Cargo.toml -type f \
-  -not -path './target/*' \
-  -not -path './.git/*' \
-  -print | LC_ALL=C sort)
+done < <(find . \( -type d \( -name target -o -name .git \) \) -prune \
+  -o -name Cargo.toml -type f -print | LC_ALL=C sort)
 
 if ! rg -q 'not ready for a network service' docs/release-readiness.md \
   || ! rg -q 'or crates\.io release' docs/release-readiness.md; then

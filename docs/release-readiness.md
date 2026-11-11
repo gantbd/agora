@@ -38,6 +38,9 @@ not ready for a network service or crates.io release.
 - exhaustive 216-schedule Service V2 model covering human/agent symmetry,
   current and stale mutations, leave/join authority, retired clients, and
   reconnect namespace reset;
+- exhaustive 4,096-schedule, four-step core lifecycle model repeated for human
+  and agent actors across speaking, stale revisions, leave/rejoin,
+  kick/ban/unban, atomic refusal, ordering, and message retention;
 - opt-in deterministic 5,000-cycle Service V2 soak covering exact replay,
   bounded paging and retention, leave/kick/rejoin lifecycle, reconnect, and
   repeated canonical checkpoint recovery;

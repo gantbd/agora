@@ -42,10 +42,9 @@ while IFS= read -r manifest; do
     exit 1
   fi
   printf 'package|%s|%s|%s\n' "$manifest" "$package_name" "$package_version"
-done < <(find . -name Cargo.toml -type f \
-  -not -path './target/*' \
-  -not -path './.git/*' \
-  -print | sed 's#^./##' | LC_ALL=C sort) > "$actual_packages"
+done < <(find . \( -type d \( -name target -o -name .git \) \) -prune \
+  -o -name Cargo.toml -type f -print \
+  | sed 's#^./##' | LC_ALL=C sort) > "$actual_packages"
 
 while IFS= read -r fixture; do
   compact=$(tr -d '[:space:]' < "$fixture")
@@ -62,10 +61,9 @@ while IFS= read -r fixture; do
     exit 1
   fi
   printf 'fixture|%s|%s|%s\n' "$fixture" "$(( ${#compact} / 2 ))" "$digest"
-done < <(find . -path '*/tests/fixtures/*.hex' -type f \
-  -not -path './target/*' \
-  -not -path './.git/*' \
-  -print | sed 's#^./##' | LC_ALL=C sort) > "$actual_fixtures"
+done < <(find . \( -type d \( -name target -o -name .git \) \) -prune \
+  -o -path '*/tests/fixtures/*.hex' -type f -print \
+  | sed 's#^./##' | LC_ALL=C sort) > "$actual_fixtures"
 
 if ! diff -u "$expected_packages" "$actual_packages"; then
   echo 'Cargo package inventory drifted; review and update the compatibility baseline' >&2

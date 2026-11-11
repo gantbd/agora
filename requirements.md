@@ -269,6 +269,13 @@
   gate must verify the immutable corpus and toolchain contract without claiming
   that an opt-in campaign ran; every executed campaign must report incomplete
   coverage honestly and preserve failures as focused ordinary regressions.
+- **R51 — Finite lifecycle state-machine evidence:** the core room lifecycle
+  must be checked against an independent bounded model across owner/member
+  speaking, deliberately stale speaking, leave, rejoin, kick, ban, and unban.
+  Every schedule must preserve exact refusal precedence, atomic refusal,
+  membership and ban state, revision/event continuity, message sequence and
+  retention, delivery/change copies, and human/agent symmetry. The evidence
+  must state its finite schedule depth and must not claim unbounded proof.
 
 ## Explicitly open
 
