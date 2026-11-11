@@ -410,6 +410,16 @@ the surviving `.pending` residue; reopening either post-rename state recovers
 the exact candidate revision. This closes the adapter's process-boundary state
 machine, not controller-cache or hardware power-loss behavior.
 
+The same real-filesystem suite qualifies a passive physical-owner observation.
+Reopen begins with the recovered revision and zero process-local counters;
+validated loads, compare-and-exchange offers, commits, known refusals,
+indeterminate publications, and integrity fences advance at their exact
+boundaries. Repeated reads are equal and perform no filesystem operation. A
+forced `u64::MAX` offer proves sticky saturation without wraparound, while
+Debug output excludes the directory path, key, checkpoint content, and record
+size. These facts reset on reopen and do not establish durable metrics or
+current resource integrity beyond the last operation.
+
 Client V2 scenarios distinguish definitely-not-sent from outcome-unknown,
 retain and resend the exact request identity only for an equal command, fence a
 different command without transport access, keep uncertainty through a later

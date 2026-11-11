@@ -485,6 +485,15 @@ three pre-rename states leave `.pending` residue and fail closed on reopen; the
 two post-rename states recover the complete candidate revision. The interrupted
 caller is always fenced and receives an indeterminate outcome.
 
+The live directory owner exposes a passive observation containing only Active
+or Fenced state, the last locally acknowledged revision, and saturating counts
+for validated logical loads, compare-and-exchange offers, durable commits,
+known refusals, indeterminate publications, and resource-integrity fences.
+Reading it consults only owner memory: it performs no filesystem or lock access,
+does not revalidate resources, and cannot retry or change an operation. It
+omits the path, key, checkpoint and record bytes, record length, identity
+stamps, and refusal detail. Counts reset when a new owner opens the directory.
+
 “Durable” here means the specified operating-system synchronization mechanism
 completed on the qualified local profile. It does not prove storage-controller
 power-loss behavior, network filesystem semantics, disk integrity, encryption,

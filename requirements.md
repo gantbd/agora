@@ -431,6 +431,16 @@
   reported only after the pinned socket and lifetime record are removed and the
   parent synchronization succeeds. This makes no concurrent drain, signal,
   service-manager, crash-shutdown, or process-exit cleanup claim.
+- **R68 — Passive physical-store observation:** the qualified private-directory
+  owner must expose a passive, content-free snapshot separating validated
+  logical loads, compare-and-exchange offers, durable commits, known refusals,
+  indeterminate publications, resource-integrity fences, current owner state,
+  and the last locally acknowledged revision. Counters must saturate without
+  wraparound. Observation must perform no filesystem, lock, validation, retry,
+  or mutation effect and must expose no path, key, checkpoint bytes, record
+  length, identity stamp, or detailed refusal. Facts reset on owner reopen and
+  are neither durable audit nor proof that filesystem resources remain intact
+  after the last operation.
 
 ## Explicitly open
 

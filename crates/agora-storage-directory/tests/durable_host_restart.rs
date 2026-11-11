@@ -192,7 +192,7 @@ fn authenticated_mutation_recovers_and_replays_across_physical_restart() {
     let reopened =
         DirectoryCheckpointStoreV1::open_existing(&store_path, DirectoryLimitsV1::default())
             .unwrap();
-    let offers_before = reopened.signals().offers;
+    let offers_before = reopened.observation().offers;
     let mut recovered = DurableHostV2::recover(reopened, config(), Verifier).unwrap();
     assert_eq!(
         recovered
@@ -224,7 +224,7 @@ fn authenticated_mutation_recovers_and_replays_across_physical_restart() {
     );
     let reopened = recovered.into_store();
     assert_eq!(
-        reopened.signals().offers,
+        reopened.observation().offers,
         offers_before,
         "exact replay must not offer another checkpoint"
     );

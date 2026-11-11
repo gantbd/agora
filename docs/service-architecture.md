@@ -163,9 +163,11 @@ facts are excluded from checkpoints and cannot affect a result.
 Agora semantics: it implements the Keystone store port for one key using a
 private directory, exclusive process lock, checksummed canonical record, and
 file-sync/atomic-rename/directory-sync commit. Its filesystem effects are
-isolated by the dependency gate. The mechanism is local Unix only and does not
-claim hardware power-loss, network-filesystem, backup/restore, encryption, or
-multi-host behavior.
+isolated by the dependency gate. Its passive owner-local observation separates
+loads, offers, commits, refusals, indeterminate publications, and integrity
+fences without exposing keys, paths, bytes, or record size. The mechanism is
+local Unix only and does not claim hardware power-loss, network-filesystem,
+backup/restore, encryption, or multi-host behavior.
 
 `ClientV2` mirrors that uncertainty boundary without assuming a transport. A
 port reports either definitely-not-sent or outcome-unknown. Unknown retains the

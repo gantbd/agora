@@ -245,6 +245,13 @@ outcome-unknown and must not be blindly retried on a new connection. Sequential
 service and finite request budgets are explicit availability limits, not
 denial-of-service immunity.
 
+The directory owner's public observation excludes filesystem paths, store keys,
+checkpoint and record bytes, record length, inode/device stamps, and detailed
+refusals. It exposes only owner state, last acknowledged revision, bounded
+outcome-class counts, and saturation. Reading it does not touch the filesystem
+or lock, so it cannot validate that trusted same-UID resources remain intact;
+operators must not treat it as a live integrity probe or durable audit trail.
+
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.
 The qualified local Moira receiver therefore exposes only a passive pending

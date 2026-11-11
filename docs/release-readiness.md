@@ -162,7 +162,8 @@ not ready for a network service or crates.io release.
 - exclusive private local Unix directory storage with a frozen checksummed
   record, process lock, pinned resource identities, synchronized atomic replace,
   fail-closed residue/corruption handling, all five publication interruption
-  points, and real authenticated-host restart;
+  points, real authenticated-host restart, and passive content-free store-owner
+  outcome observation;
 - snapshot-aligned bounded room pull changes with stable event identity,
   exclusive continuation, explicit retention/leave-rejoin gaps, durable service
   cursors, closed Wire V2 values, and a frozen representative frame;

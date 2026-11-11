@@ -69,17 +69,36 @@ fn io(error: std::io::Error) -> DirectoryErrorV1 {
     DirectoryErrorV1::Io(error.kind())
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct DirectorySignalsV1 {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DirectoryOwnerStateV1 {
+    Active,
+    Fenced,
+}
+
+/// Passive, content-free facts from the qualified physical store owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DirectoryObservationV1 {
+    pub state: DirectoryOwnerStateV1,
+    /// The last revision acknowledged by this owner, if one exists.
+    pub revision: Option<u64>,
     pub loads: u64,
     pub offers: u64,
     pub commits: u64,
     pub refusals: u64,
     pub indeterminate: u64,
-    pub errors: u64,
-    pub retained_bytes: usize,
-    pub fenced: bool,
+    pub resource_fences: u64,
     pub saturated: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct DirectoryCountersV1 {
+    loads: u64,
+    offers: u64,
+    commits: u64,
+    refusals: u64,
+    indeterminate: u64,
+    resource_fences: u64,
+    saturated: bool,
 }
 
 fn increment(value: u64) -> (u64, bool) {
@@ -124,7 +143,7 @@ pub struct DirectoryCheckpointStoreV1 {
     checkpoint: Option<Checkpoint>,
     limits: DirectoryLimitsV1,
     fenced: Cell<bool>,
-    signals: RefCell<DirectorySignalsV1>,
+    counters: RefCell<DirectoryCountersV1>,
     #[cfg(test)]
     crash_point: Cell<Option<TestCrashPoint>>,
 }
@@ -133,7 +152,7 @@ impl std::fmt::Debug for DirectoryCheckpointStoreV1 {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("DirectoryCheckpointStoreV1")
-            .field("signals", &self.signals())
+            .field("observation", &self.observation())
             .finish_non_exhaustive()
     }
 }
@@ -182,7 +201,7 @@ impl DirectoryCheckpointStoreV1 {
             checkpoint: None,
             limits,
             fenced: Cell::new(false),
-            signals: RefCell::new(DirectorySignalsV1::default()),
+            counters: RefCell::new(DirectoryCountersV1::default()),
             #[cfg(test)]
             crash_point: Cell::new(None),
         })
@@ -229,17 +248,32 @@ impl DirectoryCheckpointStoreV1 {
             checkpoint,
             limits,
             fenced: Cell::new(false),
-            signals: RefCell::new(DirectorySignalsV1 {
-                retained_bytes: head_stamp.map_or(0, |stamp| stamp.length as usize),
-                ..DirectorySignalsV1::default()
-            }),
+            counters: RefCell::new(DirectoryCountersV1::default()),
             #[cfg(test)]
             crash_point: Cell::new(None),
         })
     }
 
-    pub fn signals(&self) -> DirectorySignalsV1 {
-        *self.signals.borrow()
+    pub fn observation(&self) -> DirectoryObservationV1 {
+        let counters = *self.counters.borrow();
+        DirectoryObservationV1 {
+            state: if self.fenced.get() {
+                DirectoryOwnerStateV1::Fenced
+            } else {
+                DirectoryOwnerStateV1::Active
+            },
+            revision: self
+                .checkpoint
+                .as_ref()
+                .map(|checkpoint| checkpoint.revision.0),
+            loads: counters.loads,
+            offers: counters.offers,
+            commits: counters.commits,
+            refusals: counters.refusals,
+            indeterminate: counters.indeterminate,
+            resource_fences: counters.resource_fences,
+            saturated: counters.saturated,
+        }
     }
 
     fn check_resources(&self) -> Result<(), DirectoryErrorV1> {
@@ -286,29 +320,27 @@ impl DirectoryCheckpointStoreV1 {
 
     fn fence<T>(&self, error: DirectoryErrorV1) -> Result<T, DirectoryErrorV1> {
         self.fenced.set(true);
-        let mut signals = self.signals.borrow_mut();
-        signals.fenced = true;
-        let (errors, saturated) = increment(signals.errors);
-        signals.errors = errors;
-        signals.saturated |= saturated;
+        let mut counters = self.counters.borrow_mut();
+        let (resource_fences, saturated) = increment(counters.resource_fences);
+        counters.resource_fences = resource_fences;
+        counters.saturated |= saturated;
         Err(error)
     }
 
     fn indeterminate(&self) -> Result<CommitOutcome, DirectoryErrorV1> {
         self.fenced.set(true);
-        let mut signals = self.signals.borrow_mut();
-        signals.fenced = true;
-        let (indeterminate, saturated) = increment(signals.indeterminate);
-        signals.indeterminate = indeterminate;
-        signals.saturated |= saturated;
+        let mut counters = self.counters.borrow_mut();
+        let (indeterminate, saturated) = increment(counters.indeterminate);
+        counters.indeterminate = indeterminate;
+        counters.saturated |= saturated;
         Ok(CommitOutcome::Indeterminate)
     }
 
     fn refused(&self, refusal: StoreRefusal) -> Result<CommitOutcome, DirectoryErrorV1> {
-        let mut signals = self.signals.borrow_mut();
-        let (refusals, saturated) = increment(signals.refusals);
-        signals.refusals = refusals;
-        signals.saturated |= saturated;
+        let mut counters = self.counters.borrow_mut();
+        let (refusals, saturated) = increment(counters.refusals);
+        counters.refusals = refusals;
+        counters.saturated |= saturated;
         Ok(CommitOutcome::Refused(refusal))
     }
 
@@ -323,10 +355,10 @@ impl CheckpointStore for DirectoryCheckpointStoreV1 {
 
     fn load(&self, key: &str) -> Result<Option<Checkpoint>, Self::Error> {
         self.check_resources()?;
-        let mut signals = self.signals.borrow_mut();
-        let (loads, saturated) = increment(signals.loads);
-        signals.loads = loads;
-        signals.saturated |= saturated;
+        let mut counters = self.counters.borrow_mut();
+        let (loads, saturated) = increment(counters.loads);
+        counters.loads = loads;
+        counters.saturated |= saturated;
         if self.key.as_deref().is_some_and(|stored| stored != key) {
             return Ok(None);
         }
@@ -340,10 +372,10 @@ impl CheckpointStore for DirectoryCheckpointStoreV1 {
         bytes: &[u8],
     ) -> Result<CommitOutcome, Self::Error> {
         {
-            let mut signals = self.signals.borrow_mut();
-            let (offers, saturated) = increment(signals.offers);
-            signals.offers = offers;
-            signals.saturated |= saturated;
+            let mut counters = self.counters.borrow_mut();
+            let (offers, saturated) = increment(counters.offers);
+            counters.offers = offers;
+            counters.saturated |= saturated;
         }
         self.check_resources()?;
         if key.is_empty() {
@@ -433,11 +465,10 @@ impl CheckpointStore for DirectoryCheckpointStoreV1 {
             bytes: bytes.to_vec(),
             strength: AcknowledgementStrength::Durable,
         });
-        let mut signals = self.signals.borrow_mut();
-        signals.retained_bytes = head_stamp.length as usize;
-        let (commits, saturated) = increment(signals.commits);
-        signals.commits = commits;
-        signals.saturated |= saturated;
+        let mut counters = self.counters.borrow_mut();
+        let (commits, saturated) = increment(counters.commits);
+        counters.commits = commits;
+        counters.saturated |= saturated;
         Ok(CommitOutcome::Committed(CommitReceipt {
             revision,
             mechanism: "agora-private-directory-v1",
@@ -704,6 +735,20 @@ mod tests {
 
         let mut store =
             DirectoryCheckpointStoreV1::open_existing(&path, DirectoryLimitsV1::default()).unwrap();
+        assert_eq!(
+            store.observation(),
+            DirectoryObservationV1 {
+                state: DirectoryOwnerStateV1::Active,
+                revision: Some(0),
+                loads: 0,
+                offers: 0,
+                commits: 0,
+                refusals: 0,
+                indeterminate: 0,
+                resource_fences: 0,
+                saturated: false,
+            }
+        );
         let loaded = store.load("host").unwrap().unwrap();
         assert_eq!(loaded.revision, Revision(0));
         assert_eq!(loaded.strength, AcknowledgementStrength::Durable);
@@ -714,6 +759,11 @@ mod tests {
                 .unwrap(),
             1,
         );
+        let observation = store.observation();
+        assert_eq!(observation.revision, Some(1));
+        assert_eq!(observation.loads, 1);
+        assert_eq!(observation.offers, 1);
+        assert_eq!(observation.commits, 1);
         drop(store);
 
         let store =
@@ -740,8 +790,8 @@ mod tests {
                 store.compare_exchange("host", None, b"candidate").unwrap(),
                 CommitOutcome::Indeterminate
             );
-            assert_eq!(store.signals().indeterminate, 1);
-            assert!(store.signals().fenced);
+            assert_eq!(store.observation().indeterminate, 1);
+            assert_eq!(store.observation().state, DirectoryOwnerStateV1::Fenced);
             drop(store);
 
             if matches!(
@@ -806,19 +856,43 @@ mod tests {
     }
 
     #[test]
-    fn ownership_is_exclusive_and_debug_is_content_free() {
+    fn ownership_is_exclusive_and_observation_is_passive_content_free_and_saturating() {
         let temp = TempDirectory::new();
         let path = temp.store();
-        let store =
+        let mut store =
             DirectoryCheckpointStoreV1::create_new(&path, DirectoryLimitsV1::default()).unwrap();
         assert_eq!(
             DirectoryCheckpointStoreV1::open_existing(&path, DirectoryLimitsV1::default())
                 .unwrap_err(),
             DirectoryErrorV1::Busy
         );
+        committed(
+            store
+                .compare_exchange("credential-secret", None, b"message-secret")
+                .unwrap(),
+            0,
+        );
+        let observation = store.observation();
+        assert_eq!(observation.state, DirectoryOwnerStateV1::Active);
+        assert_eq!(observation.revision, Some(0));
+        assert_eq!(observation.offers, 1);
+        assert_eq!(observation.commits, 1);
+        assert_eq!(observation, store.observation());
         let debug = format!("{store:?}");
         assert!(debug.contains("DirectoryCheckpointStoreV1"));
         assert!(!debug.contains(path.to_str().unwrap()));
+        assert!(!debug.contains("credential-secret"));
+        assert!(!debug.contains("message-secret"));
+
+        store.counters.borrow_mut().offers = u64::MAX;
+        assert_eq!(
+            store.compare_exchange("", Some(Revision(0)), b"x").unwrap(),
+            CommitOutcome::Refused(StoreRefusal::InvalidKey)
+        );
+        let observation = store.observation();
+        assert_eq!(observation.offers, u64::MAX);
+        assert_eq!(observation.refusals, 1);
+        assert!(observation.saturated);
     }
 
     #[test]
@@ -885,7 +959,9 @@ mod tests {
             DirectoryErrorV1::LostResource
         );
         assert_eq!(store.load("key").unwrap_err(), DirectoryErrorV1::Fenced);
-        assert!(store.signals().fenced);
+        let observation = store.observation();
+        assert_eq!(observation.state, DirectoryOwnerStateV1::Fenced);
+        assert_eq!(observation.resource_fences, 1);
     }
 
     #[test]

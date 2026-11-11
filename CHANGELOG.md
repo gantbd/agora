@@ -32,6 +32,9 @@ follow Semantic Versioning once a public release contract is selected.
   cleanup. Revision `afea9769a9435c69d48978487f2825e1e93b5c08` passed the
   integrated release profile with 10,000 soak cycles and 1,000,000 cases on
   each fuzz target.
+- Replaced the directory adapter's raw internal signals with a passive,
+  content-free physical-owner observation covering revision, load/CAS outcomes,
+  indeterminate publication, resource fencing, and sticky saturation.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque

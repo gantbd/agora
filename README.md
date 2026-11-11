@@ -102,8 +102,9 @@ cursor consequences.
 receipt, restores known refusals, and fences indeterminate outcomes.
 `agora-storage-directory` supplies one separately qualified physical profile:
 an exclusive private local Unix directory with a synchronized atomic checkpoint
-replace. Its claim does not extend to hardware power-loss behavior, network
-filesystems, backup/restore, encryption, or multi-host availability.
+replace and a passive content-free owner observation. Its claim does not extend
+to hardware power-loss behavior, network filesystems, backup/restore,
+encryption, or multi-host availability.
 `agora-aegis-verifier` is a separate leaf adapter from the Host verifier port to
 the public Aegis service contract. It requests `Submit` on one configured Agora
 resource through an exact Aegis session and opaque grant, while Agora retains all
