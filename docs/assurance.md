@@ -178,12 +178,12 @@ route envelope;
 `checkpoint_canonical` drives all three semantic
 recovery layers;
 `outer_frame_canonical` drives the daemon's production length-prefix codec over
-the thirty-eight complete-frame protocol seeds (the five fixed-width local
+the forty-one complete-frame protocol seeds (the five fixed-width local
 control fixtures are deliberately excluded). An accepted
 candidate must re-encode exactly, and an accepted frame prefix must preserve its
 unconsumed stream suffix. The qualified smoke ran 20,000 fixed-seed cases on all
 three targets. The latest integrated local release-candidate campaign, for
-revision `4b19524fd21208487ca8f512257e7663e2354d71`, ran 1,000,000 fixed-seed
+revision `65230442b1bc71e1ab6342677446ad10071cf948`, ran 1,000,000 fixed-seed
 cases on each of those three targets. All campaigns use a 64-KiB input,
 10-second per-input, and 2-GiB memory ceiling on Apple Silicon. This is bounded
 coverage-guided counterexample search, not a coverage threshold, parser proof,
@@ -633,7 +633,8 @@ absent-remove/collision/capacity refusal, exact replay/conflict behavior, and
 actor/alias/add-remove attribution in all four feeds. Three frozen frames,
 closed command/outcome/refusal/capability tags, Debug/SDK construction, and
 profile-18/20/20 nested checkpoints close the implemented bounded profile.
-Integrated R53 qualification remains pending; lookup authority, redirects,
+Revision `65230442b1bc71e1ab6342677446ad10071cf948` passed the complete R53
+qualification; lookup authority, redirects,
 search synonyms, move/copy, deletion, erasure, connector state, workflow truth,
 and execution are not claimed.
 

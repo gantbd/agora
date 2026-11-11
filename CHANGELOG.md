@@ -294,6 +294,10 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Fixed
 
+- Qualified bounded topic aliases at revision
+  `65230442b1bc71e1ab6342677446ad10071cf948` across the ordinary gate, all
+  release-mode targets, 10,000 deterministic soak cycles, and 1,000,000
+  fixed-seed cases on each of the three fuzz targets.
 - Closed the fuzz workspace lock over every current target dependency, changed
   the ordinary fuzz contract from metadata-only inspection to locked offline
   compilation of all targets, and made release qualification refuse tracked

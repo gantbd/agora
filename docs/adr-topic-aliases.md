@@ -1,6 +1,6 @@
 # ADR: bounded topic display aliases
 
-Status: implemented; qualification pending
+Status: implemented and qualified
 
 Date: 2026-11-11
 
