@@ -19,7 +19,7 @@ follow Semantic Versioning once a public release contract is selected.
   state without leaking a signal, uncertain durability fences and retires the
   source, and physical local-daemon restart retains rooms while reconstructing
   transient state empty. Revision
-  `c4cad484d6dec38123b7270f7f11848519d65fd3` passed the integrated release
+  `c502202f19164a4a399b365d9a1134344faaf67e` passed the integrated release
   profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
 - Added explicit durable-collaboration endpoint-residue recovery: the caller
   supplies the recovered owner, exact prior incarnation, and distinct next
