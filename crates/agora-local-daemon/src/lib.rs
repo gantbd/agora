@@ -9,7 +9,7 @@ compile_error!("agora-local-daemon currently qualifies only Unix hosts");
 
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
 use agora_host::v2::HostV2;
-use agora_host::{HostRefusal, HostTimeV1, PrincipalVerifier};
+use agora_host::{HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
@@ -52,6 +52,36 @@ pub struct DaemonHealthV1 {
     pub refused_connections: u64,
     pub transport_errors: u64,
     pub saturated: bool,
+}
+
+/// Content-free, point-in-time operational facts from each owned runtime layer.
+///
+/// Reading this value is passive: it performs no I/O, invokes no authority,
+/// changes no counter, and cannot affect a conversation result. Counters remain
+/// separated by measurement boundary so callers cannot mistake a transport
+/// acceptance for host execution or service acceptance.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DaemonObservationV1 {
+    pub transport: DaemonHealthV1,
+    pub host: HostUsage,
+    pub service: ServiceObservationV1,
+    /// Sticky loss of counter fidelity in any represented layer.
+    pub fidelity_lost: bool,
+}
+
+/// Service-boundary facts copied into the daemon's public observation profile.
+/// This keeps the transport package from acquiring a direct service dependency.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ServiceObservationV1 {
+    pub connect_offers: u64,
+    pub connected: u64,
+    pub request_offers: u64,
+    pub accepted: u64,
+    pub refused: u64,
+    pub replayed: u64,
+    pub conflicts: u64,
+    pub disconnected: u64,
+    pub overflowed: bool,
 }
 
 #[derive(Debug)]
@@ -152,6 +182,28 @@ where
         self.health
     }
 
+    pub fn observation(&self) -> DaemonObservationV1 {
+        let host = self.host.usage();
+        let usage = self.host.service().usage();
+        let service = ServiceObservationV1 {
+            connect_offers: usage.connect_offers,
+            connected: usage.connected,
+            request_offers: usage.request_offers,
+            accepted: usage.accepted,
+            refused: usage.refused,
+            replayed: usage.replayed,
+            conflicts: usage.conflicts,
+            disconnected: usage.disconnected,
+            overflowed: usage.overflowed,
+        };
+        DaemonObservationV1 {
+            transport: self.health,
+            host,
+            service,
+            fidelity_lost: observation_fidelity_lost(self.health, host, service),
+        }
+    }
+
     pub const fn host(&self) -> &HostV2<AegisVerifierV1<P>> {
         &self.host
     }
@@ -239,6 +291,14 @@ impl<P, A, C> Drop for DaemonV1<P, A, C> {
     }
 }
 
+const fn observation_fidelity_lost(
+    transport: DaemonHealthV1,
+    host: HostUsage,
+    service: ServiceObservationV1,
+) -> bool {
+    transport.saturated || host.overflowed || service.overflowed
+}
+
 fn read_frame(
     stream: &mut UnixStream,
     max_frame_bytes: usize,
@@ -283,5 +343,57 @@ fn increment(value: &mut u64, saturated: &mut bool) {
         *value = next;
     } else {
         *saturated = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DaemonHealthV1, HostUsage, ServiceObservationV1, increment, observation_fidelity_lost,
+    };
+
+    #[test]
+    fn counter_saturation_is_sticky_and_value_preserving() {
+        let mut value = u64::MAX;
+        let mut saturated = false;
+        increment(&mut value, &mut saturated);
+        assert_eq!(value, u64::MAX);
+        assert!(saturated);
+        increment(&mut value, &mut saturated);
+        assert_eq!(value, u64::MAX);
+        assert!(saturated);
+    }
+
+    #[test]
+    fn every_layer_contributes_to_aggregate_fidelity_loss() {
+        assert!(!observation_fidelity_lost(
+            DaemonHealthV1::default(),
+            HostUsage::default(),
+            ServiceObservationV1::default()
+        ));
+        assert!(observation_fidelity_lost(
+            DaemonHealthV1 {
+                saturated: true,
+                ..DaemonHealthV1::default()
+            },
+            HostUsage::default(),
+            ServiceObservationV1::default()
+        ));
+        assert!(observation_fidelity_lost(
+            DaemonHealthV1::default(),
+            HostUsage {
+                overflowed: true,
+                ..HostUsage::default()
+            },
+            ServiceObservationV1::default()
+        ));
+        assert!(observation_fidelity_lost(
+            DaemonHealthV1::default(),
+            HostUsage::default(),
+            ServiceObservationV1 {
+                overflowed: true,
+                ..ServiceObservationV1::default()
+            }
+        ));
     }
 }

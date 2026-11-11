@@ -56,6 +56,15 @@ connections, accepted connections, cleanly completed connections, refused
 connections, transport errors, and counter saturation. It exposes no
 participant, subject, grant, room, message, or frame data.
 
+`DaemonObservationV1` is the read-only composition view. It retains distinct
+transport, Host V2, and Service V2 counter groups so a socket acceptance cannot
+be mistaken for authentication, host execution, or domain acceptance. A sticky
+`fidelity_lost` bit is the disjunction of every represented saturation signal.
+Reading the view performs no I/O or authority call, changes no counter, and
+cannot change a request result. The snapshot contains no identifiers, content,
+credentials, frame bytes, timings, or refusal detail; it is process-local and
+excluded from semantic recovery.
+
 ## Trust boundary and non-claims
 
 The mode-0700 socket parent and same-UID processes are trusted. The
@@ -80,4 +89,7 @@ EOF cleanup, erased authenticator error detail, participant mismatch without
 authority I/O, bounded request exhaustion cleanup, oversized length refusal
 before host admission, unsafe/existing-path refusal, and preservation of a
 replacement endpoint. Dependency and effect gates keep the adapter limited to
-the Aegis verifier, Host V2, Wire V2, and Unix filesystem/socket effects.
+the Aegis verifier, Host V2, Wire V2, and Unix filesystem/socket effects. The
+successful path additionally verifies exact layer-separated observation,
+repeated-read passivity, content-safe diagnostics, and sticky counter
+saturation without wraparound.

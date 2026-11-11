@@ -291,6 +291,14 @@
   positive, bounded, and adversarially validated. A partial or interrupted run
   is not a pass, and a pass makes no artifact, provenance, performance,
   architecture-portability, or publication claim.
+- **R54 — Passive layered operational observation:** the qualified local daemon
+  must expose a content-free point-in-time view that keeps transport, host, and
+  service counters in distinct measurement boundaries and reports sticky loss
+  of counter fidelity. Reading observations must perform no I/O or authority
+  call, mutate no counter or semantic state, and alter no result. Diagnostics
+  must contain no participant, subject, grant, room, message, credential, or
+  frame data. Process-local counters make no latency, SLO, delivery, attention,
+  audit, or recovery-continuity claim.
 
 ## Explicitly open
 

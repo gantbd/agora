@@ -196,6 +196,14 @@ handshake, concurrency, operational drain/crash recovery, cross-disconnect
 replay, and network transport remain unqualified. Physical storage is separate
 and narrowly qualified below.
 
+The daemon's composed operational snapshot preserves transport, host, and
+service counters as three named measurement boundaries. The successful socket
+scenario proves exact connect/execute/replay/disconnect counts, identical
+repeated reads, and content-safe Debug output; a unit scenario forces counter
+saturation and proves the sticky fidelity indicator without wraparound. This is
+passive process-local diagnostic evidence, not durable audit, metric export,
+latency measurement, concurrency evidence, or an SLO.
+
 Service V2 persistence scenarios recover byte-identical engine state and pending
 outbox, active clients, retained exact replies, and live room-page continuation.
 They replay a committed mutation without advancing the engine, preserve

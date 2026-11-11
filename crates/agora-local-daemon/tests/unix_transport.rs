@@ -240,6 +240,28 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert_eq!(daemon.health().accepted_connections, 1);
     assert_eq!(daemon.health().completed_connections, 1);
     assert_eq!(daemon.health().active_connections, 0);
+    let observation = daemon.observation();
+    assert_eq!(
+        observation,
+        daemon.observation(),
+        "observation must be passive"
+    );
+    assert_eq!(observation.transport, daemon.health());
+    assert_eq!(observation.host.open_offers, 1);
+    assert_eq!(observation.host.authenticated, 1);
+    assert_eq!(observation.host.frame_offers, 2);
+    assert_eq!(observation.host.executed, 2);
+    assert_eq!(observation.service.connect_offers, 1);
+    assert_eq!(observation.service.connected, 1);
+    assert_eq!(observation.service.request_offers, 2);
+    assert_eq!(observation.service.accepted, 1);
+    assert_eq!(observation.service.replayed, 1);
+    assert_eq!(observation.service.disconnected, 1);
+    assert!(!observation.fidelity_lost);
+    let diagnostic = format!("{observation:?}");
+    assert!(!diagnostic.contains("alice"));
+    assert!(!diagnostic.contains("room"));
+    assert!(!diagnostic.contains("Room"));
     assert_eq!(calls.lock().unwrap().len(), 3);
     drop(daemon);
     assert!(!path.exists());

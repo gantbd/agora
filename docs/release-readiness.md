@@ -88,6 +88,9 @@ not ready for a network service or crates.io release.
   fixed request budget, server-owned Host V2 session, per-frame Aegis
   reauthorization, unconditional cleanup, pinned teardown, and content-free
   health;
+- passive content-free local-daemon observations preserving separate transport,
+  host, and service measurement boundaries with sticky saturation/fidelity-loss
+  evidence and no semantic or authority effect;
 - independently versioned, scope-bound Service V2 checkpoints preserving engine,
   outbox, recent-change journal, clients, retired tombstones, exact request
   replies, and live cursor consequences across semantic recovery;

@@ -8,6 +8,9 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added a passive content-free local-daemon observation snapshot with distinct
+  transport, host, and service counter boundaries plus sticky aggregate
+  fidelity-loss evidence.
 - Added a commit-pinned integrated release-candidate profile spanning the full
   ordinary gate, all release-mode targets, a bounded 10,000-cycle recovery soak,
   and one million fixed-seed cases on each pinned fuzz target; recorded the

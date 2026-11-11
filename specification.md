@@ -587,6 +587,15 @@ been allocated. Content-free saturating health signals distinguish accepted,
 cleanly completed, refused, and transport-failed connections and expose current
 connection count and readiness.
 
+The daemon may also expose one passive point-in-time observation containing
+separate transport, Host V2, and Service V2 counter groups. Reading it performs
+no effect and changes no result. Its aggregate fidelity-loss bit is sticky once
+any represented counter saturates. It contains no identifiers, content,
+credentials, frame bytes, timing samples, or detailed refusal values and is not
+part of semantic recovery. These counters are operational facts, not proof of
+delivery, attention, authorization success beyond the named boundary, or an
+SLO.
+
 This profile is deliberately sequential: one caller of `serve_next` accepts and
 serves one connection at a time. It does not authenticate an OS peer or
 credential, protect against a same-UID process controlling the private parent,
