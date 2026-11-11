@@ -36,13 +36,16 @@ not ready for a network service or crates.io release.
   offline byte-for-byte regeneration, and adversarial schema/claim mutants;
 - canonical bounded USTAR source-archive construction and verification,
   including SHA-256 closure, platform listing/extraction, exact rearchive, and
-  checksum/framing/traversal/link mutants; exact revision qualification remains
-  an opt-in release artifact step;
+  checksum/framing/traversal/link mutants;
 - a checksum-closed self-contained stable source directory for revision
-  `67f634e30dda061b4d5a8fb2c8fac88c3feccd80`, including the canonical source
-  SBOM, reproduced byte-identically twice across 239 payload files and qualified
+  `651374a3e9cf4b51cb21da7c7af03bb746604d25`, including the canonical source
+  SBOM and archive tooling, reproduced byte-identically twice across 248 payload files and qualified
   locked/offline from its isolated sixteen-component local content closure while
   truthfully marking both sibling selections unclean;
+- two byte-identical canonical USTAR archives for that revision, each 1,984,512
+  bytes and 316 entries with SHA-256 `41e22b596d32c6bd44578afde4421c4834d2b87c45b4d4a7dd3a5637976f4ad2`;
+  one passed validation, platform extraction, exact rearchive, and complete
+  locked/offline extracted-source qualification;
 - membership-filtered, revision-bound in-process room/member/message pages with
   opaque cursors and explicit retained-history intervals;
 - separately typed volatile Protocol/Service/Client V2 source profile closing

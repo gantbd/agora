@@ -10,15 +10,16 @@ follow Semantic Versioning once a public release contract is selected.
 
 - Added a canonical bounded USTAR source-archive profile over verified source
   candidates, with fixed metadata and ordering, an exact SHA-256 sidecar,
-  platform extraction, byte-identical rearchive, and adversarial contract tests.
+  platform extraction, byte-identical rearchive, and adversarial contract tests;
+  reproduced and qualified the first 1,984,512-byte exact-revision archive.
 - Added a deterministic CycloneDX 1.5 source SBOM for the exact sixteen-package
   stable graph, with offline canonical regeneration, closed dependency and
   claim validation, host-path exclusion, and focused adversarial mutants.
 - Added a fail-closed self-contained stable source-candidate contract with exact
   local Aegis/Keystone content closure, contextual cleanliness evidence,
   complete SHA-256 inventory, adversarial verification, and isolated locked
-  offline qualification; reproduced and qualified a 239-file candidate that
-  includes the canonical source SBOM.
+  offline qualification; reproduced and qualified a 248-file candidate that
+  includes the canonical source SBOM and archive tooling.
 - Added a third pinned coverage-guided target over the local daemon's production
   outer-frame prefix codec, with exact consumed-prefix re-encoding, stream-suffix
   preservation, canonical framed seeds, ordinary codec boundary tests, and an

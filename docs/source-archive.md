@@ -1,7 +1,6 @@
 # Canonical stable source archive
 
-Status: construction and verification mechanism established; exact source
-archive qualification remains opt-in and separately recorded.
+Status: one exact local source archive qualified; distribution remains denied.
 
 `AGORA_SOURCE_CANDIDATE_DIR=/candidate AGORA_SOURCE_ARCHIVE=/new/agora.tar make
 build-source-archive` first verifies the complete R56 checksum closure, then
@@ -30,3 +29,17 @@ and symbolic candidate input.
 This profile does not qualify compression, a remote origin, clean sibling
 commits, a binary, installer, signature, attestation, timestamp authority,
 advisory status, legal compatibility, support, or a publication channel.
+
+## Qualified local archive
+
+Agora revision `651374a3e9cf4b51cb21da7c7af03bb746604d25` produced two
+byte-identical canonical archives from two independently built candidates on
+Darwin 25.6.0 arm64 / macOS 26.6.2. Each archive is 1,984,512 bytes with 316
+entries and SHA-256
+`41e22b596d32c6bd44578afde4421c4834d2b87c45b4d4a7dd3a5637976f4ad2`.
+One archive passed checksum and canonical validation, platform extraction,
+extracted R56 closure, exact rearchive, every stable workspace target, doctests,
+and warning-denied documentation with locked/offline dependencies and a fresh
+target directory. Both selected sibling trees remain truthfully recorded as
+unclean; the archive closes exact bytes and does not promote contextual Git
+revisions into origin provenance.

@@ -53,12 +53,12 @@ construction, system `tar` listing/extraction, and refusal of checksum, framing,
 valid-header traversal, and symbolic-input mutants. Actual exact-revision
 archive qualification remains separate evidence.
 
-Revision `67f634e30dda061b4d5a8fb2c8fac88c3feccd80` then produced two
-byte-identical candidates containing 239 checksummed payload files, including
-the canonical source SBOM. The manifest digest was
-`51aa559d2fb0debde1bdd93dde789402bb517d19fc65f529db89412c2d0bc374` and
+Revision `651374a3e9cf4b51cb21da7c7af03bb746604d25` then produced two
+byte-identical candidates containing 248 checksummed payload files, including
+the canonical source SBOM and archive tooling. The manifest digest was
+`521912b3d03cb40799638cc510f75bf7eddc3d76bf1b2c57e1d532b68fb6b646` and
 the checksum inventory digest was
-`2c8c082b33bcb7e37a462b48a55fdf848deed9c4c40bc23cc7decc8f7ee92750`.
+`54e92c656f80e15d6c1eb4115cb0e6ed3b0b3cd197af71565c54ee95b657d905`.
 Both selected sibling trees were recorded as unclean, so only their staged byte
 digests—not contextual revisions—carry the claim. One isolated candidate passed
 every stable workspace target, doctest, and warning-denied documentation build
@@ -66,6 +66,12 @@ with the lock file, offline mode, and a fresh target directory. This proves
 self-contained local source content for the stable graph, not remote origin,
 clean-room dependency availability, an archive, binary reproducibility, or
 publication readiness.
+
+Those two candidates produced byte-identical 1,984,512-byte canonical USTAR
+archives with 316 entries and SHA-256
+`41e22b596d32c6bd44578afde4421c4834d2b87c45b4d4a7dd3a5637976f4ad2`.
+One archive passed pre-extraction checksum/canonical validation, platform
+extraction, exact rearchive, and the complete isolated source qualification.
 
 Every frozen V1 and V2 wire frame is also a deterministic mutation corpus. The
 offline suite checks every strict prefix, a trailing-byte framing violation, and
