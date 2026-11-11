@@ -63,6 +63,19 @@ retention, byte substitution, cross-message linkability, scanning, deletion,
 and cross-engine recovery remain product/adapter threats rather than implied
 Agora guarantees.
 
+Typed Vellum artifact references add cross-engine correlation without importing
+Vellum authority. The workspace, document, and source-revision scalars are
+attacker-controlled assertions at Agora admission and may expose linkable
+document history if disclosed outside current room visibility. Agora must never
+retain a live Vellum `VersionWitness`, locator, source bytes, credential, or edit
+handle. Withdrawal and redaction scrub the complete Vellum target from current
+state and retained event copies while preserving only the room-local relation
+identity. A resolver must authenticate independently to Vellum, rederive current
+Vellum read authority, request the exact historical revision, and report stale,
+missing, refused, unavailable, and unknown outcomes without rewriting the Agora
+fact. Reference possession is not read/edit authority, a source revision is not
+an integrity digest, and neither value activates an agent or admits work.
+
 Room change positions are observer/room-bound correlation state, not bearer
 authority. Every pull rechecks current membership, cross-client and cross-room
 handles are non-enumerating, and a leave/rejoin crossing becomes a gap rather
