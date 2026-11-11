@@ -22,12 +22,13 @@ after an intentional compatibility-profile change with
 
 `make fuzz-smoke` copies the immutable seeds into a temporary corpus and runs
 20,000 coverage-guided cases per target with a fixed seed and explicit input,
-timeout, and memory ceilings. A longer campaign may replace `-runs` with a
-reviewed `-max_total_time`, but its duration, platform, tool versions, corpus,
-and result must remain visible release evidence. Generated corpus entries and
-crash artifacts are not compatibility evidence; minimize a failure, add a
-focused ordinary regression test, then decide whether the input adds durable
-seed coverage.
+timeout, and memory ceilings. `AGORA_FUZZ_RUNS` may select a positive budget up
+to 1,000,000; the release-candidate profile uses that ceiling. A longer
+time-based campaign requires separate review, and its duration, platform, tool
+versions, corpus, and result must remain visible release evidence. Generated
+corpus entries and crash artifacts are not compatibility evidence; minimize a
+failure, add a focused ordinary regression test, then decide whether the input
+adds durable seed coverage.
 
 Passing campaigns prove neither parser correctness nor exhaustive state-space
 coverage. The checkpoint target uses the frozen fixture scopes and reference

@@ -5,6 +5,13 @@ cd "$(dirname "$0")/.."
 
 toolchain=nightly-2026-11-01
 expected_fuzz='cargo-fuzz 0.13.2'
+runs=${AGORA_FUZZ_RUNS:-20000}
+if [[ ! "$runs" =~ ^[1-9][0-9]*$ ]] ||
+  (( ${#runs} > 7 )) ||
+  (( ${#runs} == 7 && 10#$runs > 1000000 )); then
+  echo 'AGORA_FUZZ_RUNS must be a positive integer no greater than 1000000' >&2
+  exit 1
+fi
 actual_fuzz=$(cargo fuzz --version 2>/dev/null || true)
 if [[ "$actual_fuzz" != "$expected_fuzz" ]]; then
   echo "cargo-fuzz 0.13.2 is required; found: ${actual_fuzz:-not installed}" >&2
@@ -27,7 +34,7 @@ for target in wire_canonical checkpoint_canonical; do
   mkdir -p "$corpus" "$artifacts"
   cp fuzz/seeds/"$target"/*.bin "$corpus"/
   cargo +"$toolchain" fuzz run "$target" "$corpus" -- \
-    -runs=20000 \
+    -runs="$runs" \
     -seed=424242 \
     -max_len=65536 \
     -timeout=10 \
@@ -36,4 +43,4 @@ for target in wire_canonical checkpoint_canonical; do
     -artifact_prefix="$artifacts"
 done
 
-echo 'Agora coverage-guided fuzz smoke completed both pinned campaigns'
+echo "Agora coverage-guided fuzz campaign completed both targets at $runs runs each"

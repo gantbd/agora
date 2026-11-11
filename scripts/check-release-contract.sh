@@ -17,6 +17,7 @@ required_files=(
   docs/assurance.md
   docs/compatibility.md
   docs/release-policy.md
+  docs/release-qualification.md
   docs/release-readiness.md
   docs/supply-chain.md
   docs/threat-model.md

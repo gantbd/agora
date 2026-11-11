@@ -18,10 +18,16 @@ fn request(id: u64, command: CommandV2) -> RequestV2 {
 }
 
 fn cycles() -> usize {
-    std::env::var("AGORA_SOAK_CYCLES")
+    let cycles = std::env::var("AGORA_SOAK_CYCLES")
         .ok()
         .map(|value| value.parse().expect("AGORA_SOAK_CYCLES must be an integer"))
-        .unwrap_or(5_000)
+        .unwrap_or(5_000);
+    assert!(cycles > 0, "AGORA_SOAK_CYCLES must be positive");
+    assert!(
+        cycles <= 10_000,
+        "AGORA_SOAK_CYCLES exceeds its qualification ceiling"
+    );
+    cycles
 }
 
 fn engine_limits(cycles: usize) -> Limits {
@@ -54,7 +60,6 @@ fn recovery_limits(cycles: usize) -> ServiceRecoveryLimitsV2 {
 #[ignore = "opt-in deterministic lifecycle/replay/recovery soak"]
 fn repeated_lifecycle_replay_page_reconnect_and_recovery_remain_exact() {
     let cycles = cycles();
-    assert!(cycles > 0);
     let mut engine = Engine::with_limits(engine_limits(cycles));
     engine
         .apply(EngineCommand::RegisterParticipant(Participant::new(

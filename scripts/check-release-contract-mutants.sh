@@ -20,7 +20,7 @@ for file in CHANGELOG.md Cargo.lock LICENSE-APACHE LICENSE-MIT README.md SECURIT
   requirements.md specification.md rust-toolchain.toml; do
   cp "$file" "$fixture_root/$file"
 done
-for file in assurance.md compatibility.md release-policy.md release-readiness.md \
+for file in assurance.md compatibility.md release-policy.md release-qualification.md release-readiness.md \
   supply-chain.md threat-model.md traceability.md; do
   cp "docs/$file" "$fixture_root/docs/$file"
 done
