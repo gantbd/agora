@@ -23,6 +23,17 @@ must never expose it as a bearer credential or accept it without a separately
 authenticated connection binding. Retained request replies may contain message
 content and therefore inherit the deployment's memory-protection obligations.
 
+The derived-search port never receives participant identity and returns only
+message identity plus room-local sequence. Source revision and index generation
+make lag/rebuild state explicit, while incomplete and unavailable are not
+silently promoted to authoritative history. The reference adapter bounds rooms,
+messages, content, terms, pages, and live cursors; projection replacement is
+atomic and revision-monotone. Indexed bodies remain sensitive in adapter memory,
+and stable hits remain linkable metadata. A participant-bound composition must
+check current membership before query and current retained visibility before
+publishing each hit; otherwise an index becomes a confused deputy or leaks
+withdrawn, redacted, evicted, or cross-room facts.
+
 Room change positions are observer/room-bound correlation state, not bearer
 authority. Every pull rechecks current membership, cross-client and cross-room
 handles are non-enumerating, and a leave/rejoin crossing becomes a gap rather

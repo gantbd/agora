@@ -21,6 +21,8 @@ agora-host -----> agora-wire + agora-service + trusted verifier port
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-observation --> keystone-storage port
 agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem
+agora-search-memory --> agora-search-port
+agora-search-port --> no normal dependencies
 agora-aegis-verifier --> agora-host + agora-durable + Aegis public service port
 agora-local-daemon --> agora-aegis-verifier + agora-host + agora-wire + Unix socket
 ```
@@ -182,6 +184,24 @@ invalid/verifiable artifact, empty destination, pending residue, or exact
 post-rename recovery. It does not automate cleanup or claim hardware power-loss,
 network-filesystem, encryption, remote transport, rollback resistance,
 disaster-recovery objectives, or multi-host behavior.
+
+## Derived search
+
+`agora-search-port` is an effect-free observation boundary, separate from the
+conversation engine and its recovery graph. Queries are room-scoped and bounded;
+pages contain only stable message identity and room-local sequence, plus exact
+source revision and opaque index generation. Available, incomplete, stale, and
+unavailable states are distinct. The port receives no participant identity and
+cannot decide authority.
+
+`agora-search-memory` is the bounded volatile semantic reference. Explicit room
+projection replacement is revision-monotone, advances generation, invalidates
+old cursors, and preserves atomic refusal under shape/content/cursor capacity.
+It performs byte-exact UTF-8 substring matching and never returns indexed body
+content. It is not durable, production-scale, or a service availability claim.
+The participant-bound composition must still derive the authenticated observer,
+check current membership, and resolve every hit against retained authoritative
+history before publishing it.
 
 Physical restore deliberately remains Agora-semantic-free. The higher
 `DurableHostV2::recover_after_restore` boundary decodes the restored Host unit,

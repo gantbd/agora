@@ -8,6 +8,8 @@ component|agora-engine|0.3.0
 component|agora-host|0.1.0
 component|agora-local-daemon|0.1.0
 component|agora-protocol|0.1.0
+component|agora-search-memory|0.1.0
+component|agora-search-port|0.1.0
 component|agora-sdk-client|0.1.0
 component|agora-sdk-embedded|0.1.0
 component|agora-service|0.1.0

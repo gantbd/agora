@@ -3,7 +3,7 @@
 Status: deterministic local-source inventory and source SBOM; not a binary SBOM
 or legal review.
 
-The current stable locked graph contains seventeen components: thirteen Agora
+The current stable locked graph contains nineteen components: fifteen Agora
 packages, two Aegis packages, and the sibling `keystone-codec` and
 `keystone-storage` path packages. It contains no registry or Git source and no
 Cargo checksum records. Every stable-workspace manifest dependency uses an
@@ -16,10 +16,10 @@ changed-version, and empty-inventory mutants.
 
 The same gate regenerates `docs/agora-source.cdx.json` from locked offline Cargo
 metadata and requires byte equality. This canonical CycloneDX 1.5 document
-contains exactly the seventeen stable local-path components, their closed Cargo
+contains exactly the nineteen stable local-path components, their closed Cargo
 dependency edges, exact versions, declared `MIT OR Apache-2.0` expressions, and
 denied publication state. Its SHA-256 digest is
-`8b4ec0469c8a392b35e7f4c23acd114fcd43cd2fd05ab0111a78d06a13669b21`.
+`10db30f568f192e44528b7fe5d066a4399be18f2f3b3e3b075135e1ee122902d`.
 The validator rejects vocabulary drift, noncanonical order, missing or duplicate
 components and edges, unknown references, host paths, altered licenses, and
 publication-enabled records; focused mutants exercise those boundaries.
@@ -30,7 +30,7 @@ the fuzz contract pins the driver, nightly compiler, and `libfuzzer-sys`
 versions. Those tools produce test evidence only and are not linked into any
 Agora package or included in the stable local-only supply claim.
 
-The source-candidate profile copies exactly those seventeen stable components into
+The source-candidate profile copies exactly those nineteen stable components into
 one local directory. Agora bytes come from an exact clean tracked revision;
 selected Aegis and Keystone bytes are individually checksummed and their subtree
 cleanliness is stated rather than inferred from the contextual repository
@@ -38,9 +38,10 @@ revision. A reduced reviewed Keystone workspace manifest supplies only inherited
 metadata for the two selected packages. Isolated locked/offline build evidence
 establishes content closure, not origin, advisory, or legal provenance.
 
-The qualified candidate for Agora revision
+The earlier qualified candidate for Agora revision
 `46098fb3cd1a6f9164365d8c49cf7edbc0957ef7` was reproduced byte-for-byte,
-closed over 291 payload files including the canonical source SBOM, archive tooling,
+closed over the then-seventeen-component, 291-payload-file graph including its
+canonical source SBOM, archive tooling,
 and storage-observation port, and passed
 the complete stable locked/offline workspace build from an isolated target.
 Its manifest digest is

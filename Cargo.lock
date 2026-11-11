@@ -102,6 +102,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "agora-search-memory"
+version = "0.1.0"
+dependencies = [
+ "agora-search-port",
+]
+
+[[package]]
+name = "agora-search-port"
+version = "0.1.0"
+
+[[package]]
 name = "agora-service"
 version = "0.1.0"
 dependencies = [

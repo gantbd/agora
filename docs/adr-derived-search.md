@@ -1,6 +1,7 @@
 # ADR: derived message search boundary
 
-Status: accepted; implementation pending
+Status: implemented for the port and bounded reference adapter; participant-bound
+composition pending
 
 Date: 2026-11-11
 

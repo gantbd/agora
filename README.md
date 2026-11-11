@@ -6,6 +6,14 @@ membership, roles, messages, and participant-neutral addressing. It does not own
 authentication, orchestration, tasks, harnesses, storage, transports, UI, model
 behavior, or wall-clock access.
 
+Derived message search is isolated behind an effect-free `agora-search-port`.
+Its bounded results carry stable message identity and room-local sequence only,
+with explicit source revision, index generation, and available, incomplete,
+stale, or unavailable state. `agora-search-memory` is a volatile bounded semantic
+reference for that contract. Neither crate receives participant authority or
+serves as conversation history; participant-bound service composition remains
+open.
+
 The v0.3 core provides bounded deterministic transitions, typed atomic refusal,
 room-local message ordering and retention, optimistic revisions, an ordered
 bounded outbox, replay-safe response publication, private read-position state,
@@ -175,6 +183,9 @@ The repository also contains an initial layered operational profile:
   passive physical-store snapshot into generic durable compositions;
 - `agora-storage-directory` owns the one qualified local Unix checkpoint-store
   mechanism and no semantic state;
+- `agora-search-port` owns the effect-free identity-only derived-search contract;
+- `agora-search-memory` owns a bounded volatile reference implementation and no
+  conversation or authority state;
 - `agora-host` binds exact wire frames and server-owned clients to a current
   externally verified principal/transport context;
 - `agora-aegis-verifier` maps Host and operator-restore ports to bounded public

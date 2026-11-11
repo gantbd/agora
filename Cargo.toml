@@ -26,6 +26,8 @@ members = [
     "crates/agora-durable",
     "crates/agora-storage-observation",
     "crates/agora-storage-directory",
+    "crates/agora-search-port",
+    "crates/agora-search-memory",
     "crates/agora-host",
     "crates/agora-client",
     "crates/agora-aegis-verifier",

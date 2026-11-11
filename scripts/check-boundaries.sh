@@ -116,6 +116,22 @@ if [[ $(printf '%s\n' "$directory_tree" | wc -l | tr -d ' ') != 3 ]] \
   exit 1
 fi
 
+search_port_tree=$(cargo tree -p agora-search-port --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$search_port_tree" | wc -l | tr -d ' ') != 1 ]]; then
+  printf '%s\n' "$search_port_tree" >&2
+  echo 'Agora search port gained a normal dependency' >&2
+  exit 1
+fi
+
+search_memory_tree=$(cargo tree -p agora-search-memory --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$search_memory_tree" | wc -l | tr -d ' ') != 2 ]] \
+  || ! printf '%s\n' "$search_memory_tree" | rg -q 'agora-search-port' \
+  || printf '%s\n' "$search_memory_tree" | rg -q 'agora-(engine|protocol|service|host|wire|client)'; then
+  printf '%s\n' "$search_memory_tree" >&2
+  echo 'Agora search reference escaped its effect-free port-only closure' >&2
+  exit 1
+fi
+
 embedded_sdk_tree=$(cargo tree -p agora-sdk-embedded --edges normal --depth 1 --locked --offline)
 if [[ $(printf '%s\n' "$embedded_sdk_tree" | wc -l | tr -d ' ') != 4 ]] \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-engine' \
@@ -145,4 +161,4 @@ for sdk_manifest in sdk/embedded/Cargo.toml sdk/client/Cargo.toml; do
   fi
 done
 
-echo 'Agora dependency direction closed; filesystem and Unix-socket effects isolated to qualified adapters'
+echo 'Agora dependency direction closed; derived search remains port-only and effects stay in qualified adapters'

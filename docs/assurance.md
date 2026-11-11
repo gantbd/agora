@@ -22,14 +22,14 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
-closes over the thirteen-package stable workspace, the standalone fuzz package,
-and forty-eight canonical fixtures.
+closes over the fifteen-package stable workspace, the standalone fuzz package,
+and sixty canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
 publication, weakening the toolchain pin, or removing the security policy is
 refused.
-The supply gate closes over seventeen local locked components and exact local-path
+The supply gate closes over nineteen local locked components and exact local-path
 dependency declarations. It also regenerates and strictly validates the
 canonical CycloneDX 1.5 source SBOM, including exact component and dependency
 closure, licenses, publication denial, deterministic ordering, host-path

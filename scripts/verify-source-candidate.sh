@@ -35,6 +35,7 @@ if ! rg -q '^schema=agora-source-candidate-v1$' "$root/SOURCE-MANIFEST.txt" \
   || ! rg -q '^agora_revision=[0-9a-f]{40}$' "$root/SOURCE-MANIFEST.txt" \
   || ! rg -q '^aegis_context_revision=[0-9a-f]{40}$' "$root/SOURCE-MANIFEST.txt" \
   || ! rg -q '^keystone_context_revision=[0-9a-f]{40}$' "$root/SOURCE-MANIFEST.txt" \
+  || ! rg -q '^stable_component_count=19$' "$root/SOURCE-MANIFEST.txt" \
   || ! rg -q '^provenance=exact-local-content-closure$' "$root/SOURCE-MANIFEST.txt" \
   || ! rg -q '^claim=self-contained-stable-local-source$' "$root/SOURCE-MANIFEST.txt" \
   || ! rg -q '^publication=denied$' "$root/SOURCE-MANIFEST.txt"; then
