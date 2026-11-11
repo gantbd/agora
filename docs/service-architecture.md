@@ -18,6 +18,7 @@ remain separate crates. Their normal dependency direction is:
 agora-client  -> agora-protocol <- agora-service -> agora-engine
                                 <- agora-wire -> keystone-codec
 agora-host -----> agora-wire + agora-service + trusted verifier port
+agora-service --> agora-search-port
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-observation --> keystone-storage port
 agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem
@@ -33,6 +34,15 @@ The wire crate depends only on passive protocol values and the shared bounded
 Keystone codec primitive. Transport types never become authoritative domain state.
 The host composes wire and service through an injected principal-verification
 port; it imports no credential or Aegis vocabulary.
+
+Derived search uses `SearchRuntimeV1` as a volatile sidecar over a borrowed
+authoritative `ServiceV2`. The embedded `SearchServiceV1` convenience owner and
+authenticated `SearchHostV1` both delegate to that same runtime; neither clones
+the engine or creates a second conversation authority. The Host wrapper routes
+ordinary mutations through its one Service V2, retires all derived continuations
+when revision changes, and retires per-client receipts/cursors on close,
+revocation, or client substitution. Search runtime state is deliberately absent
+from Service/Host checkpoints.
 
 The leaf local daemon owns outer framing and one accepted connection lifetime.
 It supplies a trusted connection-derived Aegis context and explicit time to

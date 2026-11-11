@@ -9,12 +9,21 @@ use agora_protocol::search::{
     ServiceSearchCursorV1,
 };
 use agora_protocol::v2::{ClientIdV2, MessageIdV1, ReplyV2, RequestV2};
+pub use agora_search_port::SearchPortV1;
 use agora_search_port::{
     SearchCursorV1 as AdapterCursorV1, SearchMatchProfileV1 as AdapterMatchProfileV1,
-    SearchObservationV1, SearchPageV1, SearchPortV1, SearchQueryV1,
-    SearchRefusalV1 as AdapterRefusalV1,
+    SearchObservationV1, SearchPageV1, SearchQueryV1, SearchRefusalV1 as AdapterRefusalV1,
 };
 use std::collections::BTreeMap;
+
+/// Port vocabulary re-exported for composition adapters that should depend on
+/// the service boundary rather than the reference index implementation.
+pub mod port {
+    pub use agora_search_port::{
+        SearchCoverageV1, SearchCursorV1, SearchGenerationV1, SearchHitV1, SearchMatchProfileV1,
+        SearchObservationV1, SearchPageV1, SearchQueryV1, SearchRefusalV1,
+    };
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SearchServiceLimitsV1 {
@@ -72,26 +81,27 @@ struct SearchCursorRecord {
     adapter: AdapterCursorV1,
 }
 
+struct SearchContext<'a> {
+    service: &'a ServiceV2,
+    client: ClientIdV2,
+    command: &'a SearchCommandV1,
+    room_id: &'a RoomId,
+    source_revision: u64,
+    expected_generation: Option<u64>,
+}
+
+/// Convenience owner used by embedded compositions. Hosts that already own the
+/// authoritative service use [`SearchRuntimeV1`] as a sidecar instead.
 pub struct SearchServiceV1<P> {
     service: ServiceV2,
-    port: P,
-    limits: SearchServiceLimitsV1,
-    retained: BTreeMap<(ClientIdV2, SearchRequestIdV1), RetainedSearchRequest>,
-    cursors: BTreeMap<ServiceSearchCursorV1, SearchCursorRecord>,
-    next_cursor: u64,
-    usage: SearchServiceUsageV1,
+    runtime: SearchRuntimeV1<P>,
 }
 
 impl<P: SearchPortV1> SearchServiceV1<P> {
     pub fn new(service: ServiceV2, port: P, limits: SearchServiceLimitsV1) -> Self {
         Self {
             service,
-            port,
-            limits,
-            retained: BTreeMap::new(),
-            cursors: BTreeMap::new(),
-            next_cursor: 0,
-            usage: SearchServiceUsageV1::default(),
+            runtime: SearchRuntimeV1::new(port, limits),
         }
     }
 
@@ -100,15 +110,15 @@ impl<P: SearchPortV1> SearchServiceV1<P> {
     }
 
     pub fn port(&self) -> &P {
-        &self.port
+        self.runtime.port()
     }
 
     pub fn into_parts(self) -> (ServiceV2, P) {
-        (self.service, self.port)
+        (self.service, self.runtime.into_port())
     }
 
     pub fn usage(&self) -> SearchServiceUsageV1 {
-        self.usage
+        self.runtime.usage()
     }
 
     pub fn connect(
@@ -122,7 +132,7 @@ impl<P: SearchPortV1> SearchServiceV1<P> {
         &mut self,
         client: ClientIdV2,
     ) -> Result<bool, agora_protocol::v2::RefusalV2> {
-        self.retire_client_search_state(client);
+        self.runtime.retire_client(client);
         self.service.disconnect(client)
     }
 
@@ -130,14 +140,67 @@ impl<P: SearchPortV1> SearchServiceV1<P> {
         let before = self.service.engine().revision();
         let reply = self.service.execute(client, request);
         if self.service.engine().revision() != before {
-            self.retire_all_cursors();
+            self.runtime.conversation_mutated();
         }
         reply
     }
 
     pub fn search(&mut self, client: ClientIdV2, request: SearchRequestV1) -> SearchReplyV1 {
+        self.runtime.search(&self.service, client, request)
+    }
+}
+
+/// Volatile search receipts, cursors, and adapter ownership beside one
+/// authoritative [`ServiceV2`]. It never owns or clones conversation state.
+pub struct SearchRuntimeV1<P> {
+    port: P,
+    limits: SearchServiceLimitsV1,
+    retained: BTreeMap<(ClientIdV2, SearchRequestIdV1), RetainedSearchRequest>,
+    cursors: BTreeMap<ServiceSearchCursorV1, SearchCursorRecord>,
+    next_cursor: u64,
+    usage: SearchServiceUsageV1,
+}
+
+impl<P: SearchPortV1> SearchRuntimeV1<P> {
+    pub fn new(port: P, limits: SearchServiceLimitsV1) -> Self {
+        Self {
+            port,
+            limits,
+            retained: BTreeMap::new(),
+            cursors: BTreeMap::new(),
+            next_cursor: 0,
+            usage: SearchServiceUsageV1::default(),
+        }
+    }
+
+    pub fn port(&self) -> &P {
+        &self.port
+    }
+
+    pub fn into_port(self) -> P {
+        self.port
+    }
+
+    pub fn usage(&self) -> SearchServiceUsageV1 {
+        self.usage
+    }
+
+    pub fn retire_client(&mut self, client: ClientIdV2) {
+        self.retire_client_search_state(client);
+    }
+
+    pub fn conversation_mutated(&mut self) {
+        self.retire_all_cursors();
+    }
+
+    pub fn search(
+        &mut self,
+        service: &ServiceV2,
+        client: ClientIdV2,
+        request: SearchRequestV1,
+    ) -> SearchReplyV1 {
         count(&mut self.usage.offers, &mut self.usage.overflowed);
-        let Some(participant) = self.service.participant_for_client(client).cloned() else {
+        let Some(participant) = service.participant_for_client(client).cloned() else {
             return self.refused(ProtocolSearchRefusalV1::UnknownClient);
         };
         let key = (client, request.request_id);
@@ -152,7 +215,7 @@ impl<P: SearchPortV1> SearchServiceV1<P> {
         if self.retained.len() >= self.limits.max_retained_requests {
             return self.refused(ProtocolSearchRefusalV1::RequestLimit);
         }
-        let reply = match self.search_new(client, &participant, &request.command) {
+        let reply = match self.search_new(service, client, &participant, &request.command) {
             Ok(outcome) => {
                 count(&mut self.usage.accepted, &mut self.usage.overflowed);
                 SearchReplyV1::Accepted(outcome)
@@ -171,6 +234,7 @@ impl<P: SearchPortV1> SearchServiceV1<P> {
 
     fn search_new(
         &mut self,
+        service: &ServiceV2,
         client: ClientIdV2,
         participant: &ParticipantId,
         command: &SearchCommandV1,
@@ -185,18 +249,17 @@ impl<P: SearchPortV1> SearchServiceV1<P> {
             return Err(ProtocolSearchRefusalV1::InvalidInput);
         }
         let room_id = RoomId::new(&command.room_id);
-        if self.service.engine().room(&room_id).is_none() {
+        if service.engine().room(&room_id).is_none() {
             return Err(ProtocolSearchRefusalV1::UnknownRoom);
         }
-        if self
-            .service
+        if service
             .engine()
             .member_role(&room_id, participant)
             .is_none()
         {
             return Err(ProtocolSearchRefusalV1::NotMember);
         }
-        let source_revision = self.service.engine().revision().0;
+        let source_revision = service.engine().revision().0;
         let cursor_record = if let Some(cursor) = command.cursor {
             let record = self
                 .cursors
@@ -236,9 +299,8 @@ impl<P: SearchPortV1> SearchServiceV1<P> {
             );
         }
         let observation = result?;
-        if self.service.engine().revision().0 != source_revision
-            || self
-                .service
+        if service.engine().revision().0 != source_revision
+            || service
                 .engine()
                 .member_role(&room_id, participant)
                 .is_none()
@@ -247,51 +309,32 @@ impl<P: SearchPortV1> SearchServiceV1<P> {
             return Ok(ProtocolSearchOutcomeV1::Unavailable);
         }
         self.map_observation(
-            client,
-            command,
-            &room_id,
-            source_revision,
-            cursor_record.map(|record| record.index_generation),
+            SearchContext {
+                service,
+                client,
+                command,
+                room_id: &room_id,
+                source_revision,
+                expected_generation: cursor_record.map(|record| record.index_generation),
+            },
             observation,
         )
     }
 
     fn map_observation(
         &mut self,
-        client: ClientIdV2,
-        command: &SearchCommandV1,
-        room_id: &RoomId,
-        source_revision: u64,
-        expected_generation: Option<u64>,
+        context: SearchContext<'_>,
         observation: SearchObservationV1,
     ) -> Result<ProtocolSearchOutcomeV1, ProtocolSearchRefusalV1> {
         match observation {
-            SearchObservationV1::Available(page) => Ok(self
-                .map_page(
-                    client,
-                    command,
-                    room_id,
-                    source_revision,
-                    expected_generation,
-                    page,
-                )?
-                .map_or(
-                    ProtocolSearchOutcomeV1::Unavailable,
-                    ProtocolSearchOutcomeV1::Available,
-                )),
-            SearchObservationV1::Incomplete(page) => Ok(self
-                .map_page(
-                    client,
-                    command,
-                    room_id,
-                    source_revision,
-                    expected_generation,
-                    page,
-                )?
-                .map_or(
-                    ProtocolSearchOutcomeV1::Unavailable,
-                    ProtocolSearchOutcomeV1::Incomplete,
-                )),
+            SearchObservationV1::Available(page) => Ok(self.map_page(&context, page)?.map_or(
+                ProtocolSearchOutcomeV1::Unavailable,
+                ProtocolSearchOutcomeV1::Available,
+            )),
+            SearchObservationV1::Incomplete(page) => Ok(self.map_page(&context, page)?.map_or(
+                ProtocolSearchOutcomeV1::Unavailable,
+                ProtocolSearchOutcomeV1::Incomplete,
+            )),
             SearchObservationV1::Stale {
                 source_revision,
                 generation,
@@ -305,29 +348,28 @@ impl<P: SearchPortV1> SearchServiceV1<P> {
 
     fn map_page(
         &mut self,
-        client: ClientIdV2,
-        command: &SearchCommandV1,
-        room_id: &RoomId,
-        source_revision: u64,
-        expected_generation: Option<u64>,
+        context: &SearchContext<'_>,
         page: SearchPageV1,
     ) -> Result<Option<ProtocolSearchPageV1>, ProtocolSearchRefusalV1> {
-        let canonical_hits = page.hits.len() <= command.limit as usize
+        let canonical_hits = page.hits.len() <= context.command.limit as usize
             && page
                 .hits
                 .windows(2)
                 .all(|pair| pair[0].message_sequence < pair[1].message_sequence)
             && !(page.hits.is_empty() && page.next.is_some());
-        if page.source_revision != source_revision
-            || expected_generation.is_some_and(|expected| expected != page.generation.value())
+        if page.source_revision != context.source_revision
+            || context
+                .expected_generation
+                .is_some_and(|expected| expected != page.generation.value())
             || !canonical_hits
             || page.hits.iter().any(|hit| {
-                self.service
+                context
+                    .service
                     .engine()
-                    .message_by_id(room_id, MessageId::from_bytes(hit.message_id))
+                    .message_by_id(context.room_id, MessageId::from_bytes(hit.message_id))
                     .is_none_or(|message| {
                         message.sequence() != hit.message_sequence
-                            || !message.body().contains(&command.term)
+                            || !message.body().contains(&context.command.term)
                     })
             })
         {
@@ -338,12 +380,12 @@ impl<P: SearchPortV1> SearchServiceV1<P> {
         }
         let next = if let Some(adapter) = page.next {
             match self.allocate_cursor(SearchCursorRecord {
-                owner: client,
-                room_id: command.room_id.clone(),
-                profile: command.profile,
-                term: command.term.clone(),
-                limit: command.limit,
-                source_revision,
+                owner: context.client,
+                room_id: context.command.room_id.clone(),
+                profile: context.command.profile,
+                term: context.command.term.clone(),
+                limit: context.command.limit,
+                source_revision: context.source_revision,
                 index_generation: page.generation.value(),
                 adapter,
             }) {
@@ -357,7 +399,7 @@ impl<P: SearchPortV1> SearchServiceV1<P> {
             None
         };
         Ok(Some(ProtocolSearchPageV1 {
-            source_revision,
+            source_revision: context.source_revision,
             index_generation: page.generation.value(),
             hits: page
                 .hits

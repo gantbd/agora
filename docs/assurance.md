@@ -101,8 +101,13 @@ authoritative revalidation of identity-only hits, mutation retirement, and
 disconnect cleanup. Search Wire V1 adds exhaustive closed-value round trips,
 canonical unique-ID/increasing-sequence pages, malformed and content-safe
 diagnostics evidence, two frozen frames, and bounded deterministic single-bit
-mutation closure. Authenticated Host, client uncertainty, SDK, transport, and
-recovery evidence remain open, so this is not yet a deployable search profile.
+mutation closure. Three Host scenarios bind the exact authenticated session and
+service client, preserve exact replay, reject substitution, and retire adapter
+continuations after revocation, close, or conversation mutation. Five client
+scenarios cover not-sent progression, exact outcome-unknown replay, changed
+command fencing, exact epoch/client/tail restoration, explicit rebind, and
+content-safe diagnostics. Facade-only tests close both SDK audiences. Transport
+and recovery evidence remain open, so this is not yet a deployable search profile.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;
@@ -188,7 +193,7 @@ route envelope;
 `checkpoint_canonical` drives all three semantic
 recovery layers;
 `outer_frame_canonical` drives the daemon's production length-prefix codec over
-the forty-one complete-frame protocol seeds (the five fixed-width local
+the forty-six complete-frame protocol seeds (the five fixed-width local
 control fixtures are deliberately excluded). An accepted
 candidate must re-encode exactly, and an accepted frame prefix must preserve its
 unconsumed stream suffix. The qualified smoke ran 20,000 fixed-seed cases on all

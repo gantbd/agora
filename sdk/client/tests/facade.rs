@@ -7,6 +7,8 @@ struct PortV2;
 
 struct TransientPort;
 
+struct SearchPort;
+
 impl client::ServicePort for Port {
     type Error = Infallible;
 
@@ -47,6 +49,57 @@ impl client::transient::TransientPortV1 for TransientPort {
             protocol::transient::TransientRefusalV1::NotMember,
         ))
     }
+}
+
+impl client::search::SearchPortV1 for SearchPort {
+    type Error = Infallible;
+
+    fn execute(
+        &mut self,
+        _offer: protocol::search::SearchOfferV1,
+    ) -> Result<protocol::search::SearchReplyV1, client::search::SearchPortFailureV1<Self::Error>>
+    {
+        Ok(protocol::search::SearchReplyV1::Accepted(
+            protocol::search::SearchOutcomeV1::Unavailable,
+        ))
+    }
+}
+
+#[test]
+fn facade_names_search_client_protocol_and_canonical_wire() {
+    let epoch = client::search::SearchReplayEpochV1::new([3; 32]).unwrap();
+    let mut search =
+        client::search::SearchClientV1::new(epoch, protocol::v2::ClientIdV2(7), SearchPort);
+    let command = protocol::search::SearchCommandV1 {
+        room_id: "room".into(),
+        profile: protocol::search::SearchMatchProfileV1::ExactUtf8Substring,
+        term: "term".into(),
+        cursor: None,
+        limit: 2,
+    };
+    assert_eq!(
+        search.execute(command).unwrap(),
+        protocol::search::SearchReplyV1::Accepted(protocol::search::SearchOutcomeV1::Unavailable)
+    );
+    let offer = protocol::search::SearchOfferV1 {
+        client: protocol::v2::ClientIdV2(7),
+        request: protocol::search::SearchRequestV1 {
+            request_id: protocol::search::SearchRequestIdV1(1),
+            command: protocol::search::SearchCommandV1 {
+                room_id: "room".into(),
+                profile: protocol::search::SearchMatchProfileV1::ExactUtf8Substring,
+                term: "term".into(),
+                cursor: None,
+                limit: 2,
+            },
+        },
+    };
+    let limits = wire::WireLimits::reference();
+    let encoded = wire::search::encode_search_offer_v1(&offer, limits).unwrap();
+    assert_eq!(
+        wire::search::decode_search_offer_v1(&encoded, limits).unwrap(),
+        offer
+    );
 }
 
 #[test]

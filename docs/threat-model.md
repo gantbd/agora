@@ -38,8 +38,11 @@ binds each opaque continuation to the exact client, room, term, match profile,
 authoritative revision, index generation, and limit. Exact request replay does
 not repeat index work; changed reuse conflicts. Conversation mutation and
 disconnect retire adapter continuations. The profile is still volatile and not
-remotely reachable: wire/Host/client/transport closure remains required before
-deployment, and indexed content remains a separate sensitive memory copy.
+remotely reachable: the authenticated Host binds the exact service client and
+retires search state on revocation, substitution, close, or conversation
+mutation, while the client fences outcome-unknown retry to an opaque exact
+session/server epoch. Transport selection and recovery closure remain required
+before deployment, and indexed content remains a separate sensitive memory copy.
 
 Room change positions are observer/room-bound correlation state, not bearer
 authority. Every pull rechecks current membership, cross-client and cross-room

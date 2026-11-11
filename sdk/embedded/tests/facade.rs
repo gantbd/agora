@@ -2,6 +2,22 @@ use agora_sdk_embedded::{engine, host, service};
 
 struct Verifier;
 
+struct SearchPort;
+
+impl service::search::SearchPortV1 for SearchPort {
+    fn search(
+        &mut self,
+        _query: service::search::port::SearchQueryV1,
+    ) -> Result<service::search::port::SearchObservationV1, service::search::port::SearchRefusalV1>
+    {
+        Ok(service::search::port::SearchObservationV1::Unavailable)
+    }
+
+    fn retire_cursor(&mut self, _cursor: service::search::port::SearchCursorV1) -> bool {
+        true
+    }
+}
+
 impl host::PrincipalVerifier for Verifier {
     type Context = ();
     type Error = ();
@@ -77,5 +93,26 @@ fn facade_constructs_the_additive_transient_host_profile() {
     assert_eq!(
         transient.host().service().usage(),
         service::v2::UsageV2::default()
+    );
+}
+
+#[test]
+fn facade_constructs_the_participant_bound_search_host_profile() {
+    let engine = engine::Engine::new();
+    let service = service::v2::ServiceV2::new(engine, service::v2::ServiceLimitsV2::default());
+    let host = host::v2::HostV2::new(service, Verifier, host::HostLimits::default());
+    let search = host::search::SearchHostV1::new(
+        host,
+        SearchPort,
+        service::search::SearchServiceLimitsV1::default(),
+    );
+
+    assert_eq!(
+        search.host().service().usage(),
+        service::v2::UsageV2::default()
+    );
+    assert_eq!(
+        search.search_usage(),
+        service::search::SearchServiceUsageV1::default()
     );
 }

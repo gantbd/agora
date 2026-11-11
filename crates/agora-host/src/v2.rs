@@ -211,6 +211,10 @@ impl<V: PrincipalVerifier> HostV2<V> {
         self.sessions.contains_key(&session)
     }
 
+    pub(crate) fn client_for_session(&self, session: HostSessionIdV2) -> Option<ClientIdV2> {
+        self.sessions.get(&session).map(|state| state.client)
+    }
+
     pub(crate) fn wire_limits(&self) -> agora_wire::WireLimits {
         self.limits.wire
     }
@@ -224,6 +228,24 @@ impl<V: PrincipalVerifier> HostV2<V> {
         Ok(self
             .authorize_session(session_id, context, now)?
             .participant)
+    }
+
+    pub(crate) fn authorize_search(
+        &mut self,
+        session_id: HostSessionIdV2,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<ClientIdV2, HostRefusal> {
+        Ok(self.authorize_session(session_id, context, now)?.client)
+    }
+
+    pub(crate) fn retire_search_protocol_violation(
+        &mut self,
+        session_id: HostSessionIdV2,
+    ) -> HostRefusal {
+        self.retire(session_id);
+        count(&mut self.usage.unavailable, &mut self.usage.overflowed);
+        HostRefusal::Unavailable
     }
 
     fn open_refused(&self, refusal: RefusalV2) -> Result<OpenReplyV2, HostRefusal> {

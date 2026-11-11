@@ -72,6 +72,15 @@ not publish another domain transition. A response-encoding failure after service
 acceptance is uncertain delivery, not rollback; retrying the identical request
 observes the retained reply.
 
+The additive `SearchHostV1` wrapper binds separately framed Search Wire V1 to
+the same authenticated V2 session and exact service client. Its volatile search
+runtime borrows the Host's one authoritative Service V2 rather than owning a
+copy. Revalidation precedes decoding and index access; client substitution
+retires the session without disclosing the target. Session close, revocation,
+and every accepted conversation revision change retire affected search receipts
+and adapter continuations. Search replies remain identity-only derived
+observations and the wrapper has no checkpoint profile.
+
 For the durable V2 composition, `AGORAHST` checkpoints the opaque verified
 subject, participant, host session, service client, last verification time,
 retired-session window and full service state as one scope-bound canonical unit.

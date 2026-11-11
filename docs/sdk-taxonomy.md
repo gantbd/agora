@@ -54,6 +54,12 @@ package. The session hello's opaque bytes construct the client replay epoch.
 The embedded facade likewise constructs the authenticated transient Host
 wrapper. The qualified transport remains caller-driven private Unix I/O; the
 facade does not own sockets, authentication, or reconnect policy.
+The same taxonomy applies to derived search. The remote facade names the closed
+search DTOs, canonical codec, and session-epoch-bound uncertainty client. The
+embedded facade constructs the authenticated search Host over a caller-selected
+port implementation reexported through the service boundary. Neither facade
+selects an index, duplicates conversation ownership, or claims transport or
+recovery policy.
 
 ## Laws and evidence
 
