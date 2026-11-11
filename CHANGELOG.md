@@ -25,13 +25,13 @@ follow Semantic Versioning once a public release contract is selected.
   collaboration handshake profile 2 without resuming an old session.
 - Added passive saturating durability-publication observations for both
   authenticated durable Host owners and daemon composition, including truthful
-  fenced-state reporting without exposing the Host/Service projection. Revision
-  `5c2770e1a45d4a02b7cd9262c2d5eb6ba4ea794f` passed the integrated release
-  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
+  fenced-state reporting without exposing the Host/Service projection.
 - Replaced independent daemon readiness, drain, and fence flags with one closed
   sequential lifecycle and added explicit terminal stop evidence that
   distinguishes clean teardown, preserved ambiguous residue, and incomplete
-  cleanup.
+  cleanup. Revision `afea9769a9435c69d48978487f2825e1e93b5c08` passed the
+  integrated release profile with 10,000 soak cycles and 1,000,000 cases on
+  each fuzz target.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque
