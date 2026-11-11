@@ -24,7 +24,9 @@ follow Semantic Versioning once a public release contract is selected.
 - Added explicit operator-restore recovery for durable Host and transient Host
   profiles. It preserves conversation state and identity frontiers, retires all
   recovered sessions, disconnects private Service client state, and durably
-  commits the sanitized checkpoint before returning an active owner.
+  commits the sanitized checkpoint before returning an active owner. Revision
+  `25c12f3c6f8526ba98dd490c7835b8c1cca9c05a` passed the integrated release
+  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,
