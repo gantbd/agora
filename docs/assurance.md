@@ -22,14 +22,14 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
-closes over the twelve-package stable workspace, the standalone fuzz package,
+closes over the thirteen-package stable workspace, the standalone fuzz package,
 and thirty-nine canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
 publication, weakening the toolchain pin, or removing the security policy is
 refused.
-The supply gate closes over sixteen local locked components and exact local-path
+The supply gate closes over seventeen local locked components and exact local-path
 dependency declarations. It also regenerates and strictly validates the
 canonical CycloneDX 1.5 source SBOM, including exact component and dependency
 closure, licenses, publication denial, deterministic ordering, host-path
@@ -433,6 +433,16 @@ error, absent pending/head files, Fenced observation, one offer, zero commits,
 zero indeterminate publications, and one resource fence. A later load returns
 Fenced without another fence count. Existing injected write/sync/rename and
 post-rename cases cover the indeterminate half of the operational-I/O law.
+
+The effect-free storage-observation port is dependency-closed over only the
+Keystone checkpoint-store contract. Directory evidence reads the same passive
+snapshot through both the concrete and generic ports and propagates saturation.
+Two real-socket daemon scenarios cover ordinary durable and combined
+durable/transient owners: after initialization, mutation, cleanup, reopen, and
+recovery they assert separate equal runtime/durability views, exact physical
+load/offer/commit/revision facts, repeated-read passivity, and aggregate
+fidelity. A pure unit case proves physical fidelity loss reaches the daemon even
+when transport and durable-publication counters remain exact.
 
 Client V2 scenarios distinguish definitely-not-sent from outcome-unknown,
 retain and resend the exact request identity only for an equal command, fence a

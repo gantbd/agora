@@ -42,6 +42,7 @@ dependencies = [
  "agora-host",
  "agora-protocol",
  "agora-service",
+ "agora-storage-observation",
  "agora-wire",
  "keystone-storage",
 ]
@@ -117,7 +118,15 @@ dependencies = [
  "agora-host",
  "agora-protocol",
  "agora-service",
+ "agora-storage-observation",
  "agora-wire",
+ "keystone-storage",
+]
+
+[[package]]
+name = "agora-storage-observation"
+version = "0.1.0"
+dependencies = [
  "keystone-storage",
 ]
 

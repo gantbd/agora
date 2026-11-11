@@ -484,6 +484,18 @@ pending file is created remain outcome-unknown and use the indeterminate fence.
 Together with active validation, this means no operational filesystem error can
 leave a constructed owner Active.
 
+`agora-storage-observation` defines an effect-free optional extension of the
+Keystone checkpoint-store port. Its associated snapshot is adapter-owned but
+must be copyable, content-free, passive, and explicitly report loss of counter
+fidelity. The directory adapter implements the extension with
+`DirectoryObservationV1`. A durable host may combine that value with
+`DurableHostObservationV2`; a durable daemon may additionally copy transport and
+available Host/Service facts. Each group remains separately named. Aggregate
+fidelity loss is the disjunction of every represented layer, and the existing
+store-neutral observation remains available for stores without this extension.
+The sequential copy is not a persistent metric, concurrent atomic snapshot, or
+live filesystem validation.
+
 The `AGDIRCP` version-1 record contains the store revision, UTF-8 key, bounded
 checkpoint bytes, declared lengths, and CRC32C binding the header and payload.
 Compare-and-exchange writes a new mode-0600 `.pending` file, synchronizes the

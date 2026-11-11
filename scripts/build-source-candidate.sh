@@ -97,7 +97,7 @@ cp "$keystone_root/LICENSE-MIT" "$root/keystone/LICENSE-MIT"
   echo "aegis_selected_tree_clean=$aegis_selected_clean"
   echo "keystone_context_revision=$keystone_revision"
   echo "keystone_selected_tree_clean=$keystone_selected_clean"
-  echo 'stable_component_count=16'
+  echo 'stable_component_count=17'
   echo 'provenance=exact-local-content-closure'
   echo 'claim=self-contained-stable-local-source'
   echo 'publication=denied'

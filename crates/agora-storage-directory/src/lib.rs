@@ -10,6 +10,7 @@
 #[cfg(not(unix))]
 compile_error!("agora-storage-directory currently qualifies only Unix hosts");
 
+use agora_storage_observation::{ObservableCheckpointStoreV1, ObservationFidelityV1};
 use keystone_storage::{
     AcknowledgementStrength, Checkpoint, CheckpointStore, CommitOutcome, CommitReceipt, Revision,
     StoreRefusal,
@@ -88,6 +89,12 @@ pub struct DirectoryObservationV1 {
     pub indeterminate: u64,
     pub resource_fences: u64,
     pub saturated: bool,
+}
+
+impl ObservationFidelityV1 for DirectoryObservationV1 {
+    fn fidelity_lost(&self) -> bool {
+        self.saturated
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -497,6 +504,14 @@ impl CheckpointStore for DirectoryCheckpointStoreV1 {
     }
 }
 
+impl ObservableCheckpointStoreV1 for DirectoryCheckpointStoreV1 {
+    type Observation = DirectoryObservationV1;
+
+    fn physical_observation(&self) -> Self::Observation {
+        DirectoryCheckpointStoreV1::observation(self)
+    }
+}
+
 fn validate_limits(limits: DirectoryLimitsV1) -> Result<(), DirectoryErrorV1> {
     if limits.max_key_bytes == 0
         || limits.max_value_bytes == 0
@@ -898,6 +913,11 @@ mod tests {
         assert_eq!(observation.offers, 1);
         assert_eq!(observation.commits, 1);
         assert_eq!(observation, store.observation());
+        assert_eq!(
+            observation,
+            ObservableCheckpointStoreV1::physical_observation(&store)
+        );
+        assert!(!observation.fidelity_lost());
         let debug = format!("{store:?}");
         assert!(debug.contains("DirectoryCheckpointStoreV1"));
         assert!(!debug.contains(path.to_str().unwrap()));
@@ -913,6 +933,7 @@ mod tests {
         assert_eq!(observation.offers, u64::MAX);
         assert_eq!(observation.refusals, 1);
         assert!(observation.saturated);
+        assert!(ObservableCheckpointStoreV1::physical_observation(&store).fidelity_lost());
     }
 
     #[test]

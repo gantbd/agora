@@ -65,6 +65,7 @@ durable_tree=$(cargo tree -p agora-durable --edges normal --depth 1 --locked --o
 if ! printf '%s\n' "$durable_tree" | rg -q 'agora-service' \
   || ! printf '%s\n' "$durable_tree" | rg -q 'agora-protocol' \
   || ! printf '%s\n' "$durable_tree" | rg -q 'agora-host' \
+  || ! printf '%s\n' "$durable_tree" | rg -q 'agora-storage-observation' \
   || ! printf '%s\n' "$durable_tree" | rg -q 'keystone-storage' \
   || printf '%s\n' "$durable_tree" | rg -q 'agora-(client|wire)'; then
   printf '%s\n' "$durable_tree" >&2
@@ -96,8 +97,17 @@ if [[ $(printf '%s\n' "$local_daemon_tree" | wc -l | tr -d ' ') != 6 ]] \
   exit 1
 fi
 
+observation_tree=$(cargo tree -p agora-storage-observation --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$observation_tree" | wc -l | tr -d ' ') != 2 ]] \
+  || ! printf '%s\n' "$observation_tree" | rg -q 'keystone-storage'; then
+  printf '%s\n' "$observation_tree" >&2
+  echo 'Agora storage-observation port escaped its effect-free Keystone closure' >&2
+  exit 1
+fi
+
 directory_tree=$(cargo tree -p agora-storage-directory --edges normal --depth 1 --locked --offline)
-if [[ $(printf '%s\n' "$directory_tree" | wc -l | tr -d ' ') != 2 ]] \
+if [[ $(printf '%s\n' "$directory_tree" | wc -l | tr -d ' ') != 3 ]] \
+  || ! printf '%s\n' "$directory_tree" | rg -q 'agora-storage-observation' \
   || ! printf '%s\n' "$directory_tree" | rg -q 'keystone-storage' \
   || printf '%s\n' "$directory_tree" | rg -q 'agora-(engine|host|service|wire|client)'; then
   printf '%s\n' "$directory_tree" >&2

@@ -736,6 +736,16 @@ fn durable_daemon_reopens_conversation_state_through_the_same_transport_profile(
     assert_eq!(observation.durability.offers, 3);
     assert_eq!(observation.durability.committed, 3);
     assert!(!observation.fidelity_lost);
+    let physical = daemon.physical_observation();
+    assert_eq!(physical.transport, observation.transport);
+    assert_eq!(physical.runtime, observation.runtime);
+    assert_eq!(physical.durability, observation.durability);
+    assert_eq!(physical.physical.revision, Some(3));
+    assert_eq!(physical.physical.loads, 0);
+    assert_eq!(physical.physical.offers, 4);
+    assert_eq!(physical.physical.commits, 4);
+    assert!(!physical.fidelity_lost);
+    assert_eq!(physical, daemon.physical_observation());
     assert!(
         daemon
             .host()
@@ -808,6 +818,15 @@ fn durable_daemon_reopens_conversation_state_through_the_same_transport_profile(
     drop(stream);
     let (result, daemon) = server.join().unwrap();
     result.unwrap();
+    let physical = daemon.physical_observation();
+    assert_eq!(physical.physical.loads, 1);
+    assert_eq!(
+        physical.physical.revision,
+        Some(physical.durability.store_revision)
+    );
+    assert_eq!(physical.physical.offers, physical.durability.offers);
+    assert_eq!(physical.physical.commits, physical.durability.committed);
+    assert!(!physical.fidelity_lost);
     drop(daemon);
     fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
@@ -915,6 +934,13 @@ fn durable_collaboration_recovers_from_exact_residue_with_transients_empty() {
     assert_eq!(observation.durability.offers, 5);
     assert_eq!(observation.durability.committed, 5);
     assert!(!observation.fidelity_lost);
+    let physical = daemon.physical_observation();
+    assert_eq!(physical.runtime, observation.runtime);
+    assert_eq!(physical.durability, observation.durability);
+    assert_eq!(physical.physical.revision, Some(5));
+    assert_eq!(physical.physical.offers, 6);
+    assert_eq!(physical.physical.commits, 6);
+    assert!(!physical.fidelity_lost);
     drop(daemon);
     assert!(!path.exists());
 

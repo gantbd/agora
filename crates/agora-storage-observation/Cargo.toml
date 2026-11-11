@@ -1,0 +1,17 @@
+[package]
+name = "agora-storage-observation"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+description = "Effect-free physical checkpoint-store observation port for Agora"
+publish = false
+
+[dependencies]
+keystone-storage = { path = "../../../keystone/crates/keystone-storage", version = "=0.0.1" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

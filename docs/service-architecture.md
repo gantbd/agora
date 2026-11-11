@@ -19,7 +19,8 @@ agora-client  -> agora-protocol <- agora-service -> agora-engine
                                 <- agora-wire -> keystone-codec
 agora-host -----> agora-wire + agora-service + trusted verifier port
 agora-durable --> agora-host + agora-service + keystone-storage port
-agora-storage-directory --> keystone-storage port + local Unix filesystem
+agora-storage-observation --> keystone-storage port
+agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem
 agora-aegis-verifier --> agora-host + Aegis public service port
 agora-local-daemon --> agora-aegis-verifier + agora-host + agora-wire + Unix socket
 ```
@@ -158,6 +159,13 @@ and calls after fencing with saturating content-free counters. Daemon
 composition preserves the transport and durability groups after a fence but
 omits the no-longer-trustworthy Host/Service projection. These process-local
 facts are excluded from checkpoints and cannot affect a result.
+
+`agora-storage-observation` is an effect-free optional extension of the
+checkpoint-store port. It lets a physical adapter provide an associated passive
+snapshot and fidelity bit without making `agora-durable` or the daemon depend on
+that adapter. The composed daemon view retains transport, available runtime,
+durable publication, and physical store groups separately; it does not infer
+semantic success from physical counters or claim a concurrent atomic snapshot.
 
 `agora-storage-directory` is the one qualified physical composition. It owns no
 Agora semantics: it implements the Keystone store port for one key using a

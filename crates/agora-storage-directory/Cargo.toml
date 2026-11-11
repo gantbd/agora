@@ -8,6 +8,7 @@ description = "Exclusive private-directory checkpoint adapter for Agora"
 publish = false
 
 [dependencies]
+agora-storage-observation = { path = "../agora-storage-observation", version = "=0.1.0" }
 keystone-storage = { path = "../../../keystone/crates/keystone-storage", version = "=0.0.1" }
 
 [dev-dependencies]

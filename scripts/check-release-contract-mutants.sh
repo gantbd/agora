@@ -15,6 +15,7 @@ mkdir -p "$fixture_root/docs" "$fixture_root/crates/agora-wire" \
   "$fixture_root/crates/agora-client" "$fixture_root/crates/agora-host" \
   "$fixture_root/crates/agora-protocol" "$fixture_root/crates/agora-service" \
   "$fixture_root/crates/agora-storage-directory" \
+  "$fixture_root/crates/agora-storage-observation" \
   "$fixture_root/sdk/client" "$fixture_root/sdk/embedded"
 
 for file in CHANGELOG.md Cargo.lock LICENSE-APACHE LICENSE-MIT README.md SECURITY.md \
@@ -29,6 +30,7 @@ cp docs/agora-source.cdx.json "$fixture_root/docs/agora-source.cdx.json"
 for manifest in Cargo.toml crates/agora-wire/Cargo.toml crates/agora-aegis-verifier/Cargo.toml crates/agora-client/Cargo.toml \
   crates/agora-host/Cargo.toml crates/agora-protocol/Cargo.toml \
   crates/agora-service/Cargo.toml crates/agora-storage-directory/Cargo.toml \
+  crates/agora-storage-observation/Cargo.toml \
   sdk/client/Cargo.toml sdk/embedded/Cargo.toml; do
   cp "$manifest" "$fixture_root/$manifest"
 done

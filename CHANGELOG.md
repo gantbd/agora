@@ -41,6 +41,9 @@ follow Semantic Versioning once a public release contract is selected.
   while still reporting the constructed owner Active. Revision
   `3c8e77819d571a9a4a3b7001127816f542948083` passed the integrated release
   profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
+- Added an effect-free optional physical-store observation port and generic
+  durable-host/daemon composition that preserves transport, runtime,
+  publication, and physical facts as separate groups with aggregate fidelity.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque

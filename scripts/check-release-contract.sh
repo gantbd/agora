@@ -73,7 +73,9 @@ fi
 if ! rg -q 'path = "\.\./\.\./\.\./aegis/' crates/agora-aegis-verifier/Cargo.toml \
   || ! rg -q 'path = "\.\./\.\./\.\./keystone/' crates/agora-wire/Cargo.toml \
   || ! rg -q 'path = "\.\./\.\./\.\./keystone/' \
-    crates/agora-storage-directory/Cargo.toml; then
+    crates/agora-storage-directory/Cargo.toml \
+  || ! rg -q 'path = "\.\./\.\./\.\./keystone/' \
+    crates/agora-storage-observation/Cargo.toml; then
   echo 'Aegis or Keystone source-layout assumption changed without release-contract review' >&2
   exit 1
 fi

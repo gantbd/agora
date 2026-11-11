@@ -10,7 +10,7 @@ manifests inherit workspace metadata.
 
 The tracked canonical source SBOM is part of the Agora tree and is therefore
 included in, and checksum-closed by, every source candidate. It describes the
-same sixteen-component stable graph; it does not describe built binary contents.
+same seventeen-component stable graph; it does not describe built binary contents.
 
 Construction requires a clean tracked Agora tree and records its exact commit.
 The selected sibling bytes are copied from the local Aegis and Keystone trees.
@@ -31,7 +31,7 @@ This directory profile is not itself an archive, binary artifact, registry packa
 signature, attestation, advisory report, legal conclusion, remote-source proof,
 reproducible binary, installer, or publication authorization. The standalone
 fuzz workspace retains registry-sourced test tooling and is not part of the
-stable sixteen-component release graph. Candidate distribution and security
+stable seventeen-component release graph. Candidate distribution and security
 support remain unauthorized until a channel and policy are explicitly selected.
 
 ## Qualified local candidate

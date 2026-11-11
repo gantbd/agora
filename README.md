@@ -135,6 +135,8 @@ The repository also contains an initial layered operational profile:
   registered participant, and provides bounded replay-safe requests;
 - `agora-durable` owns the store-neutral pre-reply durability and uncertainty
   fence for complete Service V2 checkpoints;
+- `agora-storage-observation` owns the effect-free optional port for copying a
+  passive physical-store snapshot into generic durable compositions;
 - `agora-storage-directory` owns the one qualified local Unix checkpoint-store
   mechanism and no semantic state;
 - `agora-host` binds exact wire frames and server-owned clients to a current

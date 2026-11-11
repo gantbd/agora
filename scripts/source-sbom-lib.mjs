@@ -1,5 +1,5 @@
 const EXPECTED_LICENSE = 'MIT OR Apache-2.0';
-const EXPECTED_COMPONENTS = 16;
+const EXPECTED_COMPONENTS = 17;
 
 function refOf(pkg) {
   return `pkg:cargo/${pkg.name}@${pkg.version}`;

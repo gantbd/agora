@@ -18,6 +18,7 @@ use agora_service::v2::{
     ServiceV2,
     persistence::{ServiceCheckpointErrorV2, ServiceCheckpointScopeV1, ServiceRecoveryLimitsV2},
 };
+pub use agora_storage_observation::{ObservableCheckpointStoreV1, ObservationFidelityV1};
 use keystone_storage::{
     AcknowledgementStrength, CheckpointStore, CommitOutcome, Revision, StoreRefusal,
 };
@@ -86,6 +87,15 @@ pub struct DurableHostObservationV2 {
     pub invalid_receipt: u64,
     pub fenced: u64,
     pub saturated: bool,
+}
+
+/// Passive publication and physical-store facts copied at one call boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DurableStoreObservationV2<O> {
+    pub durability: DurableHostObservationV2,
+    pub physical: O,
+    /// Sticky loss of counter fidelity in either represented owner.
+    pub fidelity_lost: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -163,6 +173,18 @@ fn host_observation(
         invalid_receipt: counters.invalid_receipt,
         fenced: counters.fenced,
         saturated: counters.saturated,
+    }
+}
+
+fn durable_store_observation<S: ObservableCheckpointStoreV1>(
+    durability: DurableHostObservationV2,
+    store: &S,
+) -> DurableStoreObservationV2<S::Observation> {
+    let physical = store.physical_observation();
+    DurableStoreObservationV2 {
+        durability,
+        physical,
+        fidelity_lost: durability.saturated || physical.fidelity_lost(),
     }
 }
 
@@ -615,6 +637,13 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableTransientHostV1<V, S> {
         host_observation(self.state, self.store_revision, self.counters)
     }
 
+    pub fn layered_observation(&self) -> DurableStoreObservationV2<S::Observation>
+    where
+        S: ObservableCheckpointStoreV1,
+    {
+        durable_store_observation(self.observation(), &self.store)
+    }
+
     pub fn host(&self) -> Option<&TransientHostV1<V>> {
         (self.state == DurableOwnerStateV2::Active).then_some(&self.host)
     }
@@ -865,6 +894,13 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
 
     pub fn observation(&self) -> DurableHostObservationV2 {
         host_observation(self.state, self.store_revision, self.counters)
+    }
+
+    pub fn layered_observation(&self) -> DurableStoreObservationV2<S::Observation>
+    where
+        S: ObservableCheckpointStoreV1,
+    {
+        durable_store_observation(self.observation(), &self.store)
     }
 
     pub fn host(&self) -> Option<&HostV2<V>> {

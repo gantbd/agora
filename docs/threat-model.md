@@ -260,6 +260,12 @@ reflect a raced or degraded filesystem. The owner therefore fences before
 returning the exact definitely-uncommitted I/O error. Once pending publication
 begins, any I/O failure remains indeterminate and fenced; neither class permits
 automatic retry by that owner.
+The optional storage-observation port is not an authority or integrity oracle.
+Only adapter implementations with separate evidence may participate in a
+qualified composition; the current claim covers the private-directory adapter.
+The daemon preserves physical facts as a distinct group and never infers a
+semantic commit from a store counter. Snapshots remain process-local and
+sequential, so exporters must not claim persistence or cross-owner atomicity.
 
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.

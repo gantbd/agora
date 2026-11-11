@@ -12,7 +12,7 @@ mod lifetime;
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
 use agora_durable::{
     DurableHostObservationV2, DurableHostPublicationV2, DurableHostSuppressionV2, DurableHostV2,
-    DurableTransientHostV1,
+    DurableStoreObservationV2, DurableTransientHostV1, ObservableCheckpointStoreV1,
 };
 use agora_host::transient::TransientHostV1;
 use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
@@ -135,6 +135,17 @@ pub struct DurableDaemonObservationV1 {
     pub transport: DaemonHealthV1,
     pub runtime: Option<DaemonObservationV1>,
     pub durability: DurableHostObservationV2,
+    pub fidelity_lost: bool,
+}
+
+/// Passive daemon, durable-publication, and physical-store facts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhysicalDurableDaemonObservationV1<O> {
+    pub transport: DaemonHealthV1,
+    pub runtime: Option<DaemonObservationV1>,
+    pub durability: DurableHostObservationV2,
+    pub physical: O,
+    /// Sticky loss of counter fidelity in any represented layer.
     pub fidelity_lost: bool,
 }
 
@@ -1017,6 +1028,17 @@ where
         )
     }
 
+    pub fn physical_observation(&self) -> PhysicalDurableDaemonObservationV1<S::Observation>
+    where
+        S: ObservableCheckpointStoreV1,
+    {
+        physical_durable_observation(
+            self.health,
+            self.host.host().map(|host| observation(self.health, host)),
+            self.host.layered_observation(),
+        )
+    }
+
     pub const fn host(&self) -> &DurableHostV2<AegisVerifierV1<P>, S> {
         &self.host
     }
@@ -1100,6 +1122,19 @@ where
         )
     }
 
+    pub fn physical_observation(&self) -> PhysicalDurableDaemonObservationV1<S::Observation>
+    where
+        S: ObservableCheckpointStoreV1,
+    {
+        physical_durable_observation(
+            self.health,
+            self.host
+                .host()
+                .map(|host| observation(self.health, host.host())),
+            self.host.layered_observation(),
+        )
+    }
+
     pub const fn host(&self) -> &DurableTransientHostV1<AegisVerifierV1<P>, S> {
         &self.host
     }
@@ -1142,6 +1177,22 @@ fn durable_observation(
         fidelity_lost: transport.saturated
             || runtime.is_some_and(|observation| observation.fidelity_lost)
             || durability.saturated,
+    }
+}
+
+fn physical_durable_observation<O: Copy>(
+    transport: DaemonHealthV1,
+    runtime: Option<DaemonObservationV1>,
+    store: DurableStoreObservationV2<O>,
+) -> PhysicalDurableDaemonObservationV1<O> {
+    PhysicalDurableDaemonObservationV1 {
+        transport,
+        runtime,
+        durability: store.durability,
+        physical: store.physical,
+        fidelity_lost: transport.saturated
+            || runtime.is_some_and(|observation| observation.fidelity_lost)
+            || store.fidelity_lost,
     }
 }
 
@@ -1227,9 +1278,9 @@ mod tests {
     use super::{
         DaemonHealthV1, DaemonLifecycleV1, HostUsage, OuterFrameErrorV1, ServiceObservationV1,
         decode_outer_frame_prefix_v1, durable_observation, encode_outer_frame_v1, increment,
-        observation_fidelity_lost,
+        observation_fidelity_lost, physical_durable_observation,
     };
-    use agora_durable::{DurableHostObservationV2, DurableOwnerStateV2};
+    use agora_durable::{DurableHostObservationV2, DurableOwnerStateV2, DurableStoreObservationV2};
 
     #[test]
     fn default_health_is_starting_and_cannot_claim_readiness_or_drain_completion() {
@@ -1302,6 +1353,35 @@ mod tests {
         };
         let observation = durable_observation(DaemonHealthV1::default(), None, durability);
         assert!(observation.runtime.is_none());
+        assert_eq!(observation.durability, durability);
+        assert!(observation.fidelity_lost);
+    }
+
+    #[test]
+    fn physical_store_fidelity_loss_reaches_the_aggregate() {
+        let durability = DurableHostObservationV2 {
+            state: DurableOwnerStateV2::Active,
+            store_revision: 4,
+            offers: 4,
+            committed: 4,
+            previously_committed: 0,
+            checkpoint_suppressed: 0,
+            store_refused: 0,
+            outcome_unknown: 0,
+            not_durable: 0,
+            invalid_receipt: 0,
+            fenced: 0,
+            saturated: false,
+        };
+        let observation = physical_durable_observation(
+            DaemonHealthV1::default(),
+            None,
+            DurableStoreObservationV2 {
+                durability,
+                physical: (),
+                fidelity_lost: true,
+            },
+        );
         assert_eq!(observation.durability, durability);
         assert!(observation.fidelity_lost);
     }

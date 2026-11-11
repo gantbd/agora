@@ -308,7 +308,7 @@
   an idle daemon and makes no concurrent or in-flight graceful-drain claim.
 - **R56 — Checksum-closed self-contained stable source:** an opt-in builder must
   refuse tracked Agora drift and existing output, stage the exact Agora revision
-  plus only the Aegis and Keystone packages in the sixteen-component stable
+  plus only the Aegis and Keystone packages in the seventeen-component stable
   graph, preserve the reviewed relative dependency layout, and checksum every
   regular file. Sibling revisions are context, while selected-tree cleanliness
   and exact bytes remain separate evidence. Verification must reject missing,
@@ -317,7 +317,7 @@
   grants no origin provenance, binary reproducibility, support, or publication.
 - **R57 — Deterministic stable-source SBOM:** the exact locked stable workspace
   must reproduce one canonical CycloneDX 1.5 JSON inventory offline. It must
-  enumerate exactly the sixteen local-path packages and their closed dependency
+  enumerate exactly the seventeen local-path packages and their closed dependency
   edges with exact names, versions, declared license expressions, and denied
   publication state; canonical ordering and vocabulary are part of the profile.
   Validation must reject missing, altered, escaped, host-path-bearing, or
@@ -458,6 +458,15 @@
   post-rename metadata failures retain their stricter indeterminate-publication
   classification. Constructor/open errors remain outside this owner-lifecycle
   claim.
+- **R71 — Composable physical-store observation:** an effect-free storage port
+  must let a checkpoint-store adapter supply one typed passive observation
+  without exposing its implementation to the durable host or daemon. The
+  durable and daemon compositions must preserve separate transport, runtime,
+  durable-publication, and physical-store groups, propagate fidelity loss from
+  every represented layer, and remain passive and content-free. Stores that do
+  not implement the optional port retain the existing durable observation
+  surface. This composition does not make process-local counters persistent,
+  atomic across concurrent owners, or suitable as an integrity probe.
 
 ## Explicitly open
 

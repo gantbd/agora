@@ -54,15 +54,15 @@ not ready for a network service or crates.io release.
 - unpublished trusted-host and remote-client SDK facades with executable
   facade-only construction and closed dependency evidence;
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
-  twelve packages;
-- conservative package and canonical-fixture inventory closure over twelve
+  thirteen stable workspace packages;
+- conservative package and canonical-fixture inventory closure over thirteen
   stable workspace packages, one standalone fuzz package, and thirty-nine
   fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
-- conservative supply inventory closure over sixteen locked local components with
+- conservative supply inventory closure over seventeen locked local components with
   missing, changed-version, and empty-inventory mutants;
-- deterministic CycloneDX 1.5 stable-source SBOM closure over the same sixteen
+- deterministic CycloneDX 1.5 stable-source SBOM closure over the same seventeen
   components and their dependency graph, with exact license/publication facts,
   offline byte-for-byte regeneration, and adversarial schema/claim mutants;
 - canonical bounded USTAR source-archive construction and verification,
