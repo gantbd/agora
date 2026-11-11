@@ -10,6 +10,7 @@ pub mod persistence;
 pub const MAX_TOPIC_ALIASES_PER_TOPIC_V1: usize = 16;
 pub const MAX_TOPIC_TAGS_PER_TOPIC_V1: usize = 8;
 pub const MAX_ATTACHMENTS_PER_MESSAGE_V1: usize = 8;
+pub const MAX_VELLUM_ARTIFACT_REFERENCES_PER_MESSAGE_V1: usize = 8;
 
 /// Resource ceilings for one engine profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -191,6 +192,136 @@ opaque_attachment_value!(AttachmentIdV1, 16);
 opaque_attachment_value!(AttachmentStoreIdV1, 16);
 opaque_attachment_value!(AttachmentObjectKeyV1, 32);
 opaque_attachment_value!(Sha256DigestV1, 32);
+
+/// Opaque room-local identity for one Vellum artifact relation.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct VellumArtifactReferenceIdV1([u8; 16]);
+
+opaque_attachment_value!(VellumArtifactReferenceIdV1, 16);
+
+/// Exact restart-stable Vellum document revision named by an Agora relation.
+/// These scalar values are correlation data, never Vellum authority.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct VellumDocumentTargetV1 {
+    workspace_id: u64,
+    document_id: u64,
+    source_revision: u64,
+}
+
+impl VellumDocumentTargetV1 {
+    pub const fn new(workspace_id: u64, document_id: u64, source_revision: u64) -> Option<Self> {
+        if workspace_id == 0 || document_id == 0 {
+            None
+        } else {
+            Some(Self {
+                workspace_id,
+                document_id,
+                source_revision,
+            })
+        }
+    }
+
+    pub const fn workspace_id(self) -> u64 {
+        self.workspace_id
+    }
+
+    pub const fn document_id(self) -> u64 {
+        self.document_id
+    }
+
+    pub const fn source_revision(self) -> u64 {
+        self.source_revision
+    }
+}
+
+impl fmt::Debug for VellumDocumentTargetV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("VellumDocumentTargetV1(<opaque>)")
+    }
+}
+
+/// Immutable typed reference supplied with one accepted Agora message.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct VellumArtifactReferenceV1 {
+    reference_id: VellumArtifactReferenceIdV1,
+    target: VellumDocumentTargetV1,
+}
+
+impl VellumArtifactReferenceV1 {
+    pub const fn new(
+        reference_id: VellumArtifactReferenceIdV1,
+        target: VellumDocumentTargetV1,
+    ) -> Self {
+        Self {
+            reference_id,
+            target,
+        }
+    }
+
+    pub const fn reference_id(self) -> VellumArtifactReferenceIdV1 {
+        self.reference_id
+    }
+
+    pub const fn target(self) -> VellumDocumentTargetV1 {
+        self.target
+    }
+}
+
+impl fmt::Debug for VellumArtifactReferenceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VellumArtifactReferenceV1")
+            .field("reference_id", &self.reference_id)
+            .field("target", &self.target)
+            .finish()
+    }
+}
+
+/// Closed placement vocabulary for a Vellum-artifact-bearing message.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VellumArtifactMessageTargetV1 {
+    Room,
+    Reply(MessageId),
+    Topic(TopicId),
+}
+
+/// Retained relation. A tombstone preserves only its room-local identity.
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessageVellumArtifactReferenceV1 {
+    reference_id: VellumArtifactReferenceIdV1,
+    target: Option<VellumDocumentTargetV1>,
+}
+
+impl MessageVellumArtifactReferenceV1 {
+    fn available(reference: VellumArtifactReferenceV1) -> Self {
+        Self {
+            reference_id: reference.reference_id(),
+            target: Some(reference.target()),
+        }
+    }
+
+    pub const fn reference_id(&self) -> VellumArtifactReferenceIdV1 {
+        self.reference_id
+    }
+
+    pub const fn target(&self) -> Option<VellumDocumentTargetV1> {
+        self.target
+    }
+
+    pub const fn is_tombstoned(&self) -> bool {
+        self.target.is_none()
+    }
+}
+
+impl fmt::Debug for MessageVellumArtifactReferenceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageVellumArtifactReferenceV1")
+            .field("reference_id", &self.reference_id)
+            .field("is_tombstoned", &self.is_tombstoned())
+            .finish()
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AttachmentIntegrityV1 {
@@ -607,6 +738,7 @@ pub struct Message {
     reply_to_root: Option<MessageId>,
     topic_id: Option<TopicId>,
     attachments: Vec<MessageAttachmentV1>,
+    vellum_artifacts: Vec<MessageVellumArtifactReferenceV1>,
     revisions: Vec<MessageRevisionV1>,
 }
 
@@ -656,6 +788,10 @@ impl Message {
         &self.attachments
     }
 
+    pub fn vellum_artifacts(&self) -> &[MessageVellumArtifactReferenceV1] {
+        &self.vellum_artifacts
+    }
+
     pub fn current_revision(&self) -> u32 {
         self.revisions
             .last()
@@ -680,6 +816,7 @@ impl fmt::Debug for Message {
             .field("is_reply", &self.reply_to_root.is_some())
             .field("has_topic", &self.topic_id.is_some())
             .field("attachment_count", &self.attachments.len())
+            .field("vellum_artifact_count", &self.vellum_artifacts.len())
             .field("revision_count", &self.revisions.len())
             .finish()
     }
@@ -1550,6 +1687,7 @@ struct MessageAdmission {
     addressed_to: Vec<ParticipantId>,
     placement: MessagePlacement,
     attachments: Option<Vec<AttachmentDescriptorV1>>,
+    vellum_artifacts: Option<Vec<VellumArtifactReferenceV1>>,
 }
 
 impl CommandV2 {
@@ -1574,6 +1712,12 @@ impl CommandV2 {
             Self::SpeakWithAttachments { target, .. } => Some(match target {
                 AttachmentMessageTargetV1::Reply(_) => RoomActionV1::Reply,
                 AttachmentMessageTargetV1::Room | AttachmentMessageTargetV1::Topic(_) => {
+                    RoomActionV1::Speak
+                }
+            }),
+            Self::SpeakWithVellumArtifacts { target, .. } => Some(match target {
+                VellumArtifactMessageTargetV1::Reply(_) => RoomActionV1::Reply,
+                VellumArtifactMessageTargetV1::Room | VellumArtifactMessageTargetV1::Topic(_) => {
                     RoomActionV1::Speak
                 }
             }),
@@ -1724,6 +1868,15 @@ pub enum CommandV2 {
         addressed_to: Vec<ParticipantId>,
         attachments: Vec<AttachmentDescriptorV1>,
     },
+    SpeakWithVellumArtifacts {
+        room_id: RoomId,
+        author: ParticipantId,
+        target: VellumArtifactMessageTargetV1,
+        at: LogicalTime,
+        body: String,
+        addressed_to: Vec<ParticipantId>,
+        references: Vec<VellumArtifactReferenceV1>,
+    },
     WithdrawMessage {
         room_id: RoomId,
         actor: ParticipantId,
@@ -1864,6 +2017,12 @@ pub enum OutcomeV2 {
         sequence: u64,
         attachment_count: u8,
     },
+    VellumArtifactMessageAccepted {
+        room_id: RoomId,
+        message_id: MessageId,
+        sequence: u64,
+        reference_count: u8,
+    },
     ReplyAccepted {
         room_id: RoomId,
         root_message_id: MessageId,
@@ -1923,6 +2082,9 @@ pub enum Refusal {
     InvalidAttachmentDisplayLabel,
     DuplicateAttachmentId,
     DuplicateAttachmentObject,
+    InvalidVellumArtifactReferenceCount,
+    DuplicateVellumArtifactReferenceId,
+    DuplicateVellumArtifactTarget,
     ParticipantLimit,
     RoomLimit,
     MemberLimit,
@@ -3718,6 +3880,7 @@ impl Engine {
                 addressed_to: Vec::new(),
                 placement: MessagePlacement::Unscoped,
                 attachments: None,
+                vellum_artifacts: None,
             }),
             CommandV2::SpeakAddressed {
                 room_id,
@@ -3733,6 +3896,7 @@ impl Engine {
                 addressed_to,
                 placement: MessagePlacement::Unscoped,
                 attachments: None,
+                vellum_artifacts: None,
             }),
             CommandV2::SpeakReply {
                 room_id,
@@ -3749,6 +3913,7 @@ impl Engine {
                 addressed_to,
                 placement: MessagePlacement::Reply(root_message_id),
                 attachments: None,
+                vellum_artifacts: None,
             }),
             CommandV2::CreateTopic {
                 room_id,
@@ -3802,6 +3967,7 @@ impl Engine {
                 addressed_to,
                 placement: MessagePlacement::Topic(topic_id),
                 attachments: None,
+                vellum_artifacts: None,
             }),
             CommandV2::SpeakWithAttachments {
                 room_id,
@@ -3825,6 +3991,33 @@ impl Engine {
                     AttachmentMessageTargetV1::Topic(topic_id) => MessagePlacement::Topic(topic_id),
                 },
                 attachments: Some(attachments),
+                vellum_artifacts: None,
+            }),
+            CommandV2::SpeakWithVellumArtifacts {
+                room_id,
+                author,
+                target,
+                at,
+                body,
+                addressed_to,
+                references,
+            } => self.speak(MessageAdmission {
+                room_id,
+                author,
+                at,
+                body,
+                addressed_to,
+                placement: match target {
+                    VellumArtifactMessageTargetV1::Room => MessagePlacement::Unscoped,
+                    VellumArtifactMessageTargetV1::Reply(message_id) => {
+                        MessagePlacement::Reply(message_id)
+                    }
+                    VellumArtifactMessageTargetV1::Topic(topic_id) => {
+                        MessagePlacement::Topic(topic_id)
+                    }
+                },
+                attachments: None,
+                vellum_artifacts: Some(references),
             }),
             CommandV2::WithdrawMessage {
                 room_id,
@@ -4104,6 +4297,16 @@ impl Engine {
                 message: self
                     .message(room_id, *sequence)
                     .expect("accepted message remains retained")
+                    .clone(),
+            },
+            (
+                CommandV2::SpeakWithVellumArtifacts { room_id, .. },
+                OutcomeV2::VellumArtifactMessageAccepted { sequence, .. },
+            ) => DomainEventV2::MessageAccepted {
+                room_id: room_id.clone(),
+                message: self
+                    .message(room_id, *sequence)
+                    .expect("accepted Vellum artifact message remains retained")
                     .clone(),
             },
             (
@@ -4906,6 +5109,7 @@ impl Engine {
             addressed_to,
             placement,
             attachments,
+            vellum_artifacts,
         } = admission;
         self.validate_nonempty_bounded(
             &body,
@@ -5003,6 +5207,23 @@ impl Engine {
                 }
             }
         }
+        if let Some(references) = &vellum_artifacts {
+            if references.is_empty()
+                || references.len() > MAX_VELLUM_ARTIFACT_REFERENCES_PER_MESSAGE_V1
+            {
+                return Err(Refusal::InvalidVellumArtifactReferenceCount);
+            }
+            let mut reference_ids = BTreeSet::new();
+            let mut targets = BTreeSet::new();
+            for reference in references {
+                if !reference_ids.insert(reference.reference_id()) {
+                    return Err(Refusal::DuplicateVellumArtifactReferenceId);
+                }
+                if !targets.insert(reference.target()) {
+                    return Err(Refusal::DuplicateVellumArtifactTarget);
+                }
+            }
+        }
         let message_id = MessageId::allocated(
             room.message_identity_incarnation,
             room.next_message_identity,
@@ -5034,6 +5255,7 @@ impl Engine {
             }
         }
         let attachment_count = attachments.as_ref().map_or(0, Vec::len);
+        let vellum_artifact_count = vellum_artifacts.as_ref().map_or(0, Vec::len);
         room.messages.push_back(Message {
             id: message_id,
             sequence,
@@ -5047,6 +5269,11 @@ impl Engine {
                 .unwrap_or_default()
                 .into_iter()
                 .map(MessageAttachmentV1::available)
+                .collect(),
+            vellum_artifacts: vellum_artifacts
+                .unwrap_or_default()
+                .into_iter()
+                .map(MessageVellumArtifactReferenceV1::available)
                 .collect(),
             revisions: vec![MessageRevisionV1 {
                 number: 0,
@@ -5069,6 +5296,16 @@ impl Engine {
                 attachment_count: attachment_count
                     .try_into()
                     .expect("attachment count is bounded by eight"),
+            });
+        }
+        if vellum_artifact_count != 0 {
+            return Ok(OutcomeV2::VellumArtifactMessageAccepted {
+                room_id,
+                message_id,
+                sequence,
+                reference_count: vellum_artifact_count
+                    .try_into()
+                    .expect("Vellum artifact reference count is bounded by eight"),
             });
         }
         Ok(match reply_to_root {
@@ -5349,6 +5586,9 @@ impl Engine {
         for attachment in &mut message.attachments {
             attachment.descriptor = None;
         }
+        for artifact in &mut message.vellum_artifacts {
+            artifact.target = None;
+        }
         for revision in &mut message.revisions {
             revision.body.clear();
             revision.availability = MessageRevisionAvailabilityV1::Tombstoned;
@@ -5366,6 +5606,9 @@ impl Engine {
                     message.body.clear();
                     for attachment in &mut message.attachments {
                         attachment.descriptor = None;
+                    }
+                    for artifact in &mut message.vellum_artifacts {
+                        artifact.target = None;
                     }
                     for revision in &mut message.revisions {
                         revision.body.clear();

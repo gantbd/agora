@@ -404,6 +404,9 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::InvalidAttachmentDisplayLabel
         | EngineRefusal::DuplicateAttachmentId
         | EngineRefusal::DuplicateAttachmentObject
+        | EngineRefusal::InvalidVellumArtifactReferenceCount
+        | EngineRefusal::DuplicateVellumArtifactReferenceId
+        | EngineRefusal::DuplicateVellumArtifactTarget
         | EngineRefusal::InvalidModerationReason
         | EngineRefusal::NonCanonicalAddressing
         | EngineRefusal::InvalidRoleChange

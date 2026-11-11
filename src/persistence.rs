@@ -110,7 +110,11 @@ impl Writer {
         }
         Ok(())
     }
-    fn message(&mut self, m: &Message) -> Result<(), CheckpointError> {
+    fn message(
+        &mut self,
+        m: &Message,
+        include_vellum_artifacts: bool,
+    ) -> Result<(), CheckpointError> {
         self.raw(&m.id.0)?;
         self.number(m.sequence)?;
         self.text(m.author.as_str())?;
@@ -152,6 +156,21 @@ impl Writer {
                 }
             }
         }
+        if include_vellum_artifacts {
+            self.count(m.vellum_artifacts.len())?;
+            for artifact in &m.vellum_artifacts {
+                self.raw(&artifact.reference_id.into_bytes())?;
+                match artifact.target {
+                    None => self.byte(0)?,
+                    Some(target) => {
+                        self.byte(1)?;
+                        self.number(target.workspace_id())?;
+                        self.number(target.document_id())?;
+                        self.number(target.source_revision())?;
+                    }
+                }
+            }
+        }
         self.count(m.revisions.len())?;
         for revision in &m.revisions {
             self.number(u64::from(revision.number))?;
@@ -165,7 +184,11 @@ impl Writer {
         }
         Ok(())
     }
-    fn event(&mut self, e: &DomainEventV2) -> Result<(), CheckpointError> {
+    fn event(
+        &mut self,
+        e: &DomainEventV2,
+        include_vellum_artifacts: bool,
+    ) -> Result<(), CheckpointError> {
         match e {
             DomainEventV2::ParticipantRegistered {
                 participant_id,
@@ -311,7 +334,7 @@ impl Writer {
             DomainEventV2::MessageAccepted { room_id, message } => {
                 self.byte(6)?;
                 self.text(room_id.as_str())?;
-                self.message(message)
+                self.message(message, include_vellum_artifacts)
             }
             DomainEventV2::ParticipantKicked {
                 room_id,
@@ -511,7 +534,11 @@ impl<'a> Reader<'a> {
             _ => Err(CheckpointError::Invalid),
         }
     }
-    fn message(&mut self, l: Limits) -> Result<Message, CheckpointError> {
+    fn message(
+        &mut self,
+        l: Limits,
+        has_vellum_artifacts: bool,
+    ) -> Result<Message, CheckpointError> {
         let id = MessageId(self.fixed()?);
         let sequence = self.number()?;
         let author = self.participant(l)?;
@@ -567,6 +594,28 @@ impl<'a> Reader<'a> {
                 descriptor,
             });
         }
+        let mut vellum_artifacts = Vec::new();
+        if has_vellum_artifacts {
+            let count = self.count(MAX_VELLUM_ARTIFACT_REFERENCES_PER_MESSAGE_V1)?;
+            vellum_artifacts
+                .try_reserve(count)
+                .map_err(|_| CheckpointError::Capacity)?;
+            for _ in 0..count {
+                let reference_id = VellumArtifactReferenceIdV1::new(self.fixed()?);
+                let target = match self.byte()? {
+                    0 => None,
+                    1 => Some(
+                        VellumDocumentTargetV1::new(self.number()?, self.number()?, self.number()?)
+                            .ok_or(CheckpointError::Invalid)?,
+                    ),
+                    _ => return Err(CheckpointError::Invalid),
+                };
+                vellum_artifacts.push(MessageVellumArtifactReferenceV1 {
+                    reference_id,
+                    target,
+                });
+            }
+        }
         let revision_count = self.count(MAX_MESSAGE_REVISIONS_V1)?;
         if revision_count == 0 {
             return Err(CheckpointError::Invalid);
@@ -606,10 +655,15 @@ impl<'a> Reader<'a> {
             reply_to_root,
             topic_id,
             attachments,
+            vellum_artifacts,
             revisions,
         })
     }
-    fn event(&mut self, l: Limits) -> Result<DomainEventV2, CheckpointError> {
+    fn event(
+        &mut self,
+        l: Limits,
+        has_vellum_artifacts: bool,
+    ) -> Result<DomainEventV2, CheckpointError> {
         Ok(match self.byte()? {
             0 => DomainEventV2::ParticipantRegistered {
                 participant_id: self.participant(l)?,
@@ -639,7 +693,7 @@ impl<'a> Reader<'a> {
             },
             6 => DomainEventV2::MessageAccepted {
                 room_id: self.room(l)?,
-                message: self.message(l)?,
+                message: self.message(l, has_vellum_artifacts)?,
             },
             tag @ 7..=9 => {
                 let room_id = self.room(l)?;
@@ -905,8 +959,9 @@ impl Engine {
             bytes: Vec::new(),
             max: max_snapshot_bytes,
         };
+        let include_vellum_artifacts = engine_has_vellum_artifacts(self);
         w.raw(b"AGORACP\0")?;
-        w.byte(20)?;
+        w.byte(if include_vellum_artifacts { 21 } else { 20 })?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -947,7 +1002,7 @@ impl Engine {
             }
             w.count(room.messages.len())?;
             for m in &room.messages {
-                w.message(m)?
+                w.message(m, include_vellum_artifacts)?
             }
             w.count(room.thread_roots.len())?;
             for root in &room.thread_roots {
@@ -1028,13 +1083,13 @@ impl Engine {
         for e in &self.pending_events {
             w.number(e.sequence.0)?;
             w.number(e.revision.0)?;
-            w.event(&e.event)?
+            w.event(&e.event, include_vellum_artifacts)?
         }
         w.count(self.retained_changes.len())?;
         for e in &self.retained_changes {
             w.number(e.sequence.0)?;
             w.number(e.revision.0)?;
-            w.event(&e.event)?
+            w.event(&e.event, include_vellum_artifacts)?
         }
         Ok(CheckpointV2(w.bytes))
     }
@@ -1046,9 +1101,14 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 20 {
+        if r.raw(8)? != b"AGORACP\0" {
             return Err(CheckpointError::Profile);
         }
+        let profile = r.byte()?;
+        if !matches!(profile, 20 | 21) {
+            return Err(CheckpointError::Profile);
+        }
+        let has_vellum_artifacts = profile >= 21;
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
         let mut e = Engine::with_limits(l);
         e.revision = Revision(r.number()?);
@@ -1110,7 +1170,7 @@ impl Engine {
                 .try_reserve(n)
                 .map_err(|_| CheckpointError::Capacity)?;
             for _ in 0..n {
-                messages.push_back(r.message(l)?)
+                messages.push_back(r.message(l, has_vellum_artifacts)?)
             }
             let n = r.count(l.max_messages_per_room)?;
             let mut thread_roots = BTreeSet::new();
@@ -1302,7 +1362,7 @@ impl Engine {
             e.pending_events.push_back(EventEnvelopeV2 {
                 sequence: EventSequence(r.number()?),
                 revision: Revision(r.number()?),
-                event: r.event(l)?,
+                event: r.event(l, has_vellum_artifacts)?,
             })
         }
         let n = r.count(l.max_retained_changes)?;
@@ -1313,15 +1373,37 @@ impl Engine {
             e.retained_changes.push_back(EventEnvelopeV2 {
                 sequence: EventSequence(r.number()?),
                 revision: Revision(r.number()?),
-                event: r.event(l)?,
+                event: r.event(l, has_vellum_artifacts)?,
             })
         }
         if r.pos != bytes.len() {
             return Err(CheckpointError::Trailing);
         }
         validate(&e)?;
+        if has_vellum_artifacts && !engine_has_vellum_artifacts(&e) {
+            return Err(CheckpointError::NonCanonical);
+        }
         Ok(e)
     }
+}
+
+fn engine_has_vellum_artifacts(engine: &Engine) -> bool {
+    engine
+        .rooms
+        .values()
+        .flat_map(|room| &room.messages)
+        .any(|message| !message.vellum_artifacts.is_empty())
+        || engine
+            .pending_events
+            .iter()
+            .chain(&engine.retained_changes)
+            .any(|envelope| {
+                matches!(
+                    &envelope.event,
+                    DomainEventV2::MessageAccepted { message, .. }
+                        if !message.vellum_artifacts.is_empty()
+                )
+            })
 }
 
 const CURSOR_MAGIC: &[u8; 8] = b"AGORACUR";
@@ -1779,6 +1861,30 @@ fn valid_message(e: &Engine, room: &Room, m: &Message) -> Result<(), CheckpointE
             && (descriptor.attachment_id != attachment.attachment_id
                 || descriptor.validate(attachment_limits).is_err()
                 || !object_refs.insert((descriptor.store_id, descriptor.object_key)))
+        {
+            return Err(CheckpointError::Invalid);
+        }
+    }
+    if m.vellum_artifacts.len() > MAX_VELLUM_ARTIFACT_REFERENCES_PER_MESSAGE_V1 {
+        return Err(CheckpointError::Invalid);
+    }
+    let mut artifact_ids = BTreeSet::new();
+    let mut artifact_targets = BTreeSet::new();
+    for artifact in &m.vellum_artifacts {
+        if !artifact_ids.insert(artifact.reference_id) {
+            return Err(CheckpointError::NonCanonical);
+        }
+        if m.is_withdrawn() == artifact.target.is_some() {
+            return Err(CheckpointError::Invalid);
+        }
+        if let Some(target) = artifact.target
+            && (!artifact_targets.insert(target)
+                || VellumDocumentTargetV1::new(
+                    target.workspace_id(),
+                    target.document_id(),
+                    target.source_revision(),
+                )
+                .is_none())
         {
             return Err(CheckpointError::Invalid);
         }

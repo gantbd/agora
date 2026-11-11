@@ -232,6 +232,18 @@ current shape. Public Wire V2 appends command tags 58 through 61, outcome tags
 projections, and Wire V1 remain byte-identical. Two frozen attachment frames
 raise compatibility closure to 73 fixtures.
 
+Typed Vellum artifact core state selects engine checkpoint profile 21 whenever
+an artifact relation remains in current state or a retained event copy. Profile
+21 appends an ordered bounded relation section to every retained and
+event-copied message. Each entry is either one room-local relation identity plus
+the exact nonzero workspace/document identities and source revision, or an
+identity-only tombstone. Artifact-free state remains canonical profile 20, so
+all existing engine, service, and Host fixtures remain byte-identical; profile
+20 recovers with empty artifact relations. Service and Host profiles have not
+advanced because their protocol receipts cannot yet carry the R90 command or
+outcome. Wire tags, capability discovery, SDKs, and the 73-fixture compatibility
+inventory are unchanged by this core-only slice.
+
 Transient collaboration Wire V1 is a new, separately invoked grammar. Its
 profile byte `01`, presence command/outcome tags `01` through `03`, typing
 command/outcome tags `04` through `06`, reply tags `81` and `82`, and refusal

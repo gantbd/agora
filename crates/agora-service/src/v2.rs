@@ -1175,7 +1175,8 @@ impl ServiceV2 {
                 message_id: MessageIdV1::new(message_id.into_bytes()),
                 message_revision,
             }),
-            EngineOutcome::ParticipantRegistered(_) => Err(RefusalV2::Unavailable),
+            EngineOutcome::ParticipantRegistered(_)
+            | EngineOutcome::VellumArtifactMessageAccepted { .. } => Err(RefusalV2::Unavailable),
         }
     }
 
@@ -3772,6 +3773,9 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidAttachmentDisplayLabel
         | EngineRefusal::DuplicateAttachmentId
         | EngineRefusal::DuplicateAttachmentObject
+        | EngineRefusal::InvalidVellumArtifactReferenceCount
+        | EngineRefusal::DuplicateVellumArtifactReferenceId
+        | EngineRefusal::DuplicateVellumArtifactTarget
         | EngineRefusal::NonCanonicalAddressing
         | EngineRefusal::InvalidModerationReason
         | EngineRefusal::InvalidRoleChange

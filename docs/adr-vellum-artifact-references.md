@@ -1,6 +1,6 @@
 # ADR: typed Vellum artifact references
 
-Status: accepted; implementation pending
+Status: accepted; core and canonical engine recovery implemented
 
 Date: 2026-11-11
 
