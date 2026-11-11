@@ -145,6 +145,25 @@ and port failure remains the same unavailable class. The context constructor is
 trusted: a false credential-to-principal/participant/subject binding defeats the
 profile. The adapter does not atomically commit Aegis and Agora recovery state.
 
+The private local daemon requires a mode-0700 parent, bounds the unauthenticated
+outer length before payload allocation, applies read/write deadlines and a fixed request budget, keeps host
+session identity out of frames, and closes the service client after every
+terminal connection path. A mode-0600 socket narrows accidental local access;
+device/inode-pinned teardown avoids deleting an observed replacement. A claimed
+participant still reaches no service operation until the trusted connection
+authenticator supplies its Aegis context and Host V2 authorizes it, and every
+later frame is reauthorized. Shared connect refusal avoids participant
+enumeration, while content-free health avoids adding conversation telemetry.
+
+This does not defend a same-UID attacker controlling the private socket parent,
+authenticate Unix peer credentials, hide socket metadata or
+traffic from the host, encrypt content, or recover a crashed endpoint. The
+authenticator can forge context if its credential binding is wrong. There is no
+incarnation handshake or cross-disconnect receipt retention: a lost mutation
+reply remains outcome-unknown and must not be blindly retried on a new
+connection. Sequential service and finite request budgets are explicit
+availability limits, not denial-of-service immunity.
+
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.
 The qualified local Moira receiver therefore exposes only a passive pending

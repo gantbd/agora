@@ -25,9 +25,10 @@ An additive Protocol V2 now has a separately typed serialized service, client,
 and canonical version-2 complete-frame codec. It closes participant-bound room creation, invitation, joining,
 leaving, role change, kick/ban/unban moderation, speaking, and bounded page projection with client-scoped
 opaque cursors and exact volatile request replay. It deliberately has no V2
-credential adapter or network transport yet. Its separately typed authenticated
-host applies current-context revalidation and exact session/client binding. V1
-remains unchanged.
+credential authenticator or network transport. Its separately typed authenticated
+host applies current-context revalidation and exact session/client binding, and a
+separate sequential Unix adapter composes that host with the qualified Aegis
+verifier. V1 remains unchanged.
 
 Room owners can also change Open/InviteOnly admission as an ordered room fact.
 The event records prior and new policy without rewriting earlier invitations or
@@ -91,6 +92,11 @@ filesystems, backup/restore, encryption, or multi-host availability.
 the public Aegis service contract. It requests `Submit` on one configured Agora
 resource through an exact Aegis session and opaque grant, while Agora retains all
 room authority. It authenticates no credentials and selects no transport.
+`agora-local-daemon` supplies one separately qualified transport composition: a
+new mode-0600 Unix socket inside a required mode-0700 parent, with bounded
+length-prefix framing, deadlines, per-frame Aegis reauthorization, a fixed connection request budget, and
+unconditional session cleanup. Its connection authenticator and clock remain
+trusted application inputs.
 
 The V2 client separately fences an outcome-unknown transmission: only the exact
 same command may reuse the retained request identity until a reply resolves it
@@ -101,7 +107,7 @@ checkpoint and pre-reply gate. Session subject/participant/client/time bindings
 recover with the exact service receipt and must pass current verifier
 revalidation before reuse.
 
-The repository also contains an initial transport-neutral operational profile:
+The repository also contains an initial layered operational profile:
 
 - `agora-protocol` owns closed request, reply, snapshot, and refusal values;
 - `agora-wire` owns their canonical bounded V1 binary representation;
@@ -115,10 +121,14 @@ The repository also contains an initial transport-neutral operational profile:
   externally verified principal/transport context;
 - `agora-aegis-verifier` maps that verifier port to bounded public Aegis
   session/grant authorization without entering conversation semantics;
+- `agora-local-daemon` owns the bounded sequential private Unix socket lifetime
+  around Aegis-authorized Host V2 and no conversation semantics;
 - `agora-client` owns a monotone request namespace over an abstract service port.
 
-These crates add no authentication, network transport, durable execution, or
-agent behavior. See the [service architecture](docs/service-architecture.md).
+These crates add no credential authentication, network transport, durable
+execution, or agent behavior. See the
+[service architecture](docs/service-architecture.md) and
+[local daemon profile](docs/local-daemon.md).
 
 `agora-host` performs authentication composition but does not authenticate any
 credential itself. A trusted injected verifier may consume Aegis decision

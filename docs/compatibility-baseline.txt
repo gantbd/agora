@@ -5,6 +5,7 @@ package|crates/agora-aegis-verifier/Cargo.toml|agora-aegis-verifier|0.1.0
 package|crates/agora-client/Cargo.toml|agora-client|0.1.0
 package|crates/agora-durable/Cargo.toml|agora-durable|0.1.0
 package|crates/agora-host/Cargo.toml|agora-host|0.1.0
+package|crates/agora-local-daemon/Cargo.toml|agora-local-daemon|0.1.0
 package|crates/agora-protocol/Cargo.toml|agora-protocol|0.1.0
 package|crates/agora-service/Cargo.toml|agora-service|0.1.0
 package|crates/agora-storage-directory/Cargo.toml|agora-storage-directory|0.1.0

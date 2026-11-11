@@ -28,6 +28,7 @@ members = [
     "crates/agora-host",
     "crates/agora-client",
     "crates/agora-aegis-verifier",
+    "crates/agora-local-daemon",
     "sdk/embedded",
     "sdk/client",
 ]

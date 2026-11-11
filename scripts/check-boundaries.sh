@@ -9,8 +9,16 @@ if rg -n 'AgentActivation|activate_agents|max_agent_activations' src tests; then
 fi
 
 if rg -n 'std::(fs|net|process)::|tokio|async_std|reqwest|rusqlite' \
-  src crates sdk -g '*.rs' -g '!crates/agora-storage-directory/**'; then
+  src crates sdk -g '*.rs' \
+  -g '!crates/agora-storage-directory/**' \
+  -g '!crates/agora-local-daemon/**'; then
   echo 'effectful runtime dependency crossed an Agora semantic boundary' >&2
+  exit 1
+fi
+
+if sed '/^#\[cfg(test)\]/,$d' crates/agora-local-daemon/src/lib.rs \
+  | rg -n 'std::(net|process)::|Tcp|Udp|tokio|async_std|reqwest|rusqlite'; then
+  echo 'unqualified effect entered the private local transport adapter' >&2
   exit 1
 fi
 
@@ -75,6 +83,17 @@ if [[ $(printf '%s\n' "$aegis_verifier_tree" | wc -l | tr -d ' ') != 4 ]] \
   exit 1
 fi
 
+local_daemon_tree=$(cargo tree -p agora-local-daemon --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$local_daemon_tree" | wc -l | tr -d ' ') != 4 ]] \
+  || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-aegis-verifier' \
+  || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-host' \
+  || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-wire' \
+  || printf '%s\n' "$local_daemon_tree" | rg -q 'agora-(engine|service|client|durable|storage)'; then
+  printf '%s\n' "$local_daemon_tree" >&2
+  echo 'Agora local daemon escaped its Aegis-host-wire composition closure' >&2
+  exit 1
+fi
+
 directory_tree=$(cargo tree -p agora-storage-directory --edges normal --depth 1 --locked --offline)
 if [[ $(printf '%s\n' "$directory_tree" | wc -l | tr -d ' ') != 2 ]] \
   || ! printf '%s\n' "$directory_tree" | rg -q 'keystone-storage' \
@@ -113,4 +132,4 @@ for sdk_manifest in sdk/embedded/Cargo.toml sdk/client/Cargo.toml; do
   fi
 done
 
-echo 'Agora dependency direction closed; filesystem effects isolated to the qualified adapter'
+echo 'Agora dependency direction closed; filesystem and Unix-socket effects isolated to qualified adapters'

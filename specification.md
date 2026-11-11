@@ -535,6 +535,48 @@ blocks cleanup. The host still performs no network I/O, credential verification,
 authorization-policy evaluation, physical persistence, or encryption. Durable
 session recovery requires the separate combined profile above.
 
+## Private local daemon profile V1
+
+`agora-local-daemon` is a Unix-only outer transport composition over
+`HostV2<AegisVerifierV1<_>>`. Construction requires a real existing mode-0700
+parent directory and a previously absent socket path within it. The adapter
+binds the path, changes its permissions to mode 0600, validates that it is a
+socket, and pins its device and inode. Construction refuses a symlink or
+permissive parent and any existing endpoint path without following it. Teardown
+removes the endpoint only while its type and pinned identity still match, so a
+replacement object is preserved.
+
+Every transport record is a four-byte unsigned big-endian length followed by
+exactly that many bytes. Zero, an announced length above the configured ceiling,
+truncation, and a response above the same ceiling fail closed. Read and write
+deadlines are applied before authentication. A trusted application
+`AuthenticatorV1` derives one `AegisContextV1` from the accepted connection, and
+a trusted `HostClockV1` supplies explicit nonregressing host time; neither source
+is inferred from Agora payloads.
+
+The first record must be a canonical Wire V2 Connect frame. The daemon passes it
+to Host V2 and returns the host's canonical connected or shared-refusal frame.
+The resulting opaque host session remains process-local and is never accepted
+from the wire. Each later bounded record is passed through that exact session,
+connection context, and a fresh explicit host time, causing the Aegis adapter to
+authorize the retained subject and participant again before Service V2 handles
+the request. A fixed positive post-connect frame budget bounds connection work.
+
+EOF is a clean transport close. EOF, write failure (including the initial
+connected reply), malformed framing, request-budget exhaustion, and Host refusal
+all converge on unconditional idempotent `HostV2::close` after a session has
+been allocated. Content-free saturating health signals distinguish accepted,
+cleanly completed, refused, and transport-failed connections and expose current
+connection count and readiness.
+
+This profile is deliberately sequential: one caller of `serve_next` accepts and
+serves one connection at a time. It does not authenticate an OS peer or
+credential, protect against a same-UID process controlling the private parent,
+encrypt content, provide a protocol/incarnation handshake, preserve request
+receipts across disconnect, recover a crashed endpoint, implement concurrent admission,
+signals, draining, socket activation, installation, or atomically recover Aegis
+and Agora. Those are separate composition and operational qualifications.
+
 ## Stable topic profile V1
 
 A room owns a bounded canonical map of opaque 128-bit topic identities to

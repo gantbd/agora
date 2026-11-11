@@ -1,7 +1,8 @@
 # Assurance plan
 
 Status: active for the v0.3 core, volatile service v0.1, store-neutral durable
-Service/Host V2 boundary, and exclusive local Unix directory-store profile.
+Service/Host V2 boundary, exclusive local Unix directory-store profile, and
+bounded private local Unix transport composition.
 
 Agora uses a requirements-to-scenario-to-invariant evidence chain. A behavior is
 claimed only when its requirement, closed public value, adversarial scenario, and
@@ -20,13 +21,13 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact eleven-package workspace and twenty-eight canonical fixtures.
+closes over the exact twelve-package workspace and twenty-eight canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
 publication, weakening the toolchain pin, or removing the security policy is
 refused.
-The supply gate closes over fifteen local locked components and exact local-path
+The supply gate closes over sixteen local locked components and exact local-path
 dependency declarations. It is not an advisory scan, legal conclusion, binary
 SBOM, remote source proof, or artifact provenance claim.
 
@@ -119,9 +120,8 @@ Wire V2 freezes eighteen canonical frames and round-trips every V2 command,
 outcome, and refusal. It independently exercises every truncation of
 representative request and reply frames, trailing data, V1/version mismatch,
 unknown command and cursor tags, text/list ceilings, and content-safe Debug
-surfaces. These fixtures establish only complete-frame codec behavior;
-Host V2 evidence
-is separate below and no transport is claimed.
+surfaces. These fixtures establish only complete-frame codec behavior; Host V2
+and the bounded local transport evidence are separate below.
 The remote-client facade-only scenario also constructs a V2 client request and
 round-trips a V2 Connect frame using only the facade's existing three-package
 closure.
@@ -136,9 +136,20 @@ The verifier remains a trusted test double in the host scenarios. The separate
 Aegis adapter scenarios map the exact public session, grant, time, namespace,
 resource, and action; reject participant mismatch before authority I/O; erase
 refusal, expiry, malformed success, and port failure; retire host/service state
-on revoked revalidation; and keep diagnostics content-safe. Credential
-authentication and network transport remain unqualified. Physical storage is
-separate and narrowly qualified below.
+on revoked revalidation; and keep diagnostics content-safe.
+
+Five real Unix-socket daemon scenarios compose that adapter with Host V2. They
+verify mode-0700 parent enforcement and mode-0600 endpoint creation, Aegis
+authorization on Connect and every later frame, exact replay, EOF cleanup, shared participant-mismatch refusal
+without authority I/O, erased authenticator failure detail, post-reply
+request-budget cleanup, oversized outer-length
+refusal before allocation or host admission, existing-path refusal, pinned
+replacement preservation, and content-free counters. I/O deadlines are present
+in the configured profile; the tests do not claim timing determinism. Credential
+and Unix-peer authentication, hostile same-UID parent defense, protocol/incarnation
+handshake, concurrency, operational drain/crash recovery, cross-disconnect
+replay, and network transport remain unqualified. Physical storage is separate
+and narrowly qualified below.
 
 Service V2 persistence scenarios recover byte-identical engine state and pending
 outbox, active clients, retained exact replies, and live room-page continuation.

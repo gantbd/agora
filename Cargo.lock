@@ -61,6 +61,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "agora-local-daemon"
+version = "0.1.0"
+dependencies = [
+ "aegis-client",
+ "aegis-protocol",
+ "agora-aegis-verifier",
+ "agora-engine",
+ "agora-host",
+ "agora-protocol",
+ "agora-service",
+ "agora-wire",
+]
+
+[[package]]
 name = "agora-protocol"
 version = "0.1.0"
 

@@ -2,7 +2,8 @@
 
 Status: qualified transport-neutral host profiles V1 and V2 plus canonical,
 store-neutral authenticated V2 recovery, one local Unix store composition, and
-one separate Aegis public-service verifier adapter.
+one separate Aegis public-service verifier adapter composed with a bounded
+private local Unix transport.
 
 `agora-host` is a composition boundary over exact `agora-wire` frames and one
 serialized `agora-service`. It performs no socket I/O and understands no
@@ -41,6 +42,13 @@ opaque subject, validates every frame at explicit host time, and erases all
 authority failures. This is service-session admission only; Agora roles still
 authorize room operations. Credential authentication, context provenance, grant
 issuance, and transport remain composition responsibilities.
+
+The separate `agora-local-daemon` composition supplies one such transport
+binding for V2. Its trusted connection authenticator creates the Aegis context;
+the daemon retains the returned host session outside payloads, passes that same
+context plus fresh explicit time on every bounded frame, and closes the session
+on every terminal path. This qualifies the binding mechanism, not the
+authenticator's credential-to-context provenance.
 
 ## Session and client binding
 
@@ -91,11 +99,29 @@ clients, and request receipts have explicit ceilings. Malformed frames and host
 session capacity refuse before the verifier is invoked. Diagnostics expose only
 opaque identities and aggregate counts.
 
+## Qualified private local transport
+
+The Unix-only daemon requires a real mode-0700 parent, binds a previously absent
+path, applies and verifies socket mode 0600, pins the socket's device/inode
+identity, and removes it only while that identity remains unchanged. Four-byte
+big-endian outer lengths are checked before allocation; zero, overflow,
+truncation, deadline expiry, and response
+overflow terminate the connection. The first payload must be a Wire V2 Connect,
+and a fixed positive budget bounds later payloads.
+
+Serving is deliberately sequential. Content-free counters distinguish clean
+completion, authentication/host refusal, and transport failure. The profile
+trusts same-UID control of the private parent, the authenticator, clock, and Aegis
+port. It supplies neither peer-credential extraction nor endpoint lifecycle
+locking, crash recovery, incarnation negotiation, concurrent admission,
+graceful drain, signal handling, or durable Host V2 composition. See
+[`local-daemon.md`](local-daemon.md).
+
 ## Deliberate exclusions
 
-The host is not a network server, credential verifier, authorization-policy
+The host itself is not a network server, credential verifier, authorization-policy
 engine, secret store, rate limiter, TLS terminator, or audit sink. A production
-composition root may pair it with the qualified directory adapter, but must still
-define transport replay, credential rotation, backup/restore, power-loss
-expectations, and operational abuse policy.
+composition root may pair it with the qualified directory and local transport
+adapters, but must still define transport uncertainty, credential rotation,
+backup/restore, power-loss expectations, operational lifecycle, and abuse policy.
 

@@ -8,6 +8,11 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added a bounded private local Unix transport composition over Aegis-authorized
+  Host V2 with a required mode-0700 parent, mode-0600 new-path socket,
+  preallocation frame ceiling,
+  deadlines, request budget, per-frame reauthorization, pinned teardown,
+  unconditional cleanup, and content-free health.
 - Added a separate Aegis verifier adapter that maps exact public session/grant
   authorization to Agora host admission and revalidation with failure erasure.
 - Accepted the private monotone read-position architecture: self-scoped room,

@@ -242,6 +242,16 @@
   time. The adapter binds the claimed participant and opaque verified subject
   before calling authority, erases all Aegis and port failures to unavailable,
   and imports neither authority semantics nor grant material into Agora core.
+- **R48 — Bounded private local transport:** a separate Unix-only composition
+  binds one new mode-0600 domain socket inside an existing mode-0700 directory,
+  accepts a trusted connection-derived
+  Aegis context and explicit host time, and carries only length-prefixed
+  canonical Wire V2 frames. It must bound the outer frame before allocation,
+  apply an I/O deadline and per-connection request budget, keep the host session
+  server-owned, reauthorize every admitted frame, and unconditionally close the
+  host session after EOF, refusal, limit, or transport failure. Existing socket
+  paths must fail closed, and teardown may remove only the exact endpoint object
+  created by the composition.
 
 ## Explicitly open
 
@@ -249,7 +259,8 @@ Additional physical durable storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,
 federation, delivery acknowledgment, and durable audit are not part of the
 current v0.3 claim.
-Credential/Aegis adapters, transport, backup/restore qualification, and durable
-profiles beyond the qualified single-owner local Unix directory remain open;
+Credential authentication, network transport, operational daemon lifecycle,
+backup/restore qualification, and durable profiles beyond the qualified
+single-owner local Unix directory remain open;
 Protocol V1 bytes and semantics are unchanged.
 

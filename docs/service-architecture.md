@@ -1,7 +1,8 @@
 # Operational service architecture
 
 Status: volatile in-process source profiles, a store-neutral durable V2
-publication boundary, and one qualified local Unix checkpoint-store adapter.
+publication boundary, one qualified local Unix checkpoint-store adapter, and one
+bounded private local Unix transport composition.
 
 The repository now carries two source profiles. `Service` preserves frozen
 Protocol V1 Snapshot/Speak behavior. `v2::ServiceV2` is separately typed and adds
@@ -19,6 +20,8 @@ agora-client  -> agora-protocol <- agora-service -> agora-engine
 agora-host -----> agora-wire + agora-service + trusted verifier port
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-directory --> keystone-storage port + local Unix filesystem
+agora-aegis-verifier --> agora-host + Aegis public service port
+agora-local-daemon --> agora-aegis-verifier + agora-host + agora-wire + Unix socket
 ```
 
 `agora-engine` and `agora-protocol` have no normal dependencies. The protocol
@@ -27,6 +30,11 @@ The wire crate depends only on passive protocol values and the shared bounded
 Keystone codec primitive. Transport types never become authoritative domain state.
 The host composes wire and service through an injected principal-verification
 port; it imports no credential or Aegis vocabulary.
+
+The leaf local daemon owns outer framing and one accepted connection lifetime.
+It supplies a trusted connection-derived Aegis context and explicit time to
+Host V2 but neither imports transport state into conversation semantics nor
+exposes the opaque host session on the wire.
 
 ## Connection and identity
 
