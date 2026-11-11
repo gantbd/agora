@@ -18,7 +18,9 @@ follow Semantic Versioning once a public release contract is selected.
   deliberately non-durable presence and typing. Store refusal restores Host
   state without leaking a signal, uncertain durability fences and retires the
   source, and physical local-daemon restart retains rooms while reconstructing
-  transient state empty.
+  transient state empty. Revision
+  `c4cad484d6dec38123b7270f7f11848519d65fd3` passed the integrated release
+  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque
