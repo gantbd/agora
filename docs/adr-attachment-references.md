@@ -1,7 +1,7 @@
 # ADR: bounded immutable attachment references
 
-Status: implementation in progress; bounded descriptor vocabulary and validation
-implemented, message admission and vertical composition open
+Status: implementation in progress; core admission, tombstoning, and canonical
+recovery implemented, protocol-through-transport composition open
 
 Date: 2026-11-11
 

@@ -398,6 +398,12 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::InvalidDisplayName
         | EngineRefusal::InvalidRoomName
         | EngineRefusal::InvalidMessageBody
+        | EngineRefusal::InvalidAttachmentCount
+        | EngineRefusal::InvalidAttachmentDeclaredLength
+        | EngineRefusal::InvalidAttachmentMediaType
+        | EngineRefusal::InvalidAttachmentDisplayLabel
+        | EngineRefusal::DuplicateAttachmentId
+        | EngineRefusal::DuplicateAttachmentObject
         | EngineRefusal::InvalidModerationReason
         | EngineRefusal::NonCanonicalAddressing
         | EngineRefusal::InvalidRoleChange

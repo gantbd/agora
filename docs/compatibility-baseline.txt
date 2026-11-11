@@ -19,10 +19,12 @@ package|sdk/embedded/Cargo.toml|agora-sdk-embedded|0.1.0
 fixture|crates/agora-host/tests/fixtures/host-checkpoint-v19.hex|4726|26edeb533f341756210b16f0d3fe469524ef1df42958cbdd75ed86beefce9668
 fixture|crates/agora-host/tests/fixtures/host-checkpoint-v20.hex|5029|abcd318be5ebd361027213beb81b20d42d477e66bd474f6593c18feb82203b1d
 fixture|crates/agora-host/tests/fixtures/host-checkpoint-v21.hex|5317|0251ca05d1bd8400d065c3e85975d72d51fc7eb29c2328088f0fe40ca6235c5a
+fixture|crates/agora-host/tests/fixtures/host-checkpoint-v22.hex|5413|b1e68ebd49054dd050ae40ca86a1c77b696517d4933e56f3901309ed8437e44a
 fixture|crates/agora-local-daemon/tests/fixtures/lifetime-record-v1.hex|24|eee7ee78b07ffe73b9b53bd8ab6d44804d7185c2977c3f6107ec5268c29eb47c
 fixture|crates/agora-service/tests/fixtures/service-checkpoint-v19.hex|6113|31846ab9b86e7b07e6bbfac4482d32b784e57006f1177d71c2d3fe20f63a4fa2
 fixture|crates/agora-service/tests/fixtures/service-checkpoint-v20.hex|6410|a2bdb2aa3f6f2aaae053974e2f243aaa50f647d495a356baf8b10409dc3fb847
 fixture|crates/agora-service/tests/fixtures/service-checkpoint-v21.hex|6692|1a1b16dcd1c4a2a74c70c379ecd0e2da0cff8ea1b3264509f3956f11ad79dcb6
+fixture|crates/agora-service/tests/fixtures/service-checkpoint-v22.hex|6812|768e11bce1cab27e851abe3ce4f69cbc46219a10f6e2aca69f7598f42bcd5444
 fixture|crates/agora-storage-directory/tests/fixtures/directory-record-v1.hex|52|377cc1e927daa46ec954c5ad419ca762da86a18ee18b7e2d2169262aa0e70b16
 fixture|crates/agora-wire/tests/fixtures/bans-reply-v2.hex|56|1eceb89d5dd13236623b366cc25ac4d12535cdc87dec8101f2290615f819832a
 fixture|crates/agora-wire/tests/fixtures/capabilities-reply-v2.hex|34|cf9d93cba276359f7f483c778e9160e37b155a15bacf3ceceb619fc992fe6d00
@@ -80,3 +82,4 @@ fixture|crates/agora-wire/tests/fixtures/withdrawal-change-reply-v2.hex|79|c4147
 fixture|tests/fixtures/checkpoint-v17.hex|3013|07691a181f032074f34156a9b0876e6a4638b87464c10e0a849065c8f3eef9c2
 fixture|tests/fixtures/checkpoint-v18.hex|3164|f11969efb2b37376c03e6bad2084f3c2dc68157509c868cef9a552530f6f8dca
 fixture|tests/fixtures/checkpoint-v19.hex|3312|ca36f514514973aadb47b964fdef3cd34a88612138e77fbad0e6962004006cfd
+fixture|tests/fixtures/checkpoint-v20.hex|3384|fa5044f71eb9159f42da1f562acfedd1d6d5a812b5dc666395ebfcf418a01e22

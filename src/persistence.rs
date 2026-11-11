@@ -128,6 +128,30 @@ impl Writer {
                 self.raw(&topic_id.into_bytes())?;
             }
         }
+        self.count(m.attachments.len())?;
+        for attachment in &m.attachments {
+            self.raw(&attachment.attachment_id.into_bytes())?;
+            match &attachment.descriptor {
+                None => self.byte(0)?,
+                Some(descriptor) => {
+                    if descriptor.attachment_id != attachment.attachment_id {
+                        return Err(CheckpointError::Invalid);
+                    }
+                    self.byte(1)?;
+                    self.raw(&descriptor.store_id.into_bytes())?;
+                    self.raw(&descriptor.object_key.into_bytes())?;
+                    self.number(descriptor.declared_bytes)?;
+                    self.text(&descriptor.media_type)?;
+                    self.text(&descriptor.display_label)?;
+                    match descriptor.integrity {
+                        AttachmentIntegrityV1::Sha256(digest) => {
+                            self.byte(1)?;
+                            self.raw(&digest.into_bytes())?;
+                        }
+                    }
+                }
+            }
+        }
         self.count(m.revisions.len())?;
         for revision in &m.revisions {
             self.number(u64::from(revision.number))?;
@@ -507,6 +531,42 @@ impl<'a> Reader<'a> {
             1 => Some(TopicId::from_bytes(self.fixed()?)),
             _ => return Err(CheckpointError::Invalid),
         };
+        let attachment_count = self.count(MAX_ATTACHMENTS_PER_MESSAGE_V1)?;
+        let mut attachments = Vec::new();
+        attachments
+            .try_reserve(attachment_count)
+            .map_err(|_| CheckpointError::Capacity)?;
+        for _ in 0..attachment_count {
+            let attachment_id = AttachmentIdV1::new(self.fixed()?);
+            let descriptor = match self.byte()? {
+                0 => None,
+                1 => {
+                    let store_id = AttachmentStoreIdV1::new(self.fixed()?);
+                    let object_key = AttachmentObjectKeyV1::new(self.fixed()?);
+                    let declared_bytes = self.number()?;
+                    let media_type = self.text(l.max_attachment_media_type_bytes)?;
+                    let display_label = self.text(l.max_attachment_display_label_bytes)?;
+                    let integrity = match self.byte()? {
+                        1 => AttachmentIntegrityV1::Sha256(Sha256DigestV1::new(self.fixed()?)),
+                        _ => return Err(CheckpointError::Invalid),
+                    };
+                    Some(AttachmentDescriptorV1::new(
+                        attachment_id,
+                        store_id,
+                        object_key,
+                        declared_bytes,
+                        media_type,
+                        display_label,
+                        integrity,
+                    ))
+                }
+                _ => return Err(CheckpointError::Invalid),
+            };
+            attachments.push(MessageAttachmentV1 {
+                attachment_id,
+                descriptor,
+            });
+        }
         let revision_count = self.count(MAX_MESSAGE_REVISIONS_V1)?;
         if revision_count == 0 {
             return Err(CheckpointError::Invalid);
@@ -545,6 +605,7 @@ impl<'a> Reader<'a> {
             addressed_to,
             reply_to_root,
             topic_id,
+            attachments,
             revisions,
         })
     }
@@ -776,7 +837,7 @@ fn read_role(v: u8) -> Result<Role, CheckpointError> {
         _ => Err(CheckpointError::Invalid),
     }
 }
-fn limits_values(l: Limits) -> [usize; 18] {
+fn limits_values(l: Limits) -> [usize; 21] {
     [
         l.max_participants,
         l.max_rooms,
@@ -796,6 +857,9 @@ fn limits_values(l: Limits) -> [usize; 18] {
         l.max_topic_name_bytes,
         l.max_message_body_bytes,
         l.max_moderation_reason_bytes,
+        l.max_attachment_declared_bytes,
+        l.max_attachment_media_type_bytes,
+        l.max_attachment_display_label_bytes,
     ]
 }
 fn read_limits(r: &mut Reader<'_>, c: Limits) -> Result<Limits, CheckpointError> {
@@ -818,6 +882,9 @@ fn read_limits(r: &mut Reader<'_>, c: Limits) -> Result<Limits, CheckpointError>
         max_topic_name_bytes: r.size(c.max_topic_name_bytes)?,
         max_message_body_bytes: r.size(c.max_message_body_bytes)?,
         max_moderation_reason_bytes: r.size(c.max_moderation_reason_bytes)?,
+        max_attachment_declared_bytes: r.size(c.max_attachment_declared_bytes)?,
+        max_attachment_media_type_bytes: r.size(c.max_attachment_media_type_bytes)?,
+        max_attachment_display_label_bytes: r.size(c.max_attachment_display_label_bytes)?,
     })
 }
 fn insert<K: Ord, V>(map: &mut BTreeMap<K, V>, key: K, value: V) -> Result<(), CheckpointError> {
@@ -839,7 +906,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(19)?;
+        w.byte(20)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -979,7 +1046,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 19 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 20 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -1687,6 +1754,35 @@ fn valid_message(e: &Engine, room: &Room, m: &Message) -> Result<(), CheckpointE
         false,
     )?;
     validate_addressing(e, &m.addressed_to)?;
+    if m.attachments.len() > MAX_ATTACHMENTS_PER_MESSAGE_V1 {
+        return Err(CheckpointError::Invalid);
+    }
+    let attachment_limits = AttachmentDescriptorLimitsV1 {
+        max_declared_bytes: e
+            .limits
+            .max_attachment_declared_bytes
+            .try_into()
+            .map_err(|_| CheckpointError::Invalid)?,
+        max_media_type_bytes: e.limits.max_attachment_media_type_bytes,
+        max_display_label_bytes: e.limits.max_attachment_display_label_bytes,
+    };
+    let mut attachment_ids = BTreeSet::new();
+    let mut object_refs = BTreeSet::new();
+    for attachment in &m.attachments {
+        if !attachment_ids.insert(attachment.attachment_id) {
+            return Err(CheckpointError::NonCanonical);
+        }
+        if m.is_withdrawn() == attachment.descriptor.is_some() {
+            return Err(CheckpointError::Invalid);
+        }
+        if let Some(descriptor) = &attachment.descriptor
+            && (descriptor.attachment_id != attachment.attachment_id
+                || descriptor.validate(attachment_limits).is_err()
+                || !object_refs.insert((descriptor.store_id, descriptor.object_key)))
+        {
+            return Err(CheckpointError::Invalid);
+        }
+    }
     if m.revisions.is_empty() || m.revisions.len() > MAX_MESSAGE_REVISIONS_V1 {
         return Err(CheckpointError::Invalid);
     }

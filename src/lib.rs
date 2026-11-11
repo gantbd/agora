@@ -32,6 +32,9 @@ pub struct Limits {
     pub max_topic_name_bytes: usize,
     pub max_message_body_bytes: usize,
     pub max_moderation_reason_bytes: usize,
+    pub max_attachment_declared_bytes: usize,
+    pub max_attachment_media_type_bytes: usize,
+    pub max_attachment_display_label_bytes: usize,
 }
 
 impl Default for Limits {
@@ -55,6 +58,9 @@ impl Default for Limits {
             max_topic_name_bytes: 256,
             max_message_body_bytes: 16 * 1_024,
             max_moderation_reason_bytes: 1_024,
+            max_attachment_declared_bytes: 1024 * 1024 * 1024,
+            max_attachment_media_type_bytes: 127,
+            max_attachment_display_label_bytes: 256,
         }
     }
 }
@@ -191,6 +197,14 @@ pub enum AttachmentIntegrityV1 {
     Sha256(Sha256DigestV1),
 }
 
+/// Closed placement vocabulary for an attachment-bearing message.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AttachmentMessageTargetV1 {
+    Room,
+    Reply(MessageId),
+    Topic(TopicId),
+}
+
 /// Bounds for validating one attachment descriptor before message mutation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AttachmentDescriptorLimitsV1 {
@@ -312,6 +326,45 @@ impl fmt::Debug for AttachmentDescriptorV1 {
             .field("media_type_bytes", &self.media_type.len())
             .field("display_label_bytes", &self.display_label.len())
             .field("integrity", &self.integrity)
+            .finish()
+    }
+}
+
+/// Retained relation between a message and one attachment identity. A
+/// tombstone retains only the identity and original ordering slot.
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessageAttachmentV1 {
+    attachment_id: AttachmentIdV1,
+    descriptor: Option<AttachmentDescriptorV1>,
+}
+
+impl MessageAttachmentV1 {
+    fn available(descriptor: AttachmentDescriptorV1) -> Self {
+        Self {
+            attachment_id: descriptor.attachment_id(),
+            descriptor: Some(descriptor),
+        }
+    }
+
+    pub fn attachment_id(&self) -> AttachmentIdV1 {
+        self.attachment_id
+    }
+
+    pub fn descriptor(&self) -> Option<&AttachmentDescriptorV1> {
+        self.descriptor.as_ref()
+    }
+
+    pub fn is_tombstoned(&self) -> bool {
+        self.descriptor.is_none()
+    }
+}
+
+impl fmt::Debug for MessageAttachmentV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageAttachmentV1")
+            .field("attachment_id", &self.attachment_id)
+            .field("is_tombstoned", &self.is_tombstoned())
             .finish()
     }
 }
@@ -553,6 +606,7 @@ pub struct Message {
     addressed_to: Vec<ParticipantId>,
     reply_to_root: Option<MessageId>,
     topic_id: Option<TopicId>,
+    attachments: Vec<MessageAttachmentV1>,
     revisions: Vec<MessageRevisionV1>,
 }
 
@@ -598,6 +652,10 @@ impl Message {
         self.topic_id
     }
 
+    pub fn attachments(&self) -> &[MessageAttachmentV1] {
+        &self.attachments
+    }
+
     pub fn current_revision(&self) -> u32 {
         self.revisions
             .last()
@@ -621,6 +679,7 @@ impl fmt::Debug for Message {
             .field("addressed_count", &self.addressed_to.len())
             .field("is_reply", &self.reply_to_root.is_some())
             .field("has_topic", &self.topic_id.is_some())
+            .field("attachment_count", &self.attachments.len())
             .field("revision_count", &self.revisions.len())
             .finish()
     }
@@ -1483,6 +1542,16 @@ enum MessagePlacement {
     Topic(TopicId),
 }
 
+struct MessageAdmission {
+    room_id: RoomId,
+    author: ParticipantId,
+    at: LogicalTime,
+    body: String,
+    addressed_to: Vec<ParticipantId>,
+    placement: MessagePlacement,
+    attachments: Option<Vec<AttachmentDescriptorV1>>,
+}
+
 impl CommandV2 {
     /// Passive authorization vocabulary for a trusted host or Aegis adapter.
     /// Agora still enforces its room invariants after any external decision.
@@ -1502,6 +1571,12 @@ impl CommandV2 {
                 Some(RoomActionV1::Speak)
             }
             Self::SpeakReply { .. } => Some(RoomActionV1::Reply),
+            Self::SpeakWithAttachments { target, .. } => Some(match target {
+                AttachmentMessageTargetV1::Reply(_) => RoomActionV1::Reply,
+                AttachmentMessageTargetV1::Room | AttachmentMessageTargetV1::Topic(_) => {
+                    RoomActionV1::Speak
+                }
+            }),
             Self::SetReaction { .. } => Some(RoomActionV1::React),
             Self::EditMessage { .. } => Some(RoomActionV1::EditOwn),
             Self::SetThreadArchived { .. } => Some(RoomActionV1::ManageThread),
@@ -1640,6 +1715,15 @@ pub enum CommandV2 {
         body: String,
         addressed_to: Vec<ParticipantId>,
     },
+    SpeakWithAttachments {
+        room_id: RoomId,
+        author: ParticipantId,
+        target: AttachmentMessageTargetV1,
+        at: LogicalTime,
+        body: String,
+        addressed_to: Vec<ParticipantId>,
+        attachments: Vec<AttachmentDescriptorV1>,
+    },
     WithdrawMessage {
         room_id: RoomId,
         actor: ParticipantId,
@@ -1774,6 +1858,12 @@ pub enum OutcomeV2 {
         topic_id: TopicId,
         sequence: u64,
     },
+    AttachmentMessageAccepted {
+        room_id: RoomId,
+        message_id: MessageId,
+        sequence: u64,
+        attachment_count: u8,
+    },
     ReplyAccepted {
         room_id: RoomId,
         root_message_id: MessageId,
@@ -1827,6 +1917,12 @@ pub enum Refusal {
     InvalidDisplayName,
     InvalidRoomName,
     InvalidMessageBody,
+    InvalidAttachmentCount,
+    InvalidAttachmentDeclaredLength,
+    InvalidAttachmentMediaType,
+    InvalidAttachmentDisplayLabel,
+    DuplicateAttachmentId,
+    DuplicateAttachmentObject,
     ParticipantLimit,
     RoomLimit,
     MemberLimit,
@@ -3614,28 +3710,30 @@ impl Engine {
                 author,
                 at,
                 body,
-            } => self.speak(
+            } => self.speak(MessageAdmission {
                 room_id,
                 author,
                 at,
                 body,
-                Vec::new(),
-                MessagePlacement::Unscoped,
-            ),
+                addressed_to: Vec::new(),
+                placement: MessagePlacement::Unscoped,
+                attachments: None,
+            }),
             CommandV2::SpeakAddressed {
                 room_id,
                 author,
                 at,
                 body,
                 addressed_to,
-            } => self.speak(
+            } => self.speak(MessageAdmission {
                 room_id,
                 author,
                 at,
                 body,
                 addressed_to,
-                MessagePlacement::Unscoped,
-            ),
+                placement: MessagePlacement::Unscoped,
+                attachments: None,
+            }),
             CommandV2::SpeakReply {
                 room_id,
                 author,
@@ -3643,14 +3741,15 @@ impl Engine {
                 at,
                 body,
                 addressed_to,
-            } => self.speak(
+            } => self.speak(MessageAdmission {
                 room_id,
                 author,
                 at,
                 body,
                 addressed_to,
-                MessagePlacement::Reply(root_message_id),
-            ),
+                placement: MessagePlacement::Reply(root_message_id),
+                attachments: None,
+            }),
             CommandV2::CreateTopic {
                 room_id,
                 actor,
@@ -3695,14 +3794,38 @@ impl Engine {
                 at,
                 body,
                 addressed_to,
-            } => self.speak(
+            } => self.speak(MessageAdmission {
                 room_id,
                 author,
                 at,
                 body,
                 addressed_to,
-                MessagePlacement::Topic(topic_id),
-            ),
+                placement: MessagePlacement::Topic(topic_id),
+                attachments: None,
+            }),
+            CommandV2::SpeakWithAttachments {
+                room_id,
+                author,
+                target,
+                at,
+                body,
+                addressed_to,
+                attachments,
+            } => self.speak(MessageAdmission {
+                room_id,
+                author,
+                at,
+                body,
+                addressed_to,
+                placement: match target {
+                    AttachmentMessageTargetV1::Room => MessagePlacement::Unscoped,
+                    AttachmentMessageTargetV1::Reply(message_id) => {
+                        MessagePlacement::Reply(message_id)
+                    }
+                    AttachmentMessageTargetV1::Topic(topic_id) => MessagePlacement::Topic(topic_id),
+                },
+                attachments: Some(attachments),
+            }),
             CommandV2::WithdrawMessage {
                 room_id,
                 actor,
@@ -4003,6 +4126,16 @@ impl Engine {
                 message: self
                     .message(room_id, *sequence)
                     .expect("accepted reply remains retained")
+                    .clone(),
+            },
+            (
+                CommandV2::SpeakWithAttachments { room_id, .. },
+                OutcomeV2::AttachmentMessageAccepted { sequence, .. },
+            ) => DomainEventV2::MessageAccepted {
+                room_id: room_id.clone(),
+                message: self
+                    .message(room_id, *sequence)
+                    .expect("accepted attachment message remains retained")
                     .clone(),
             },
             (
@@ -4764,15 +4897,16 @@ impl Engine {
         })
     }
 
-    fn speak(
-        &mut self,
-        room_id: RoomId,
-        author: ParticipantId,
-        at: LogicalTime,
-        body: String,
-        addressed_to: Vec<ParticipantId>,
-        placement: MessagePlacement,
-    ) -> Result<OutcomeV2, Refusal> {
+    fn speak(&mut self, admission: MessageAdmission) -> Result<OutcomeV2, Refusal> {
+        let MessageAdmission {
+            room_id,
+            author,
+            at,
+            body,
+            addressed_to,
+            placement,
+            attachments,
+        } = admission;
         self.validate_nonempty_bounded(
             &body,
             self.limits.max_message_body_bytes,
@@ -4832,6 +4966,43 @@ impl Engine {
         {
             return Err(Refusal::NotMember(id.clone()));
         }
+        if let Some(attachments) = &attachments {
+            if attachments.is_empty() || attachments.len() > MAX_ATTACHMENTS_PER_MESSAGE_V1 {
+                return Err(Refusal::InvalidAttachmentCount);
+            }
+            let limits = AttachmentDescriptorLimitsV1 {
+                max_declared_bytes: self
+                    .limits
+                    .max_attachment_declared_bytes
+                    .try_into()
+                    .map_err(|_| Refusal::InvalidAttachmentDeclaredLength)?,
+                max_media_type_bytes: self.limits.max_attachment_media_type_bytes,
+                max_display_label_bytes: self.limits.max_attachment_display_label_bytes,
+            };
+            let mut attachment_ids = BTreeSet::new();
+            let mut object_refs = BTreeSet::new();
+            for attachment in attachments {
+                attachment
+                    .validate(limits)
+                    .map_err(|refusal| match refusal {
+                        AttachmentDescriptorRefusalV1::InvalidDeclaredLength => {
+                            Refusal::InvalidAttachmentDeclaredLength
+                        }
+                        AttachmentDescriptorRefusalV1::InvalidMediaType => {
+                            Refusal::InvalidAttachmentMediaType
+                        }
+                        AttachmentDescriptorRefusalV1::InvalidDisplayLabel => {
+                            Refusal::InvalidAttachmentDisplayLabel
+                        }
+                    })?;
+                if !attachment_ids.insert(attachment.attachment_id()) {
+                    return Err(Refusal::DuplicateAttachmentId);
+                }
+                if !object_refs.insert((attachment.store_id(), attachment.object_key())) {
+                    return Err(Refusal::DuplicateAttachmentObject);
+                }
+            }
+        }
         let message_id = MessageId::allocated(
             room.message_identity_incarnation,
             room.next_message_identity,
@@ -4862,6 +5033,7 @@ impl Engine {
                 room.thread_roots.remove(&root);
             }
         }
+        let attachment_count = attachments.as_ref().map_or(0, Vec::len);
         room.messages.push_back(Message {
             id: message_id,
             sequence,
@@ -4871,6 +5043,11 @@ impl Engine {
             addressed_to,
             reply_to_root,
             topic_id,
+            attachments: attachments
+                .unwrap_or_default()
+                .into_iter()
+                .map(MessageAttachmentV1::available)
+                .collect(),
             revisions: vec![MessageRevisionV1 {
                 number: 0,
                 editor: author,
@@ -4883,6 +5060,16 @@ impl Engine {
         room.next_message_sequence = next;
         if let Some(root) = reply_to_root {
             room.thread_roots.insert(root);
+        }
+        if attachment_count != 0 {
+            return Ok(OutcomeV2::AttachmentMessageAccepted {
+                room_id,
+                message_id,
+                sequence,
+                attachment_count: attachment_count
+                    .try_into()
+                    .expect("attachment count is bounded by eight"),
+            });
         }
         Ok(match reply_to_root {
             Some(root_message_id) => OutcomeV2::ReplyAccepted {
@@ -5159,6 +5346,9 @@ impl Engine {
             .find(|message| message.id == message_id)
             .expect("message established by validation");
         message.body.clear();
+        for attachment in &mut message.attachments {
+            attachment.descriptor = None;
+        }
         for revision in &mut message.revisions {
             revision.body.clear();
             revision.availability = MessageRevisionAvailabilityV1::Tombstoned;
@@ -5174,6 +5364,9 @@ impl Engine {
                     message,
                 } if event_room == room_id && message.id == message_id => {
                     message.body.clear();
+                    for attachment in &mut message.attachments {
+                        attachment.descriptor = None;
+                    }
                     for revision in &mut message.revisions {
                         revision.body.clear();
                         revision.availability = MessageRevisionAvailabilityV1::Tombstoned;

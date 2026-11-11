@@ -833,6 +833,32 @@ receipts through nested recovery without publishing them. Durable execution
 commits both before reply, and exact lost-reply replay performs no second store
 write.
 
+## Immutable attachment-reference core profile V1
+
+An additive engine command admits one message body, canonical addressing, one
+closed room/reply/topic target, and one through eight ordered attachment
+descriptors as a single transition. The ordinary membership, one-level reply,
+topic-resolution, optimistic revision, message identity, retention, outbox, and
+human/agent-neutral laws apply unchanged. A reply inherits its retained root's
+topic. Every descriptor is validated before any message or event capacity is
+consumed.
+
+A descriptor has a room-local opaque attachment identity, logical opaque store
+and object identities, a nonzero bounded declared length, lowercase ASCII
+parameter-free `type/subtype`, a bounded control-free UTF-8 display label, and
+one closed SHA-256 claim. Attachment IDs and `(store, object)` pairs are unique
+inside the message; presentation order is retained. These values are neither
+URLs nor credentials, and Agora performs no object-store I/O or byte
+verification.
+
+Body edits preserve the immutable relation. Withdrawal and moderator redaction
+retain each attachment identity and ordering slot while removing the store,
+object, length, media type, label, and digest from current messages and retained
+message-acceptance event copies. This is logical non-disclosure, not external
+object deletion. Engine checkpoint profile 20 encodes only complete descriptors
+or identity-only tombstones; enclosing service and Host profiles advance to 22.
+The existing public protocol and wire profiles do not yet expose the feature.
+
 ## Wire profile V1
 
 `agora-wire` canonically encodes passive protocol V1 requests and replies using

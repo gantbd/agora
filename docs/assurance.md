@@ -119,6 +119,18 @@ production-scale indexing remain outside this volatile profile. Revision
 qualification with 10,000 soak cycles and 1,000,000 fixed-seed cases on each of
 the three fuzz targets.
 
+The attachment core has three descriptor-vocabulary scenarios and four message
+behavior scenarios. They cover opaque value round trips, canonical lowercase
+parameter-free media types, declared-length and label bounds, content-safe
+diagnostics, exact caller order, unique attachment and object identities,
+human/agent-neutral room/topic/reply admission, reply topic inheritance, atomic
+pre-mutation refusal, edit preservation, withdrawal and moderator-redaction
+scrubbing in current state and retained event copies, and exact canonical
+recovery. Engine/service/Host persistence profiles advance together to
+20/22/22 because the enclosing records nest the engine state. This evidence
+does not establish a public protocol, blob availability, byte verification,
+download authority, scanning, deletion, or cross-engine atomicity.
+
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;
 human/agent symmetry; current membership and target authority; no conversation

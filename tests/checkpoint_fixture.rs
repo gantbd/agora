@@ -201,11 +201,11 @@ fn unhex(value: &str) -> Vec<u8> {
 }
 
 #[test]
-fn canonical_v19_checkpoint_is_immutable_and_recovers() {
+fn canonical_v20_checkpoint_is_immutable_and_recovers() {
     let source = fixture_engine();
     let topic_id = topic_id_from_fixture(&source);
     let prepared = source.prepare_checkpoint(65_536).unwrap();
-    let expected_hex = include_str!("fixtures/checkpoint-v19.hex").trim();
+    let expected_hex = include_str!("fixtures/checkpoint-v20.hex").trim();
     assert_eq!(hex(prepared.bytes()), expected_hex);
 
     let recovered = Engine::recover_checkpoint(

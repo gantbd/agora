@@ -1033,6 +1033,7 @@ impl ServiceV2 {
                 }
             }),
             EngineOutcome::ReplyAccepted { .. } => Err(RefusalV2::Unavailable),
+            EngineOutcome::AttachmentMessageAccepted { .. } => Err(RefusalV2::Unavailable),
             EngineOutcome::MessageWithdrawn {
                 message_id,
                 sequence,
@@ -3434,6 +3435,12 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidDisplayName
         | EngineRefusal::InvalidRoomName
         | EngineRefusal::InvalidMessageBody
+        | EngineRefusal::InvalidAttachmentCount
+        | EngineRefusal::InvalidAttachmentDeclaredLength
+        | EngineRefusal::InvalidAttachmentMediaType
+        | EngineRefusal::InvalidAttachmentDisplayLabel
+        | EngineRefusal::DuplicateAttachmentId
+        | EngineRefusal::DuplicateAttachmentObject
         | EngineRefusal::NonCanonicalAddressing
         | EngineRefusal::InvalidModerationReason
         | EngineRefusal::InvalidRoleChange
