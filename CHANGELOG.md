@@ -18,16 +18,16 @@ follow Semantic Versioning once a public release contract is selected.
   deliberately non-durable presence and typing. Store refusal restores Host
   state without leaking a signal, uncertain durability fences and retires the
   source, and physical local-daemon restart retains rooms while reconstructing
-  transient state empty. Revision
-  `c502202f19164a4a399b365d9a1134344faaf67e` passed the integrated release
-  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
+  transient state empty.
 - Added explicit durable-collaboration endpoint-residue recovery: the caller
   supplies the recovered owner, exact prior incarnation, and distinct next
   incarnation; the daemon rotates only validated residue and preserves
   collaboration handshake profile 2 without resuming an old session.
 - Added passive saturating durability-publication observations for both
   authenticated durable Host owners and daemon composition, including truthful
-  fenced-state reporting without exposing the Host/Service projection.
+  fenced-state reporting without exposing the Host/Service projection. Revision
+  `5c2770e1a45d4a02b7cd9262c2d5eb6ba4ea794f` passed the integrated release
+  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque
