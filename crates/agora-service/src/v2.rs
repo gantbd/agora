@@ -13,6 +13,10 @@ use agora_engine::{
     Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
     Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicId,
     TopicMessagePageCursorV1, TopicPageCursorV1,
+    VellumArtifactMessageTargetV1 as EngineVellumArtifactMessageTargetV1,
+    VellumArtifactReferenceIdV1 as EngineVellumArtifactReferenceIdV1,
+    VellumArtifactReferenceV1 as EngineVellumArtifactReferenceV1,
+    VellumDocumentTargetV1 as EngineVellumDocumentTargetV1,
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
@@ -21,14 +25,17 @@ use agora_protocol::v2::{
     ChangeGapV2, ClientIdV2, CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1,
     IdentifiedRoomChangePageV1, IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2,
     MemberV2, MessageAttachmentV1, MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1,
-    MessageRevisionPageV1, MessageRevisionV1, MessageV2, OutcomeV2, PageCursorV2,
-    ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2,
-    ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
-    RoomPageV2, RoomSummaryV2, Sha256DigestV1, ThreadLifecycleStateV1, ThreadMessagePageV1,
-    ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1,
-    ThreadedRoomEventV1, TopicAliasStatusV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1,
-    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1,
-    TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1,
+    MessageRevisionPageV1, MessageRevisionV1, MessageV2, MessageVellumArtifactReferenceV1,
+    OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
+    ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
+    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, Sha256DigestV1,
+    ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
+    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
+    TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1, TopicRoomChangePageV1,
+    TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1, TopicSupersessionStatusV1,
+    TopicTagStatusV1, TopicV1, VellumArtifactMessagePageV1, VellumArtifactMessageTargetV1,
+    VellumArtifactMessageV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
+    VellumDocumentTargetV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -112,6 +119,10 @@ enum CursorPage {
         cursor: MessagePageCursor,
     },
     AttachmentMessages {
+        room_id: RoomId,
+        cursor: MessagePageCursor,
+    },
+    VellumArtifactMessages {
         room_id: RoomId,
         cursor: MessagePageCursor,
     },
@@ -331,6 +342,7 @@ impl ServiceV2 {
                 CapabilityV2::TopicAliasesV1,
                 CapabilityV2::TopicTagsV1,
                 CapabilityV2::ImmutableAttachmentReferencesV1,
+                CapabilityV2::VellumArtifactReferencesV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -358,6 +370,11 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.attachment_messages(client, participant, room_id, *cursor, *limit),
+            CommandV2::VellumArtifactMessages {
+                room_id,
+                cursor,
+                limit,
+            } => self.vellum_artifact_messages(client, participant, room_id, *cursor, *limit),
             CommandV2::OpenChanges {
                 room_id,
                 observed_revision,
@@ -853,6 +870,30 @@ impl ServiceV2 {
                         .collect(),
                 },
             ),
+            CommandV2::SpeakWithVellumArtifacts {
+                room_id,
+                expected_revision,
+                target,
+                logical_time,
+                body,
+                addressed_to,
+                references,
+            } => self.mutate_vellum_artifacts(
+                *expected_revision,
+                EngineCommand::SpeakWithVellumArtifacts {
+                    room_id: RoomId::new(room_id),
+                    author: participant.clone(),
+                    target: map_vellum_artifact_target_to_engine(*target),
+                    at: agora_engine::LogicalTime(*logical_time),
+                    body: body.clone(),
+                    addressed_to: addressed_to.iter().map(ParticipantId::new).collect(),
+                    references: references
+                        .iter()
+                        .copied()
+                        .map(map_vellum_artifact_reference_to_engine)
+                        .collect(),
+                },
+            ),
             CommandV2::WithdrawMessage {
                 room_id,
                 expected_revision,
@@ -961,6 +1002,35 @@ impl ServiceV2 {
             message_id: MessageIdV1::new(message_id.into_bytes()),
             sequence,
             attachment_count: u32::from(attachment_count),
+        })
+    }
+
+    fn mutate_vellum_artifacts(
+        &mut self,
+        expected_revision: u64,
+        command: EngineCommand,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let transition = self
+            .engine
+            .apply_revisioned(RevisionedCommandV2 {
+                expected_revision: Revision(expected_revision),
+                command,
+            })
+            .map_err(map_engine_refusal)?;
+        let EngineOutcome::VellumArtifactMessageAccepted {
+            message_id,
+            sequence,
+            reference_count,
+            ..
+        } = transition.outcome
+        else {
+            return Err(RefusalV2::Unavailable);
+        };
+        Ok(OutcomeV2::VellumArtifactMessageAccepted {
+            revision: transition.revision.0,
+            message_id: MessageIdV1::new(message_id.into_bytes()),
+            sequence,
+            reference_count: u32::from(reference_count),
         })
     }
 
@@ -1471,6 +1541,52 @@ impl ServiceV2 {
             next_message_sequence: page.next_message_sequence,
             next,
         }))
+    }
+
+    fn vellum_artifact_messages(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        cursor_id: Option<PageCursorV2>,
+        limit: u32,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let cursor = match cursor_id {
+            Some(id) => match self.cursor_for(client, id)? {
+                CursorPage::VellumArtifactMessages {
+                    room_id: bound_room,
+                    cursor,
+                } if bound_room == room => Some(cursor),
+                _ => return Err(RefusalV2::InvalidCursor),
+            },
+            None => None,
+        };
+        let page = self
+            .engine
+            .message_page(observer, &room, cursor.as_ref(), limit as usize)
+            .map_err(map_observation_refusal)?;
+        let next_page = page.next.map(|cursor| CursorPage::VellumArtifactMessages {
+            room_id: room.clone(),
+            cursor,
+        });
+        let next = self.replace_cursor(client, cursor_id, next_page)?;
+        let messages = page
+            .messages
+            .into_iter()
+            .filter(|message| !message.vellum_artifacts().is_empty())
+            .map(map_vellum_artifact_message_from_engine)
+            .collect();
+        Ok(OutcomeV2::VellumArtifactMessages(
+            VellumArtifactMessagePageV1 {
+                revision: page.revision.0,
+                room_id: page.room_id.as_str().to_owned(),
+                messages,
+                oldest_retained_sequence: page.oldest_retained_sequence,
+                next_message_sequence: page.next_message_sequence,
+                next,
+            },
+        ))
     }
 
     fn message_revisions(
@@ -2655,6 +2771,7 @@ impl ServiceV2 {
             | CommandV2::Messages { room_id, limit, .. }
             | CommandV2::IdentifiedMessages { room_id, limit, .. }
             | CommandV2::AttachmentMessages { room_id, limit, .. }
+            | CommandV2::VellumArtifactMessages { room_id, limit, .. }
             | CommandV2::ThreadRoots { room_id, limit, .. }
             | CommandV2::ThreadReplies { room_id, limit, .. }
             | CommandV2::MessageRevisions { room_id, limit, .. }
@@ -2800,6 +2917,21 @@ impl ServiceV2 {
                         .all(|participant| valid_participant(participant))
                     && (1..=8).contains(&attachments.len())
             }
+            CommandV2::SpeakWithVellumArtifacts {
+                room_id,
+                body,
+                addressed_to,
+                references,
+                ..
+            } => {
+                valid_room(room_id)
+                    && valid_text(body, self.limits.max_message_body_bytes)
+                    && addressed_to.len() <= self.limits.max_addressed_participants
+                    && addressed_to
+                        .iter()
+                        .all(|participant| valid_participant(participant))
+                    && (1..=8).contains(&references.len())
+            }
         }
     }
 }
@@ -2893,6 +3025,73 @@ fn map_attachment_target_to_engine(
         AttachmentMessageTargetV1::Topic(topic_id) => {
             EngineAttachmentMessageTargetV1::Topic(TopicId::from_bytes(topic_id.into_bytes()))
         }
+    }
+}
+
+fn map_vellum_artifact_target_to_engine(
+    target: VellumArtifactMessageTargetV1,
+) -> EngineVellumArtifactMessageTargetV1 {
+    match target {
+        VellumArtifactMessageTargetV1::Room => EngineVellumArtifactMessageTargetV1::Room,
+        VellumArtifactMessageTargetV1::Reply(message_id) => {
+            EngineVellumArtifactMessageTargetV1::Reply(MessageId::from_bytes(
+                message_id.into_bytes(),
+            ))
+        }
+        VellumArtifactMessageTargetV1::Topic(topic_id) => {
+            EngineVellumArtifactMessageTargetV1::Topic(TopicId::from_bytes(topic_id.into_bytes()))
+        }
+    }
+}
+
+fn map_vellum_artifact_reference_to_engine(
+    reference: VellumArtifactReferenceV1,
+) -> EngineVellumArtifactReferenceV1 {
+    EngineVellumArtifactReferenceV1::new(
+        EngineVellumArtifactReferenceIdV1::new(reference.reference_id.into_bytes()),
+        EngineVellumDocumentTargetV1::new(
+            reference.target.workspace_id,
+            reference.target.document_id,
+            reference.target.source_revision,
+        )
+        .expect("wire validation rejects zero Vellum identities"),
+    )
+}
+
+fn map_vellum_artifact_message_from_engine(
+    message: agora_engine::Message,
+) -> VellumArtifactMessageV1 {
+    VellumArtifactMessageV1 {
+        message_id: MessageIdV1::new(message.id().into_bytes()),
+        sequence: message.sequence(),
+        author: message.author().as_str().to_owned(),
+        logical_time: message.at().0,
+        body: message.body().to_owned(),
+        addressed_to: message
+            .addressed_to()
+            .iter()
+            .map(|participant| participant.as_str().to_owned())
+            .collect(),
+        reply_to_root: message
+            .reply_to_root()
+            .map(|message_id| MessageIdV1::new(message_id.into_bytes())),
+        topic_id: message
+            .topic_id()
+            .map(|topic_id| TopicIdV1::new(topic_id.into_bytes())),
+        references: message
+            .vellum_artifacts()
+            .iter()
+            .map(|reference| MessageVellumArtifactReferenceV1 {
+                reference_id: VellumArtifactReferenceIdV1::new(
+                    reference.reference_id().into_bytes(),
+                ),
+                target: reference.target().map(|target| VellumDocumentTargetV1 {
+                    workspace_id: target.workspace_id(),
+                    document_id: target.document_id(),
+                    source_revision: target.source_revision(),
+                }),
+            })
+            .collect(),
     }
 }
 

@@ -239,10 +239,16 @@ event-copied message. Each entry is either one room-local relation identity plus
 the exact nonzero workspace/document identities and source revision, or an
 identity-only tombstone. Artifact-free state remains canonical profile 20, so
 all existing engine, service, and Host fixtures remain byte-identical; profile
-20 recovers with empty artifact relations. Service and Host profiles have not
-advanced because their protocol receipts cannot yet carry the R90 command or
-outcome. Wire tags, capability discovery, SDKs, and the 73-fixture compatibility
-inventory are unchanged by this core-only slice.
+20 recovers with empty artifact relations. The additive retained-history and
+admission protocol advances service persistence to profile 25 only when an
+artifact-bearing engine checkpoint, artifact cursor, or artifact request receipt
+is present; artifact-free service state remains canonical profile 24. Host
+profile 24 remains canonical because its length-delimited service record already
+permits the service profile to evolve without reinterpretation. Public Wire V2
+appends command tags 62 and 63, outcome tags 59 and 60, and capability tag 24.
+All older tags, projections, frames, and fixtures remain byte-identical. Two
+frozen artifact frames raise compatibility closure to 75 fixtures and seed both
+canonical wire fuzz profiles.
 
 Transient collaboration Wire V1 is a new, separately invoked grammar. Its
 profile byte `01`, presence command/outcome tags `01` through `03`, typing

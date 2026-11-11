@@ -141,16 +141,22 @@ fuzz targets. This evidence does not establish blob availability, byte
 verification, download authority, scanning, deletion, or cross-engine
 atomicity.
 
-The typed Vellum artifact core has four behavior scenarios covering
+The typed Vellum artifact profile has four core behavior scenarios covering
 human/agent-neutral room/topic/reply admission, exact order and target
 round-trip, zero source revision, count/identity/target uniqueness refusals
 before mutation, edit preservation, withdrawal and moderator-redaction
 scrubbing in current and retained event copies, and canonical recovery. Engine
 checkpoint profile 21 retains complete targets or identity-only tombstones;
-artifact-free state stays canonical profile 20. This is core
-and recovery evidence only; protocol, wire, service, Host, client, SDK, typed
-Vellum conversion, local transport, fuzz refresh, and release qualification
-remain open.
+artifact-free state stays canonical profile 20. Three wire and four service
+scenarios cover closed bounds, frozen canonical frames, content-safe diagnostics,
+actor-bound admission, exact replay/conflict, participant-bound history,
+tombstone scrubbing, cursor isolation, and profile-25 receipt/cursor recovery.
+Authenticated Host admission and recovery, exact client uncertainty, both SDK
+facades, durable commit-before-publication recovery, and a real private
+Unix-socket admission complete the in-repository functional evidence. The
+75-fixture compatibility closure and refreshed canonical fuzz corpus pass the
+full ordinary gate. Exact conversion against Vellum's public identity types and
+commit-pinned release qualification remain open.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;

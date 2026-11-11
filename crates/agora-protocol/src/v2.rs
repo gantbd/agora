@@ -83,6 +83,59 @@ opaque_attachment_value!(AttachmentIdV1, 16);
 opaque_attachment_value!(AttachmentStoreIdV1, 16);
 opaque_attachment_value!(AttachmentObjectKeyV1, 32);
 opaque_attachment_value!(Sha256DigestV1, 32);
+opaque_attachment_value!(VellumArtifactReferenceIdV1, 16);
+
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct VellumDocumentTargetV1 {
+    pub workspace_id: u64,
+    pub document_id: u64,
+    pub source_revision: u64,
+}
+
+impl fmt::Debug for VellumDocumentTargetV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("VellumDocumentTargetV1(<opaque>)")
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct VellumArtifactReferenceV1 {
+    pub reference_id: VellumArtifactReferenceIdV1,
+    pub target: VellumDocumentTargetV1,
+}
+
+impl fmt::Debug for VellumArtifactReferenceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VellumArtifactReferenceV1")
+            .field("reference_id", &self.reference_id)
+            .field("target", &self.target)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VellumArtifactMessageTargetV1 {
+    Room,
+    Reply(MessageIdV1),
+    Topic(TopicIdV1),
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessageVellumArtifactReferenceV1 {
+    pub reference_id: VellumArtifactReferenceIdV1,
+    pub target: Option<VellumDocumentTargetV1>,
+}
+
+impl fmt::Debug for MessageVellumArtifactReferenceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageVellumArtifactReferenceV1")
+            .field("reference_id", &self.reference_id)
+            .field("available", &self.target.is_some())
+            .finish()
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AttachmentIntegrityV1 {
@@ -216,6 +269,11 @@ pub enum CommandV2 {
         limit: u32,
     },
     AttachmentMessages {
+        room_id: String,
+        cursor: Option<PageCursorV2>,
+        limit: u32,
+    },
+    VellumArtifactMessages {
         room_id: String,
         cursor: Option<PageCursorV2>,
         limit: u32,
@@ -506,6 +564,15 @@ pub enum CommandV2 {
         addressed_to: Vec<String>,
         attachments: Vec<AttachmentDescriptorV1>,
     },
+    SpeakWithVellumArtifacts {
+        room_id: String,
+        expected_revision: u64,
+        target: VellumArtifactMessageTargetV1,
+        logical_time: u64,
+        body: String,
+        addressed_to: Vec<String>,
+        references: Vec<VellumArtifactReferenceV1>,
+    },
     WithdrawMessage {
         room_id: String,
         expected_revision: u64,
@@ -575,6 +642,16 @@ impl fmt::Debug for CommandV2 {
                 limit,
             } => formatter
                 .debug_struct("AttachmentMessages")
+                .field("room_id_bytes", &room_id.len())
+                .field("has_cursor", &cursor.is_some())
+                .field("limit", limit)
+                .finish(),
+            Self::VellumArtifactMessages {
+                room_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("VellumArtifactMessages")
                 .field("room_id_bytes", &room_id.len())
                 .field("has_cursor", &cursor.is_some())
                 .field("limit", limit)
@@ -833,6 +910,24 @@ impl fmt::Debug for CommandV2 {
                 .field("body_bytes", &body.len())
                 .field("addressed_count", &addressed_to.len())
                 .field("attachment_count", &attachments.len())
+                .finish(),
+            Self::SpeakWithVellumArtifacts {
+                room_id,
+                expected_revision,
+                target,
+                logical_time,
+                body,
+                addressed_to,
+                references,
+            } => formatter
+                .debug_struct("SpeakWithVellumArtifacts")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("target", target)
+                .field("logical_time", logical_time)
+                .field("body_bytes", &body.len())
+                .field("addressed_count", &addressed_to.len())
+                .field("reference_count", &references.len())
                 .finish(),
             Self::WithdrawMessage {
                 room_id,
@@ -1140,6 +1235,7 @@ pub enum CapabilityV2 {
     TopicAliasesV1,
     TopicTagsV1,
     ImmutableAttachmentReferencesV1,
+    VellumArtifactReferencesV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -1267,6 +1363,36 @@ pub struct AttachmentMessageV1 {
     pub reply_to_root: Option<MessageIdV1>,
     pub topic_id: Option<TopicIdV1>,
     pub attachments: Vec<MessageAttachmentV1>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct VellumArtifactMessageV1 {
+    pub message_id: MessageIdV1,
+    pub sequence: u64,
+    pub author: String,
+    pub logical_time: u64,
+    pub body: String,
+    pub addressed_to: Vec<String>,
+    pub reply_to_root: Option<MessageIdV1>,
+    pub topic_id: Option<TopicIdV1>,
+    pub references: Vec<MessageVellumArtifactReferenceV1>,
+}
+
+impl fmt::Debug for VellumArtifactMessageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VellumArtifactMessageV1")
+            .field("message_id", &self.message_id)
+            .field("sequence", &self.sequence)
+            .field("author_bytes", &self.author.len())
+            .field("logical_time", &self.logical_time)
+            .field("body_bytes", &self.body.len())
+            .field("addressed_count", &self.addressed_to.len())
+            .field("is_reply", &self.reply_to_root.is_some())
+            .field("has_topic", &self.topic_id.is_some())
+            .field("reference_count", &self.references.len())
+            .finish()
+    }
 }
 
 impl fmt::Debug for AttachmentMessageV1 {
@@ -1500,6 +1626,16 @@ pub struct AttachmentMessagePageV1 {
     pub revision: u64,
     pub room_id: String,
     pub messages: Vec<AttachmentMessageV1>,
+    pub oldest_retained_sequence: u64,
+    pub next_message_sequence: u64,
+    pub next: Option<PageCursorV2>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct VellumArtifactMessagePageV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub messages: Vec<VellumArtifactMessageV1>,
     pub oldest_retained_sequence: u64,
     pub next_message_sequence: u64,
     pub next: Option<PageCursorV2>,
@@ -3084,6 +3220,12 @@ page_debug!(
     "message_count"
 );
 page_debug!(
+    VellumArtifactMessagePageV1,
+    "VellumArtifactMessagePageV1",
+    messages,
+    "message_count"
+);
+page_debug!(
     AttachmentMessagePageV1,
     "AttachmentMessagePageV1",
     messages,
@@ -3099,6 +3241,7 @@ pub enum OutcomeV2 {
     Messages(MessagePageV2),
     IdentifiedMessages(IdentifiedMessagePageV1),
     AttachmentMessages(AttachmentMessagePageV1),
+    VellumArtifactMessages(VellumArtifactMessagePageV1),
     ThreadRoots(ThreadMessagePageV1),
     ThreadReplies(ThreadMessagePageV1),
     ThreadStatus(ThreadStatusV1),
@@ -3162,6 +3305,12 @@ pub enum OutcomeV2 {
         message_id: MessageIdV1,
         sequence: u64,
         attachment_count: u32,
+    },
+    VellumArtifactMessageAccepted {
+        revision: u64,
+        message_id: MessageIdV1,
+        sequence: u64,
+        reference_count: u32,
     },
     ReplyAccepted {
         revision: u64,

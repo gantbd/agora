@@ -11,6 +11,8 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1, ClientIdV2, CommandV2,
     OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1,
+    VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
+    VellumDocumentTargetV1,
 };
 use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
@@ -295,6 +297,156 @@ fn v2_attachment_admission_binds_the_authenticated_actor() {
         "bot"
     );
     assert!(calls.get() >= 2);
+}
+
+#[test]
+fn v2_vellum_artifact_admission_binds_the_authenticated_actor() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(2),
+    );
+    let (session, client, context) = open(&mut host, "bot", 2);
+    let frame = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::SpeakWithVellumArtifacts {
+                    room_id: "room".to_owned(),
+                    expected_revision: 4,
+                    target: VellumArtifactMessageTargetV1::Room,
+                    logical_time: 5,
+                    body: "body".to_owned(),
+                    addressed_to: vec![],
+                    references: vec![VellumArtifactReferenceV1 {
+                        reference_id: VellumArtifactReferenceIdV1::new([1; 16]),
+                        target: VellumDocumentTargetV1 {
+                            workspace_id: 2,
+                            document_id: 3,
+                            source_revision: 4,
+                        },
+                    }],
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host
+                .handle(session, &frame, &context, HostTimeV1(2))
+                .unwrap(),
+            limits(2).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(
+            OutcomeV2::VellumArtifactMessageAccepted { revision: 5, .. }
+        ))
+    ));
+    let message = host
+        .service()
+        .engine()
+        .message(&RoomId::new("room"), 0)
+        .unwrap();
+    assert_eq!(message.author().as_str(), "bot");
+    assert_eq!(message.vellum_artifacts().len(), 1);
+    assert!(calls.get() >= 2);
+}
+
+#[test]
+fn v2_vellum_artifact_receipt_and_actor_binding_recover_through_host_checkpoint() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(2),
+    );
+    let (session, client, context) = open(&mut host, "bot", 2);
+    let frame = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::SpeakWithVellumArtifacts {
+                    room_id: "room".to_owned(),
+                    expected_revision: 4,
+                    target: VellumArtifactMessageTargetV1::Room,
+                    logical_time: 5,
+                    body: "body".to_owned(),
+                    addressed_to: vec![],
+                    references: vec![VellumArtifactReferenceV1 {
+                        reference_id: VellumArtifactReferenceIdV1::new([1; 16]),
+                        target: VellumDocumentTargetV1 {
+                            workspace_id: 2,
+                            document_id: 3,
+                            source_revision: 4,
+                        },
+                    }],
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    let accepted = host
+        .handle(session, &frame, &context, HostTimeV1(2))
+        .unwrap();
+    let checkpoint = host
+        .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+        .unwrap();
+    assert_eq!(checkpoint.bytes()[8], 24);
+
+    let mut recovered = HostV2::recover_checkpoint(
+        checkpoint.bytes(),
+        CHECKPOINT_SCOPE,
+        recovery_limits(),
+        Verifier { calls },
+    )
+    .unwrap();
+    assert_eq!(
+        recovered
+            .handle(session, &frame, &context, HostTimeV1(3))
+            .unwrap(),
+        accepted
+    );
+    assert_eq!(recovered.service().engine().revision(), Revision(5));
 }
 
 #[test]

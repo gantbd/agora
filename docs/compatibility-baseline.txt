@@ -84,6 +84,8 @@ fixture|crates/agora-wire/tests/fixtures/transient-presence-page-v1.hex|52|6ad16
 fixture|crates/agora-wire/tests/fixtures/transient-publish-request-v1.hex|27|96da341e20a0c50c000b036776b12f6a92704c8e062faa0ba5f8ee7f6d92ff46
 fixture|crates/agora-wire/tests/fixtures/transient-typing-page-v1.hex|52|79a0c435aa782480b655725cd2dd664258702a60f9b9a99324ea9b79cfc82e56
 fixture|crates/agora-wire/tests/fixtures/transient-typing-publish-request-v1.hex|43|aa98e75ca047a5da777fb024d1a889db6c3416b5631a8660127642112bdd2017
+fixture|crates/agora-wire/tests/fixtures/vellum-artifact-history-reply-v2.hex|156|09fd40d831ad3836f98178a69d12293ff1922027cf1d4941545fa9542479632b
+fixture|crates/agora-wire/tests/fixtures/vellum-artifact-speak-request-v2.hex|160|66d7db09da2714c69adcead251b094e6ca36603e0e6e58009e43ca2e0a805f6d
 fixture|crates/agora-wire/tests/fixtures/withdrawal-change-reply-v2.hex|79|c41479e1282e31d5aa6ba8dc836aa4b745648085d96bd47585eb4e8b2fd276de
 fixture|tests/fixtures/checkpoint-v17.hex|3013|07691a181f032074f34156a9b0876e6a4638b87464c10e0a849065c8f3eef9c2
 fixture|tests/fixtures/checkpoint-v18.hex|3164|f11969efb2b37376c03e6bad2084f3c2dc68157509c868cef9a552530f6f8dca

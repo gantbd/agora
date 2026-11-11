@@ -1,6 +1,6 @@
 # ADR: typed Vellum artifact references
 
-Status: accepted; core and canonical engine recovery implemented
+Status: accepted; Agora-local functional profile implemented and ordinarily gated
 
 Date: 2026-11-11
 

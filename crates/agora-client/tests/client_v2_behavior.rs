@@ -4,7 +4,8 @@ use agora_client::v2::{
 use agora_protocol::v2::{
     AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1, AttachmentMessageTargetV1,
     AttachmentObjectKeyV1, AttachmentStoreIdV1, ClientIdV2, CommandV2, RefusalV2, ReplyV2,
-    RequestIdV2, RequestV2, Sha256DigestV1,
+    RequestIdV2, RequestV2, Sha256DigestV1, VellumArtifactMessageTargetV1,
+    VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use std::collections::VecDeque;
 
@@ -56,6 +57,25 @@ fn attachment_command(label: &str) -> CommandV2 {
     }
 }
 
+fn vellum_artifact_command(source_revision: u64) -> CommandV2 {
+    CommandV2::SpeakWithVellumArtifacts {
+        room_id: "room".to_owned(),
+        expected_revision: 4,
+        target: VellumArtifactMessageTargetV1::Room,
+        logical_time: 5,
+        body: "body".to_owned(),
+        addressed_to: vec![],
+        references: vec![VellumArtifactReferenceV1 {
+            reference_id: VellumArtifactReferenceIdV1::new([1; 16]),
+            target: VellumDocumentTargetV1 {
+                workspace_id: 2,
+                document_id: 3,
+                source_revision,
+            },
+        }],
+    }
+}
+
 #[test]
 fn attachment_uncertainty_replays_only_the_exact_descriptor_set() {
     let port = RecordingPortV2 {
@@ -77,6 +97,34 @@ fn attachment_uncertainty_replays_only_the_exact_descriptor_set() {
     );
     assert_eq!(
         client.execute(attachment_command("first")),
+        Ok(ReplyV2::Refused(RefusalV2::Unavailable))
+    );
+    let (port, pending) = client.into_parts();
+    assert!(pending.is_none());
+    assert_eq!(port.requests[0], port.requests[1]);
+}
+
+#[test]
+fn vellum_artifact_uncertainty_replays_only_the_exact_revision_set() {
+    let port = RecordingPortV2 {
+        replies: [
+            Err(PortFailureV2::OutcomeUnknown("lost")),
+            Ok(ReplyV2::Refused(RefusalV2::Unavailable)),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let mut client = ClientV2::new(ClientIdV2(7), port);
+    assert_eq!(
+        client.execute(vellum_artifact_command(4)),
+        Err(ClientErrorV2::OutcomeUnknown("lost"))
+    );
+    assert_eq!(
+        client.execute(vellum_artifact_command(5)),
+        Err(ClientErrorV2::UnresolvedOutcome)
+    );
+    assert_eq!(
+        client.execute(vellum_artifact_command(4)),
         Ok(ReplyV2::Refused(RefusalV2::Unavailable))
     );
     let (port, pending) = client.into_parts();

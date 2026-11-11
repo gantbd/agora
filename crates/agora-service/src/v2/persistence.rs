@@ -17,7 +17,8 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 const MAGIC: &[u8; 8] = b"AGORASV\0";
-const VERSION: u8 = 24;
+const VERSION_V24: u8 = 24;
+const VERSION_V25: u8 = 25;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ServiceCheckpointScopeV1([u8; 16]);
@@ -288,8 +289,30 @@ impl ServiceV2 {
             bytes: Vec::new(),
             max: max_snapshot_bytes,
         };
+        let requires_v25 = engine.bytes().get(8) == Some(&21)
+            || self
+                .cursors
+                .values()
+                .any(|record| matches!(record.page, CursorPage::VellumArtifactMessages { .. }))
+            || self.retained.values().any(|retained| {
+                matches!(
+                    retained.request.command,
+                    CommandV2::VellumArtifactMessages { .. }
+                        | CommandV2::SpeakWithVellumArtifacts { .. }
+                ) || matches!(
+                    retained.reply,
+                    ReplyV2::Accepted(
+                        OutcomeV2::VellumArtifactMessages(_)
+                            | OutcomeV2::VellumArtifactMessageAccepted { .. }
+                    )
+                )
+            });
         writer.raw(MAGIC)?;
-        writer.byte(VERSION)?;
+        writer.byte(if requires_v25 {
+            VERSION_V25
+        } else {
+            VERSION_V24
+        })?;
         writer.raw(&scope.0)?;
         write_limits(&mut writer, self.limits)?;
         writer.number(self.next_client)?;
@@ -473,6 +496,14 @@ impl ServiceV2 {
                         .map_err(|error| map_engine(error, true))?;
                     writer.blob(checkpoint.bytes())?;
                 }
+                CursorPage::VellumArtifactMessages { room_id, cursor } => {
+                    writer.byte(17)?;
+                    writer.text(room_id.as_str())?;
+                    let checkpoint = cursor
+                        .prepare_checkpoint(max_snapshot_bytes)
+                        .map_err(|error| map_engine(error, true))?;
+                    writer.blob(checkpoint.bytes())?;
+                }
             }
         }
         Ok(ServiceCheckpointV2(writer.bytes))
@@ -487,7 +518,11 @@ impl ServiceV2 {
             return Err(ServiceCheckpointErrorV2::Limit);
         }
         let mut reader = Reader { bytes, position: 0 };
-        if reader.raw(MAGIC.len())? != MAGIC || reader.byte()? != VERSION {
+        if reader.raw(MAGIC.len())? != MAGIC {
+            return Err(ServiceCheckpointErrorV2::Profile);
+        }
+        let version = reader.byte()?;
+        if !matches!(version, VERSION_V24 | VERSION_V25) {
             return Err(ServiceCheckpointErrorV2::Profile);
         }
         if reader.fixed::<16>()? != expected_scope.0 {
@@ -816,6 +851,18 @@ impl ServiceV2 {
                         return Err(ServiceCheckpointErrorV2::Invalid);
                     }
                     CursorPage::AttachmentChanges { room_id, position }
+                }
+                17 if version == VERSION_V25 => {
+                    let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
+                    let cursor = MessagePageCursor::recover_checkpoint(
+                        reader.blob(bounds.max_snapshot_bytes)?,
+                        cursor_bounds,
+                    )
+                    .map_err(|error| map_engine(error, true))?;
+                    if room_id.as_str().is_empty() || !cursor.is_bound_to(participant, &room_id) {
+                        return Err(ServiceCheckpointErrorV2::Invalid);
+                    }
+                    CursorPage::VellumArtifactMessages { room_id, cursor }
                 }
                 _ => return Err(ServiceCheckpointErrorV2::Invalid),
             };

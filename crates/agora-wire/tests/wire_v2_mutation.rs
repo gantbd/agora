@@ -82,6 +82,16 @@ fn every_v2_fixture_has_deterministic_bounded_single_bit_and_framing_mutation() 
             FrameKind::Request,
         ),
         (
+            "vellum-artifact-speak-request",
+            include_str!("fixtures/vellum-artifact-speak-request-v2.hex"),
+            FrameKind::Request,
+        ),
+        (
+            "vellum-artifact-history-reply",
+            include_str!("fixtures/vellum-artifact-history-reply-v2.hex"),
+            FrameKind::Reply,
+        ),
+        (
             "bans-reply",
             include_str!("fixtures/bans-reply-v2.hex"),
             FrameKind::Reply,

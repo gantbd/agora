@@ -11,14 +11,17 @@ use agora_protocol::v2::{
     ChangeGapV2, ClientIdV2, CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1,
     IdentifiedRoomChangePageV1, IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2,
     MemberV2, MessageAttachmentV1, MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1,
-    MessageRevisionPageV1, MessageRevisionV1, MessageV2, OutcomeV2, PageCursorV2,
-    ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2,
-    ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
-    RoomPageV2, RoomSummaryV2, Sha256DigestV1, ThreadLifecycleStateV1, ThreadMessagePageV1,
-    ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1,
-    ThreadedRoomEventV1, TopicAliasStatusV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1,
-    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1,
-    TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1,
+    MessageRevisionPageV1, MessageRevisionV1, MessageV2, MessageVellumArtifactReferenceV1,
+    OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
+    ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
+    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, Sha256DigestV1,
+    ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
+    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
+    TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1, TopicRoomChangePageV1,
+    TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1, TopicSupersessionStatusV1,
+    TopicTagStatusV1, TopicV1, VellumArtifactMessagePageV1, VellumArtifactMessageTargetV1,
+    VellumArtifactMessageV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
+    VellumDocumentTargetV1,
 };
 use std::{collections::BTreeSet, fmt};
 
@@ -249,6 +252,16 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             limit,
         } => {
             sink.u8(58)?;
+            sink.text(room_id)?;
+            encode_optional_cursor(sink, *cursor)?;
+            sink.u64(u64::from(*limit))
+        }
+        CommandV2::VellumArtifactMessages {
+            room_id,
+            cursor,
+            limit,
+        } => {
+            sink.u8(62)?;
             sink.text(room_id)?;
             encode_optional_cursor(sink, *cursor)?;
             sink.u64(u64::from(*limit))
@@ -829,6 +842,34 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             }
             Ok(())
         }
+        CommandV2::SpeakWithVellumArtifacts {
+            room_id,
+            expected_revision,
+            target,
+            logical_time,
+            body,
+            addressed_to,
+            references,
+        } => {
+            if !valid_vellum_artifact_references(references) {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(63)?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            encode_vellum_artifact_target(sink, *target)?;
+            sink.u64(*logical_time)?;
+            sink.text(body)?;
+            sink.list(addressed_to.len())?;
+            for participant in addressed_to {
+                sink.text(participant)?;
+            }
+            sink.list(references.len())?;
+            for reference in references {
+                encode_vellum_artifact_reference(sink, reference)?;
+            }
+            Ok(())
+        }
         CommandV2::WithdrawMessage {
             room_id,
             expected_revision,
@@ -1281,6 +1322,43 @@ fn decode_command(
             cursor: PageCursorV2(read_u64(decoder)?),
             limit: read_u32(decoder)?,
         }),
+        62 => Ok(CommandV2::VellumArtifactMessages {
+            room_id: read_text(decoder)?,
+            cursor: decode_optional_cursor(decoder)?,
+            limit: read_u32(decoder)?,
+        }),
+        63 => {
+            let room_id = read_text(decoder)?;
+            let expected_revision = read_u64(decoder)?;
+            let target = decode_vellum_artifact_target(decoder)?;
+            let logical_time = read_u64(decoder)?;
+            let body = read_text(decoder)?;
+            let addressed_count = read_list(decoder, limits)?;
+            let mut addressed_to = try_vec(addressed_count)?;
+            for _ in 0..addressed_count {
+                addressed_to.push(read_text(decoder)?);
+            }
+            let reference_count = read_list(decoder, limits)?;
+            if !(1..=8).contains(&reference_count) {
+                return Err(WireDecodeError::Limit);
+            }
+            let mut references = try_vec(reference_count)?;
+            for _ in 0..reference_count {
+                references.push(decode_vellum_artifact_reference(decoder)?);
+            }
+            if !valid_vellum_artifact_references(&references) {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(CommandV2::SpeakWithVellumArtifacts {
+                room_id,
+                expected_revision,
+                target,
+                logical_time,
+                body,
+                addressed_to,
+                references,
+            })
+        }
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1400,6 +1478,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::TopicAliasesV1 => 21,
                     CapabilityV2::TopicTagsV1 => 22,
                     CapabilityV2::ImmutableAttachmentReferencesV1 => 23,
+                    CapabilityV2::VellumArtifactReferencesV1 => 24,
                 })?;
             }
             Ok(())
@@ -1430,6 +1509,13 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             }
             sink.u8(56)?;
             encode_attachment_message_page(sink, page)
+        }
+        OutcomeV2::VellumArtifactMessages(page) => {
+            if !valid_vellum_artifact_message_page(page) {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(59)?;
+            encode_vellum_artifact_message_page(sink, page)
         }
         OutcomeV2::AttachmentChanges(page) => {
             if !valid_attachment_change_page(page) {
@@ -1622,6 +1708,21 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             encode_message_id(sink, *message_id)?;
             sink.u64(*sequence)?;
             sink.u64(u64::from(*attachment_count))
+        }
+        OutcomeV2::VellumArtifactMessageAccepted {
+            revision,
+            message_id,
+            sequence,
+            reference_count,
+        } => {
+            if !(1..=8).contains(reference_count) {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(60)?;
+            sink.u64(*revision)?;
+            encode_message_id(sink, *message_id)?;
+            sink.u64(*sequence)?;
+            sink.u64(u64::from(*reference_count))
         }
         OutcomeV2::ReplyAccepted {
             revision,
@@ -1944,6 +2045,7 @@ fn decode_outcome(
                     21 => CapabilityV2::TopicAliasesV1,
                     22 => CapabilityV2::TopicTagsV1,
                     23 => CapabilityV2::ImmutableAttachmentReferencesV1,
+                    24 => CapabilityV2::VellumArtifactReferencesV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -2290,6 +2392,28 @@ fn decode_outcome(
                 return Err(WireDecodeError::Malformed);
             }
             Ok(OutcomeV2::AttachmentChanges(page))
+        }
+        59 => {
+            let page = decode_vellum_artifact_message_page(decoder, limits)?;
+            if !valid_vellum_artifact_message_page(&page) {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(OutcomeV2::VellumArtifactMessages(page))
+        }
+        60 => {
+            let revision = read_u64(decoder)?;
+            let message_id = decode_message_id(decoder)?;
+            let sequence = read_u64(decoder)?;
+            let reference_count = read_u32(decoder)?;
+            if !(1..=8).contains(&reference_count) {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(OutcomeV2::VellumArtifactMessageAccepted {
+                revision,
+                message_id,
+                sequence,
+                reference_count,
+            })
         }
         _ => Err(WireDecodeError::UnknownTag),
     }
@@ -2906,6 +3030,238 @@ fn valid_attachment_message(message: &AttachmentMessageV1, require_attachments: 
         })
         && (!available || descriptors.is_empty() || valid_attachment_descriptors(&descriptors))
         && (available || descriptors.is_empty())
+}
+
+fn encode_vellum_artifact_target(
+    sink: &mut dyn Sink,
+    target: VellumArtifactMessageTargetV1,
+) -> Result<(), WireEncodeError> {
+    match target {
+        VellumArtifactMessageTargetV1::Room => sink.u8(1),
+        VellumArtifactMessageTargetV1::Reply(message_id) => {
+            sink.u8(2)?;
+            encode_message_id(sink, message_id)
+        }
+        VellumArtifactMessageTargetV1::Topic(topic_id) => {
+            sink.u8(3)?;
+            encode_topic_id(sink, topic_id)
+        }
+    }
+}
+
+fn decode_vellum_artifact_target(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<VellumArtifactMessageTargetV1, WireDecodeError> {
+    match read_u8(decoder)? {
+        1 => Ok(VellumArtifactMessageTargetV1::Room),
+        2 => Ok(VellumArtifactMessageTargetV1::Reply(decode_message_id(
+            decoder,
+        )?)),
+        3 => Ok(VellumArtifactMessageTargetV1::Topic(decode_topic_id(
+            decoder,
+        )?)),
+        _ => Err(WireDecodeError::UnknownTag),
+    }
+}
+
+fn encode_vellum_artifact_reference(
+    sink: &mut dyn Sink,
+    reference: &VellumArtifactReferenceV1,
+) -> Result<(), WireEncodeError> {
+    for byte in reference.reference_id.into_bytes() {
+        sink.u8(byte)?;
+    }
+    if reference.target.workspace_id == 0 || reference.target.document_id == 0 {
+        return Err(WireEncodeError::Invalid);
+    }
+    sink.u64(reference.target.workspace_id)?;
+    sink.u64(reference.target.document_id)?;
+    sink.u64(reference.target.source_revision)
+}
+
+fn decode_vellum_artifact_reference(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<VellumArtifactReferenceV1, WireDecodeError> {
+    let mut reference_id = [0; 16];
+    for byte in &mut reference_id {
+        *byte = read_u8(decoder)?;
+    }
+    let target = VellumDocumentTargetV1 {
+        workspace_id: read_u64(decoder)?,
+        document_id: read_u64(decoder)?,
+        source_revision: read_u64(decoder)?,
+    };
+    if target.workspace_id == 0 || target.document_id == 0 {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok(VellumArtifactReferenceV1 {
+        reference_id: VellumArtifactReferenceIdV1::new(reference_id),
+        target,
+    })
+}
+
+fn valid_vellum_artifact_references(references: &[VellumArtifactReferenceV1]) -> bool {
+    let mut ids = BTreeSet::new();
+    let mut targets = BTreeSet::new();
+    (1..=8).contains(&references.len())
+        && references.iter().all(|reference| {
+            reference.target.workspace_id != 0
+                && reference.target.document_id != 0
+                && ids.insert(reference.reference_id)
+                && targets.insert(reference.target)
+        })
+}
+
+fn encode_vellum_artifact_message(
+    sink: &mut dyn Sink,
+    message: &VellumArtifactMessageV1,
+) -> Result<(), WireEncodeError> {
+    encode_message_id(sink, message.message_id)?;
+    sink.u64(message.sequence)?;
+    sink.text(&message.author)?;
+    sink.u64(message.logical_time)?;
+    sink.text(&message.body)?;
+    sink.list(message.addressed_to.len())?;
+    for participant in &message.addressed_to {
+        sink.text(participant)?;
+    }
+    encode_optional_message_id(sink, message.reply_to_root)?;
+    encode_optional_topic_id(sink, message.topic_id)?;
+    sink.list(message.references.len())?;
+    for reference in &message.references {
+        for byte in reference.reference_id.into_bytes() {
+            sink.u8(byte)?;
+        }
+        match reference.target {
+            None => sink.u8(0)?,
+            Some(target) => {
+                sink.u8(1)?;
+                sink.u64(target.workspace_id)?;
+                sink.u64(target.document_id)?;
+                sink.u64(target.source_revision)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn decode_vellum_artifact_message(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<VellumArtifactMessageV1, WireDecodeError> {
+    let message_id = decode_message_id(decoder)?;
+    let sequence = read_u64(decoder)?;
+    let author = read_text(decoder)?;
+    let logical_time = read_u64(decoder)?;
+    let body = read_text(decoder)?;
+    let addressed_count = read_list(decoder, limits)?;
+    let mut addressed_to = try_vec(addressed_count)?;
+    for _ in 0..addressed_count {
+        addressed_to.push(read_text(decoder)?);
+    }
+    let reply_to_root = decode_optional_message_id(decoder)?;
+    let topic_id = decode_optional_topic_id(decoder)?;
+    let reference_count = read_list(decoder, limits)?;
+    if reference_count > 8 {
+        return Err(WireDecodeError::Limit);
+    }
+    let mut references = try_vec(reference_count)?;
+    for _ in 0..reference_count {
+        let mut reference_id = [0; 16];
+        for byte in &mut reference_id {
+            *byte = read_u8(decoder)?;
+        }
+        let target = match read_u8(decoder)? {
+            0 => None,
+            1 => {
+                let target = VellumDocumentTargetV1 {
+                    workspace_id: read_u64(decoder)?,
+                    document_id: read_u64(decoder)?,
+                    source_revision: read_u64(decoder)?,
+                };
+                if target.workspace_id == 0 || target.document_id == 0 {
+                    return Err(WireDecodeError::Malformed);
+                }
+                Some(target)
+            }
+            _ => return Err(WireDecodeError::UnknownTag),
+        };
+        references.push(MessageVellumArtifactReferenceV1 {
+            reference_id: VellumArtifactReferenceIdV1::new(reference_id),
+            target,
+        });
+    }
+    Ok(VellumArtifactMessageV1 {
+        message_id,
+        sequence,
+        author,
+        logical_time,
+        body,
+        addressed_to,
+        reply_to_root,
+        topic_id,
+        references,
+    })
+}
+
+fn encode_vellum_artifact_message_page(
+    sink: &mut dyn Sink,
+    page: &VellumArtifactMessagePageV1,
+) -> Result<(), WireEncodeError> {
+    sink.u64(page.revision)?;
+    sink.text(&page.room_id)?;
+    sink.list(page.messages.len())?;
+    for message in &page.messages {
+        encode_vellum_artifact_message(sink, message)?;
+    }
+    sink.u64(page.oldest_retained_sequence)?;
+    sink.u64(page.next_message_sequence)?;
+    encode_optional_cursor(sink, page.next)
+}
+
+fn decode_vellum_artifact_message_page(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<VellumArtifactMessagePageV1, WireDecodeError> {
+    let revision = read_u64(decoder)?;
+    let room_id = read_text(decoder)?;
+    let message_count = read_list(decoder, limits)?;
+    let mut messages = try_vec(message_count)?;
+    for _ in 0..message_count {
+        messages.push(decode_vellum_artifact_message(decoder, limits)?);
+    }
+    Ok(VellumArtifactMessagePageV1 {
+        revision,
+        room_id,
+        messages,
+        oldest_retained_sequence: read_u64(decoder)?,
+        next_message_sequence: read_u64(decoder)?,
+        next: decode_optional_cursor(decoder)?,
+    })
+}
+
+fn valid_vellum_artifact_message_page(page: &VellumArtifactMessagePageV1) -> bool {
+    !page.room_id.is_empty()
+        && page
+            .messages
+            .windows(2)
+            .all(|pair| pair[0].sequence < pair[1].sequence)
+        && page.messages.iter().all(valid_vellum_artifact_message)
+}
+
+fn valid_vellum_artifact_message(message: &VellumArtifactMessageV1) -> bool {
+    let available = !message.body.is_empty();
+    let mut ids = BTreeSet::new();
+    let mut targets = BTreeSet::new();
+    !message.author.is_empty()
+        && (1..=8).contains(&message.references.len())
+        && message.references.iter().all(|reference| {
+            ids.insert(reference.reference_id)
+                && reference.target.is_some() == available
+                && reference.target.is_none_or(|target| {
+                    target.workspace_id != 0 && target.document_id != 0 && targets.insert(target)
+                })
+        })
 }
 
 fn encode_attachment_change_page(

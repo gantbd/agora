@@ -85,6 +85,11 @@ fn facade_alone_constructs_the_embedded_v2_stack() {
         engine::AttachmentIntegrityV1::Sha256(engine::Sha256DigestV1::new([4; 32])),
     );
     assert_eq!(descriptor.declared_bytes(), 4);
+    let reference = engine::VellumArtifactReferenceV1::new(
+        engine::VellumArtifactReferenceIdV1::new([5; 16]),
+        engine::VellumDocumentTargetV1::new(6, 7, 8).unwrap(),
+    );
+    assert_eq!(reference.target().source_revision(), 8);
 }
 
 #[test]

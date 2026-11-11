@@ -19,7 +19,8 @@ use agora_protocol::transient::{
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, CommandV2, MessageIdV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2,
-    RequestIdV2, RequestV2,
+    RequestIdV2, RequestV2, VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1,
+    VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use agora_service::transient::TransientLimitsV1;
 use agora_service::typing::TypingLimitsV1;
@@ -358,6 +359,69 @@ fn committed_lost_reply_recovers_as_exact_replay_without_duplicate_event() {
         }
     );
     assert_eq!(store.commit_calls(), 3);
+}
+
+#[test]
+fn vellum_artifact_admission_commits_as_one_unit_and_recovers_exact_replay() {
+    let (mut durable, store, client) = initialized();
+    assert!(matches!(
+        durable.execute(client, create_request("room")),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 2 }),
+            evidence: DurableEvidenceV2::Committed {
+                revision: Revision(2)
+            },
+        }
+    ));
+    let request = RequestV2 {
+        request_id: RequestIdV2(8),
+        command: CommandV2::SpeakWithVellumArtifacts {
+            room_id: "room".to_owned(),
+            expected_revision: 2,
+            target: VellumArtifactMessageTargetV1::Room,
+            logical_time: 3,
+            body: "artifact".to_owned(),
+            addressed_to: vec![],
+            references: vec![VellumArtifactReferenceV1 {
+                reference_id: VellumArtifactReferenceIdV1::new([1; 16]),
+                target: VellumDocumentTargetV1 {
+                    workspace_id: 2,
+                    document_id: 3,
+                    source_revision: 4,
+                },
+            }],
+        },
+    };
+    let published = durable.execute(client, request.clone());
+    assert!(matches!(
+        published,
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::VellumArtifactMessageAccepted { revision: 3, .. }),
+            evidence: DurableEvidenceV2::Committed {
+                revision: Revision(3)
+            },
+        }
+    ));
+    let pending = durable.service().unwrap().engine().pending_events().len();
+    assert_eq!(store.commit_calls(), 4);
+    drop(durable.into_store());
+
+    let mut recovered = DurableServiceV2::recover(store.clone(), config()).unwrap();
+    assert_eq!(recovered.service().unwrap().engine().revision().0, 3);
+    assert_eq!(
+        recovered.service().unwrap().engine().pending_events().len(),
+        pending
+    );
+    assert!(matches!(
+        recovered.execute(client, request),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::VellumArtifactMessageAccepted { revision: 3, .. }),
+            evidence: DurableEvidenceV2::PreviouslyCommitted {
+                revision: Revision(3)
+            },
+        }
+    ));
+    assert_eq!(store.commit_calls(), 4, "exact replay must not recommit");
 }
 
 #[test]

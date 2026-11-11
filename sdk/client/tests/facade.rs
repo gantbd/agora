@@ -40,6 +40,38 @@ fn facade_names_attachment_protocol_and_wire_values() {
     assert!(wire::v2::encode_request_v2(&request, wire::WireLimits::reference()).is_ok());
 }
 
+#[test]
+fn facade_names_vellum_artifact_protocol_and_wire_values() {
+    let request = wire::v2::WireRequestV2::Execute {
+        client: protocol::v2::ClientIdV2(1),
+        request: protocol::v2::RequestV2 {
+            request_id: protocol::v2::RequestIdV2(1),
+            command: protocol::v2::CommandV2::SpeakWithVellumArtifacts {
+                room_id: "room".to_owned(),
+                expected_revision: 1,
+                target: protocol::v2::VellumArtifactMessageTargetV1::Room,
+                logical_time: 1,
+                body: "body".to_owned(),
+                addressed_to: vec![],
+                references: vec![protocol::v2::VellumArtifactReferenceV1 {
+                    reference_id: protocol::v2::VellumArtifactReferenceIdV1::new([1; 16]),
+                    target: protocol::v2::VellumDocumentTargetV1 {
+                        workspace_id: 2,
+                        document_id: 3,
+                        source_revision: 4,
+                    },
+                }],
+            },
+        },
+    };
+    let limits = wire::WireLimits::reference();
+    let encoded = wire::v2::encode_request_v2(&request, limits).unwrap();
+    assert_eq!(
+        wire::v2::decode_request_v2(&encoded, limits).unwrap(),
+        request
+    );
+}
+
 impl client::ServicePort for Port {
     type Error = Infallible;
 

@@ -20,10 +20,11 @@
    only through separately authorized resolver or external-lifecycle adapters;
    do not import blob bytes, bearer locators, scanning, download authority, or
    external retention into Agora.
-6. Implement the accepted typed Vellum artifact-reference profile across core,
-   protocol, wire, service, host, client, SDK, recovery, and private local
-   transport without importing document content, live witnesses, editing,
-   persistence, agent behavior, or cross-engine transaction claims into Agora.
+6. Qualify the implemented typed Vellum artifact-reference profile at a pinned
+   revision after a separately owned adapter proves exact conversion against
+   Vellum's public workspace/document/source-revision types. Keep document
+   content, live witnesses, editing, persistence, agent behavior, and
+   cross-engine transaction claims outside Agora.
 
 Agent harness selection, prompting, retries, and execution remain out of scope.
 
