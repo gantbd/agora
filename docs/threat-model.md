@@ -149,6 +149,17 @@ namespace to that exact Host session without exposing the Host handle. The
 epoch is correlation evidence, not a secret, credential, capability, or source
 of authority. Other transports must supply an equivalent binding.
 
+The combined durable-collaboration owner checkpoints only the authenticated
+Host and conversation service. Presence, typing, transient replay receipts,
+cursors, and clock state never enter the durable record, so reconstruction
+cannot disclose or resurrect stale collaboration signals. An authenticated
+transient offer may still change durable Host verification/session state; that
+change is receipt-gated before reply. Known store refusal restores the Host and
+conservatively retires the volatile source, while unknown, weak, or invalid
+durability fences semantic access and retires the source. This does not make
+the transient signal durable, make store and endpoint recovery atomic, or bind
+recovered Agora state to recovered Aegis state.
+
 The service checkpoint binds one caller-selected store scope and refuses foreign
 scope, malformed structure, noncanonical ordering, invalid attribution, and host
 ceiling violations. The durable owner never exposes a changed semantic result
@@ -204,16 +215,20 @@ enumeration, while content-free health avoids adding conversation telemetry.
 
 This does not defend a same-UID attacker controlling the private socket parent,
 authenticate Unix peer credentials, hide socket metadata or
-traffic from the host, encrypt content, or recover a crashed endpoint. The
+traffic from the host, encrypt content, or automatically recover a crashed
+endpoint. The
 authenticator can forge context if its credential binding is wrong. The
 handshake incarnation is caller-supplied, unauthenticated lifecycle evidence;
 the lease excludes a second live owner but cannot prove fresh generation or
 automatically repair residue. Explicit endpoint recovery requires exact
 prior-incarnation evidence and rotates to a distinct declared lifetime without
-inventing Host state. A separately selected receipt-gated durable Host plus
-private directory store now retains conversation state across clean daemon-owner
-restart and exposes it only after a fresh authenticated connection; the transport
-does not choose or relax that store boundary. There is no cross-disconnect
+inventing Host state. The combined explicit path accepts only a caller-recovered
+durable-collaboration owner, applies the same residue checks, and binds a fresh
+collaboration session and replay epoch; it does not resume the old connection.
+A separately selected receipt-gated durable Host plus private directory store
+retains conversation state across daemon-owner restart and exposes it only after
+a fresh authenticated connection; the transport does not choose or relax that
+store boundary. There is no cross-disconnect
 receipt retention or reconnect resumption: a lost mutation reply remains
 outcome-unknown and must not be blindly retried on a new connection. Sequential
 service and finite request budgets are explicit availability limits, not
