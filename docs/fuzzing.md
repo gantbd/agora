@@ -20,8 +20,9 @@ with `cargo install cargo-fuzz --version 0.13.2 --locked` and install the pinned
 toolchain with `rustup toolchain install nightly-2026-11-01 --profile minimal`.
 The ordinary stable gate does not install or run either external tool.
 
-`make check-fuzz-contract` is part of `make check`. It verifies the exact
-toolchain/dependency pins and proves every committed binary seed is the exact
+`make check-fuzz-contract` is part of `make check`. It compiles every fuzz target
+under the exact offline locked dependency graph, verifies the toolchain/dependency
+pins, and proves every committed binary seed is the exact
 decoded form of a canonical wire or checkpoint fixture. Outer-frame seeds are
 the twenty-nine canonical complete-frame protocol fixtures with their exact
 four-byte length prefix. The five fixed-width local handshake/session-control
@@ -29,6 +30,10 @@ fixtures are deliberately excluded from that corpus.
 Refresh those seeds
 after an intentional compatibility-profile change with
 `./scripts/refresh-fuzz-seeds.sh`.
+
+Release qualification checks tracked-tree cleanliness both before and after the
+campaign, so a stale fuzz lock or any other generated tracked drift makes the
+candidate fail rather than silently changing the qualified source.
 
 `make fuzz-smoke` copies the immutable seeds into a temporary corpus and runs
 20,000 coverage-guided cases per target with a fixed seed and explicit input,

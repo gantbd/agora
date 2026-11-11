@@ -6,6 +6,12 @@ cd "$(dirname "$0")/.."
 bash -n scripts/qualify-release-candidate.sh
 bash -n scripts/run-fuzz-smoke.sh
 
+if [[ $(rg -c 'git diff --quiet.*git diff --cached --quiet' \
+  scripts/qualify-release-candidate.sh) -ne 2 ]]; then
+  echo 'release-candidate qualifier must fence tracked drift before and after execution' >&2
+  exit 1
+fi
+
 AGORA_RELEASE_SOAK_CYCLES=10000 AGORA_RELEASE_FUZZ_RUNS=1000000 \
   ./scripts/qualify-release-candidate.sh --validate-profile-only >/dev/null
 

@@ -164,7 +164,9 @@ cases on each of those three targets. All campaigns use a 64-KiB input,
 coverage-guided counterexample search, not a coverage threshold, parser proof,
 partial-kernel-read test, physical-storage test, or migration claim. The
 ordinary offline gate verifies pins and seeds but does not misreport an opt-in
-campaign as executed.
+campaign as executed. It now also compiles every fuzz target against the
+committed offline lock, and release qualification refuses any tracked-tree
+mutation after the campaign as well as before it.
 
 The addressing model exhausts every author, recipient subset, and human/agent
 kind assignment for a three-participant room. This establishes symmetry only for

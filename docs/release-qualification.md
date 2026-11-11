@@ -9,6 +9,10 @@ and then runs:
 3. the ignored Service V2 lifecycle/replay/recovery soak in release mode; and
 4. all three pinned coverage-guided fuzz targets.
 
+It checks tracked-tree cleanliness again after all four stages. A stale lock or
+other generated tracked drift therefore fails the candidate instead of silently
+changing the source that was supposedly qualified.
+
 The default candidate profile uses 10,000 soak cycles and 1,000,000 libFuzzer
 runs per target. `AGORA_RELEASE_SOAK_CYCLES` may select 1 through 10,000;
 `AGORA_RELEASE_FUZZ_RUNS` may select 1 through 1,000,000. Invalid, zero, signed,

@@ -52,7 +52,6 @@ if ! diff -qr "$expected/wire" fuzz/seeds/wire_canonical \
   exit 1
 fi
 
-cargo metadata --no-deps --format-version 1 \
-  --manifest-path fuzz/Cargo.toml --locked --offline >/dev/null
+cargo check --manifest-path fuzz/Cargo.toml --all-targets --locked --offline >/dev/null
 
-echo 'Agora fuzz contract pins its toolchain and exact canonical seed corpus'
+echo 'Agora fuzz contract pins its toolchain, lock closure, and exact canonical seed corpus'

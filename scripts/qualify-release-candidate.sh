@@ -49,4 +49,9 @@ cargo test --workspace --all-targets --release --locked --offline
 AGORA_SOAK_CYCLES="$soak_cycles" make soak-release
 AGORA_FUZZ_RUNS="$fuzz_runs" make fuzz-smoke
 
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo 'release-candidate qualification mutated its commit-pinned tracked tree' >&2
+  exit 1
+fi
+
 echo "Agora release candidate qualified at $revision ($soak_cycles soak cycles, $fuzz_runs fuzz runs per target)"
