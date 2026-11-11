@@ -47,6 +47,8 @@ fixture|crates/agora-wire/tests/fixtures/reaction-status-reply-v2.hex|65|edd5b71
 fixture|crates/agora-wire/tests/fixtures/read-position-reply-v2.hex|64|4863e95b916612c2d8fb531546d5f62b9a5888b008ba727f37921c1382d455da
 fixture|crates/agora-wire/tests/fixtures/redaction-change-reply-v2.hex|112|ee900c30b9a789fcd67d0aae98df95432b25a9cfad9eb255b0fb4cf9cdeac441
 fixture|crates/agora-wire/tests/fixtures/rooms-reply-v2.hex|77|7628d1c11bfab1dbacee136357ee73acd0431cd90c3355b8aed478f9921b1710
+fixture|crates/agora-wire/tests/fixtures/search-offer-v1.hex|45|26920244190f01d89da9612147d942dd2bf8517a507feb9ed10310dbfc157220
+fixture|crates/agora-wire/tests/fixtures/search-page-reply-v1.hex|92|0d2006bc81174b81a7ee57a519ef10d9b1f24cd737b0bf5ab91de97072a5f38a
 fixture|crates/agora-wire/tests/fixtures/snapshot-reply-v1.hex|137|10efdc44b693253f645c64ace2e3f458bf7d1ece9eb6d82bb8faa553702de12c
 fixture|crates/agora-wire/tests/fixtures/speak-request-v1.hex|77|9a623df28a992a3af0235bd7cfe4c31bb746397ca8d28f8b32378d7961a878ed
 fixture|crates/agora-wire/tests/fixtures/thread-lifecycle-change-reply-v2.hex|94|164e7898dd01f704768a4e8d855e9edba03b396df21072c6e3f25fc15d2cbff1

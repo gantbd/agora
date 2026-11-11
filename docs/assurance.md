@@ -23,7 +23,7 @@ The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
 closes over the fifteen-package stable workspace, the standalone fuzz package,
-and sixty canonical fixtures.
+and sixty-two canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -93,6 +93,16 @@ source and membership-transition retirement, redacted opaque handles, and an
 empty restart projection. A saturation unit proves that generation overflow
 sticks fidelity loss and fences publication/observation without blocking source
 cleanup.
+
+The participant-bound search service has five focused scenarios covering
+human/agent symmetry, current membership before index access, exact request
+replay and conflict, client/query/revision/generation-bound continuations,
+authoritative revalidation of identity-only hits, mutation retirement, and
+disconnect cleanup. Search Wire V1 adds exhaustive closed-value round trips,
+canonical unique-ID/increasing-sequence pages, malformed and content-safe
+diagnostics evidence, two frozen frames, and bounded deterministic single-bit
+mutation closure. Authenticated Host, client uncertainty, SDK, transport, and
+recovery evidence remain open, so this is not yet a deployable search profile.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;
@@ -170,9 +180,9 @@ embedded facade constructs the profile without direct crate dependencies.
 
 The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
 nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus
-is regenerated from and checked against all forty-three wire and fixed local
+is regenerated from and checked against all fifty-one wire and fixed local
 control fixtures plus the current engine, service, and host checkpoint fixtures.
-`wire_canonical` drives all six public conversation/transient request/reply
+`wire_canonical` drives all eight public conversation/transient/search request/reply
 decoders, five fixed-width handshake/session-control decoders, and the local
 route envelope;
 `checkpoint_canonical` drives all three semantic

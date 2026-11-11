@@ -1,7 +1,7 @@
 # ADR: derived message search boundary
 
-Status: implemented for the port and bounded reference adapter; participant-bound
-composition pending
+Status: implemented through participant-bound service and canonical search wire;
+authenticated host, client/SDK, and transport composition pending
 
 Date: 2026-11-11
 
@@ -48,10 +48,15 @@ that revision. Incomplete coverage is returned as such, including when the sourc
 cannot prove that premise. A requested revision newer than the indexed source is
 stale; an adapter that cannot safely classify its state is unavailable.
 
-The initial port and reference adapter are qualified independently. A later
-participant-bound profile will compose them through service, protocol, wire,
-host, client, SDK, recovery, and release evidence without adding search mutation
-commands, domain events, outbox entries, or search state to the engine checkpoint.
+The initial port and reference adapter are qualified independently. The
+participant-bound service now derives authority from its connected client,
+revalidates every hit against current retained history, owns exact request
+replay, and retires continuations on mutation and disconnect. A separate
+canonical Search Wire V1 grammar carries those closed DTOs without changing
+conversation Wire V1/V2 tags. Authenticated host, client/SDK, transport,
+recovery, and release evidence remain before the whole profile is deployable.
+None of these layers add search mutation commands, domain events, outbox entries,
+or search state to the engine checkpoint.
 
 ## Consequences
 

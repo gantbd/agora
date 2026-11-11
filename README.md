@@ -11,8 +11,10 @@ Its bounded results carry stable message identity and room-local sequence only,
 with explicit source revision, index generation, and available, incomplete,
 stale, or unavailable state. `agora-search-memory` is a volatile bounded semantic
 reference for that contract. Neither crate receives participant authority or
-serves as conversation history; participant-bound service composition remains
-open.
+serves as conversation history. The service layer derives authority from a
+connected client, revalidates identity-only hits against current retained
+history, and exposes a separate canonical Search Wire V1 grammar. Authenticated
+host, client/SDK, and transport composition remain open.
 
 The v0.3 core provides bounded deterministic transitions, typed atomic refusal,
 room-local message ordering and retention, optimistic revisions, an ordered

@@ -234,6 +234,16 @@ payloads use a closed one-byte conversation/transient/control discriminator,
 and the server-only control hello binds a nonzero replay epoch to one declared
 server incarnation and connection.
 
+Derived Search Wire V1 is another separately invoked additive grammar. Its
+profile byte `01`, accepted/refused reply tags `81`/`82`, available, incomplete,
+stale, and unavailable outcomes, and nine closed refusal tags do not reinterpret
+conversation or transient frames. The two frozen frames pin a client-bound
+offer and identity-only available page. Pages require unique stable message IDs,
+strictly increasing room-local sequences, and no continuation on an empty page.
+The service cursor is opaque and fixed-width; these bytes grant no room authority
+and remain unreachable until an authenticated host/transport profile selects
+them explicitly.
+
 ## Conservative baseline gate
 
 `docs/compatibility-baseline.txt` records the exact sorted Cargo package
