@@ -1,7 +1,7 @@
 # Transient wire profile V1
 
-Status: canonical bounded presence grammar, unadvertised and not yet connected
-to a public Host or client runtime.
+Status: canonical bounded presence grammar plus client uncertainty state,
+unadvertised and not yet connected to a public Host runtime.
 
 This profile is separate from durable Protocol/Wire V2. A transient request is
 not a `CommandV2`, does not receive a durable service receipt, and cannot replay
@@ -22,7 +22,7 @@ one command:
 Presence state tags are Available `01`, Away `02`, and Busy `03`. Optional
 cursors use absent `00` or present `01` followed by an opaque `u64`. Request IDs
 are scoped to one authenticated transient Host session; the future Host
-composition must define exact replay, conflict, ordering, and restart rules.
+composition must enforce exact replay, conflict, and ordering rules.
 
 ## Replies
 
@@ -46,8 +46,12 @@ Unavailable `08`, RequestConflict `09`, and RequestOutOfSequence `0a`.
 
 The profile adds new entry points and does not alter any V1/V2 frame, durable
 request, capability list, checkpoint, or service receipt. The remote-client SDK
-can name the raw protocol and codec through its existing facade reexports, but
-there is no qualified client state machine or transport binding yet. Presence
-is not advertised until authenticated Host replay/cursor composition, typing,
-SDK behavior, local-daemon lifecycle evidence, and the remaining R62 gates
-close.
+can name the raw protocol, codec, and `TransientClientV1` state machine through
+its existing facade reexports. The client retains only one exact outcome-unknown
+request, permits equal-command replay, and validates exported state. Its opaque
+nonzero replay epoch is caller-supplied and must bind both the server
+incarnation and exact authenticated session; any reconnect or restart requires
+explicit `rebind`, which returns old uncertainty and starts request ID zero.
+There is no qualified Host handler or transport binding yet. Presence is not
+advertised until authenticated Host replay/cursor composition, typing,
+local-daemon lifecycle evidence, and the remaining R62 gates close.

@@ -48,9 +48,9 @@ and wire modules, including the process-local exact-request uncertainty fence;
 it does not imply that a V2 authenticated host, durable client journal, or
 transport is available.
 The protocol and wire reexports also make the unadvertised transient presence
-values and codec nameable without adding an umbrella package. This is raw
-contract reachability only: no transient client state machine, authenticated
-Host handler, transport binding, or advertised capability is qualified yet.
+values, codec, and replay-epoch-bound client state machine nameable without
+adding an umbrella package. No authenticated transient Host handler, transport
+binding, or advertised capability is qualified yet.
 
 ## Laws and evidence
 

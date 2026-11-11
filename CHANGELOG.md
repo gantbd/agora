@@ -27,6 +27,10 @@ follow Semantic Versioning once a public release contract is selected.
   grammar with volatile request identities, opaque page cursors, remaining-only
   lifetime projection, canonical shape/order checks, frozen frames, and bounded
   deterministic mutation closure. Durable Protocol V2 remains byte-unchanged.
+- Added an unadvertised transient client state machine whose exact uncertainty
+  is bound to a nonzero caller-supplied replay epoch spanning the server
+  incarnation and authenticated session; reconnect/restart rebind returns old
+  uncertainty and begins a fresh request namespace.
 - Added explicit fail-closed local endpoint residue recovery requiring the exact
   prior incarnation, a distinct next incarnation, and a fresh Host composition,
   with locked in-place record rotation and no implicit volatile-state adoption.

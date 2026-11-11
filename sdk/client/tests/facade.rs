@@ -5,6 +5,8 @@ struct Port;
 
 struct PortV2;
 
+struct TransientPort;
+
 impl client::ServicePort for Port {
     type Error = Infallible;
 
@@ -27,6 +29,22 @@ impl client::v2::ServicePortV2 for PortV2 {
     ) -> Result<protocol::v2::ReplyV2, client::v2::PortFailureV2<Self::Error>> {
         Ok(protocol::v2::ReplyV2::Refused(
             protocol::v2::RefusalV2::UnknownRoom,
+        ))
+    }
+}
+
+impl client::transient::TransientPortV1 for TransientPort {
+    type Error = Infallible;
+
+    fn execute(
+        &mut self,
+        _request: protocol::transient::TransientRequestV1,
+    ) -> Result<
+        protocol::transient::TransientReplyV1,
+        client::transient::TransientPortFailureV1<Self::Error>,
+    > {
+        Ok(protocol::transient::TransientReplyV1::Refused(
+            protocol::transient::TransientRefusalV1::NotMember,
         ))
     }
 }
@@ -313,5 +331,18 @@ fn facade_names_the_unadvertised_transient_presence_contract() {
     assert_eq!(
         wire::transient::decode_transient_request_v1(&encoded, limits).unwrap(),
         request
+    );
+
+    let epoch = client::transient::TransientReplayEpochV1::new([7; 32]).unwrap();
+    let mut client = client::transient::TransientClientV1::new(epoch, TransientPort);
+    assert_eq!(
+        client
+            .execute(protocol::transient::TransientCommandV1::ClearPresence {
+                room_id: "room".to_owned(),
+            })
+            .unwrap(),
+        protocol::transient::TransientReplyV1::Refused(
+            protocol::transient::TransientRefusalV1::NotMember,
+        )
     );
 }

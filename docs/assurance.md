@@ -100,9 +100,18 @@ before its accepted reply and no rejoin resurrection, bounded expiry, and
 wrapper reconstruction to `Unknown`. The presence-only Protocol/Wire grammar
 now has exhaustive value round trips, canonical shape and ordering checks, two
 frozen frames, content-safe Debug, and deterministic
-truncation/trailing/single-bit mutation closure. Authenticated public Host/client
-composition, typing, public replay/cursor rules, SDK behavior, and end-to-end
-local-daemon evidence remain open under R62.
+truncation/trailing/single-bit mutation closure. Authenticated public Host
+composition, typing, Host replay/cursor rules, transport epoch binding, and
+end-to-end local-daemon evidence remain open under R62.
+
+Five transient-client scenarios prove exact equal-command retry after an
+outcome-unknown failure, definitely-not-sent progression, same-epoch state
+restoration, malformed-tail and changed-epoch refusal, explicit reconnect/restart
+rebind with returned uncertainty, fresh request identity, and content-safe
+diagnostics. The remote-client facade constructs the client and codec without a
+direct crate dependency. The caller must bind the opaque replay epoch to both
+server incarnation and exact authenticated session; Agora does not infer that
+transport fact.
 
 The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
 nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus
