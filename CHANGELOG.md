@@ -12,7 +12,9 @@ follow Semantic Versioning once a public release contract is selected.
   directory store. Export holds the source lock and synchronizes a new private
   exact-record file; restore validates before creating a new store, preserves
   revision continuity, and leaves failed post-creation work explicitly
-  operator-visible rather than claiming rollback.
+  operator-visible rather than claiming rollback. Revision
+  `4ef205466ddd434fe9f05400534c7a00b08c8abb` passed the integrated release
+  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,
