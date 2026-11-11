@@ -35,12 +35,12 @@ follow Semantic Versioning once a public release contract is selected.
   indeterminate publication, resource fencing, and sticky saturation.
 - Made every active directory/lock/head/residue validation failure establish one
   sticky physical-owner fence before returning its specific first error; later
-  operations refuse without revalidation or a duplicate fence count. Revision
-  `5093b538b60bfa7fc7c3b7cec19d2480950e77bc` passed the integrated release
-  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
+  operations refuse without revalidation or a duplicate fence count.
 - Fenced the physical store owner on pending-publication creation I/O errors,
   closing the remaining operational path that could return a filesystem error
-  while still reporting the constructed owner Active.
+  while still reporting the constructed owner Active. Revision
+  `3c8e77819d571a9a4a3b7001127816f542948083` passed the integrated release
+  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque
