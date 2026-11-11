@@ -49,7 +49,9 @@ follow Semantic Versioning once a public release contract is selected.
   1,000,000 cases per fuzz target.
 - Added no-unwind subprocess termination after every endpoint-rotation
   persistence boundary, proving the exact record/socket residue classes unlock
-  and resume to another distinct incarnation.
+  and resume to another distinct incarnation. Revision
+  `eacc767bcb27560372036de940f3f98b773200bc` passed the integrated release profile with 10,000 soak cycles and
+  1,000,000 cases per fuzz target.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,
