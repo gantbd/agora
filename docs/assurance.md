@@ -158,8 +158,10 @@ Unix-socket admission complete the in-repository functional evidence. The
 full ordinary gate. The separately owned `agora-vellum-adapter` project proves
 exact round-trip conversion against Vellum's public workspace and document
 identities while accepting no witness or authority type at revision
-`5a6e7b45b0d471196e5945b2c5713c3488df709b`. Commit-pinned Agora release
-qualification remains open.
+`5a6e7b45b0d471196e5945b2c5713c3488df709b`. Agora revision
+`c642d735371804e2a1bfd16c42e2b5ad57d4518c` passed the full release profile,
+including release-mode tests, 10,000 soak cycles, and one million fixed-seed
+cases for each of three fuzz targets.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;

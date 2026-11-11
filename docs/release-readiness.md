@@ -160,6 +160,13 @@ not ready for a network service or crates.io release.
   explicit empty-runtime recovery, with exact-revision integrated qualification
   at `1781d3a156a35caee9551c0924ba5554c540050a`; durable or production-scale
   indexing and integrated durable-daemon/index recovery remain open;
+- authority-free typed Vellum artifact references through engine, closed
+  protocol/wire, conditional service recovery, authenticated Host, uncertainty-
+  safe client, both SDK facades, durable publication, and private local
+  transport; exact conversion is separately owned by adapter revision
+  `5a6e7b45b0d471196e5945b2c5713c3488df709b`, with Agora exact-revision
+  integrated qualification at `c642d735371804e2a1bfd16c42e2b5ad57d4518c`;
+  resolution, Vellum authority, and cross-engine atomicity remain open;
 - independent delivery and pull retention: acknowledgment drains only the
   backpressured outbox, journal eviction carries its own exact gap, and both
   suffixes recover canonically with live service cursors;

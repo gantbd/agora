@@ -1,6 +1,6 @@
 # ADR: typed Vellum artifact references
 
-Status: accepted; functional profile and separately owned typed conversion implemented
+Status: accepted; functional profile and separately owned typed conversion release-qualified
 
 Date: 2026-11-11
 
