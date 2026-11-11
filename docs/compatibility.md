@@ -204,6 +204,19 @@ retains canonical bounded alias sets and their event chain; service and host
 records retain exact request/reply consequences. Profiles 17/19/19 fail closed
 rather than discard aliases or infer them from rename history.
 
+Bounded topic tags are additive: add, remove, and status command tags `37`
+through `39`, added/removed/status outcome tags `35` through `37`, capability
+tag `16`, room-event tag `16`, and refusal tags `1b` through `1e` were
+previously unassigned. The separate status observation preserves established
+topic-page bytes; every change profile carries actor, stable topic ID, tag, and
+add/remove state. Frozen add, receipt, and topic-aware change frames pin the
+grammar.
+
+Engine/service/host persistence profiles advance to 19/21/21. The engine record
+retains canonical bounded tag sets and their event chain; service and host
+records retain exact request/reply consequences. Profiles 18/20/20 fail closed
+rather than discard tags or infer them from aliases or names.
+
 Transient collaboration Wire V1 is a new, separately invoked grammar. Its
 profile byte `01`, presence command/outcome tags `01` through `03`, typing
 command/outcome tags `04` through `06`, reply tags `81` and `82`, and refusal

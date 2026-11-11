@@ -639,6 +639,158 @@ fn topic_aliases_are_bounded_canonical_authorized_and_recoverable() {
 }
 
 #[test]
+fn topic_tags_are_bounded_canonical_authorized_distinct_and_recoverable() {
+    let mut engine = setup(Limits::default());
+    let topic = create_topic(&mut engine, "owner", "operations");
+    let other = create_topic(&mut engine, "owner", "alerts");
+    assert!(matches!(
+        engine.apply(CommandV2::SetTopicTag {
+            room_id: "room".into(),
+            actor: "member".into(),
+            topic_id: topic,
+            tag: "urgent".to_owned(),
+            added: true,
+        }),
+        Err(Refusal::NotAuthorized(_))
+    ));
+    engine
+        .apply(CommandV2::SetRole {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            participant: "agent".into(),
+            role: Role::Moderator,
+        })
+        .unwrap();
+    engine
+        .apply(CommandV2::SetTopicAlias {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: topic,
+            alias: "ops".to_owned(),
+            added: true,
+        })
+        .unwrap();
+    for (actor, topic_id, tag) in [
+        ("agent", topic, "urgent"),
+        ("owner", topic, "operations"),
+        ("owner", topic, "ops"),
+        ("owner", other, "urgent"),
+    ] {
+        engine
+            .apply(CommandV2::SetTopicTag {
+                room_id: "room".into(),
+                actor: actor.into(),
+                topic_id,
+                tag: tag.to_owned(),
+                added: true,
+            })
+            .unwrap();
+    }
+    assert_eq!(
+        engine
+            .topic_tag_status(&"member".into(), &"room".into(), topic)
+            .unwrap()
+            .tags,
+        vec![
+            "operations".to_owned(),
+            "ops".to_owned(),
+            "urgent".to_owned()
+        ]
+    );
+
+    let revision = engine.revision();
+    let events = engine.pending_events().count();
+    assert_eq!(
+        engine.apply(CommandV2::SetTopicTag {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: topic,
+            tag: "urgent".to_owned(),
+            added: true,
+        }),
+        Err(Refusal::DuplicateTopicTag)
+    );
+    assert_eq!(engine.revision(), revision);
+    assert_eq!(engine.pending_events().count(), events);
+
+    engine
+        .apply(CommandV2::SetTopicTag {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: topic,
+            tag: "urgent".to_owned(),
+            added: false,
+        })
+        .unwrap();
+    assert_eq!(
+        engine.apply(CommandV2::SetTopicTag {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: topic,
+            tag: "urgent".to_owned(),
+            added: false,
+        }),
+        Err(Refusal::UnknownTopicTag)
+    );
+    for index in 0..6 {
+        engine
+            .apply(CommandV2::SetTopicTag {
+                room_id: "room".into(),
+                actor: "owner".into(),
+                topic_id: topic,
+                tag: format!("tag-{index:02}"),
+                added: true,
+            })
+            .unwrap();
+    }
+    assert_eq!(
+        engine.apply(CommandV2::SetTopicTag {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: topic,
+            tag: "overflow".to_owned(),
+            added: true,
+        }),
+        Err(Refusal::TopicTagLimit)
+    );
+    for tag in [
+        String::new(),
+        "x".repeat(Limits::default().max_topic_name_bytes + 1),
+    ] {
+        assert_eq!(
+            engine.apply(CommandV2::SetTopicTag {
+                room_id: "room".into(),
+                actor: "owner".into(),
+                topic_id: other,
+                tag,
+                added: true,
+            }),
+            Err(Refusal::InvalidTopicTag)
+        );
+    }
+
+    let checkpoint = engine.prepare_checkpoint(1_000_000).unwrap();
+    let recovered = Engine::recover_checkpoint(
+        checkpoint.bytes(),
+        RecoveryLimits {
+            max_snapshot_bytes: 1_000_000,
+            maximum_engine_limits: Limits::default(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        recovered
+            .topic_tag_status(&"member".into(), &"room".into(), topic)
+            .unwrap()
+            .tags,
+        ["operations".to_owned(), "ops".to_owned()]
+            .into_iter()
+            .chain((0..6).map(|index| format!("tag-{index:02}")))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn topic_messages_preserve_relation_through_replies_edits_reactions_and_tombstones() {
     let mut engine = setup(Limits::default());
     let topic = create_topic(&mut engine, "owner", "general");

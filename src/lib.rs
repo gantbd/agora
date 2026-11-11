@@ -8,6 +8,7 @@ use std::fmt;
 pub mod persistence;
 
 pub const MAX_TOPIC_ALIASES_PER_TOPIC_V1: usize = 16;
+pub const MAX_TOPIC_TAGS_PER_TOPIC_V1: usize = 8;
 
 /// Resource ceilings for one engine profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -291,6 +292,7 @@ pub struct TopicV1 {
     creator: ParticipantId,
     resolved: bool,
     aliases: BTreeSet<String>,
+    tags: BTreeSet<String>,
 }
 
 impl TopicV1 {
@@ -309,6 +311,9 @@ impl TopicV1 {
 
     pub fn aliases(&self) -> &BTreeSet<String> {
         &self.aliases
+    }
+    pub fn tags(&self) -> &BTreeSet<String> {
+        &self.tags
     }
 }
 
@@ -771,6 +776,26 @@ pub struct TopicAliasStatusV1 {
     pub room_id: RoomId,
     pub topic_id: TopicId,
     pub aliases: Vec<String>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicTagStatusV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub topic_id: TopicId,
+    pub tags: Vec<String>,
+}
+
+impl fmt::Debug for TopicTagStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicTagStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("topic_id", &self.topic_id)
+            .field("tag_count", &self.tags.len())
+            .finish()
+    }
 }
 
 impl fmt::Debug for TopicAliasStatusV1 {
@@ -1280,6 +1305,7 @@ impl CommandV2 {
             Self::SetTopicResolved { .. } => Some(RoomActionV1::ManageTopics),
             Self::SetTopicSuccessor { .. } => Some(RoomActionV1::ManageTopics),
             Self::SetTopicAlias { .. } => Some(RoomActionV1::ManageTopics),
+            Self::SetTopicTag { .. } => Some(RoomActionV1::ManageTopics),
         }
     }
 }
@@ -1390,6 +1416,13 @@ pub enum CommandV2 {
         actor: ParticipantId,
         topic_id: TopicId,
         alias: String,
+        added: bool,
+    },
+    SetTopicTag {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        tag: String,
         added: bool,
     },
     SpeakInTopic {
@@ -1522,6 +1555,13 @@ pub enum OutcomeV2 {
         alias: String,
         added: bool,
     },
+    TopicTagChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        tag: String,
+        added: bool,
+    },
     TopicMessageAccepted {
         room_id: RoomId,
         topic_id: TopicId,
@@ -1627,6 +1667,10 @@ pub enum Refusal {
     TopicMustBeResolved,
     TopicAliasLimit,
     UnknownTopicAlias,
+    InvalidTopicTag,
+    DuplicateTopicTag,
+    TopicTagLimit,
+    UnknownTopicTag,
     MessageAlreadyTombstoned,
     RevisionConflict {
         expected: Revision,
@@ -1779,6 +1823,13 @@ pub enum DomainEventV2 {
         alias: String,
         added: bool,
     },
+    TopicTagChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        tag: String,
+        added: bool,
+    },
     InvitationRecorded {
         room_id: RoomId,
         participant: ParticipantId,
@@ -1877,6 +1928,7 @@ impl DomainEventV2 {
             | Self::TopicLifecycleChanged { room_id, .. }
             | Self::TopicSupersessionChanged { room_id, .. }
             | Self::TopicAliasChanged { room_id, .. }
+            | Self::TopicTagChanged { room_id, .. }
             | Self::InvitationRecorded { room_id, .. }
             | Self::ParticipantJoined { room_id, .. }
             | Self::ParticipantLeft { room_id, .. }
@@ -2610,6 +2662,34 @@ impl Engine {
             room_id: room_id.clone(),
             topic_id,
             aliases: topic.aliases.iter().cloned().collect(),
+        })
+    }
+
+    pub fn topic_tag_status(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        topic_id: TopicId,
+    ) -> Result<TopicTagStatusV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        let topic = room
+            .topics
+            .get(&topic_id)
+            .ok_or(ObservationRefusal::InvalidTarget)?;
+        Ok(TopicTagStatusV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            topic_id,
+            tags: topic.tags.iter().cloned().collect(),
         })
     }
 
@@ -3394,6 +3474,13 @@ impl Engine {
                 alias,
                 added,
             } => self.set_topic_alias(room_id, actor, topic_id, alias, added),
+            CommandV2::SetTopicTag {
+                room_id,
+                actor,
+                topic_id,
+                tag,
+                added,
+            } => self.set_topic_tag(room_id, actor, topic_id, tag, added),
             CommandV2::SpeakInTopic {
                 room_id,
                 author,
@@ -3558,6 +3645,22 @@ impl Engine {
                 actor: actor.clone(),
                 topic_id: *topic_id,
                 alias: alias.clone(),
+                added: *added,
+            },
+            (
+                CommandV2::SetTopicTag { .. },
+                OutcomeV2::TopicTagChanged {
+                    room_id,
+                    actor,
+                    topic_id,
+                    tag,
+                    added,
+                },
+            ) => DomainEventV2::TopicTagChanged {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                topic_id: *topic_id,
+                tag: tag.clone(),
                 added: *added,
             },
             (
@@ -4187,6 +4290,7 @@ impl Engine {
                 creator: actor.clone(),
                 resolved: false,
                 aliases: BTreeSet::new(),
+                tags: BTreeSet::new(),
             },
         );
         room.next_topic_identity = next_topic_identity;
@@ -4396,6 +4500,59 @@ impl Engine {
             actor,
             topic_id,
             alias,
+            added,
+        })
+    }
+
+    fn set_topic_tag(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        tag: String,
+        added: bool,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_nonempty_bounded(
+            &tag,
+            self.limits.max_topic_name_bytes,
+            Refusal::InvalidTopicTag,
+        )?;
+        let room = self.room_ref(&room_id)?;
+        if !matches!(
+            room.members.get(&actor),
+            Some(Role::Owner | Role::Moderator)
+        ) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        let topic = room.topics.get(&topic_id).ok_or(Refusal::UnknownTopic)?;
+        if added {
+            if topic.tags.contains(&tag) {
+                return Err(Refusal::DuplicateTopicTag);
+            }
+            if topic.tags.len() >= MAX_TOPIC_TAGS_PER_TOPIC_V1 {
+                return Err(Refusal::TopicTagLimit);
+            }
+        } else if !topic.tags.contains(&tag) {
+            return Err(Refusal::UnknownTopicTag);
+        }
+        let tags = &mut self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation")
+            .topics
+            .get_mut(&topic_id)
+            .expect("topic established by validation")
+            .tags;
+        if added {
+            tags.insert(tag.clone());
+        } else {
+            tags.remove(&tag);
+        }
+        Ok(OutcomeV2::TopicTagChanged {
+            room_id,
+            actor,
+            topic_id,
+            tag,
             added,
         })
     }

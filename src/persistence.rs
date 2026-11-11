@@ -236,6 +236,20 @@ impl Writer {
                 self.text(alias)?;
                 self.byte(u8::from(*added))
             }
+            DomainEventV2::TopicTagChanged {
+                room_id,
+                actor,
+                topic_id,
+                tag,
+                added,
+            } => {
+                self.byte(21)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&topic_id.into_bytes())?;
+                self.text(tag)?;
+                self.byte(u8::from(*added))
+            }
             DomainEventV2::InvitationRecorded {
                 room_id,
                 participant,
@@ -706,6 +720,17 @@ impl<'a> Reader<'a> {
                     _ => return Err(CheckpointError::Invalid),
                 },
             },
+            21 => DomainEventV2::TopicTagChanged {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                topic_id: TopicId::from_bytes(self.fixed()?),
+                tag: self.text(l.max_topic_name_bytes)?,
+                added: match self.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::Invalid),
+                },
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -814,7 +839,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(18)?;
+        w.byte(19)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -887,6 +912,10 @@ impl Engine {
                 for alias in &topic.aliases {
                     w.text(alias)?;
                 }
+                w.count(topic.tags.len())?;
+                for tag in &topic.tags {
+                    w.text(tag)?;
+                }
             }
             w.count(room.topic_successors.len())?;
             for (topic_id, successor_topic_id) in &room.topic_successors {
@@ -950,7 +979,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 18 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 19 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -1097,6 +1126,20 @@ impl Engine {
                             aliases.insert(alias);
                         }
                         aliases
+                    },
+                    tags: {
+                        let count = r.count(MAX_TOPIC_TAGS_PER_TOPIC_V1)?;
+                        let mut tags = BTreeSet::new();
+                        for _ in 0..count {
+                            let tag = r.text(l.max_topic_name_bytes)?;
+                            if tag.is_empty()
+                                || tags.last().is_some_and(|previous| previous >= &tag)
+                            {
+                                return Err(CheckpointError::NonCanonical);
+                            }
+                            tags.insert(tag);
+                        }
+                        tags
                     },
                 };
                 insert(&mut topics, topic_id, topic)?;
@@ -1869,6 +1912,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                 || !e.participants.contains_key(&topic.creator)
                 || !names.insert(topic.name.clone())
                 || topic.aliases.len() > MAX_TOPIC_ALIASES_PER_TOPIC_V1
+                || topic.tags.len() > MAX_TOPIC_TAGS_PER_TOPIC_V1
             {
                 return Err(CheckpointError::Invalid);
             }
@@ -1878,6 +1922,9 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                 if !names.insert(alias.clone()) {
                     return Err(CheckpointError::Invalid);
                 }
+            }
+            for tag in &topic.tags {
+                bounded(tag, l.max_topic_name_bytes)?;
             }
         }
         for (topic_id, successor_topic_id) in &room.topic_successors {
@@ -1971,6 +2018,14 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                     room.topics
                         .values()
                         .map(|topic| topic.aliases.len() as u64)
+                        .sum(),
+                )
+            })
+            .and_then(|n| {
+                n.checked_add(
+                    room.topics
+                        .values()
+                        .map(|topic| topic.tags.len() as u64)
                         .sum(),
                 )
             })
@@ -2346,6 +2401,20 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             let r = room(room_id)?;
             participant(actor)?;
             bounded(alias, e.limits.max_topic_name_bytes)?;
+            if !r.topics.contains_key(topic_id) {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::TopicTagChanged {
+            room_id,
+            actor,
+            topic_id,
+            tag,
+            added: _,
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            bounded(tag, e.limits.max_topic_name_bytes)?;
             if !r.topics.contains_key(topic_id) {
                 return Err(CheckpointError::Invalid);
             }

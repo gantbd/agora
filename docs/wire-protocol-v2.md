@@ -78,6 +78,9 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `34` | AddTopicAlias | room, expected revision, topic ID, bounded alias |
 | `35` | RemoveTopicAlias | room, expected revision, topic ID, bounded alias |
 | `36` | TopicAliasStatus | room, topic ID |
+| `37` | AddTopicTag | room, expected revision, topic ID, bounded tag |
+| `38` | RemoveTopicTag | room, expected revision, topic ID, bounded tag |
+| `39` | TopicTagStatus | room, topic ID |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -100,7 +103,8 @@ ReadPositionAdvanced `2a`, TopicRenamed `2b`, TopicResolved `2c`,
 TopicReopened `2d`, TopicStatus `2e`, TopicSuperseded `2f`,
 TopicSupersessionCleared `30`, and TopicSupersessionStatus `31`.
 TopicAliasAdded is `32`, TopicAliasRemoved is `33`, and TopicAliasStatus is
-`34`.
+`34`. TopicTagAdded is `35`, TopicTagRemoved is `36`, and TopicTagStatus is
+`37`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -222,6 +226,13 @@ and at most 16 aliases in strict byte order. Room-event tag `15` carries actor,
 stable topic ID, alias, and add/remove state in every change profile. Aliases
 are display metadata only and never become wire selectors or redirects.
 
+TopicTagAdded and TopicTagRemoved carry revision, stable topic ID, and the
+bounded tag. The separate status outcome carries revision, room, topic ID, and
+at most eight tags in strict byte order. Room-event tag `16` carries actor,
+stable topic ID, tag, and add/remove state in every change profile. Tags are
+display/index metadata only and never become selectors, hierarchy, authority,
+routing, workflow state, or execution evidence.
+
 A read scope is Room `01`, Thread `02` plus a 16-byte root message ID, or Topic
 `03` plus a 16-byte topic ID. A read-position query carries room and scope. An
 advance additionally carries the exact observed engine revision and a 16-byte
@@ -260,6 +271,10 @@ is derived from the client binding and is never present on the wire.
 | `18` | TopicMustBeResolved | — |
 | `19` | TopicAliasLimit | — |
 | `1a` | UnknownTopicAlias | — |
+| `1b` | InvalidTopicTag | — |
+| `1c` | DuplicateTopicTag | — |
+| `1d` | TopicTagLimit | — |
+| `1e` | UnknownTopicTag | — |
 
 ## Closure and evidence
 
@@ -299,6 +314,9 @@ outcomes `2f` through `31`, event `14`, and refusals `17` and `18`.
 Capability tag `15` advertises `TopicAliasesV1`; frozen add request, added
 receipt, and topic-aware change fixtures pin commands `34` through `36`,
 outcomes `32` through `34`, event `15`, and refusals `19` and `1a`.
+Capability tag `16` advertises `TopicTagsV1`; frozen add request, added receipt,
+and topic-aware change fixtures pin commands `37` through `39`, outcomes `35`
+through `37`, event `16`, and refusals `1b` through `1e`.
 Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push

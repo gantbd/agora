@@ -58,6 +58,15 @@ fn fixture_engine() -> Engine {
             added: true,
         })
         .unwrap();
+    engine
+        .apply(CommandV2::SetTopicTag {
+            room_id: "room".into(),
+            actor: "human".into(),
+            topic_id,
+            tag: "urgent".to_owned(),
+            added: true,
+        })
+        .unwrap();
     let OutcomeV2::TopicCreated {
         topic_id: successor_topic_id,
         ..
@@ -192,11 +201,11 @@ fn unhex(value: &str) -> Vec<u8> {
 }
 
 #[test]
-fn canonical_v18_checkpoint_is_immutable_and_recovers() {
+fn canonical_v19_checkpoint_is_immutable_and_recovers() {
     let source = fixture_engine();
     let topic_id = topic_id_from_fixture(&source);
     let prepared = source.prepare_checkpoint(65_536).unwrap();
-    let expected_hex = include_str!("fixtures/checkpoint-v18.hex").trim();
+    let expected_hex = include_str!("fixtures/checkpoint-v19.hex").trim();
     assert_eq!(hex(prepared.bytes()), expected_hex);
 
     let recovered = Engine::recover_checkpoint(
@@ -230,6 +239,13 @@ fn canonical_v18_checkpoint_is_immutable_and_recovers() {
             .unwrap()
             .aliases,
         vec!["General".to_owned()]
+    );
+    assert_eq!(
+        recovered
+            .topic_tag_status(&"human".into(), &"room".into(), topic_id)
+            .unwrap()
+            .tags,
+        vec!["urgent".to_owned()]
     );
 
     let mut broken_history = prepared.bytes().to_vec();

@@ -20,7 +20,7 @@ use agora_protocol::v2::{
     ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
     ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1, TopicIdV1, TopicMessagePageV1,
     TopicMessageV1, TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1,
-    TopicStatusV1, TopicSupersessionStatusV1, TopicV1,
+    TopicStatusV1, TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -313,6 +313,7 @@ impl ServiceV2 {
                 CapabilityV2::TopicResolutionV1,
                 CapabilityV2::TopicSupersessionV1,
                 CapabilityV2::TopicAliasesV1,
+                CapabilityV2::TopicTagsV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -423,6 +424,9 @@ impl ServiceV2 {
             CommandV2::TopicAliasStatus { room_id, topic_id } => {
                 self.topic_alias_status(participant, room_id, *topic_id)
             }
+            CommandV2::TopicTagStatus { room_id, topic_id } => {
+                self.topic_tag_status(participant, room_id, *topic_id)
+            }
             CommandV2::ReadPosition { room_id, scope } => {
                 self.read_position(participant, room_id, *scope)
             }
@@ -528,6 +532,27 @@ impl ServiceV2 {
                     topic_id: TopicId::from_bytes(topic_id.into_bytes()),
                     alias: alias.clone(),
                     added: matches!(command, CommandV2::AddTopicAlias { .. }),
+                },
+            ),
+            CommandV2::AddTopicTag {
+                room_id,
+                expected_revision,
+                topic_id,
+                tag,
+            }
+            | CommandV2::RemoveTopicTag {
+                room_id,
+                expected_revision,
+                topic_id,
+                tag,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetTopicTag {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    topic_id: TopicId::from_bytes(topic_id.into_bytes()),
+                    tag: tag.clone(),
+                    added: matches!(command, CommandV2::AddTopicTag { .. }),
                 },
             ),
             CommandV2::SpeakInTopic {
@@ -987,6 +1012,24 @@ impl ServiceV2 {
                     revision,
                     topic_id: TopicIdV1::new(topic_id.into_bytes()),
                     alias,
+                }
+            }),
+            EngineOutcome::TopicTagChanged {
+                topic_id,
+                tag,
+                added,
+                ..
+            } => Ok(if added {
+                OutcomeV2::TopicTagAdded {
+                    revision,
+                    topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                    tag,
+                }
+            } else {
+                OutcomeV2::TopicTagRemoved {
+                    revision,
+                    topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                    tag,
                 }
             }),
             EngineOutcome::ReplyAccepted { .. } => Err(RefusalV2::Unavailable),
@@ -1481,6 +1524,31 @@ impl ServiceV2 {
         }))
     }
 
+    fn topic_tag_status(
+        &self,
+        observer: &ParticipantId,
+        room_id: &str,
+        topic_id: TopicIdV1,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let status = self
+            .engine
+            .topic_tag_status(
+                observer,
+                &RoomId::new(room_id),
+                TopicId::from_bytes(topic_id.into_bytes()),
+            )
+            .map_err(|refusal| match refusal {
+                ObservationRefusal::InvalidTarget => RefusalV2::UnknownTopic,
+                other => map_observation_refusal(other),
+            })?;
+        Ok(OutcomeV2::TopicTagStatus(TopicTagStatusV1 {
+            revision: status.revision.0,
+            room_id: status.room_id.as_str().to_owned(),
+            topic_id: TopicIdV1::new(status.topic_id.into_bytes()),
+            tags: status.tags,
+        }))
+    }
+
     fn topic_messages(
         &mut self,
         client: ClientIdV2,
@@ -1831,6 +1899,18 @@ impl ServiceV2 {
                                 actor_id: actor.as_str().to_owned(),
                                 topic_id: TopicIdV1::new(topic_id.into_bytes()),
                                 alias,
+                                added,
+                            },
+                            agora_engine::DomainEventV2::TopicTagChanged {
+                                actor,
+                                topic_id,
+                                tag,
+                                added,
+                                ..
+                            } => RoomEventV2::TopicTagChanged {
+                                actor_id: actor.as_str().to_owned(),
+                                topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                                tag,
                                 added,
                             },
                             agora_engine::DomainEventV2::InvitationRecorded {
@@ -2379,6 +2459,11 @@ impl ServiceV2 {
                 valid_room(room_id) && valid_text(alias, self.limits.max_room_name_bytes)
             }
             CommandV2::TopicAliasStatus { room_id, .. } => valid_room(room_id),
+            CommandV2::AddTopicTag { room_id, tag, .. }
+            | CommandV2::RemoveTopicTag { room_id, tag, .. } => {
+                valid_room(room_id) && valid_text(tag, self.limits.max_room_name_bytes)
+            }
+            CommandV2::TopicTagStatus { room_id, .. } => valid_room(room_id),
             CommandV2::Invite {
                 room_id,
                 participant_id,
@@ -2677,6 +2762,18 @@ fn map_identified_room_event(
             alias,
             added,
         },
+        agora_engine::DomainEventV2::TopicTagChanged {
+            actor,
+            topic_id,
+            tag,
+            added,
+            ..
+        } => IdentifiedRoomEventV1::TopicTagChanged {
+            actor_id: actor.as_str().to_owned(),
+            topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            tag,
+            added,
+        },
         agora_engine::DomainEventV2::InvitationRecorded { participant, .. } => {
             IdentifiedRoomEventV1::InvitationRecorded {
                 participant_id: participant.as_str().to_owned(),
@@ -2888,6 +2985,18 @@ fn map_threaded_room_event(
             alias,
             added,
         },
+        agora_engine::DomainEventV2::TopicTagChanged {
+            actor,
+            topic_id,
+            tag,
+            added,
+            ..
+        } => ThreadedRoomEventV1::TopicTagChanged {
+            actor_id: actor.as_str().to_owned(),
+            topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            tag,
+            added,
+        },
         agora_engine::DomainEventV2::InvitationRecorded { participant, .. } => {
             ThreadedRoomEventV1::InvitationRecorded {
                 participant_id: participant.as_str().to_owned(),
@@ -3090,6 +3199,17 @@ fn map_topic_room_event(event: agora_engine::DomainEventV2) -> Result<TopicRoomE
             alias,
             added,
         },
+        ThreadedRoomEventV1::TopicTagChanged {
+            actor_id,
+            topic_id,
+            tag,
+            added,
+        } => TopicRoomEventV1::TopicTagChanged {
+            actor_id,
+            topic_id,
+            tag,
+            added,
+        },
         ThreadedRoomEventV1::InvitationRecorded { participant_id } => {
             TopicRoomEventV1::InvitationRecorded { participant_id }
         }
@@ -3289,6 +3409,10 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         EngineRefusal::TopicMustBeResolved => RefusalV2::TopicMustBeResolved,
         EngineRefusal::TopicAliasLimit => RefusalV2::TopicAliasLimit,
         EngineRefusal::UnknownTopicAlias => RefusalV2::UnknownTopicAlias,
+        EngineRefusal::InvalidTopicTag => RefusalV2::InvalidTopicTag,
+        EngineRefusal::DuplicateTopicTag => RefusalV2::DuplicateTopicTag,
+        EngineRefusal::TopicTagLimit => RefusalV2::TopicTagLimit,
+        EngineRefusal::UnknownTopicTag => RefusalV2::UnknownTopicTag,
         EngineRefusal::ParticipantLimit
         | EngineRefusal::RoomLimit
         | EngineRefusal::MemberLimit

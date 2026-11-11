@@ -329,6 +329,22 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
             room_id: "room".to_owned(),
             topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
         },
+        protocol::v2::CommandV2::AddTopicTag {
+            room_id: "room".to_owned(),
+            expected_revision: 28,
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+            tag: "urgent".to_owned(),
+        },
+        protocol::v2::CommandV2::RemoveTopicTag {
+            room_id: "room".to_owned(),
+            expected_revision: 29,
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+            tag: "urgent".to_owned(),
+        },
+        protocol::v2::CommandV2::TopicTagStatus {
+            room_id: "room".to_owned(),
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+        },
         protocol::v2::CommandV2::SpeakInTopic {
             room_id: "room".to_owned(),
             expected_revision: 21,

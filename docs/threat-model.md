@@ -369,6 +369,14 @@ ambiguous presentation. Unauthorized, stale, invalid, duplicate, over-limit,
 and absent-remove attempts refuse atomically. Hosts must never accept an alias
 as a topic selector, posting redirect, authority grant, search result guarantee,
 connector truth, or workflow state.
+Tags expose retained display/index metadata under the same content
+confidentiality boundary. Fixed count and byte ceilings bound amplification;
+canonical per-topic sets prevent duplicate-state ambiguity while deliberately
+allowing cross-topic reuse and equality with names or aliases. Unauthorized,
+stale, invalid, duplicate, over-limit, and absent-remove attempts refuse
+atomically. Hosts must never interpret a tag as hierarchy, selector, authority,
+routing, guaranteed search truth, subscription, notification policy, workflow
+state, or agent activation.
 
 Private read positions are sensitive behavioral metadata even though they prove
 neither delivery nor attention. The engine exposes only the actor-keyed marker

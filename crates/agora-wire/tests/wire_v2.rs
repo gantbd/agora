@@ -9,7 +9,7 @@ use agora_protocol::v2::{
     ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
     ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1, TopicIdV1, TopicMessagePageV1,
     TopicMessageV1, TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1,
-    TopicStatusV1, TopicSupersessionStatusV1, TopicV1,
+    TopicStatusV1, TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -165,6 +165,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::TopicResolutionV1,
         CapabilityV2::TopicSupersessionV1,
         CapabilityV2::TopicAliasesV1,
+        CapabilityV2::TopicTagsV1,
     ])))
 }
 
@@ -332,6 +333,49 @@ fn topic_alias_changed_reply() -> WireReplyV2 {
                 },
             }],
             next: PageCursorV2(13),
+            has_more: false,
+        },
+    )))
+}
+
+fn topic_tag_add_request() -> WireRequestV2 {
+    WireRequestV2::Execute {
+        client: ClientIdV2(7),
+        request: RequestV2 {
+            request_id: RequestIdV2(92),
+            command: CommandV2::AddTopicTag {
+                room_id: "room".to_owned(),
+                expected_revision: 13,
+                topic_id: TopicIdV1::new([0x44; 16]),
+                tag: "urgent".to_owned(),
+            },
+        },
+    }
+}
+
+fn topic_tag_added_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicTagAdded {
+        revision: 14,
+        topic_id: TopicIdV1::new([0x44; 16]),
+        tag: "urgent".to_owned(),
+    }))
+}
+
+fn topic_tag_changed_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicChanges(
+        TopicRoomChangePageV1 {
+            revision: 14,
+            changes: vec![TopicRoomChangeV1 {
+                event_sequence: 13,
+                revision: 14,
+                event: TopicRoomEventV1::TopicTagChanged {
+                    actor_id: "agent".to_owned(),
+                    topic_id: TopicIdV1::new([0x44; 16]),
+                    tag: "urgent".to_owned(),
+                    added: true,
+                },
+            }],
+            next: PageCursorV2(14),
             has_more: false,
         },
     )))
@@ -710,6 +754,18 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
             fixture(include_str!("fixtures/topic-alias-change-reply-v2.hex")),
         ),
         (
+            encode_request_v2(&topic_tag_add_request(), limits()).unwrap(),
+            fixture(include_str!("fixtures/topic-tag-add-request-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&topic_tag_added_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/topic-tag-added-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&topic_tag_changed_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/topic-tag-change-reply-v2.hex")),
+        ),
+        (
             encode_reply_v2(&change_retention_gap_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/change-retention-gap-reply-v2.hex")),
         ),
@@ -1026,6 +1082,22 @@ fn every_v2_command_round_trips() {
             alias: "incidents".to_owned(),
         },
         CommandV2::TopicAliasStatus {
+            room_id: "room".to_owned(),
+            topic_id: TopicIdV1::new([0x47; 16]),
+        },
+        CommandV2::AddTopicTag {
+            room_id: "room".to_owned(),
+            expected_revision: 12,
+            topic_id: TopicIdV1::new([0x47; 16]),
+            tag: "urgent".to_owned(),
+        },
+        CommandV2::RemoveTopicTag {
+            room_id: "room".to_owned(),
+            expected_revision: 13,
+            topic_id: TopicIdV1::new([0x47; 16]),
+            tag: "urgent".to_owned(),
+        },
+        CommandV2::TopicTagStatus {
             room_id: "room".to_owned(),
             topic_id: TopicIdV1::new([0x47; 16]),
         },
@@ -1391,6 +1463,22 @@ fn every_v2_outcome_and_refusal_round_trips() {
             topic_id: TopicIdV1::new([0xb0; 16]),
             aliases: vec!["general".to_owned(), "incidents".to_owned()],
         }),
+        OutcomeV2::TopicTagAdded {
+            revision: 20,
+            topic_id: TopicIdV1::new([0xb0; 16]),
+            tag: "urgent".to_owned(),
+        },
+        OutcomeV2::TopicTagRemoved {
+            revision: 21,
+            topic_id: TopicIdV1::new([0xb0; 16]),
+            tag: "urgent".to_owned(),
+        },
+        OutcomeV2::TopicTagStatus(TopicTagStatusV1 {
+            revision: 21,
+            room_id: "room".to_owned(),
+            topic_id: TopicIdV1::new([0xb0; 16]),
+            tags: vec!["incident".to_owned(), "urgent".to_owned()],
+        }),
     ];
     for outcome in outcomes {
         let reply = WireReplyV2::Executed(ReplyV2::Accepted(outcome));
@@ -1425,6 +1513,10 @@ fn every_v2_outcome_and_refusal_round_trips() {
         RefusalV2::TopicMustBeResolved,
         RefusalV2::TopicAliasLimit,
         RefusalV2::UnknownTopicAlias,
+        RefusalV2::InvalidTopicTag,
+        RefusalV2::DuplicateTopicTag,
+        RefusalV2::TopicTagLimit,
+        RefusalV2::UnknownTopicTag,
     ];
     for refusal in refusals {
         for reply in [
@@ -1924,6 +2016,22 @@ fn v2_topic_commands_pages_and_mutation_outcomes_are_canonical() {
             room_id: "room".to_owned(),
             topic_id,
         },
+        CommandV2::AddTopicTag {
+            room_id: "room".to_owned(),
+            expected_revision: 16,
+            topic_id,
+            tag: "urgent".to_owned(),
+        },
+        CommandV2::RemoveTopicTag {
+            room_id: "room".to_owned(),
+            expected_revision: 17,
+            topic_id,
+            tag: "urgent".to_owned(),
+        },
+        CommandV2::TopicTagStatus {
+            room_id: "room".to_owned(),
+            topic_id,
+        },
         CommandV2::SpeakInTopic {
             room_id: "room".to_owned(),
             expected_revision: 9,
@@ -2021,6 +2129,22 @@ fn v2_topic_commands_pages_and_mutation_outcomes_are_canonical() {
             topic_id,
             aliases: vec!["general".to_owned(), "incidents".to_owned()],
         }),
+        OutcomeV2::TopicTagAdded {
+            revision: 15,
+            topic_id,
+            tag: "urgent".to_owned(),
+        },
+        OutcomeV2::TopicTagRemoved {
+            revision: 16,
+            topic_id,
+            tag: "urgent".to_owned(),
+        },
+        OutcomeV2::TopicTagStatus(TopicTagStatusV1 {
+            revision: 16,
+            room_id: "room".to_owned(),
+            topic_id,
+            tags: vec!["incident".to_owned(), "urgent".to_owned()],
+        }),
         OutcomeV2::TopicMessageAccepted {
             revision: 10,
             message_id,
@@ -2084,7 +2208,14 @@ fn v2_topic_commands_pages_and_mutation_outcomes_are_canonical() {
     let refusal = WireReplyV2::Executed(ReplyV2::Refused(RefusalV2::TopicResolved));
     let encoded = encode_reply_v2(&refusal, limits()).unwrap();
     assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), refusal);
-    for refusal in [RefusalV2::TopicAliasLimit, RefusalV2::UnknownTopicAlias] {
+    for refusal in [
+        RefusalV2::TopicAliasLimit,
+        RefusalV2::UnknownTopicAlias,
+        RefusalV2::InvalidTopicTag,
+        RefusalV2::DuplicateTopicTag,
+        RefusalV2::TopicTagLimit,
+        RefusalV2::UnknownTopicTag,
+    ] {
         let reply = WireReplyV2::Executed(ReplyV2::Refused(refusal));
         let encoded = encode_reply_v2(&reply, limits()).unwrap();
         assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), reply);
@@ -2384,6 +2515,67 @@ fn v2_topic_alias_event_round_trips_in_every_change_profile() {
             },
         ))),
         topic_alias_changed_reply(),
+    ];
+    for reply in replies {
+        let encoded = encode_reply_v2(&reply, limits()).unwrap();
+        assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), reply);
+    }
+}
+
+#[test]
+fn v2_topic_tag_event_round_trips_in_every_change_profile() {
+    let topic_id = TopicIdV1::new([0x44; 16]);
+    let replies = [
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 14,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 13,
+                revision: 14,
+                event: RoomEventV2::TopicTagChanged {
+                    actor_id: "agent".to_owned(),
+                    topic_id,
+                    tag: "urgent".to_owned(),
+                    added: true,
+                },
+            }],
+            next: PageCursorV2(14),
+            has_more: false,
+        }))),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(
+            IdentifiedRoomChangePageV1 {
+                revision: 14,
+                changes: vec![IdentifiedRoomChangeV1 {
+                    event_sequence: 13,
+                    revision: 14,
+                    event: IdentifiedRoomEventV1::TopicTagChanged {
+                        actor_id: "agent".to_owned(),
+                        topic_id,
+                        tag: "urgent".to_owned(),
+                        added: true,
+                    },
+                }],
+                next: PageCursorV2(14),
+                has_more: false,
+            },
+        ))),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadedChanges(
+            ThreadedRoomChangePageV1 {
+                revision: 14,
+                changes: vec![ThreadedRoomChangeV1 {
+                    event_sequence: 13,
+                    revision: 14,
+                    event: ThreadedRoomEventV1::TopicTagChanged {
+                        actor_id: "agent".to_owned(),
+                        topic_id,
+                        tag: "urgent".to_owned(),
+                        added: true,
+                    },
+                }],
+                next: PageCursorV2(14),
+                has_more: false,
+            },
+        ))),
+        topic_tag_changed_reply(),
     ];
     for reply in replies {
         let encoded = encode_reply_v2(&reply, limits()).unwrap();

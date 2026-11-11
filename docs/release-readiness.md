@@ -141,6 +141,11 @@ not ready for a network service or crates.io release.
   domain, stable-ID-only selection, explicit add/remove, canonical separate
   status, four-feed attribution, exact replay/recovery, and profile-18/20/20
   checkpoints and exact-revision integrated qualification;
+- separately negotiated bounded topic tags with owner/moderator kind-neutral
+  authority, an eight-tag ceiling, byte-exact canonical per-topic sets,
+  stable-ID-only selection, explicit add/remove, separate participant-bound
+  status, four-feed attribution, exact replay/recovery, and profile-19/21/21
+  checkpoints; integrated qualification is pending;
 - independent delivery and pull retention: acknowledgment drains only the
   backpressured outbox, journal eviction carries its own exact gap, and both
   suffixes recover canonically with live service cursors;

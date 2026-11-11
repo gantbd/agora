@@ -294,6 +294,22 @@ pub enum CommandV2 {
         room_id: String,
         topic_id: TopicIdV1,
     },
+    AddTopicTag {
+        room_id: String,
+        expected_revision: u64,
+        topic_id: TopicIdV1,
+        tag: String,
+    },
+    RemoveTopicTag {
+        room_id: String,
+        expected_revision: u64,
+        topic_id: TopicIdV1,
+        tag: String,
+    },
+    TopicTagStatus {
+        room_id: String,
+        topic_id: TopicIdV1,
+    },
     SpeakInTopic {
         room_id: String,
         expected_revision: u64,
@@ -886,6 +902,29 @@ impl fmt::Debug for CommandV2 {
                 .field("room_id_bytes", &room_id.len())
                 .field("topic_id", topic_id)
                 .finish(),
+            Self::AddTopicTag {
+                room_id,
+                expected_revision,
+                topic_id,
+                tag,
+            }
+            | Self::RemoveTopicTag {
+                room_id,
+                expected_revision,
+                topic_id,
+                tag,
+            } => formatter
+                .debug_struct("TopicTagMutation")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("topic_id", topic_id)
+                .field("tag_bytes", &tag.len())
+                .finish(),
+            Self::TopicTagStatus { room_id, topic_id } => formatter
+                .debug_struct("TopicTagStatus")
+                .field("room_id_bytes", &room_id.len())
+                .field("topic_id", topic_id)
+                .finish(),
             Self::SpeakInTopic {
                 room_id,
                 expected_revision,
@@ -948,6 +987,7 @@ pub enum CapabilityV2 {
     TopicResolutionV1,
     TopicSupersessionV1,
     TopicAliasesV1,
+    TopicTagsV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -1129,6 +1169,26 @@ pub struct TopicAliasStatusV1 {
     pub room_id: String,
     pub topic_id: TopicIdV1,
     pub aliases: Vec<String>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicTagStatusV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub topic_id: TopicIdV1,
+    pub tags: Vec<String>,
+}
+
+impl fmt::Debug for TopicTagStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicTagStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("topic_id", &self.topic_id)
+            .field("tag_count", &self.tags.len())
+            .finish()
+    }
 }
 
 impl fmt::Debug for TopicAliasStatusV1 {
@@ -1470,6 +1530,12 @@ pub enum RoomEventV2 {
         alias: String,
         added: bool,
     },
+    TopicTagChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        tag: String,
+        added: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1599,6 +1665,18 @@ impl fmt::Debug for RoomEventV2 {
                 .field("actor_id_bytes", &actor_id.len())
                 .field("topic_id", topic_id)
                 .field("alias_bytes", &alias.len())
+                .field("added", added)
+                .finish(),
+            Self::TopicTagChanged {
+                actor_id,
+                topic_id,
+                tag,
+                added,
+            } => formatter
+                .debug_struct("TopicTagChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("tag_bytes", &tag.len())
                 .field("added", added)
                 .finish(),
             Self::InvitationRecorded { participant_id }
@@ -1760,6 +1838,12 @@ pub enum IdentifiedRoomEventV1 {
         alias: String,
         added: bool,
     },
+    TopicTagChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        tag: String,
+        added: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1889,6 +1973,18 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .field("actor_id_bytes", &actor_id.len())
                 .field("topic_id", topic_id)
                 .field("alias_bytes", &alias.len())
+                .field("added", added)
+                .finish(),
+            Self::TopicTagChanged {
+                actor_id,
+                topic_id,
+                tag,
+                added,
+            } => formatter
+                .debug_struct("TopicTagChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("tag_bytes", &tag.len())
                 .field("added", added)
                 .finish(),
             Self::InvitationRecorded { participant_id }
@@ -2050,6 +2146,12 @@ pub enum ThreadedRoomEventV1 {
         alias: String,
         added: bool,
     },
+    TopicTagChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        tag: String,
+        added: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -2179,6 +2281,18 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .field("actor_id_bytes", &actor_id.len())
                 .field("topic_id", topic_id)
                 .field("alias_bytes", &alias.len())
+                .field("added", added)
+                .finish(),
+            Self::TopicTagChanged {
+                actor_id,
+                topic_id,
+                tag,
+                added,
+            } => formatter
+                .debug_struct("TopicTagChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("tag_bytes", &tag.len())
                 .field("added", added)
                 .finish(),
             Self::InvitationRecorded { participant_id }
@@ -2340,6 +2454,12 @@ pub enum TopicRoomEventV1 {
         alias: String,
         added: bool,
     },
+    TopicTagChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        tag: String,
+        added: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -2475,6 +2595,18 @@ impl fmt::Debug for TopicRoomEventV1 {
                 .field("actor_id_bytes", &actor_id.len())
                 .field("topic_id", topic_id)
                 .field("alias_bytes", &alias.len())
+                .field("added", added)
+                .finish(),
+            Self::TopicTagChanged {
+                actor_id,
+                topic_id,
+                tag,
+                added,
+            } => formatter
+                .debug_struct("TopicTagChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("tag_bytes", &tag.len())
                 .field("added", added)
                 .finish(),
             Self::InvitationRecorded { participant_id }
@@ -2880,6 +3012,17 @@ pub enum OutcomeV2 {
         alias: String,
     },
     TopicAliasStatus(TopicAliasStatusV1),
+    TopicTagAdded {
+        revision: u64,
+        topic_id: TopicIdV1,
+        tag: String,
+    },
+    TopicTagRemoved {
+        revision: u64,
+        topic_id: TopicIdV1,
+        tag: String,
+    },
+    TopicTagStatus(TopicTagStatusV1),
     TopicMessageAccepted {
         revision: u64,
         message_id: MessageIdV1,
@@ -2919,6 +3062,10 @@ pub enum RefusalV2 {
     TopicMustBeResolved,
     TopicAliasLimit,
     UnknownTopicAlias,
+    InvalidTopicTag,
+    DuplicateTopicTag,
+    TopicTagLimit,
+    UnknownTopicTag,
     InvalidReadScope,
     InvalidReadTarget,
     ReadPositionRegression,

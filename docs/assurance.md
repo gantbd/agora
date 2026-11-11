@@ -638,6 +638,18 @@ qualification; lookup authority, redirects,
 search synonyms, move/copy, deletion, erasure, connector state, workflow truth,
 and execution are not claimed.
 
+Topic-tag scenarios prove owner/moderator and human/agent-neutral authority,
+explicit add/remove, an eight-tag ceiling, byte-exact canonical status order,
+stable-ID-only selection, cross-topic reuse and name/alias vocabulary
+separation, and atomic invalid/duplicate/absent/capacity refusal. Service
+scenarios cover actor derivation, exact replay/conflict behavior, and
+actor/tag/add-remove attribution in all four feeds. Three frozen frames, closed
+command/outcome/refusal/capability tags, Debug/SDK construction, and
+profile-19/21/21 nested checkpoints close the implemented bounded profile.
+Integrated qualification is pending; hierarchy, lookup authority, routing,
+search truth, subscriptions, notification policy, workflow truth, and execution
+are not claimed.
+
 Private read-position core scenarios prove room/thread/topic scope validation,
 human/agent-neutral self-state, monotone and idempotent advancement, atomic
 stale/regression/target refusal, membership inaccessibility, retention survival,

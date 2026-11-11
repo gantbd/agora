@@ -291,6 +291,10 @@ follow Semantic Versioning once a public release contract is selected.
   owner/moderator kind-neutral authority, one room-wide current-name/alias
   collision domain, explicit add/remove, canonical status, all-feed
   attribution, exact replay/recovery, and no string-based routing or authority.
+- Added separately negotiated bounded topic tags with owner/moderator
+  kind-neutral authority, an eight-tag per-topic ceiling, explicit add/remove,
+  canonical participant-bound status, all-feed attribution, exact
+  replay/recovery, and no hierarchy, routing, workflow, or execution meaning.
 
 ### Fixed
 
@@ -308,8 +312,8 @@ follow Semantic Versioning once a public release contract is selected.
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 18, 20,
-  and 20 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 19, 21,
+  and 21 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

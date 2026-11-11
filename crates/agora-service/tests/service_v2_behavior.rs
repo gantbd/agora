@@ -1029,6 +1029,252 @@ fn v2_topic_aliases_are_actor_bound_replayable_collision_safe_and_visible_in_eve
 }
 
 #[test]
+fn v2_topic_tags_are_actor_bound_replayable_and_visible_in_every_feed() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                1,
+                CommandV2::SetRole {
+                    room_id: "room".to_owned(),
+                    participant_id: "bot".to_owned(),
+                    role: RoleV2::Moderator,
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoleChanged { revision: 5 })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::TopicCreated {
+        topic_id,
+        revision: 6,
+    }) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::CreateTopic {
+                room_id: "room".to_owned(),
+                expected_revision: 5,
+                name: "operations".to_owned(),
+            },
+        ),
+    )
+    else {
+        panic!("topic expected");
+    };
+
+    let mut cursors = Vec::new();
+    for (id, command) in [
+        (
+            3,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 6,
+            },
+        ),
+        (
+            4,
+            CommandV2::OpenIdentifiedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 6,
+            },
+        ),
+        (
+            5,
+            CommandV2::OpenThreadedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 6,
+            },
+        ),
+        (
+            6,
+            CommandV2::OpenTopicChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 6,
+            },
+        ),
+    ] {
+        let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) =
+            service.execute(alice, request(id, command))
+        else {
+            panic!("change cursor expected");
+        };
+        cursors.push(cursor);
+    }
+
+    let add = request(
+        1,
+        CommandV2::AddTopicTag {
+            room_id: "room".to_owned(),
+            expected_revision: 6,
+            topic_id,
+            tag: "urgent".to_owned(),
+        },
+    );
+    let accepted = ReplyV2::Accepted(OutcomeV2::TopicTagAdded {
+        revision: 7,
+        topic_id,
+        tag: "urgent".to_owned(),
+    });
+    assert_eq!(service.execute(bot, add.clone()), accepted);
+    assert_eq!(service.execute(bot, add), accepted);
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                1,
+                CommandV2::AddTopicTag {
+                    room_id: "room".to_owned(),
+                    expected_revision: 7,
+                    topic_id,
+                    tag: "conflict".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::RequestConflict)
+    );
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                7,
+                CommandV2::TopicTagStatus {
+                    room_id: "room".to_owned(),
+                    topic_id,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicTagStatus(status))
+            if status.revision == 7 && status.tags == vec!["urgent"]
+    ));
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                8,
+                CommandV2::AddTopicTag {
+                    room_id: "room".to_owned(),
+                    expected_revision: 7,
+                    topic_id,
+                    tag: "urgent".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::DuplicateTopicTag)
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                9,
+                CommandV2::RemoveTopicTag {
+                    room_id: "room".to_owned(),
+                    expected_revision: 7,
+                    topic_id,
+                    tag: "missing".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::UnknownTopicTag)
+    );
+
+    let replies = [
+        service.execute(
+            alice,
+            request(
+                10,
+                CommandV2::Changes {
+                    room_id: "room".to_owned(),
+                    cursor: cursors[0],
+                    limit: 1,
+                },
+            ),
+        ),
+        service.execute(
+            alice,
+            request(
+                11,
+                CommandV2::IdentifiedChanges {
+                    room_id: "room".to_owned(),
+                    cursor: cursors[1],
+                    limit: 1,
+                },
+            ),
+        ),
+        service.execute(
+            alice,
+            request(
+                12,
+                CommandV2::ThreadedChanges {
+                    room_id: "room".to_owned(),
+                    cursor: cursors[2],
+                    limit: 1,
+                },
+            ),
+        ),
+        service.execute(
+            alice,
+            request(
+                13,
+                CommandV2::TopicChanges {
+                    room_id: "room".to_owned(),
+                    cursor: cursors[3],
+                    limit: 1,
+                },
+            ),
+        ),
+    ];
+    assert!(matches!(
+        &replies[0],
+        ReplyV2::Accepted(OutcomeV2::Changes(page))
+            if matches!(&page.changes[0].event, RoomEventV2::TopicTagChanged { actor_id, topic_id: id, tag, added } if actor_id == "bot" && *id == topic_id && tag == "urgent" && *added)
+    ));
+    assert!(matches!(
+        &replies[1],
+        ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(page))
+            if matches!(&page.changes[0].event, IdentifiedRoomEventV1::TopicTagChanged { actor_id, topic_id: id, tag, added } if actor_id == "bot" && *id == topic_id && tag == "urgent" && *added)
+    ));
+    assert!(matches!(
+        &replies[2],
+        ReplyV2::Accepted(OutcomeV2::ThreadedChanges(page))
+            if matches!(&page.changes[0].event, ThreadedRoomEventV1::TopicTagChanged { actor_id, topic_id: id, tag, added } if actor_id == "bot" && *id == topic_id && tag == "urgent" && *added)
+    ));
+    assert!(matches!(
+        &replies[3],
+        ReplyV2::Accepted(OutcomeV2::TopicChanges(page))
+            if matches!(&page.changes[0].event, TopicRoomEventV1::TopicTagChanged { actor_id, topic_id: id, tag, added } if actor_id == "bot" && *id == topic_id && tag == "urgent" && *added)
+    ));
+}
+
+#[test]
 fn v2_one_level_threads_preserve_identity_pages_and_feed_relationships() {
     let mut engine = Engine::new();
     for (id, kind) in [
@@ -3327,8 +3573,8 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 21);
-    assert_eq!(capabilities.last(), Some(&CapabilityV2::TopicAliasesV1));
+    assert_eq!(capabilities.len(), 22);
+    assert_eq!(capabilities.last(), Some(&CapabilityV2::TopicTagsV1));
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

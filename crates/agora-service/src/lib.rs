@@ -383,6 +383,7 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::BanLimit
         | EngineRefusal::TopicLimit
         | EngineRefusal::TopicAliasLimit
+        | EngineRefusal::TopicTagLimit
         | EngineRefusal::MessageRetentionDisabled
         | EngineRefusal::AddressedParticipantLimit
         | EngineRefusal::EventOutboxFull => RefusalV1::Capacity,
@@ -417,6 +418,9 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::InvalidTopicSupersession
         | EngineRefusal::TopicMustBeResolved
         | EngineRefusal::UnknownTopicAlias
+        | EngineRefusal::InvalidTopicTag
+        | EngineRefusal::DuplicateTopicTag
+        | EngineRefusal::UnknownTopicTag
         | EngineRefusal::MessageAlreadyTombstoned
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)

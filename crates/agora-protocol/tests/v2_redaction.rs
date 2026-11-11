@@ -7,7 +7,7 @@ use agora_protocol::v2::{
     ReadPositionV1, ReadScopeV1, ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
     RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1,
     ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
-    TopicAliasStatusV1, TopicIdV1, TopicStatusV1, TopicSupersessionStatusV1,
+    TopicAliasStatusV1, TopicIdV1, TopicStatusV1, TopicSupersessionStatusV1, TopicTagStatusV1,
 };
 
 #[test]
@@ -196,8 +196,35 @@ fn v2_debug_output_is_content_safe() {
             room_id: "secret-room".to_owned(),
             topic_id: TopicIdV1::new([0x72; 16]),
         },
+        CommandV2::AddTopicTag {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 68,
+            topic_id: TopicIdV1::new([0x72; 16]),
+            tag: "secret-topic-tag".to_owned(),
+        },
+        CommandV2::RemoveTopicTag {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 69,
+            topic_id: TopicIdV1::new([0x72; 16]),
+            tag: "secret-topic-tag".to_owned(),
+        },
+        CommandV2::TopicTagStatus {
+            room_id: "secret-room".to_owned(),
+            topic_id: TopicIdV1::new([0x72; 16]),
+        },
     ];
     let replies = [
+        ReplyV2::Accepted(OutcomeV2::TopicTagStatus(TopicTagStatusV1 {
+            revision: 69,
+            room_id: "secret-room".to_owned(),
+            topic_id: TopicIdV1::new([0x72; 16]),
+            tags: vec!["secret-topic-tag".to_owned()],
+        })),
+        ReplyV2::Accepted(OutcomeV2::TopicTagAdded {
+            revision: 69,
+            topic_id: TopicIdV1::new([0x72; 16]),
+            tag: "secret-topic-tag".to_owned(),
+        }),
         ReplyV2::Accepted(OutcomeV2::TopicAliasStatus(TopicAliasStatusV1 {
             revision: 67,
             room_id: "secret-room".to_owned(),
@@ -437,6 +464,21 @@ fn v2_debug_output_is_content_safe() {
             has_more: false,
         })),
         ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 69,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 68,
+                revision: 69,
+                event: RoomEventV2::TopicTagChanged {
+                    actor_id: "secret-actor".to_owned(),
+                    topic_id: TopicIdV1::new([0x72; 16]),
+                    tag: "secret-topic-tag".to_owned(),
+                    added: true,
+                },
+            }],
+            next: PageCursorV2(70),
+            has_more: false,
+        })),
+        ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
             revision: 62,
             changes: vec![RoomChangeV2 {
                 event_sequence: 61,
@@ -575,6 +617,7 @@ fn v2_debug_output_is_content_safe() {
         "secret-prior-topic",
         "secret-topic-name",
         "secret-topic-alias",
+        "secret-topic-tag",
         "42",
         "43",
         "44",

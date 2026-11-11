@@ -270,6 +270,15 @@ attributed in all feed profiles and retained by exact receipts and nested
 recovery. Aliases never become selectors, redirects, authority, or workflow
 state.
 
+`TopicTagsV1` is a distinct bounded display/index set over the stable topic
+owner. The service derives the actor and exposes explicit add, remove, and
+status operations. The engine admits at most eight byte-exact tags per topic;
+duplicates and absent removals refuse atomically, while the same tag may appear
+on multiple topics or equal a name/alias. Status is participant-bound and
+canonically ordered; every mutation is attributed in all feed profiles and
+retained by exact receipts and nested recovery. Tags never become selectors,
+hierarchy, permissions, routing, workflow state, or execution evidence.
+
 ## Private read positions
 
 `PrivateReadPositionsV1` is private current-state projection inside the same

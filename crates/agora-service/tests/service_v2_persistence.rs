@@ -239,6 +239,21 @@ fn populated() -> (
         ),
         ReplyV2::Accepted(OutcomeV2::TopicAliasAdded { revision: 16, .. })
     ));
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                111,
+                CommandV2::AddTopicTag {
+                    room_id: "alpha".to_owned(),
+                    expected_revision: 16,
+                    topic_id,
+                    tag: "urgent".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicTagAdded { revision: 17, .. })
+    ));
     let ReplyV2::Accepted(OutcomeV2::Topics(topic_page)) = service.execute(
         alice,
         request(
@@ -275,11 +290,11 @@ fn populated() -> (
                 106,
                 CommandV2::OpenTopicChanges {
                     room_id: "alpha".to_owned(),
-                    observed_revision: 16,
+                    observed_revision: 17,
                 },
             ),
         ),
-        ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision: 16, .. })
+        ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision: 17, .. })
     ));
     let ReplyV2::Accepted(OutcomeV2::Rooms(page)) = service.execute(
         alice,
@@ -315,7 +330,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v20.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v21.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -355,6 +370,18 @@ fn complete_service_state_round_trips_and_continues_exactly() {
             .unwrap()
             .aliases,
         vec!["incidents".to_owned()]
+    );
+    assert_eq!(
+        recovered
+            .engine()
+            .topic_tag_status(
+                &ParticipantId::new("alice"),
+                &RoomId::new("alpha"),
+                topic_id_from_populated(&recovered),
+            )
+            .unwrap()
+            .tags,
+        vec!["urgent".to_owned()]
     );
     assert!(
         recovered
@@ -465,7 +492,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 21;
+    future[8] = 22;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile

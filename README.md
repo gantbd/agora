@@ -107,6 +107,13 @@ topic. Current names and aliases share one room-wide collision domain, while
 commands, posting, authority, relations, and supersession continue to use only
 the stable topic ID. A separate participant-bound status returns aliases in
 canonical order; every transition is attributable in all four change feeds.
+The separately advertised `TopicTagsV1` capability lets current owners and
+moderators explicitly add or remove at most eight bounded byte-exact tags per
+topic. Tags are a canonical per-topic display/index set: the same tag may label
+multiple topics and may equal a current name or alias, while commands and
+authority continue to select only stable topic IDs. A separate participant-bound
+status and every change feed expose attributable transitions. Tags do not imply
+hierarchy, routing, search truth, subscriptions, workflow, or execution.
 The `PrivateReadPositionsV1` capability adds participant-private monotone room,
 thread, and topic markers. The service derives the participant from its client
 binding; an advance changes neither room revision nor room events, but its state
