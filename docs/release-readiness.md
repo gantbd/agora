@@ -41,6 +41,9 @@ not ready for a network service or crates.io release.
 - exhaustive 4,096-schedule, four-step core lifecycle model repeated for human
   and agent actors across speaking, stale revisions, leave/rejoin,
   kick/ban/unban, atomic refusal, ordering, and message retention;
+- exhaustive 4,096-schedule, four-step conversation-relation model repeated for
+  human and agent root authors across replies, thread lifecycle, reactions,
+  edits, withdrawal, retention eviction, and dual event-copy atomicity;
 - opt-in deterministic 5,000-cycle Service V2 soak covering exact replay,
   bounded paging and retention, leave/kick/rejoin lifecycle, reconnect, and
   repeated canonical checkpoint recovery;

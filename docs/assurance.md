@@ -93,6 +93,15 @@ preserve the complete room view plus both retained event copies. This covers
 only the represented two-participant open-room vocabulary and schedule depth;
 it is not an unbounded state or concurrency proof.
 
+A second core model enumerates the same 4,096 four-step schedule space over
+reply admission, archive/reopen, one reaction toggle, author edit, author
+withdrawal, and unrelated speech under a three-message retention ceiling. It
+repeats every schedule for human and agent root authors and checks exact
+acceptance/refusal, refusal nonmutation, revision/event order, message suffix,
+revision tombstones, thread state, reaction aggregate, and cleanup when the root
+is evicted. This is limited to one root, one reaction key, two participants, and
+depth four; it does not cover pagination, recovery, or concurrent execution.
+
 `make soak` runs an opt-in deterministic 5,000-cycle Service V2 campaign. Every
 cycle performs identified speaking plus exact replay, bounded history paging,
 leave or owner kick, open rejoin, and retention checks; actor clients reconnect

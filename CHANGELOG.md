@@ -14,6 +14,8 @@ follow Semantic Versioning once a public release contract is selected.
 - Added an exhaustive four-step core lifecycle model spanning 4,096 schedules
   for both human and agent actors across speech, stale revisions, membership,
   moderation, retention, and dual event-copy invariants.
+- Added a second exhaustive four-step model for replies, thread lifecycle,
+  reactions, edits, withdrawal, retention eviction, and human/agent symmetry.
 - Separated the lossless acknowledged delivery outbox from a bounded recent
   change journal, with independent eviction evidence, participant-bound pull
   gaps, canonical profile-14/16/16 recovery, a closed capability, and frozen

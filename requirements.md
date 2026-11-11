@@ -276,6 +276,13 @@
   membership and ban state, revision/event continuity, message sequence and
   retention, delivery/change copies, and human/agent symmetry. The evidence
   must state its finite schedule depth and must not claim unbounded proof.
+- **R52 — Finite conversation-relation state-machine evidence:** retained root
+  and reply behavior must be checked against an independent bounded model across
+  reply admission, archive/reopen, reaction add/remove, author edit, author
+  withdrawal, unrelated speech, and root eviction. Each schedule must preserve
+  exact refusal precedence and atomicity, immutable identity/sequence relations,
+  tombstone revision scrubbing, reaction/thread cleanup on eviction, retention,
+  event ordering, and human/agent symmetry without claiming unbounded proof.
 
 ## Explicitly open
 
