@@ -142,20 +142,23 @@ fn populated() -> (
     ) else {
         panic!("topic creation expected");
     };
-    assert!(matches!(
-        service.execute(
-            alice,
-            request(
-                101,
-                CommandV2::CreateTopic {
-                    room_id: "alpha".to_owned(),
-                    expected_revision: 9,
-                    name: "alerts".to_owned(),
-                },
-            ),
+    let ReplyV2::Accepted(OutcomeV2::TopicCreated {
+        topic_id: successor_topic_id,
+        revision: 10,
+    }) = service.execute(
+        alice,
+        request(
+            101,
+            CommandV2::CreateTopic {
+                room_id: "alpha".to_owned(),
+                expected_revision: 9,
+                name: "alerts".to_owned(),
+            },
         ),
-        ReplyV2::Accepted(OutcomeV2::TopicCreated { revision: 10, .. })
-    ));
+    )
+    else {
+        panic!("successor topic creation expected");
+    };
     for (request_id, expected_revision, logical_time, body) in
         [(102, 10, 11, "topic one"), (103, 11, 12, "topic two")]
     {
@@ -206,6 +209,21 @@ fn populated() -> (
         ),
         ReplyV2::Accepted(OutcomeV2::TopicResolved { revision: 14, .. })
     ));
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                109,
+                CommandV2::SupersedeTopic {
+                    room_id: "alpha".to_owned(),
+                    expected_revision: 14,
+                    topic_id,
+                    successor_topic_id,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicSuperseded { revision: 15, .. })
+    ));
     let ReplyV2::Accepted(OutcomeV2::Topics(topic_page)) = service.execute(
         alice,
         request(
@@ -242,11 +260,11 @@ fn populated() -> (
                 106,
                 CommandV2::OpenTopicChanges {
                     room_id: "alpha".to_owned(),
-                    observed_revision: 14,
+                    observed_revision: 15,
                 },
             ),
         ),
-        ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision: 14, .. })
+        ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision: 15, .. })
     ));
     let ReplyV2::Accepted(OutcomeV2::Rooms(page)) = service.execute(
         alice,
@@ -282,7 +300,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v18.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v19.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -298,6 +316,18 @@ fn complete_service_state_round_trips_and_continues_exactly() {
             .topic(&RoomId::new("alpha"), topic_id_from_populated(&recovered))
             .unwrap()
             .is_resolved()
+    );
+    assert!(
+        recovered
+            .engine()
+            .topic_supersession_status(
+                &ParticipantId::new("alice"),
+                &RoomId::new("alpha"),
+                topic_id_from_populated(&recovered),
+            )
+            .unwrap()
+            .successor_topic_id
+            .is_some()
     );
     assert!(
         recovered
@@ -408,7 +438,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 19;
+    future[8] = 20;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile

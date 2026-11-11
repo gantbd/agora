@@ -284,6 +284,9 @@ follow Semantic Versioning once a public release contract is selected.
 - Added separately negotiated reversible topic resolution with owner/moderator
   authority, new-message fencing, stable reference/history preservation,
   explicit prior/new lifecycle events, and no task-completion semantics.
+- Added separately negotiated bounded topic supersession with owner/moderator
+  authority, a depth-one same-room successor graph, explicit set/replace/clear,
+  all-feed attribution, exact recovery, and no history rewrite or post routing.
 
 ### Fixed
 
@@ -297,8 +300,8 @@ follow Semantic Versioning once a public release contract is selected.
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 16, 18,
-  and 18 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 17, 19,
+  and 19 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

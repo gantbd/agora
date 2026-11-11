@@ -7,7 +7,7 @@ use agora_protocol::v2::{
     ReadPositionV1, ReadScopeV1, ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
     RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1,
     ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
-    TopicIdV1, TopicStatusV1,
+    TopicIdV1, TopicStatusV1, TopicSupersessionStatusV1,
 };
 
 #[test]
@@ -165,8 +165,31 @@ fn v2_debug_output_is_content_safe() {
             room_id: "secret-room".to_owned(),
             topic_id: TopicIdV1::new([0x72; 16]),
         },
+        CommandV2::SupersedeTopic {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 64,
+            topic_id: TopicIdV1::new([0x72; 16]),
+            successor_topic_id: TopicIdV1::new([0x73; 16]),
+        },
+        CommandV2::ClearTopicSupersession {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 65,
+            topic_id: TopicIdV1::new([0x72; 16]),
+        },
+        CommandV2::TopicSupersessionStatus {
+            room_id: "secret-room".to_owned(),
+            topic_id: TopicIdV1::new([0x72; 16]),
+        },
     ];
     let replies = [
+        ReplyV2::Accepted(OutcomeV2::TopicSupersessionStatus(
+            TopicSupersessionStatusV1 {
+                revision: 64,
+                room_id: "secret-room".to_owned(),
+                topic_id: TopicIdV1::new([0x72; 16]),
+                successor_topic_id: Some(TopicIdV1::new([0x73; 16])),
+            },
+        )),
         ReplyV2::Accepted(OutcomeV2::TopicStatus(TopicStatusV1 {
             revision: 62,
             room_id: "secret-room".to_owned(),
@@ -399,6 +422,21 @@ fn v2_debug_output_is_content_safe() {
                 },
             }],
             next: PageCursorV2(63),
+            has_more: false,
+        })),
+        ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 64,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 63,
+                revision: 64,
+                event: RoomEventV2::TopicSupersessionChanged {
+                    actor_id: "secret-actor".to_owned(),
+                    topic_id: TopicIdV1::new([0x72; 16]),
+                    previous_successor_topic_id: None,
+                    successor_topic_id: Some(TopicIdV1::new([0x73; 16])),
+                },
+            }],
+            next: PageCursorV2(64),
             has_more: false,
         })),
         ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {

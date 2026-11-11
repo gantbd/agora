@@ -323,6 +323,180 @@ fn topic_resolution_is_attributable_reversible_and_reference_preserving() {
 }
 
 #[test]
+fn topic_supersession_is_depth_one_reversible_and_never_retargets_history() {
+    let mut engine = setup(Limits::default());
+    let source = create_topic(&mut engine, "owner", "source");
+    let successor = create_topic(&mut engine, "owner", "successor");
+    let third = create_topic(&mut engine, "owner", "third");
+    let OutcomeV2::TopicMessageAccepted { sequence, .. } = engine
+        .apply(CommandV2::SpeakInTopic {
+            room_id: "room".into(),
+            author: "member".into(),
+            topic_id: source,
+            at: LogicalTime(1),
+            body: "historical".to_owned(),
+            addressed_to: vec![],
+        })
+        .unwrap()
+    else {
+        panic!("topic message expected");
+    };
+
+    assert_eq!(
+        engine.apply(CommandV2::SetTopicSuccessor {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: source,
+            successor_topic_id: Some(successor),
+        }),
+        Err(Refusal::TopicMustBeResolved)
+    );
+    engine
+        .apply(CommandV2::SetTopicResolved {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: source,
+            resolved: true,
+        })
+        .unwrap();
+    assert!(matches!(
+        engine
+            .apply(CommandV2::SetTopicSuccessor {
+                room_id: "room".into(),
+                actor: "owner".into(),
+                topic_id: source,
+                successor_topic_id: Some(successor),
+            })
+            .unwrap(),
+        OutcomeV2::TopicSupersessionChanged {
+            topic_id,
+            previous_successor_topic_id: None,
+            successor_topic_id: Some(target),
+            ..
+        } if topic_id == source && target == successor
+    ));
+    assert_eq!(
+        engine
+            .topic_supersession_status(&"member".into(), &"room".into(), source)
+            .unwrap()
+            .successor_topic_id,
+        Some(successor)
+    );
+    assert_eq!(
+        engine.message(&"room".into(), sequence).unwrap().topic_id(),
+        Some(source)
+    );
+    assert_eq!(
+        engine.apply(CommandV2::SetTopicResolved {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: source,
+            resolved: false,
+        }),
+        Err(Refusal::InvalidTopicLifecycleChange)
+    );
+
+    engine
+        .apply(CommandV2::SetTopicResolved {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: successor,
+            resolved: true,
+        })
+        .unwrap();
+    assert_eq!(
+        engine.apply(CommandV2::SetTopicSuccessor {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: successor,
+            successor_topic_id: Some(third),
+        }),
+        Err(Refusal::InvalidTopicSupersession)
+    );
+    engine
+        .apply(CommandV2::SetTopicResolved {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: third,
+            resolved: true,
+        })
+        .unwrap();
+    assert_eq!(
+        engine.apply(CommandV2::SetTopicSuccessor {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: third,
+            successor_topic_id: Some(source),
+        }),
+        Err(Refusal::InvalidTopicSupersession)
+    );
+
+    assert!(matches!(
+        engine
+            .apply(CommandV2::SetTopicSuccessor {
+                room_id: "room".into(),
+                actor: "owner".into(),
+                topic_id: source,
+                successor_topic_id: None,
+            })
+            .unwrap(),
+        OutcomeV2::TopicSupersessionChanged {
+            previous_successor_topic_id: Some(previous),
+            successor_topic_id: None,
+            ..
+        } if previous == successor
+    ));
+    assert_eq!(
+        engine
+            .topic_supersession_status(&"member".into(), &"room".into(), source)
+            .unwrap()
+            .successor_topic_id,
+        None
+    );
+    assert!(engine.topic(&"room".into(), source).unwrap().is_resolved());
+}
+
+#[test]
+fn topic_supersession_survives_canonical_recovery() {
+    let mut engine = setup(Limits::default());
+    let source = create_topic(&mut engine, "owner", "source");
+    let successor = create_topic(&mut engine, "owner", "successor");
+    engine
+        .apply(CommandV2::SetTopicResolved {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: source,
+            resolved: true,
+        })
+        .unwrap();
+    engine
+        .apply(CommandV2::SetTopicSuccessor {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: source,
+            successor_topic_id: Some(successor),
+        })
+        .unwrap();
+
+    let checkpoint = engine.prepare_checkpoint(1_000_000).unwrap();
+    let recovered = Engine::recover_checkpoint(
+        checkpoint.bytes(),
+        RecoveryLimits {
+            max_snapshot_bytes: 1_000_000,
+            maximum_engine_limits: Limits::default(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        recovered
+            .topic_supersession_status(&"member".into(), &"room".into(), source)
+            .unwrap()
+            .successor_topic_id,
+        Some(successor)
+    );
+}
+
+#[test]
 fn topic_messages_preserve_relation_through_replies_edits_reactions_and_tombstones() {
     let mut engine = setup(Limits::default());
     let topic = create_topic(&mut engine, "owner", "general");

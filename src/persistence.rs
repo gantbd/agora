@@ -201,6 +201,27 @@ impl Writer {
                 self.byte(u8::from(*previous_resolved))?;
                 self.byte(u8::from(*resolved))
             }
+            DomainEventV2::TopicSupersessionChanged {
+                room_id,
+                actor,
+                topic_id,
+                previous_successor_topic_id,
+                successor_topic_id,
+            } => {
+                self.byte(19)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&topic_id.into_bytes())?;
+                self.byte(u8::from(previous_successor_topic_id.is_some()))?;
+                if let Some(previous) = previous_successor_topic_id {
+                    self.raw(&previous.into_bytes())?;
+                }
+                self.byte(u8::from(successor_topic_id.is_some()))?;
+                if let Some(successor) = successor_topic_id {
+                    self.raw(&successor.into_bytes())?;
+                }
+                Ok(())
+            }
             DomainEventV2::InvitationRecorded {
                 room_id,
                 participant,
@@ -645,6 +666,21 @@ impl<'a> Reader<'a> {
                     _ => return Err(CheckpointError::Invalid),
                 },
             },
+            19 => DomainEventV2::TopicSupersessionChanged {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                topic_id: TopicId::from_bytes(self.fixed()?),
+                previous_successor_topic_id: match self.byte()? {
+                    0 => None,
+                    1 => Some(TopicId::from_bytes(self.fixed()?)),
+                    _ => return Err(CheckpointError::Invalid),
+                },
+                successor_topic_id: match self.byte()? {
+                    0 => None,
+                    1 => Some(TopicId::from_bytes(self.fixed()?)),
+                    _ => return Err(CheckpointError::Invalid),
+                },
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -753,7 +789,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(16)?;
+        w.byte(17)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -823,6 +859,11 @@ impl Engine {
                 w.text(topic.creator.as_str())?;
                 w.byte(u8::from(topic.resolved))?;
             }
+            w.count(room.topic_successors.len())?;
+            for (topic_id, successor_topic_id) in &room.topic_successors {
+                w.raw(&topic_id.into_bytes())?;
+                w.raw(&successor_topic_id.into_bytes())?;
+            }
         }
         w.count(self.read_positions.len())?;
         for ((participant, room_id, scope), position) in &self.read_positions {
@@ -880,7 +921,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 16 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 17 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -1017,6 +1058,13 @@ impl Engine {
                 };
                 insert(&mut topics, topic_id, topic)?;
             }
+            let mut topic_successors = BTreeMap::new();
+            let count = r.count(l.max_topics_per_room)?;
+            for _ in 0..count {
+                let topic_id = TopicId::from_bytes(r.fixed()?);
+                let successor_topic_id = TopicId::from_bytes(r.fixed()?);
+                insert(&mut topic_successors, topic_id, successor_topic_id)?;
+            }
             insert(
                 &mut e.rooms,
                 id.clone(),
@@ -1032,6 +1080,7 @@ impl Engine {
                     archived_threads,
                     reactions,
                     topics,
+                    topic_successors,
                     topic_identity_incarnation,
                     next_topic_identity,
                     message_identity_incarnation,
@@ -1726,6 +1775,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             || room.bans.len() > l.max_bans_per_room
             || room.messages.len() > l.max_messages_per_room
             || room.topics.len() > l.max_topics_per_room
+            || room.topic_successors.len() > room.topics.len()
             || room.thread_roots.len() > room.messages.len()
             || room.archived_threads.len() > room.messages.len()
         {
@@ -1779,6 +1829,19 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                 return Err(CheckpointError::Invalid);
             }
             bounded(&topic.name, l.max_topic_name_bytes)?;
+        }
+        for (topic_id, successor_topic_id) in &room.topic_successors {
+            if topic_id == successor_topic_id
+                || !room.topics.get(topic_id).is_some_and(TopicV1::is_resolved)
+                || !room.topics.contains_key(successor_topic_id)
+                || room.topic_successors.contains_key(successor_topic_id)
+                || room
+                    .topic_successors
+                    .values()
+                    .any(|candidate| candidate == topic_id)
+            {
+                return Err(CheckpointError::Invalid);
+            }
         }
         if l.max_messages_per_room == 0 && room.next_message_sequence != 0 {
             return Err(CheckpointError::Invalid);
@@ -1852,6 +1915,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             .and_then(|n| n.checked_add(room.invitations.len() as u64))
             .and_then(|n| n.checked_add(room.bans.len() as u64))
             .and_then(|n| n.checked_add(room.topics.len() as u64))
+            .and_then(|n| n.checked_add(room.topic_successors.len() as u64))
             .ok_or(CheckpointError::Invalid)?;
     }
     for ((participant, room_id, scope), position) in &e.read_positions {
@@ -2027,6 +2091,7 @@ fn validate_topic_event_history(
 ) -> Result<(), CheckpointError> {
     let mut names = BTreeMap::<(RoomId, TopicId), String>::new();
     let mut lifecycle = BTreeMap::<(RoomId, TopicId), bool>::new();
+    let mut supersession = BTreeMap::<(RoomId, TopicId), Option<TopicId>>::new();
     for envelope in events {
         match &envelope.event {
             DomainEventV2::TopicCreated {
@@ -2075,6 +2140,23 @@ fn validate_topic_event_history(
                 }
                 *current = *resolved;
             }
+            DomainEventV2::TopicSupersessionChanged {
+                room_id,
+                topic_id,
+                previous_successor_topic_id,
+                successor_topic_id,
+                ..
+            } => {
+                let current = supersession
+                    .entry((room_id.clone(), *topic_id))
+                    .or_insert(*previous_successor_topic_id);
+                if current != previous_successor_topic_id
+                    || previous_successor_topic_id == successor_topic_id
+                {
+                    return Err(CheckpointError::Invalid);
+                }
+                *current = *successor_topic_id;
+            }
             _ => {}
         }
     }
@@ -2095,6 +2177,18 @@ fn validate_topic_event_history(
             .and_then(|room| room.topics.get(&topic_id))
             .ok_or(CheckpointError::Invalid)?;
         if topic.resolved != resolved {
+            return Err(CheckpointError::Invalid);
+        }
+    }
+    for ((room_id, topic_id), successor_topic_id) in supersession {
+        let current = engine
+            .rooms
+            .get(&room_id)
+            .ok_or(CheckpointError::Invalid)?
+            .topic_successors
+            .get(&topic_id)
+            .copied();
+        if current != successor_topic_id {
             return Err(CheckpointError::Invalid);
         }
     }
@@ -2161,6 +2255,26 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             let r = room(room_id)?;
             participant(actor)?;
             if previous_resolved == resolved || !r.topics.contains_key(topic_id) {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::TopicSupersessionChanged {
+            room_id,
+            actor,
+            topic_id,
+            previous_successor_topic_id,
+            successor_topic_id,
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            if previous_successor_topic_id == successor_topic_id
+                || !r.topics.contains_key(topic_id)
+                || previous_successor_topic_id
+                    .is_some_and(|candidate| !r.topics.contains_key(&candidate))
+                || successor_topic_id.is_some_and(|candidate| {
+                    candidate == *topic_id || !r.topics.contains_key(&candidate)
+                })
+            {
                 return Err(CheckpointError::Invalid);
             }
         }

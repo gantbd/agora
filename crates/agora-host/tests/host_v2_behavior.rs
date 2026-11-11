@@ -463,14 +463,42 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
     else {
         panic!("topic creation expected");
     };
-    let topic_message = encode_request_v2(
+    let create_successor_topic = encode_request_v2(
         &WireRequestV2::Execute {
             client,
             request: RequestV2 {
                 request_id: RequestIdV2(13),
-                command: CommandV2::SpeakInTopic {
+                command: CommandV2::CreateTopic {
                     room_id: "private".to_owned(),
                     expected_revision: 8,
+                    name: "current".to_owned(),
+                },
+            },
+        },
+        limits(8).wire,
+    )
+    .unwrap();
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicCreated {
+        topic_id: successor_topic_id,
+        revision: 9,
+    })) = decode_reply_v2(
+        &host
+            .handle(session, &create_successor_topic, &context, HostTimeV1(2))
+            .unwrap(),
+        limits(8).wire,
+    )
+    .unwrap()
+    else {
+        panic!("successor topic creation expected");
+    };
+    let topic_message = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(14),
+                command: CommandV2::SpeakInTopic {
+                    room_id: "private".to_owned(),
+                    expected_revision: 9,
                     topic_id,
                     logical_time: 21,
                     body: "checkpoint topic".to_owned(),
@@ -490,7 +518,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
         )
         .unwrap(),
         WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicMessageAccepted {
-            revision: 9,
+            revision: 10,
             ..
         }))
     ));
@@ -498,10 +526,10 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
         &WireRequestV2::Execute {
             client,
             request: RequestV2 {
-                request_id: RequestIdV2(14),
+                request_id: RequestIdV2(15),
                 command: CommandV2::RenameTopic {
                     room_id: "private".to_owned(),
-                    expected_revision: 9,
+                    expected_revision: 10,
                     topic_id,
                     name: "operations".to_owned(),
                 },
@@ -519,7 +547,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
         )
         .unwrap(),
         WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicRenamed {
-            revision: 10,
+            revision: 11,
             ..
         }))
     ));
@@ -527,10 +555,10 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
         &WireRequestV2::Execute {
             client,
             request: RequestV2 {
-                request_id: RequestIdV2(15),
+                request_id: RequestIdV2(16),
                 command: CommandV2::ResolveTopic {
                     room_id: "private".to_owned(),
-                    expected_revision: 10,
+                    expected_revision: 11,
                     topic_id,
                 },
             },
@@ -547,14 +575,43 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
         )
         .unwrap(),
         WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicResolved {
-            revision: 11,
+            revision: 12,
+            ..
+        }))
+    ));
+    let supersede_topic = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(17),
+                command: CommandV2::SupersedeTopic {
+                    room_id: "private".to_owned(),
+                    expected_revision: 12,
+                    topic_id,
+                    successor_topic_id,
+                },
+            },
+        },
+        limits(8).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host
+                .handle(session, &supersede_topic, &context, HostTimeV1(2))
+                .unwrap(),
+            limits(8).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicSuperseded {
+            revision: 13,
             ..
         }))
     ));
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    let fixture = include_str!("fixtures/host-checkpoint-v18.hex").trim();
+    let fixture = include_str!("fixtures/host-checkpoint-v19.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -583,6 +640,19 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
             )
             .unwrap()
             .is_some()
+    );
+    assert_eq!(
+        recovered
+            .service()
+            .engine()
+            .topic_supersession_status(
+                &ParticipantId::new("alice"),
+                &RoomId::new("private"),
+                TopicId::from_bytes(topic_id.into_bytes()),
+            )
+            .unwrap()
+            .successor_topic_id,
+        Some(TopicId::from_bytes(successor_topic_id.into_bytes()))
     );
     assert_eq!(
         recovered
@@ -620,7 +690,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
             .unwrap(),
         first
     );
-    assert_eq!(recovered.service().engine().revision(), Revision(11));
+    assert_eq!(recovered.service().engine().revision(), Revision(13));
     assert_eq!(calls.get(), 1, "recovered session must be revalidated");
 }
 
@@ -722,7 +792,7 @@ fn v2_host_checkpoint_is_scope_bound_bounded_and_closed_to_partial_state() {
 
 #[test]
 fn fixed_seed_host_checkpoint_mutations_refuse_or_remain_canonical() {
-    let checkpoint = decode_hex(include_str!("fixtures/host-checkpoint-v18.hex"));
+    let checkpoint = decode_hex(include_str!("fixtures/host-checkpoint-v19.hex"));
     let mut seed = 0x7057_c4ae_c0de_0015u64;
 
     for sample in 0..512 {

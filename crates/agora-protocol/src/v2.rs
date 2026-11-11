@@ -263,6 +263,21 @@ pub enum CommandV2 {
         room_id: String,
         topic_id: TopicIdV1,
     },
+    SupersedeTopic {
+        room_id: String,
+        expected_revision: u64,
+        topic_id: TopicIdV1,
+        successor_topic_id: TopicIdV1,
+    },
+    ClearTopicSupersession {
+        room_id: String,
+        expected_revision: u64,
+        topic_id: TopicIdV1,
+    },
+    TopicSupersessionStatus {
+        room_id: String,
+        topic_id: TopicIdV1,
+    },
     SpeakInTopic {
         room_id: String,
         expected_revision: u64,
@@ -805,6 +820,33 @@ impl fmt::Debug for CommandV2 {
                 .field("room_id_bytes", &room_id.len())
                 .field("topic_id", topic_id)
                 .finish(),
+            Self::SupersedeTopic {
+                room_id,
+                expected_revision,
+                topic_id,
+                successor_topic_id,
+            } => formatter
+                .debug_struct("SupersedeTopic")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("topic_id", topic_id)
+                .field("successor_topic_id", successor_topic_id)
+                .finish(),
+            Self::ClearTopicSupersession {
+                room_id,
+                expected_revision,
+                topic_id,
+            } => formatter
+                .debug_struct("ClearTopicSupersession")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("topic_id", topic_id)
+                .finish(),
+            Self::TopicSupersessionStatus { room_id, topic_id } => formatter
+                .debug_struct("TopicSupersessionStatus")
+                .field("room_id_bytes", &room_id.len())
+                .field("topic_id", topic_id)
+                .finish(),
             Self::SpeakInTopic {
                 room_id,
                 expected_revision,
@@ -865,6 +907,7 @@ pub enum CapabilityV2 {
     IndependentChangeRetentionV1,
     TopicRenameV1,
     TopicResolutionV1,
+    TopicSupersessionV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -1030,6 +1073,26 @@ pub struct TopicStatusV1 {
     pub room_id: String,
     pub topic_id: TopicIdV1,
     pub resolved: bool,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicSupersessionStatusV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub topic_id: TopicIdV1,
+    pub successor_topic_id: Option<TopicIdV1>,
+}
+
+impl fmt::Debug for TopicSupersessionStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicSupersessionStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("topic_id", &self.topic_id)
+            .field("successor_topic_id", &self.successor_topic_id)
+            .finish()
+    }
 }
 
 impl fmt::Debug for TopicStatusV1 {
@@ -1335,6 +1398,12 @@ pub enum RoomEventV2 {
         previous_resolved: bool,
         resolved: bool,
     },
+    TopicSupersessionChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous_successor_topic_id: Option<TopicIdV1>,
+        successor_topic_id: Option<TopicIdV1>,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1441,6 +1510,18 @@ impl fmt::Debug for RoomEventV2 {
                 .field("topic_id", topic_id)
                 .field("previous_resolved", previous_resolved)
                 .field("resolved", resolved)
+                .finish(),
+            Self::TopicSupersessionChanged {
+                actor_id,
+                topic_id,
+                previous_successor_topic_id,
+                successor_topic_id,
+            } => formatter
+                .debug_struct("TopicSupersessionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("previous_successor_topic_id", previous_successor_topic_id)
+                .field("successor_topic_id", successor_topic_id)
                 .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
@@ -1589,6 +1670,12 @@ pub enum IdentifiedRoomEventV1 {
         previous_resolved: bool,
         resolved: bool,
     },
+    TopicSupersessionChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous_successor_topic_id: Option<TopicIdV1>,
+        successor_topic_id: Option<TopicIdV1>,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1695,6 +1782,18 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .field("topic_id", topic_id)
                 .field("previous_resolved", previous_resolved)
                 .field("resolved", resolved)
+                .finish(),
+            Self::TopicSupersessionChanged {
+                actor_id,
+                topic_id,
+                previous_successor_topic_id,
+                successor_topic_id,
+            } => formatter
+                .debug_struct("TopicSupersessionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("previous_successor_topic_id", previous_successor_topic_id)
+                .field("successor_topic_id", successor_topic_id)
                 .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
@@ -1843,6 +1942,12 @@ pub enum ThreadedRoomEventV1 {
         previous_resolved: bool,
         resolved: bool,
     },
+    TopicSupersessionChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous_successor_topic_id: Option<TopicIdV1>,
+        successor_topic_id: Option<TopicIdV1>,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1949,6 +2054,18 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .field("topic_id", topic_id)
                 .field("previous_resolved", previous_resolved)
                 .field("resolved", resolved)
+                .finish(),
+            Self::TopicSupersessionChanged {
+                actor_id,
+                topic_id,
+                previous_successor_topic_id,
+                successor_topic_id,
+            } => formatter
+                .debug_struct("TopicSupersessionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("previous_successor_topic_id", previous_successor_topic_id)
+                .field("successor_topic_id", successor_topic_id)
                 .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
@@ -2097,6 +2214,12 @@ pub enum TopicRoomEventV1 {
         previous_resolved: bool,
         resolved: bool,
     },
+    TopicSupersessionChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous_successor_topic_id: Option<TopicIdV1>,
+        successor_topic_id: Option<TopicIdV1>,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -2209,6 +2332,18 @@ impl fmt::Debug for TopicRoomEventV1 {
                 .field("topic_id", topic_id)
                 .field("previous_resolved", previous_resolved)
                 .field("resolved", resolved)
+                .finish(),
+            Self::TopicSupersessionChanged {
+                actor_id,
+                topic_id,
+                previous_successor_topic_id,
+                successor_topic_id,
+            } => formatter
+                .debug_struct("TopicSupersessionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("previous_successor_topic_id", previous_successor_topic_id)
+                .field("successor_topic_id", successor_topic_id)
                 .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
@@ -2592,6 +2727,16 @@ pub enum OutcomeV2 {
         topic_id: TopicIdV1,
     },
     TopicStatus(TopicStatusV1),
+    TopicSuperseded {
+        revision: u64,
+        topic_id: TopicIdV1,
+        successor_topic_id: TopicIdV1,
+    },
+    TopicSupersessionCleared {
+        revision: u64,
+        topic_id: TopicIdV1,
+    },
+    TopicSupersessionStatus(TopicSupersessionStatusV1),
     TopicMessageAccepted {
         revision: u64,
         message_id: MessageIdV1,
@@ -2621,6 +2766,8 @@ pub enum RefusalV2 {
     ThreadArchived,
     UnknownTopic,
     TopicResolved,
+    InvalidTopicSupersession,
+    TopicMustBeResolved,
     InvalidReadScope,
     InvalidReadTarget,
     ReadPositionRegression,

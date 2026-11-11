@@ -298,6 +298,21 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
             room_id: "room".to_owned(),
             topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
         },
+        protocol::v2::CommandV2::SupersedeTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 24,
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+            successor_topic_id: protocol::v2::TopicIdV1::new([0x59; 16]),
+        },
+        protocol::v2::CommandV2::ClearTopicSupersession {
+            room_id: "room".to_owned(),
+            expected_revision: 25,
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+        },
+        protocol::v2::CommandV2::TopicSupersessionStatus {
+            room_id: "room".to_owned(),
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+        },
         protocol::v2::CommandV2::SpeakInTopic {
             room_id: "room".to_owned(),
             expected_revision: 21,

@@ -253,6 +253,14 @@ project the state without rewriting identity, history, or legacy topic-page
 bytes. Resolution is not Chronos task completion or agent
 orchestration evidence.
 
+`TopicSupersessionV1` is a depth-one navigation relation over that owner. The
+service derives the actor and exposes explicit set, replace, clear, and status
+operations. The engine requires a resolved source and refuses source/target
+role overlap, while allowing multiple sources to share one successor. No
+message or post is moved, copied, or silently retargeted; clearing the relation
+does not reopen the source. Exact receipts, all-feed attribution, and the graph
+survive service and host recovery.
+
 ## Private read positions
 
 `PrivateReadPositionsV1` is private current-state projection inside the same

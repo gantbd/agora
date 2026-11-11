@@ -23,7 +23,7 @@ The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
 closes over the thirteen-package stable workspace, the standalone fuzz package,
-and forty-five canonical fixtures.
+and forty-eight canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -170,7 +170,7 @@ embedded facade constructs the profile without direct crate dependencies.
 
 The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
 nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus
-is regenerated from and checked against all thirty-four wire and fixed local
+is regenerated from and checked against all forty-three wire and fixed local
 control fixtures plus the current engine, service, and host checkpoint fixtures.
 `wire_canonical` drives all six public conversation/transient request/reply
 decoders, five fixed-width handshake/session-control decoders, and the local
@@ -178,7 +178,7 @@ route envelope;
 `checkpoint_canonical` drives all three semantic
 recovery layers;
 `outer_frame_canonical` drives the daemon's production length-prefix codec over
-the twenty-nine complete-frame protocol seeds (the five fixed-width local
+the thirty-eight complete-frame protocol seeds (the five fixed-width local
 control fixtures are deliberately excluded). An accepted
 candidate must re-encode exactly, and an accepted frame prefix must preserve its
 unconsumed stream suffix. The qualified smoke ran 20,000 fixed-seed cases on all
@@ -613,6 +613,18 @@ checkpoints close the bounded profile. Revision
 `956bb2308f7324a61e36b956cacbdb8edc97f600` passed the complete R53
 qualification without claiming task completion, approval, notification,
 connector synchronization, move, merge, or deletion.
+
+Topic-supersession scenarios prove owner/moderator and human/agent-neutral
+authority, a resolved-source precondition, distinct same-room identities,
+depth-one source/target roles, shared successors, explicit replacement and
+clear, reopening fences, and unchanged historical message relations. Current
+state is projected by a separate participant-bound status observation; actor,
+source, prior successor, and new successor are retained in all four feeds.
+Frozen supersede, receipt, and change frames, closed capability/refusal tags,
+Debug/SDK construction, and profile-17/19/19 nested checkpoints close the
+bounded implementation. Exact R53 revision qualification remains pending; no
+move, copy, deletion, erasure, aliasing, implicit routing, connector state, or
+workflow truth is claimed.
 
 Private read-position core scenarios prove room/thread/topic scope validation,
 human/agent-neutral self-state, monotone and idempotent advancement, atomic

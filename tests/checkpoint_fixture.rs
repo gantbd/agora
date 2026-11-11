@@ -49,6 +49,19 @@ fn fixture_engine() -> Engine {
             name: "Operations".to_owned(),
         })
         .unwrap();
+    let OutcomeV2::TopicCreated {
+        topic_id: successor_topic_id,
+        ..
+    } = engine
+        .apply(CommandV2::CreateTopic {
+            room_id: "room".into(),
+            actor: "human".into(),
+            name: "Current".to_owned(),
+        })
+        .unwrap()
+    else {
+        panic!("successor topic creation expected");
+    };
     engine
         .apply(CommandV2::SpeakInTopic {
             room_id: "room".into(),
@@ -115,6 +128,14 @@ fn fixture_engine() -> Engine {
             resolved: true,
         })
         .unwrap();
+    engine
+        .apply(CommandV2::SetTopicSuccessor {
+            room_id: "room".into(),
+            actor: "human".into(),
+            topic_id,
+            successor_topic_id: Some(successor_topic_id),
+        })
+        .unwrap();
     engine.acknowledge_events(EventSequence(2)).unwrap();
     engine
         .apply(CommandV2::Ban {
@@ -162,11 +183,11 @@ fn unhex(value: &str) -> Vec<u8> {
 }
 
 #[test]
-fn canonical_v16_checkpoint_is_immutable_and_recovers() {
+fn canonical_v17_checkpoint_is_immutable_and_recovers() {
     let source = fixture_engine();
     let topic_id = topic_id_from_fixture(&source);
     let prepared = source.prepare_checkpoint(65_536).unwrap();
-    let expected_hex = include_str!("fixtures/checkpoint-v16.hex").trim();
+    let expected_hex = include_str!("fixtures/checkpoint-v17.hex").trim();
     assert_eq!(hex(prepared.bytes()), expected_hex);
 
     let recovered = Engine::recover_checkpoint(
@@ -186,6 +207,13 @@ fn canonical_v16_checkpoint_is_immutable_and_recovers() {
             .topic(&RoomId::new("room"), topic_id)
             .unwrap()
             .is_resolved()
+    );
+    assert!(
+        recovered
+            .topic_supersession_status(&"human".into(), &"room".into(), topic_id)
+            .unwrap()
+            .successor_topic_id
+            .is_some()
     );
 
     let mut broken_history = prepared.bytes().to_vec();
@@ -221,6 +249,31 @@ fn canonical_v16_checkpoint_is_immutable_and_recovers() {
     assert!(matches!(
         Engine::recover_checkpoint(
             &broken_lifecycle,
+            RecoveryLimits {
+                max_snapshot_bytes: 65_536,
+                maximum_engine_limits: Default::default(),
+            },
+        ),
+        Err(agora_engine::persistence::CheckpointError::Invalid)
+    ));
+
+    let mut supersession_pattern = vec![19];
+    for value in ["room", "human"] {
+        supersession_pattern.extend_from_slice(&(value.len() as u32).to_be_bytes());
+        supersession_pattern.extend_from_slice(value.as_bytes());
+    }
+    supersession_pattern.extend_from_slice(&topic_id.into_bytes());
+    supersession_pattern.push(0);
+    supersession_pattern.push(1);
+    let mut broken_supersession = prepared.bytes().to_vec();
+    let offset = broken_supersession
+        .windows(supersession_pattern.len())
+        .position(|bytes| bytes.starts_with(&supersession_pattern))
+        .expect("fixture retains the topic supersession chain");
+    broken_supersession[offset + supersession_pattern.len()] ^= 1;
+    assert!(matches!(
+        Engine::recover_checkpoint(
+            &broken_supersession,
             RecoveryLimits {
                 max_snapshot_bytes: 65_536,
                 maximum_engine_limits: Default::default(),

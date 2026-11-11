@@ -26,12 +26,15 @@ done
 
 rm -f "$checkpoint_seed_dir/engine-v16.bin" \
   "$checkpoint_seed_dir/service-v18.bin" \
-  "$checkpoint_seed_dir/host-v18.bin"
-xxd -r -p tests/fixtures/checkpoint-v16.hex \
-  "$checkpoint_seed_dir/engine-v16.bin"
-xxd -r -p crates/agora-service/tests/fixtures/service-checkpoint-v18.hex \
-  "$checkpoint_seed_dir/service-v18.bin"
-xxd -r -p crates/agora-host/tests/fixtures/host-checkpoint-v18.hex \
-  "$checkpoint_seed_dir/host-v18.bin"
+  "$checkpoint_seed_dir/host-v18.bin" \
+  "$checkpoint_seed_dir/engine-v17.bin" \
+  "$checkpoint_seed_dir/service-v19.bin" \
+  "$checkpoint_seed_dir/host-v19.bin"
+xxd -r -p tests/fixtures/checkpoint-v17.hex \
+  "$checkpoint_seed_dir/engine-v17.bin"
+xxd -r -p crates/agora-service/tests/fixtures/service-checkpoint-v19.hex \
+  "$checkpoint_seed_dir/service-v19.bin"
+xxd -r -p crates/agora-host/tests/fixtures/host-checkpoint-v19.hex \
+  "$checkpoint_seed_dir/host-v19.bin"
 
 echo 'Refreshed Agora wire, outer-frame, and checkpoint fuzz seeds from canonical fixtures'

@@ -511,6 +511,209 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
 }
 
 #[test]
+fn v2_topic_supersession_is_actor_bound_replayable_observable_and_feed_visible() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+
+    let ReplyV2::Accepted(OutcomeV2::TopicCreated {
+        topic_id: source,
+        revision: 5,
+    }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::CreateTopic {
+                room_id: "room".to_owned(),
+                expected_revision: 4,
+                name: "source".to_owned(),
+            },
+        ),
+    )
+    else {
+        panic!("source topic expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::TopicCreated {
+        topic_id: successor,
+        revision: 6,
+    }) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::CreateTopic {
+                room_id: "room".to_owned(),
+                expected_revision: 5,
+                name: "successor".to_owned(),
+            },
+        ),
+    )
+    else {
+        panic!("successor topic expected");
+    };
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                1,
+                CommandV2::SupersedeTopic {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    topic_id: source,
+                    successor_topic_id: successor,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::NotAuthorized)
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                3,
+                CommandV2::SupersedeTopic {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    topic_id: source,
+                    successor_topic_id: successor,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::TopicMustBeResolved)
+    );
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                4,
+                CommandV2::ResolveTopic {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    topic_id: source,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicResolved { revision: 7, .. })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        alice,
+        request(
+            5,
+            CommandV2::OpenTopicChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 7,
+            },
+        ),
+    ) else {
+        panic!("change cursor expected");
+    };
+    let supersede = request(
+        6,
+        CommandV2::SupersedeTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 7,
+            topic_id: source,
+            successor_topic_id: successor,
+        },
+    );
+    let accepted = ReplyV2::Accepted(OutcomeV2::TopicSuperseded {
+        revision: 8,
+        topic_id: source,
+        successor_topic_id: successor,
+    });
+    assert_eq!(service.execute(alice, supersede.clone()), accepted);
+    assert_eq!(service.execute(alice, supersede), accepted);
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                7,
+                CommandV2::TopicSupersessionStatus {
+                    room_id: "room".to_owned(),
+                    topic_id: source,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicSupersessionStatus(status))
+            if status.revision == 8 && status.successor_topic_id == Some(successor)
+    ));
+    let ReplyV2::Accepted(OutcomeV2::TopicChanges(page)) = service.execute(
+        alice,
+        request(
+            8,
+            CommandV2::TopicChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("supersession feed event expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        agora_protocol::v2::TopicRoomEventV1::TopicSupersessionChanged {
+            actor_id,
+            topic_id,
+            previous_successor_topic_id: None,
+            successor_topic_id: Some(event_successor),
+        } if actor_id == "alice" && *topic_id == source && *event_successor == successor
+    ));
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                9,
+                CommandV2::ReopenTopic {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                    topic_id: source,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::InvalidInput)
+    );
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                10,
+                CommandV2::ClearTopicSupersession {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                    topic_id: source,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicSupersessionCleared { revision: 9, .. })
+    ));
+}
+
+#[test]
 fn v2_one_level_threads_preserve_identity_pages_and_feed_relationships() {
     let mut engine = Engine::new();
     for (id, kind) in [
@@ -2809,8 +3012,11 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 19);
-    assert_eq!(capabilities.last(), Some(&CapabilityV2::TopicResolutionV1));
+    assert_eq!(capabilities.len(), 20);
+    assert_eq!(
+        capabilities.last(),
+        Some(&CapabilityV2::TopicSupersessionV1)
+    );
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

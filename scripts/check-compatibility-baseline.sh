@@ -77,4 +77,4 @@ fi
 
 cargo metadata --no-deps --format-version 1 --locked --offline >/dev/null
 
-echo 'Agora compatibility baseline closes over 14 packages and 45 canonical fixtures'
+echo 'Agora compatibility baseline closes over 14 packages and 48 canonical fixtures'

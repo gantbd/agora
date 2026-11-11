@@ -355,6 +355,13 @@ references; clients must not present it as deletion, task completion, approval,
 or external workflow truth. Same-state, stale, unknown-topic, and unauthorized
 attempts are atomic refusals, and reopening is an equally attributable role-
 authorized transition.
+Supersession exposes a bounded relationship between two otherwise independent
+topic identities. The engine requires a resolved source, distinct same-room
+topics, and a depth-one graph; source/target role overlap, same-state, stale,
+unknown-topic, and unauthorized attempts refuse atomically. Multiple sources
+may share a successor. Clients must not treat the relation as deletion,
+canonical-name resolution, implicit posting redirection, content movement, or
+workflow truth, and must retain both identities when presenting history.
 
 Private read positions are sensitive behavioral metadata even though they prove
 neither delivery nor attention. The engine exposes only the actor-keyed marker

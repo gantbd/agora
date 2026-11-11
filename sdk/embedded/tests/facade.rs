@@ -47,6 +47,18 @@ fn facade_alone_constructs_the_embedded_v2_stack() {
         engine::ReadScopeV1::Room,
         "private read-position substrate is reachable through the embedded facade"
     );
+    let source = engine::TopicId::from_bytes([0x51; 16]);
+    let successor = engine::TopicId::from_bytes([0x52; 16]);
+    let command = engine::CommandV2::SetTopicSuccessor {
+        room_id: "room".into(),
+        actor: "owner".into(),
+        topic_id: source,
+        successor_topic_id: Some(successor),
+    };
+    assert!(matches!(
+        command,
+        engine::CommandV2::SetTopicSuccessor { .. }
+    ));
 }
 
 #[test]

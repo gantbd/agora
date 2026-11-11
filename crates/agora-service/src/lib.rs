@@ -413,6 +413,8 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::UnknownTopic
         | EngineRefusal::TopicResolved
         | EngineRefusal::InvalidTopicLifecycleChange
+        | EngineRefusal::InvalidTopicSupersession
+        | EngineRefusal::TopicMustBeResolved
         | EngineRefusal::MessageAlreadyTombstoned
         | EngineRefusal::DuplicateParticipant(_)
         | EngineRefusal::DuplicateRoom(_)

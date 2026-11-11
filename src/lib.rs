@@ -750,6 +750,26 @@ pub struct TopicStatusV1 {
     pub resolved: bool,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicSupersessionStatusV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub topic_id: TopicId,
+    pub successor_topic_id: Option<TopicId>,
+}
+
+impl fmt::Debug for TopicSupersessionStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicSupersessionStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("topic_id", &self.topic_id)
+            .field("successor_topic_id", &self.successor_topic_id)
+            .finish()
+    }
+}
+
 impl fmt::Debug for TopicStatusV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -1104,6 +1124,7 @@ struct Room {
     archived_threads: BTreeSet<MessageId>,
     reactions: BTreeMap<MessageId, BTreeMap<String, BTreeSet<ParticipantId>>>,
     topics: BTreeMap<TopicId, TopicV1>,
+    topic_successors: BTreeMap<TopicId, TopicId>,
     topic_identity_incarnation: u64,
     next_topic_identity: u64,
     message_identity_incarnation: u64,
@@ -1230,6 +1251,7 @@ impl CommandV2 {
             Self::CreateTopic { .. } => Some(RoomActionV1::ManageTopics),
             Self::RenameTopic { .. } => Some(RoomActionV1::ManageTopics),
             Self::SetTopicResolved { .. } => Some(RoomActionV1::ManageTopics),
+            Self::SetTopicSuccessor { .. } => Some(RoomActionV1::ManageTopics),
         }
     }
 }
@@ -1328,6 +1350,12 @@ pub enum CommandV2 {
         actor: ParticipantId,
         topic_id: TopicId,
         resolved: bool,
+    },
+    SetTopicSuccessor {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        successor_topic_id: Option<TopicId>,
     },
     SpeakInTopic {
         room_id: RoomId,
@@ -1445,6 +1473,13 @@ pub enum OutcomeV2 {
         previous_resolved: bool,
         resolved: bool,
     },
+    TopicSupersessionChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        previous_successor_topic_id: Option<TopicId>,
+        successor_topic_id: Option<TopicId>,
+    },
     TopicMessageAccepted {
         room_id: RoomId,
         topic_id: TopicId,
@@ -1546,6 +1581,8 @@ pub enum Refusal {
     UnknownTopic,
     TopicResolved,
     InvalidTopicLifecycleChange,
+    InvalidTopicSupersession,
+    TopicMustBeResolved,
     MessageAlreadyTombstoned,
     RevisionConflict {
         expected: Revision,
@@ -1684,6 +1721,13 @@ pub enum DomainEventV2 {
         previous_resolved: bool,
         resolved: bool,
     },
+    TopicSupersessionChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        previous_successor_topic_id: Option<TopicId>,
+        successor_topic_id: Option<TopicId>,
+    },
     InvitationRecorded {
         room_id: RoomId,
         participant: ParticipantId,
@@ -1780,6 +1824,7 @@ impl DomainEventV2 {
             | Self::TopicCreated { room_id, .. }
             | Self::TopicRenamed { room_id, .. }
             | Self::TopicLifecycleChanged { room_id, .. }
+            | Self::TopicSupersessionChanged { room_id, .. }
             | Self::InvitationRecorded { room_id, .. }
             | Self::ParticipantJoined { room_id, .. }
             | Self::ParticipantLeft { room_id, .. }
@@ -2458,6 +2503,33 @@ impl Engine {
             room_id: room_id.clone(),
             topic_id,
             resolved: topic.resolved,
+        })
+    }
+
+    pub fn topic_supersession_status(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        topic_id: TopicId,
+    ) -> Result<TopicSupersessionStatusV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        if !room.topics.contains_key(&topic_id) {
+            return Err(ObservationRefusal::InvalidTarget);
+        }
+        Ok(TopicSupersessionStatusV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            topic_id,
+            successor_topic_id: room.topic_successors.get(&topic_id).copied(),
         })
     }
 
@@ -3229,6 +3301,12 @@ impl Engine {
                 topic_id,
                 resolved,
             } => self.set_topic_resolved(room_id, actor, topic_id, resolved),
+            CommandV2::SetTopicSuccessor {
+                room_id,
+                actor,
+                topic_id,
+                successor_topic_id,
+            } => self.set_topic_successor(room_id, actor, topic_id, successor_topic_id),
             CommandV2::SpeakInTopic {
                 room_id,
                 author,
@@ -3362,6 +3440,22 @@ impl Engine {
                 topic_id: *topic_id,
                 previous_resolved: *previous_resolved,
                 resolved: *resolved,
+            },
+            (
+                CommandV2::SetTopicSuccessor { .. },
+                OutcomeV2::TopicSupersessionChanged {
+                    room_id,
+                    actor,
+                    topic_id,
+                    previous_successor_topic_id,
+                    successor_topic_id,
+                },
+            ) => DomainEventV2::TopicSupersessionChanged {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                topic_id: *topic_id,
+                previous_successor_topic_id: *previous_successor_topic_id,
+                successor_topic_id: *successor_topic_id,
             },
             (
                 CommandV2::Join { .. },
@@ -3655,6 +3749,7 @@ impl Engine {
                 archived_threads: BTreeSet::new(),
                 reactions: BTreeMap::new(),
                 topics: BTreeMap::new(),
+                topic_successors: BTreeMap::new(),
                 topic_identity_incarnation: self.next_event_sequence.0,
                 next_topic_identity: 0,
                 message_identity_incarnation: self.next_event_sequence.0,
@@ -4054,6 +4149,9 @@ impl Engine {
         if topic.resolved == resolved {
             return Err(Refusal::InvalidTopicLifecycleChange);
         }
+        if !resolved && room.topic_successors.contains_key(&topic_id) {
+            return Err(Refusal::InvalidTopicLifecycleChange);
+        }
         let previous_resolved = topic.resolved;
         self.rooms
             .get_mut(&room_id)
@@ -4068,6 +4166,67 @@ impl Engine {
             topic_id,
             previous_resolved,
             resolved,
+        })
+    }
+
+    fn set_topic_successor(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        successor_topic_id: Option<TopicId>,
+    ) -> Result<OutcomeV2, Refusal> {
+        let room = self.room_ref(&room_id)?;
+        if !matches!(
+            room.members.get(&actor),
+            Some(Role::Owner | Role::Moderator)
+        ) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        let topic = room.topics.get(&topic_id).ok_or(Refusal::UnknownTopic)?;
+        let previous_successor_topic_id = room.topic_successors.get(&topic_id).copied();
+        if previous_successor_topic_id == successor_topic_id {
+            return Err(Refusal::InvalidTopicSupersession);
+        }
+        if let Some(successor_topic_id) = successor_topic_id {
+            if !topic.resolved {
+                return Err(Refusal::TopicMustBeResolved);
+            }
+            if successor_topic_id == topic_id || !room.topics.contains_key(&successor_topic_id) {
+                return Err(if successor_topic_id == topic_id {
+                    Refusal::InvalidTopicSupersession
+                } else {
+                    Refusal::UnknownTopic
+                });
+            }
+            if room.topic_successors.contains_key(&successor_topic_id)
+                || room
+                    .topic_successors
+                    .values()
+                    .any(|candidate| *candidate == topic_id)
+            {
+                return Err(Refusal::InvalidTopicSupersession);
+            }
+        } else if previous_successor_topic_id.is_none() {
+            return Err(Refusal::InvalidTopicSupersession);
+        }
+
+        let successors = &mut self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation")
+            .topic_successors;
+        if let Some(successor_topic_id) = successor_topic_id {
+            successors.insert(topic_id, successor_topic_id);
+        } else {
+            successors.remove(&topic_id);
+        }
+        Ok(OutcomeV2::TopicSupersessionChanged {
+            room_id,
+            actor,
+            topic_id,
+            previous_successor_topic_id,
+            successor_topic_id,
         })
     }
 

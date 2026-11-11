@@ -20,7 +20,7 @@ use agora_protocol::v2::{
     ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
     ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1,
     TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1,
-    TopicV1,
+    TopicSupersessionStatusV1, TopicV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -311,6 +311,7 @@ impl ServiceV2 {
                 CapabilityV2::IndependentChangeRetentionV1,
                 CapabilityV2::TopicRenameV1,
                 CapabilityV2::TopicResolutionV1,
+                CapabilityV2::TopicSupersessionV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -415,6 +416,9 @@ impl ServiceV2 {
             CommandV2::TopicStatus { room_id, topic_id } => {
                 self.topic_status(participant, room_id, *topic_id)
             }
+            CommandV2::TopicSupersessionStatus { room_id, topic_id } => {
+                self.topic_supersession_status(participant, room_id, *topic_id)
+            }
             CommandV2::ReadPosition { room_id, scope } => {
                 self.read_position(participant, room_id, *scope)
             }
@@ -472,6 +476,33 @@ impl ServiceV2 {
                     actor: participant.clone(),
                     topic_id: TopicId::from_bytes(topic_id.into_bytes()),
                     resolved: matches!(command, CommandV2::ResolveTopic { .. }),
+                },
+            ),
+            CommandV2::SupersedeTopic {
+                room_id,
+                expected_revision,
+                topic_id,
+                successor_topic_id,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetTopicSuccessor {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    topic_id: TopicId::from_bytes(topic_id.into_bytes()),
+                    successor_topic_id: Some(TopicId::from_bytes(successor_topic_id.into_bytes())),
+                },
+            ),
+            CommandV2::ClearTopicSupersession {
+                room_id,
+                expected_revision,
+                topic_id,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetTopicSuccessor {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    topic_id: TopicId::from_bytes(topic_id.into_bytes()),
+                    successor_topic_id: None,
                 },
             ),
             CommandV2::SpeakInTopic {
@@ -899,6 +930,21 @@ impl ServiceV2 {
                     revision,
                     topic_id: TopicIdV1::new(topic_id.into_bytes()),
                 }
+            }),
+            EngineOutcome::TopicSupersessionChanged {
+                topic_id,
+                successor_topic_id,
+                ..
+            } => Ok(match successor_topic_id {
+                Some(successor_topic_id) => OutcomeV2::TopicSuperseded {
+                    revision,
+                    topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                    successor_topic_id: TopicIdV1::new(successor_topic_id.into_bytes()),
+                },
+                None => OutcomeV2::TopicSupersessionCleared {
+                    revision,
+                    topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                },
             }),
             EngineOutcome::ReplyAccepted { .. } => Err(RefusalV2::Unavailable),
             EngineOutcome::MessageWithdrawn {
@@ -1338,6 +1384,35 @@ impl ServiceV2 {
         }))
     }
 
+    fn topic_supersession_status(
+        &self,
+        observer: &ParticipantId,
+        room_id: &str,
+        topic_id: TopicIdV1,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let status = self
+            .engine
+            .topic_supersession_status(
+                observer,
+                &RoomId::new(room_id),
+                TopicId::from_bytes(topic_id.into_bytes()),
+            )
+            .map_err(|refusal| match refusal {
+                ObservationRefusal::InvalidTarget => RefusalV2::UnknownTopic,
+                other => map_observation_refusal(other),
+            })?;
+        Ok(OutcomeV2::TopicSupersessionStatus(
+            TopicSupersessionStatusV1 {
+                revision: status.revision.0,
+                room_id: status.room_id.as_str().to_owned(),
+                topic_id: TopicIdV1::new(status.topic_id.into_bytes()),
+                successor_topic_id: status
+                    .successor_topic_id
+                    .map(|id| TopicIdV1::new(id.into_bytes())),
+            },
+        ))
+    }
+
     fn topic_messages(
         &mut self,
         client: ClientIdV2,
@@ -1663,6 +1738,20 @@ impl ServiceV2 {
                                 topic_id: TopicIdV1::new(topic_id.into_bytes()),
                                 previous_resolved,
                                 resolved,
+                            },
+                            agora_engine::DomainEventV2::TopicSupersessionChanged {
+                                actor,
+                                topic_id,
+                                previous_successor_topic_id,
+                                successor_topic_id,
+                                ..
+                            } => RoomEventV2::TopicSupersessionChanged {
+                                actor_id: actor.as_str().to_owned(),
+                                topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                                previous_successor_topic_id: previous_successor_topic_id
+                                    .map(|id| TopicIdV1::new(id.into_bytes())),
+                                successor_topic_id: successor_topic_id
+                                    .map(|id| TopicIdV1::new(id.into_bytes())),
                             },
                             agora_engine::DomainEventV2::InvitationRecorded {
                                 participant, ..
@@ -2201,7 +2290,10 @@ impl ServiceV2 {
             }
             CommandV2::ResolveTopic { room_id, .. }
             | CommandV2::ReopenTopic { room_id, .. }
-            | CommandV2::TopicStatus { room_id, .. } => valid_room(room_id),
+            | CommandV2::TopicStatus { room_id, .. }
+            | CommandV2::SupersedeTopic { room_id, .. }
+            | CommandV2::ClearTopicSupersession { room_id, .. }
+            | CommandV2::TopicSupersessionStatus { room_id, .. } => valid_room(room_id),
             CommandV2::Invite {
                 room_id,
                 participant_id,
@@ -2475,6 +2567,19 @@ fn map_identified_room_event(
             previous_resolved,
             resolved,
         },
+        agora_engine::DomainEventV2::TopicSupersessionChanged {
+            actor,
+            topic_id,
+            previous_successor_topic_id,
+            successor_topic_id,
+            ..
+        } => IdentifiedRoomEventV1::TopicSupersessionChanged {
+            actor_id: actor.as_str().to_owned(),
+            topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            previous_successor_topic_id: previous_successor_topic_id
+                .map(|id| TopicIdV1::new(id.into_bytes())),
+            successor_topic_id: successor_topic_id.map(|id| TopicIdV1::new(id.into_bytes())),
+        },
         agora_engine::DomainEventV2::InvitationRecorded { participant, .. } => {
             IdentifiedRoomEventV1::InvitationRecorded {
                 participant_id: participant.as_str().to_owned(),
@@ -2661,6 +2766,19 @@ fn map_threaded_room_event(
             previous_resolved,
             resolved,
         },
+        agora_engine::DomainEventV2::TopicSupersessionChanged {
+            actor,
+            topic_id,
+            previous_successor_topic_id,
+            successor_topic_id,
+            ..
+        } => ThreadedRoomEventV1::TopicSupersessionChanged {
+            actor_id: actor.as_str().to_owned(),
+            topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            previous_successor_topic_id: previous_successor_topic_id
+                .map(|id| TopicIdV1::new(id.into_bytes())),
+            successor_topic_id: successor_topic_id.map(|id| TopicIdV1::new(id.into_bytes())),
+        },
         agora_engine::DomainEventV2::InvitationRecorded { participant, .. } => {
             ThreadedRoomEventV1::InvitationRecorded {
                 participant_id: participant.as_str().to_owned(),
@@ -2840,6 +2958,17 @@ fn map_topic_room_event(event: agora_engine::DomainEventV2) -> Result<TopicRoomE
             topic_id,
             previous_resolved,
             resolved,
+        },
+        ThreadedRoomEventV1::TopicSupersessionChanged {
+            actor_id,
+            topic_id,
+            previous_successor_topic_id,
+            successor_topic_id,
+        } => TopicRoomEventV1::TopicSupersessionChanged {
+            actor_id,
+            topic_id,
+            previous_successor_topic_id,
+            successor_topic_id,
         },
         ThreadedRoomEventV1::InvitationRecorded { participant_id } => {
             TopicRoomEventV1::InvitationRecorded { participant_id }
@@ -3036,6 +3165,8 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         EngineRefusal::ParticipantBanned(_) => RefusalV2::Banned,
         EngineRefusal::ThreadArchived => RefusalV2::ThreadArchived,
         EngineRefusal::TopicResolved => RefusalV2::TopicResolved,
+        EngineRefusal::InvalidTopicSupersession => RefusalV2::InvalidTopicSupersession,
+        EngineRefusal::TopicMustBeResolved => RefusalV2::TopicMustBeResolved,
         EngineRefusal::ParticipantLimit
         | EngineRefusal::RoomLimit
         | EngineRefusal::MemberLimit

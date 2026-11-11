@@ -59,7 +59,7 @@ not ready for a network service or crates.io release.
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   thirteen stable workspace packages;
 - conservative package and canonical-fixture inventory closure over thirteen
-  stable workspace packages, one standalone fuzz package, and forty-five
+  stable workspace packages, one standalone fuzz package, and forty-eight
   fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
@@ -131,6 +131,11 @@ not ready for a network service or crates.io release.
   four-feed attribution, profile-16/18/18 recovery, and exact-revision
   integrated qualification; resolution carries no task-completion or
   orchestration meaning;
+- separately negotiated bounded topic supersession with owner/moderator
+  kind-neutral authority, a resolved-source and depth-one same-room graph law,
+  explicit set/replace/clear, separate participant-bound status, unchanged
+  historical relations and posting targets, four-feed attribution, and
+  profile-17/19/19 recovery; exact-revision qualification remains pending;
 - independent delivery and pull retention: acknowledgment drains only the
   backpressured outbox, journal eviction carries its own exact gap, and both
   suffixes recover canonically with live service cursors;

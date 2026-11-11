@@ -212,6 +212,21 @@ fn every_v2_fixture_has_deterministic_bounded_single_bit_and_framing_mutation() 
             FrameKind::Reply,
         ),
         (
+            "topic-supersede-request",
+            include_str!("fixtures/topic-supersede-request-v2.hex"),
+            FrameKind::Request,
+        ),
+        (
+            "topic-superseded-change-reply",
+            include_str!("fixtures/topic-superseded-change-reply-v2.hex"),
+            FrameKind::Reply,
+        ),
+        (
+            "topic-superseded-reply",
+            include_str!("fixtures/topic-superseded-reply-v2.hex"),
+            FrameKind::Reply,
+        ),
+        (
             "withdrawal-change-reply",
             include_str!("fixtures/withdrawal-change-reply-v2.hex"),
             FrameKind::Reply,
