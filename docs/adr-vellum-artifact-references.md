@@ -1,6 +1,6 @@
 # ADR: typed Vellum artifact references
 
-Status: accepted; Agora-local functional profile implemented and ordinarily gated
+Status: accepted; functional profile and separately owned typed conversion implemented
 
 Date: 2026-11-11
 

@@ -155,8 +155,11 @@ Authenticated Host admission and recovery, exact client uncertainty, both SDK
 facades, durable commit-before-publication recovery, and a real private
 Unix-socket admission complete the in-repository functional evidence. The
 75-fixture compatibility closure and refreshed canonical fuzz corpus pass the
-full ordinary gate. Exact conversion against Vellum's public identity types and
-commit-pinned release qualification remain open.
+full ordinary gate. The separately owned `agora-vellum-adapter` project proves
+exact round-trip conversion against Vellum's public workspace and document
+identities while accepting no witness or authority type at revision
+`5a6e7b45b0d471196e5945b2c5713c3488df709b`. Commit-pinned Agora release
+qualification remains open.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;
