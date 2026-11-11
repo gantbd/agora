@@ -106,7 +106,7 @@ not ready for a network service or crates.io release.
   engine/service/host recovery, and the production outer-frame prefix codec,
   with immutable canonical seeds and exact re-encoding oracles;
 - commit-pinned integrated local qualification of revision
-  `04f723e2e6dbf0f7917ff9c933fc3a93957dccb5` on Darwin 25.6.0 arm64 / macOS
+  `956bb2308f7324a61e36b956cacbdb8edc97f600` on Darwin 25.6.0 arm64 / macOS
   26.6.2 across the ordinary gate, all release-mode targets, 10,000 deterministic
   soak cycles, and 1,000,000 fixed-seed cases on each of the three fuzz targets,
   with locked fuzz-target compilation and unchanged tracked bytes afterward;
@@ -128,8 +128,9 @@ not ready for a network service or crates.io release.
 - separately negotiated reversible topic resolution with owner/moderator
   kind-neutral authority, resolved-state root/reply fencing, separate
   participant-bound status observation, stable identity/history preservation,
-  four-feed attribution, and profile-16/18/18 recovery; resolution carries no
-  task-completion or orchestration meaning;
+  four-feed attribution, profile-16/18/18 recovery, and exact-revision
+  integrated qualification; resolution carries no task-completion or
+  orchestration meaning;
 - independent delivery and pull retention: acknowledgment drains only the
   backpressured outbox, journal eviction carries its own exact gap, and both
   suffixes recover canonically with live service cursors;

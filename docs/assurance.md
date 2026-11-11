@@ -609,8 +609,10 @@ preservation. Current state is projected by a separate participant-bound status
 observation; actor/prior/new state
 is retained in all four feeds. Frozen resolve, receipt, and change frames,
 closed capability/refusal tags, SDK construction, and profile-16/18/18 nested
-checkpoints close the bounded profile without claiming task completion,
-approval, notification, connector synchronization, move, merge, or deletion.
+checkpoints close the bounded profile. Revision
+`956bb2308f7324a61e36b956cacbdb8edc97f600` passed the complete R53
+qualification without claiming task completion, approval, notification,
+connector synchronization, move, merge, or deletion.
 
 Private read-position core scenarios prove room/thread/topic scope validation,
 human/agent-neutral self-state, monotone and idempotent advancement, atomic
