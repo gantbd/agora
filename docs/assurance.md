@@ -23,7 +23,7 @@ The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
 closes over the fifteen-package stable workspace, the standalone fuzz package,
-and sixty-two canonical fixtures.
+and sixty-four canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -101,13 +101,20 @@ authoritative revalidation of identity-only hits, mutation retirement, and
 disconnect cleanup. Search Wire V1 adds exhaustive closed-value round trips,
 canonical unique-ID/increasing-sequence pages, malformed and content-safe
 diagnostics evidence, two frozen frames, and bounded deterministic single-bit
-mutation closure. Three Host scenarios bind the exact authenticated session and
+mutation closure. Four Host scenarios bind the exact authenticated session and
 service client, preserve exact replay, reject substitution, and retire adapter
 continuations after revocation, close, or conversation mutation. Five client
 scenarios cover not-sent progression, exact outcome-unknown replay, changed
 command fencing, exact epoch/client/tail restoration, explicit rebind, and
 content-safe diagnostics. Facade-only tests close both SDK audiences. Transport
-and recovery evidence remain open, so this is not yet a deployable search profile.
+profile 3 adds two frozen fixed-width hellos and a real Unix-socket scenario that
+proves authenticated conversation/search routing, identity-only response,
+adapter-continuation cleanup on both EOFs, request-identity restart at zero, and
+a distinct replay epoch for each connection. Host checkpoint recovery proves a
+recovered authority starts with empty search receipts/cursors, rejects an old
+continuation, accepts a fresh request identity, and retires the adapter cursor
+before returning its port. Integrated durable-daemon/index recovery and
+production-scale indexing remain outside this volatile profile.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;
@@ -185,15 +192,15 @@ embedded facade constructs the profile without direct crate dependencies.
 
 The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
 nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus
-is regenerated from and checked against all fifty-one wire and fixed local
+is regenerated from and checked against all fifty-three wire and fixed local
 control fixtures plus the current engine, service, and host checkpoint fixtures.
 `wire_canonical` drives all eight public conversation/transient/search request/reply
-decoders, five fixed-width handshake/session-control decoders, and the local
+decoders, seven fixed-width handshake/session-control decoders, and the local
 route envelope;
 `checkpoint_canonical` drives all three semantic
 recovery layers;
 `outer_frame_canonical` drives the daemon's production length-prefix codec over
-the forty-six complete-frame protocol seeds (the five fixed-width local
+the forty-six complete-frame protocol seeds (the seven fixed-width local
 control fixtures are deliberately excluded). An accepted
 candidate must re-encode exactly, and an accepted frame prefix must preserve its
 unconsumed stream suffix. The qualified smoke ran 20,000 fixed-seed cases on all
@@ -359,12 +366,12 @@ uniqueness, concurrency, operational drain/crash recovery,
 cross-disconnect replay, and network transport remain
 unqualified. Physical storage is separate and narrowly qualified below.
 
-The fixed-width handshake codec is owned by `agora-wire`, not the daemon. Five
-canonical fixtures close both ClientHello/ServerHello pairs and the
+The fixed-width handshake codec is owned by `agora-wire`, not the daemon. Seven
+canonical fixtures close all three ClientHello/ServerHello pairs and the
 session-control hello; ordinary tests
 reject length, magic, profile, zero-limit, and zero-incarnation drift and require
 exact reconstruction. The client SDK facade constructs and decodes the profile.
-The pinned wire fuzz target now applies exact re-encoding oracles to all five
+The pinned wire fuzz target now applies exact re-encoding oracles to all seven
 local control decoders, the route envelope, and all complete-frame decoders. This establishes
 closed profile selection and visible server-lifetime evidence, not credential
 authentication, compatibility-range negotiation, incarnation provenance,

@@ -177,7 +177,8 @@ impl<P: SearchPortV1> SearchRuntimeV1<P> {
         &self.port
     }
 
-    pub fn into_port(self) -> P {
+    pub fn into_port(mut self) -> P {
+        self.retire_all_cursors();
         self.port
     }
 

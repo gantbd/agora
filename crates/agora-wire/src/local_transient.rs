@@ -9,6 +9,7 @@ pub const LOCAL_SESSION_HELLO_BYTES_V1: usize = 40;
 pub enum LocalRouteV1 {
     Conversation,
     Transient,
+    Search,
     Control,
 }
 
@@ -104,6 +105,7 @@ pub fn decode_local_routed_frame_v1(
         1 => LocalRouteV1::Conversation,
         2 => LocalRouteV1::Transient,
         3 => LocalRouteV1::Control,
+        4 => LocalRouteV1::Search,
         _ => return Err(LocalRouteErrorV1::UnknownRoute),
     };
     Ok(LocalRoutedFrameV1 {
@@ -140,5 +142,6 @@ fn route_tag(route: LocalRouteV1) -> u8 {
         LocalRouteV1::Conversation => 1,
         LocalRouteV1::Transient => 2,
         LocalRouteV1::Control => 3,
+        LocalRouteV1::Search => 4,
     }
 }

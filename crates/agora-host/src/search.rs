@@ -2,9 +2,8 @@
 
 use crate::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
 use crate::{HostRefusal, HostTimeV1, PrincipalVerifier};
-use agora_service::search::{
-    SearchPortV1, SearchRuntimeV1, SearchServiceLimitsV1, SearchServiceUsageV1,
-};
+pub use agora_service::search::SearchPortV1;
+use agora_service::search::{SearchRuntimeV1, SearchServiceLimitsV1, SearchServiceUsageV1};
 use agora_wire::search::{decode_search_offer_v1, encode_search_reply_v1};
 
 /// Owns one conversation Host and a volatile search sidecar over the same

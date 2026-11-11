@@ -20,6 +20,7 @@ fn routed_frames_are_typed_bounded_exact_and_content_safe() {
     for route in [
         LocalRouteV1::Conversation,
         LocalRouteV1::Transient,
+        LocalRouteV1::Search,
         LocalRouteV1::Control,
     ] {
         let encoded = encode_local_routed_frame_v1(route, b"secret", 8).unwrap();

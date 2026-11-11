@@ -32,6 +32,8 @@ for fixture in crates/agora-wire/tests/fixtures/*.hex; do
     || "$name" == local-server-hello-v1 \
     || "$name" == local-collaboration-client-hello-v1 \
     || "$name" == local-collaboration-server-hello-v1 \
+    || "$name" == local-search-client-hello-v1 \
+    || "$name" == local-search-server-hello-v1 \
     || "$name" == local-session-hello-v1 ]]; then
     continue
   fi

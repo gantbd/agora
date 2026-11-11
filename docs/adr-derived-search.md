@@ -1,8 +1,8 @@
 # ADR: derived message search boundary
 
 Status: implemented through participant-bound service, canonical wire,
-authenticated host, uncertainty-safe client, and SDK facades; transport and
-recovery composition pending
+authenticated host, uncertainty-safe client, SDK facades, private local
+transport, and volatile-runtime recovery policy; release qualification pending
 
 Date: 2026-11-11
 
@@ -59,8 +59,13 @@ single authoritative Service V2 owned by an authenticated Host, so composition
 does not clone conversation authority. The host revalidates the session and
 exact client on every search frame; the transport-neutral client fences
 outcome-unknown delivery against an opaque session/server epoch. Both SDK
-facades expose the appropriate existing surfaces. Transport selection, recovery,
-and release evidence remain before the whole profile is deployable.
+facades expose the appropriate existing surfaces. Additive private local
+handshake profile 3 routes conversation and search frames and supplies a distinct
+replay epoch for every authenticated connection. Host recovery deliberately
+reconstructs search receipts and cursors empty, rejects old continuations, and
+permits a fresh request namespace; the adapter is returned only after retiring
+live continuations. Release evidence remains before the implemented profile is
+qualified.
 None of these layers add search mutation commands, domain events, outbox entries,
 or search state to the engine checkpoint.
 

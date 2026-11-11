@@ -3,6 +3,7 @@ use agora_engine::{
     RoomId,
 };
 use agora_host::search::SearchHostV1;
+use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
 use agora_host::v2::{HostSessionIdV2, HostV2};
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_protocol::search::{
@@ -15,6 +16,7 @@ use agora_service::search::port::{
     SearchQueryV1, SearchRefusalV1,
 };
 use agora_service::search::{SearchPortV1, SearchServiceLimitsV1};
+use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 use agora_wire::WireLimits;
 use agora_wire::search::{decode_search_reply_v1, encode_search_offer_v1};
@@ -277,4 +279,73 @@ fn authoritative_conversation_mutation_retires_search_continuations() {
     host.handle(session, &frame, &context, HostTimeV1(3))
         .unwrap();
     assert_eq!(retired.get(), 1);
+}
+
+#[test]
+fn recovered_host_starts_with_empty_search_receipts_and_cursors() {
+    const SCOPE: HostCheckpointScopeV1 = HostCheckpointScopeV1::new(*b"search-host-test");
+    const MAX: usize = 2 * 1_024 * 1_024;
+
+    let (mut host, retired) = fixture();
+    let (session, client, context) = open(&mut host);
+    let first = host
+        .handle_search(session, &search_frame(client, 0), &context, HostTimeV1(2))
+        .unwrap();
+    let SearchReplyV1::Accepted(SearchOutcomeV1::Available(page)) =
+        decode_search_reply_v1(&first, wire_limits()).unwrap()
+    else {
+        panic!("available page expected")
+    };
+    let old_cursor = page.next.unwrap();
+    let checkpoint = host.host().prepare_checkpoint(SCOPE, MAX).unwrap();
+    let (_, port) = host.into_parts();
+    assert_eq!(retired.get(), 1);
+    let recovered = HostV2::recover_checkpoint(
+        checkpoint.bytes(),
+        SCOPE,
+        HostRecoveryLimitsV2 {
+            max_snapshot_bytes: MAX,
+            max_service_snapshot_bytes: MAX,
+            maximum_host_limits: HostLimits {
+                max_sessions: 8,
+                max_retired_sessions: 8,
+                wire: wire_limits(),
+            },
+            service: ServiceRecoveryLimitsV2 {
+                max_snapshot_bytes: MAX,
+                max_engine_snapshot_bytes: MAX,
+                maximum_service_limits: ServiceLimitsV2::default(),
+                maximum_engine_limits: agora_engine::Limits::default(),
+            },
+        },
+        Verifier,
+    )
+    .unwrap();
+    let mut host = SearchHostV1::new(recovered, port, SearchServiceLimitsV1::default());
+
+    let mut old_continuation = search_frame(client, 1);
+    let mut offer =
+        agora_wire::search::decode_search_offer_v1(&old_continuation, wire_limits()).unwrap();
+    offer.request.command.cursor = Some(old_cursor);
+    old_continuation = encode_search_offer_v1(&offer, wire_limits()).unwrap();
+    assert_eq!(
+        decode_search_reply_v1(
+            &host
+                .handle_search(session, &old_continuation, &context, HostTimeV1(3))
+                .unwrap(),
+            wire_limits(),
+        )
+        .unwrap(),
+        SearchReplyV1::Refused(agora_protocol::search::SearchRefusalV1::InvalidCursor)
+    );
+    assert!(matches!(
+        decode_search_reply_v1(
+            &host
+                .handle_search(session, &search_frame(client, 0), &context, HostTimeV1(4),)
+                .unwrap(),
+            wire_limits(),
+        )
+        .unwrap(),
+        SearchReplyV1::Accepted(SearchOutcomeV1::Available(_))
+    ));
 }

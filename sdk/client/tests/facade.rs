@@ -127,9 +127,10 @@ fn facade_alone_constructs_protocol_client_and_wire_values() {
 fn facade_exposes_the_canonical_local_handshake_without_transport_policy() {
     use wire::local_handshake::{
         ServerIncarnationV1, decode_client_hello_v1, decode_collaboration_client_hello_v1,
-        decode_collaboration_server_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
+        decode_collaboration_server_hello_v1, decode_search_client_hello_v1,
+        decode_search_server_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
         encode_collaboration_client_hello_v1, encode_collaboration_server_hello_v1,
-        encode_server_hello_v1,
+        encode_search_client_hello_v1, encode_search_server_hello_v1, encode_server_hello_v1,
     };
     use wire::local_transient::{
         LocalReplayEpochV1, LocalRouteV1, decode_local_routed_frame_v1,
@@ -157,6 +158,12 @@ fn facade_exposes_the_canonical_local_handshake_without_transport_policy() {
     let collaboration = decode_collaboration_server_hello_v1(&collaboration_server).unwrap();
     assert_eq!(collaboration.server_incarnation(), incarnation);
     assert!(collaboration.supports_transient_collaboration());
+
+    let search_client = encode_search_client_hello_v1();
+    assert_eq!(decode_search_client_hello_v1(&search_client), Ok(()));
+    let search_server = encode_search_server_hello_v1(incarnation, 8_192, 1_024).unwrap();
+    let search = decode_search_server_hello_v1(&search_server).unwrap();
+    assert!(search.supports_derived_search());
 
     let routed = encode_local_routed_frame_v1(LocalRouteV1::Transient, b"frame", 32).unwrap();
     let decoded = decode_local_routed_frame_v1(&routed, 32).unwrap();

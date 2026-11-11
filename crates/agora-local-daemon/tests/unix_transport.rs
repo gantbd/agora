@@ -13,6 +13,7 @@ use agora_durable::{
     OperatorRestoreAuthorizationV1,
 };
 use agora_engine::{CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind};
+use agora_host::search::SearchHostV1;
 use agora_host::transient::TransientHostV1;
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
@@ -21,11 +22,16 @@ use agora_local_daemon::{
     AuthenticatorV1, COLLABORATION_SERVER_HELLO_BYTES_V1, CollaborationServerHelloV1,
     DaemonCleanupV1, DaemonErrorV1, DaemonLifecycleV1, DaemonLimitsV1, DaemonV1, HostClockV1,
     LOCAL_SESSION_HELLO_BYTES_V1, LocalReplayEpochV1, LocalRouteV1, OsServerIncarnationEntropyV1,
-    SERVER_HELLO_BYTES_V1, ServerHelloV1, ServerIncarnationEntropyV1, ServerIncarnationV1,
-    decode_collaboration_server_hello_v1, decode_local_routed_frame_v1,
-    decode_local_session_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
-    encode_collaboration_client_hello_v1, encode_local_routed_frame_v1,
+    SEARCH_SERVER_HELLO_BYTES_V1, SERVER_HELLO_BYTES_V1, SearchServerHelloV1, ServerHelloV1,
+    ServerIncarnationEntropyV1, ServerIncarnationV1, decode_collaboration_server_hello_v1,
+    decode_local_routed_frame_v1, decode_local_session_hello_v1, decode_search_server_hello_v1,
+    decode_server_hello_v1, encode_client_hello_v1, encode_collaboration_client_hello_v1,
+    encode_local_routed_frame_v1, encode_search_client_hello_v1,
     generate_distinct_server_incarnation_v1, generate_server_incarnation_v1,
+};
+use agora_protocol::search::{
+    SearchCommandV1, SearchMatchProfileV1, SearchOfferV1, SearchOutcomeV1, SearchReplyV1,
+    SearchRequestIdV1, SearchRequestV1,
 };
 use agora_protocol::transient::{
     PresenceStateV1, PresenceViewStateV1, TransientCommandV1, TransientOutcomeV1, TransientReplyV1,
@@ -35,6 +41,11 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, CommandV2 as ProtocolCommand, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
     RequestV2,
 };
+use agora_service::search::port::{
+    SearchCursorV1, SearchGenerationV1, SearchHitV1, SearchObservationV1, SearchPageV1,
+    SearchQueryV1, SearchRefusalV1,
+};
+use agora_service::search::{SearchPortV1, SearchServiceLimitsV1};
 use agora_service::transient::TransientLimitsV1;
 use agora_service::typing::TypingLimitsV1;
 use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
@@ -44,6 +55,7 @@ use agora_storage_directory::{
     restore_directory_backup_v1,
 };
 use agora_wire::WireLimits;
+use agora_wire::search::{decode_search_reply_v1, encode_search_offer_v1};
 use agora_wire::transient::{decode_transient_reply_v1, encode_transient_request_v1};
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
 use std::fs;
@@ -141,6 +153,31 @@ impl AuthenticatorV1 for RejectingAuthentication {
 
 struct Clock(u64);
 
+struct LocalSearchPort {
+    message_id: [u8; 16],
+    message_sequence: u64,
+    retired: Arc<AtomicU64>,
+}
+
+impl SearchPortV1 for LocalSearchPort {
+    fn search(&mut self, query: SearchQueryV1) -> Result<SearchObservationV1, SearchRefusalV1> {
+        Ok(SearchObservationV1::Available(SearchPageV1 {
+            source_revision: query.observed_revision,
+            generation: SearchGenerationV1::new(1),
+            hits: vec![SearchHitV1 {
+                message_id: self.message_id,
+                message_sequence: self.message_sequence,
+            }],
+            next: Some(SearchCursorV1::new([4; 16])),
+        }))
+    }
+
+    fn retire_cursor(&mut self, _cursor: SearchCursorV1) -> bool {
+        self.retired.fetch_add(1, Ordering::Relaxed);
+        true
+    }
+}
+
 struct FixedEntropy([u8; 16]);
 
 impl ServerIncarnationEntropyV1 for FixedEntropy {
@@ -188,6 +225,55 @@ fn host(port: Port) -> HostV2<AegisVerifierV1<Port>> {
             wire: wire_limits(),
         },
     )
+}
+
+fn search_host(
+    port: Port,
+    retired: Arc<AtomicU64>,
+) -> SearchHostV1<AegisVerifierV1<Port>, LocalSearchPort> {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".into(),
+            owner: "alice".into(),
+            admission: agora_engine::AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Speak {
+            room_id: "room".into(),
+            author: "alice".into(),
+            at: agora_engine::LogicalTime(1),
+            body: "needle".into(),
+        })
+        .unwrap();
+    let message = &engine
+        .room(&agora_engine::RoomId::new("room"))
+        .unwrap()
+        .messages[0];
+    let search = LocalSearchPort {
+        message_id: message.id().into_bytes(),
+        message_sequence: message.sequence(),
+        retired,
+    };
+    let host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        AegisVerifierV1::new(port, [0x55; 16]),
+        HostLimits {
+            max_sessions: 4,
+            max_retired_sessions: 8,
+            wire: wire_limits(),
+        },
+    );
+    SearchHostV1::new(host, search, SearchServiceLimitsV1::default())
 }
 
 fn daemon_limits() -> DaemonLimitsV1 {
@@ -371,6 +457,13 @@ fn collaboration_handshake(stream: &mut UnixStream) -> CollaborationServerHelloV
     decode_collaboration_server_hello_v1(&reply).unwrap()
 }
 
+fn search_handshake(stream: &mut UnixStream) -> SearchServerHelloV1 {
+    stream.write_all(&encode_search_client_hello_v1()).unwrap();
+    let mut reply = [0_u8; SEARCH_SERVER_HELLO_BYTES_V1];
+    stream.read_exact(&mut reply).unwrap();
+    decode_search_server_hello_v1(&reply).unwrap()
+}
+
 fn write_routed(stream: &mut UnixStream, route: LocalRouteV1, payload: &[u8]) {
     let frame =
         encode_local_routed_frame_v1(route, payload, daemon_limits().max_frame_bytes).unwrap();
@@ -409,6 +502,89 @@ fn transient_frame(request_id: u64, command: TransientCommandV1) -> Vec<u8> {
         wire_limits(),
     )
     .unwrap()
+}
+
+fn search_frame(client: agora_protocol::v2::ClientIdV2, request_id: u64) -> Vec<u8> {
+    encode_search_offer_v1(
+        &SearchOfferV1 {
+            client,
+            request: SearchRequestV1 {
+                request_id: SearchRequestIdV1(request_id),
+                command: SearchCommandV1 {
+                    room_id: "room".into(),
+                    profile: SearchMatchProfileV1::ExactUtf8Substring,
+                    term: "needle".into(),
+                    cursor: None,
+                    limit: 1,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn search_profile_routes_authenticated_frames_and_rotates_connection_epochs() {
+    let path = socket_path();
+    let retired = Arc::new(AtomicU64::new(0));
+    let daemon = DaemonV1::bind_new_search(
+        &path,
+        search_host(Port::default(), retired.clone()),
+        Authentication,
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let path_for_thread = path.clone();
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        daemon.serve_next().unwrap();
+        daemon.serve_next().unwrap();
+        daemon.stop()
+    });
+
+    let mut epochs = Vec::new();
+    for _ in 0..2 {
+        let mut stream = loop {
+            match UnixStream::connect(&path_for_thread) {
+                Ok(stream) => break stream,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => thread::yield_now(),
+                Err(error) => panic!("search socket connect failed: {error}"),
+            }
+        };
+        let hello = search_handshake(&mut stream);
+        assert!(hello.supports_derived_search());
+        write_routed(
+            &mut stream,
+            LocalRouteV1::Conversation,
+            &connect_frame("alice"),
+        );
+        let WireReplyV2::Connected(client) = decode_reply_v2(
+            &read_routed(&mut stream, LocalRouteV1::Conversation),
+            wire_limits(),
+        )
+        .unwrap() else {
+            panic!("connected reply expected")
+        };
+        let control = read_routed(&mut stream, LocalRouteV1::Control);
+        epochs.push(decode_local_session_hello_v1(&control).unwrap());
+        write_routed(&mut stream, LocalRouteV1::Search, &search_frame(client, 0));
+        assert!(matches!(
+            decode_search_reply_v1(
+                &read_routed(&mut stream, LocalRouteV1::Search),
+                wire_limits()
+            )
+            .unwrap(),
+            SearchReplyV1::Accepted(SearchOutcomeV1::Available(_))
+        ));
+    }
+    assert_ne!(epochs[0], epochs[1]);
+    let stopped = server.join().unwrap();
+    assert_eq!(retired.load(Ordering::Relaxed), 2);
+    assert_eq!(stopped.cleanup, DaemonCleanupV1::Clean);
+    remove_parent(&path);
 }
 
 fn connect_frame(participant_id: &str) -> Vec<u8> {

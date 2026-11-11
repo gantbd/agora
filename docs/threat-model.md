@@ -41,8 +41,10 @@ disconnect retire adapter continuations. The profile is still volatile and not
 remotely reachable: the authenticated Host binds the exact service client and
 retires search state on revocation, substitution, close, or conversation
 mutation, while the client fences outcome-unknown retry to an opaque exact
-session/server epoch. Transport selection and recovery closure remain required
-before deployment, and indexed content remains a separate sensitive memory copy.
+session/server epoch. The qualified private local profile selects search
+explicitly and rejects cross-profile routes; restart/recovery closure remains
+required before deployment, and indexed content remains a separate sensitive
+memory copy.
 
 Room change positions are observer/room-bound correlation state, not bearer
 authority. Every pull rechecks current membership, cross-client and cross-room

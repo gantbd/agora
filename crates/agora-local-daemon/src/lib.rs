@@ -21,16 +21,20 @@ use agora_durable::{
     DurableHostObservationV2, DurableHostPublicationV2, DurableHostSuppressionV2, DurableHostV2,
     DurableStoreObservationV2, DurableTransientHostV1, ObservableCheckpointStoreV1,
 };
+use agora_host::search::{SearchHostV1, SearchPortV1};
 use agora_host::transient::TransientHostV1;
 use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
 use agora_host::{HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier};
 pub use agora_wire::local_handshake::{
     CLIENT_HELLO_BYTES_V1, COLLABORATION_CLIENT_HELLO_BYTES_V1,
     COLLABORATION_SERVER_HELLO_BYTES_V1, CollaborationServerHelloV1, HandshakeErrorV1,
-    SERVER_HELLO_BYTES_V1, ServerHelloV1, ServerIncarnationV1, decode_client_hello_v1,
+    SEARCH_CLIENT_HELLO_BYTES_V1, SEARCH_SERVER_HELLO_BYTES_V1, SERVER_HELLO_BYTES_V1,
+    SearchServerHelloV1, ServerHelloV1, ServerIncarnationV1, decode_client_hello_v1,
     decode_collaboration_client_hello_v1, decode_collaboration_server_hello_v1,
-    decode_server_hello_v1, encode_client_hello_v1, encode_collaboration_client_hello_v1,
-    encode_collaboration_server_hello_v1, encode_server_hello_v1,
+    decode_search_client_hello_v1, decode_search_server_hello_v1, decode_server_hello_v1,
+    encode_client_hello_v1, encode_collaboration_client_hello_v1,
+    encode_collaboration_server_hello_v1, encode_search_client_hello_v1,
+    encode_search_server_hello_v1, encode_server_hello_v1,
 };
 pub use agora_wire::local_transient::{
     LOCAL_SESSION_HELLO_BYTES_V1, LocalReplayEpochV1, LocalRouteErrorV1, LocalRouteV1,
@@ -228,6 +232,15 @@ pub trait DaemonHostV1: sealed::Sealed {
         context: &AegisContextV1,
         now: HostTimeV1,
     ) -> Result<Vec<u8>, DaemonHostErrorV1>;
+    fn handle_search_daemon(
+        &mut self,
+        _session: HostSessionIdV2,
+        _frame: &[u8],
+        _context: &AegisContextV1,
+        _now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        Err(DaemonHostErrorV1::Host(HostRefusal::ProtocolViolation))
+    }
     fn close_daemon(&mut self, session: HostSessionIdV2) -> Result<bool, DaemonHostErrorV1>;
 }
 
@@ -415,6 +428,65 @@ where
     }
 }
 
+impl<P, Q> sealed::Sealed for SearchHostV1<AegisVerifierV1<P>, Q>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    Q: SearchPortV1,
+{
+}
+
+impl<P, Q> DaemonHostV1 for SearchHostV1<AegisVerifierV1<P>, Q>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    Q: SearchPortV1,
+{
+    fn open_daemon(
+        &mut self,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<OpenReplyV2, DaemonHostErrorV1> {
+        self.open(frame, context, now)
+            .map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn handle_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        self.handle(session, frame, context, now)
+            .map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn handle_transient_daemon(
+        &mut self,
+        _session: HostSessionIdV2,
+        _frame: &[u8],
+        _context: &AegisContextV1,
+        _now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        Err(DaemonHostErrorV1::Host(HostRefusal::ProtocolViolation))
+    }
+
+    fn handle_search_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        self.handle_search(session, frame, context, now)
+            .map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn close_daemon(&mut self, session: HostSessionIdV2) -> Result<bool, DaemonHostErrorV1> {
+        Ok(self.close(session))
+    }
+}
+
 fn durable_value<T>(publication: DurableHostPublicationV2<T>) -> Result<T, DaemonHostErrorV1> {
     match publication {
         DurableHostPublicationV2::Published { value, .. } => Ok(value),
@@ -535,6 +607,7 @@ pub struct DaemonV1<H, A, C> {
 enum DaemonTransportProfileV1 {
     Conversation,
     Collaboration,
+    Search,
 }
 
 impl<H, A, C> DaemonV1<H, A, C>
@@ -774,8 +847,7 @@ where
         };
 
         let result = (|| {
-            let replay_epoch = if self.transport_profile == DaemonTransportProfileV1::Collaboration
-            {
+            let replay_epoch = if self.transport_profile != DaemonTransportProfileV1::Conversation {
                 Some(self.allocate_replay_epoch()?)
             } else {
                 None
@@ -801,6 +873,10 @@ where
                         &context,
                         self.clock.now(),
                     ),
+                    LocalRouteV1::Search => {
+                        self.host
+                            .handle_search_daemon(session, payload, &context, self.clock.now())
+                    }
                     LocalRouteV1::Control => return Err(DaemonErrorV1::Route),
                 };
                 let reply = match reply {
@@ -859,6 +935,26 @@ where
                 .map_err(|_| DaemonErrorV1::Handshake)?
                 .to_vec()
             }
+            DaemonTransportProfileV1::Search => {
+                let mut client = [0; SEARCH_CLIENT_HELLO_BYTES_V1];
+                stream.read_exact(&mut client).map_err(DaemonErrorV1::Io)?;
+                if decode_search_client_hello_v1(&client).is_err() {
+                    increment(
+                        &mut self.health.handshake_refused,
+                        &mut self.health.saturated,
+                    );
+                    return Err(DaemonErrorV1::Handshake);
+                }
+                encode_search_server_hello_v1(
+                    self.server_incarnation,
+                    u32::try_from(self.limits.max_frame_bytes)
+                        .map_err(|_| DaemonErrorV1::Handshake)?,
+                    u32::try_from(self.limits.max_frames_after_connect)
+                        .map_err(|_| DaemonErrorV1::Handshake)?,
+                )
+                .map_err(|_| DaemonErrorV1::Handshake)?
+                .to_vec()
+            }
         };
         stream.write_all(&server).map_err(DaemonErrorV1::Io)?;
         stream.flush().map_err(DaemonErrorV1::Io)
@@ -871,11 +967,15 @@ where
     ) -> Result<(LocalRouteV1, &'a [u8]), DaemonErrorV1> {
         match self.transport_profile {
             DaemonTransportProfileV1::Conversation => Ok((LocalRouteV1::Conversation, frame)),
-            DaemonTransportProfileV1::Collaboration => {
+            DaemonTransportProfileV1::Collaboration | DaemonTransportProfileV1::Search => {
                 let decoded = decode_local_routed_frame_v1(frame, self.limits.max_frame_bytes)
                     .map_err(|_| DaemonErrorV1::Route)?;
                 if decoded.route() == LocalRouteV1::Control
                     || (connect && decoded.route() != LocalRouteV1::Conversation)
+                    || (self.transport_profile == DaemonTransportProfileV1::Collaboration
+                        && decoded.route() == LocalRouteV1::Search)
+                    || (self.transport_profile == DaemonTransportProfileV1::Search
+                        && decoded.route() == LocalRouteV1::Transient)
                 {
                     return Err(DaemonErrorV1::Route);
                 }
@@ -894,7 +994,7 @@ where
             DaemonTransportProfileV1::Conversation => {
                 write_frame(stream, payload, self.limits.max_frame_bytes)
             }
-            DaemonTransportProfileV1::Collaboration => {
+            DaemonTransportProfileV1::Collaboration | DaemonTransportProfileV1::Search => {
                 let encoded =
                     encode_local_routed_frame_v1(route, payload, self.limits.max_frame_bytes)
                         .map_err(|_| DaemonErrorV1::FrameLimit)?;
@@ -1018,6 +1118,79 @@ where
     }
 
     pub const fn host(&self) -> &TransientHostV1<AegisVerifierV1<P>> {
+        &self.host
+    }
+}
+
+impl<P, Q, A, C> DaemonV1<SearchHostV1<AegisVerifierV1<P>, Q>, A, C>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    Q: SearchPortV1,
+    A: AuthenticatorV1,
+    C: HostClockV1,
+{
+    pub fn bind_new_search(
+        socket_path: impl AsRef<Path>,
+        host: SearchHostV1<AegisVerifierV1<P>, Q>,
+        authenticator: A,
+        clock: C,
+        server_incarnation: ServerIncarnationV1,
+        limits: DaemonLimitsV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        validate_daemon_configuration(server_incarnation, limits)?;
+        let socket_path = socket_path.as_ref().to_path_buf();
+        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
+        let lifetime = LifetimeLeaseV1::acquire_new(parent, &socket_path, server_incarnation)?;
+        Self::bind_owned(
+            socket_path,
+            lifetime,
+            host,
+            authenticator,
+            clock,
+            server_incarnation,
+            limits,
+            DaemonTransportProfileV1::Search,
+        )
+    }
+
+    /// Rebinds exact unlocked endpoint residue around a caller-reconstructed
+    /// Host and a fresh volatile search runtime.
+    #[allow(clippy::too_many_arguments)]
+    pub fn recover_stale_search(
+        socket_path: impl AsRef<Path>,
+        host: SearchHostV1<AegisVerifierV1<P>, Q>,
+        authenticator: A,
+        clock: C,
+        previous_incarnation: ServerIncarnationV1,
+        next_incarnation: ServerIncarnationV1,
+        limits: DaemonLimitsV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        validate_daemon_configuration(next_incarnation, limits)?;
+        let socket_path = socket_path.as_ref().to_path_buf();
+        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
+        let lifetime = LifetimeLeaseV1::recover_stale(
+            parent,
+            &socket_path,
+            previous_incarnation,
+            next_incarnation,
+        )?;
+        Self::bind_owned(
+            socket_path,
+            lifetime,
+            host,
+            authenticator,
+            clock,
+            next_incarnation,
+            limits,
+            DaemonTransportProfileV1::Search,
+        )
+    }
+
+    pub fn observation(&self) -> DaemonObservationV1 {
+        observation(self.health, self.host.host())
+    }
+
+    pub const fn host(&self) -> &SearchHostV1<AegisVerifierV1<P>, Q> {
         &self.host
     }
 }

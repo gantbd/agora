@@ -8,7 +8,8 @@ use agora_wire::local_handshake::{
     decode_client_hello_v1, decode_collaboration_client_hello_v1,
     decode_collaboration_server_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
     encode_collaboration_client_hello_v1, encode_collaboration_server_hello_v1,
-    encode_server_hello_v1,
+    encode_search_client_hello_v1, encode_search_server_hello_v1, encode_server_hello_v1,
+    decode_search_client_hello_v1, decode_search_server_hello_v1,
 };
 use agora_wire::local_transient::{
     decode_local_routed_frame_v1, decode_local_session_hello_v1, encode_local_routed_frame_v1,
@@ -92,6 +93,19 @@ fuzz_target!(|input: &[u8]| {
             "accepted collaboration server hello was not canonical"
         );
         assert_eq!(decode_collaboration_server_hello_v1(&encoded), Ok(value));
+    }
+    if decode_search_client_hello_v1(input).is_ok() {
+        assert_eq!(encode_search_client_hello_v1().as_slice(), input);
+    }
+    if let Ok(value) = decode_search_server_hello_v1(input) {
+        let encoded = encode_search_server_hello_v1(
+            value.server_incarnation(),
+            value.max_frame_bytes(),
+            value.max_frames_after_connect(),
+        )
+        .expect("decoded search server hello must encode");
+        assert_eq!(encoded.as_slice(), input, "accepted search server hello was not canonical");
+        assert_eq!(decode_search_server_hello_v1(&encoded), Ok(value));
     }
     if let Ok(value) = decode_local_session_hello_v1(input) {
         let encoded = encode_local_session_hello_v1(value);

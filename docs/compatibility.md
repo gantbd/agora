@@ -244,6 +244,14 @@ The service cursor is opaque and fixed-width; these bytes grant no room authorit
 and remain unreachable until an authenticated host/transport profile selects
 them explicitly.
 
+Private local search handshake profile 3 selects conversation Wire V2 plus
+Search Wire V1 without changing profiles 1 or 2. Its separate 14-byte
+`AGORAHC3` ClientHello and 42-byte `AGORAHS3` ServerHello are frozen. The routed
+envelope assigns additive search route tag `04`; profile-specific daemon checks
+reject search under collaboration profile 2 and transient frames under search
+profile 3. The existing control hello supplies the connection/server-bound
+replay epoch used by the search client uncertainty fence.
+
 ## Conservative baseline gate
 
 `docs/compatibility-baseline.txt` records the exact sorted Cargo package

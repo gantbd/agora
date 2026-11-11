@@ -1,8 +1,9 @@
 # Private local daemon profile
 
 Status: qualified bounded Unix transport composition V1 with separately selected
-volatile conversation, volatile collaboration, receipt-gated durable
-conversation, or receipt-gated durable conversation plus volatile collaboration.
+volatile conversation, volatile collaboration, volatile derived search,
+receipt-gated durable conversation, or receipt-gated durable conversation plus
+volatile collaboration.
 
 `agora-local-daemon` owns only the outer connection and framing lifetime around
 an Aegis-authorized volatile, transient-wrapped, durable, or combined
@@ -186,6 +187,15 @@ cleanup still closes the service client and reclaims its receipt namespace. The
 qualified idle drain fence does not add concurrent in-flight drain or signal
 integration. The combined owner checkpoints only durable Host state and always
 reconstructs transient state empty.
+
+The separate search selection uses fixed-width handshake profile 3 and the same
+routed envelope/control hello, but admits conversation/search rather than
+conversation/transient frames. Search route tag `04` reaches `SearchHostV1`
+under the exact authenticated session. Each EOF closes the Host client and
+retires volatile search receipts and adapter continuations. Reconnecting starts
+a fresh request namespace and replay epoch. Separately, Host checkpoint recovery
+wraps the recovered authority in an empty search runtime and rejects old search
+continuations; an integrated durable-daemon/index recovery owner is not claimed.
 
 ## Qualification evidence
 

@@ -80,6 +80,15 @@ retires the session without disclosing the target. Session close, revocation,
 and every accepted conversation revision change retire affected search receipts
 and adapter continuations. Search replies remain identity-only derived
 observations and the wrapper has no checkpoint profile.
+Private local handshake profile 3 selects this wrapper explicitly, admits only
+conversation/search/control routes, and emits the same server-only
+connection/incarnation-bound replay-epoch control hello used by the client
+uncertainty fence. It does not reinterpret collaboration profile 2.
+When a Host checkpoint is recovered, callers construct a fresh search runtime.
+No search receipt or service cursor survives; old continuations refuse, while a
+fresh request may run after current authentication and authority checks. Taking
+the wrapper apart retires every live adapter continuation before returning the
+port.
 
 For the durable V2 composition, `AGORAHST` checkpoints the opaque verified
 subject, participant, host session, service client, last verification time,

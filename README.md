@@ -15,8 +15,10 @@ serves as conversation history. The service layer derives authority from a
 connected client, revalidates identity-only hits against current retained
 history, and exposes a separate canonical Search Wire V1 grammar. Authenticated
 Host session binding, outcome-uncertainty-safe client behavior, and both SDK
-facades are implemented without cloning conversation authority. Transport and
-recovery composition remain open.
+facades are implemented without cloning conversation authority. Additive private
+local handshake profile 3 now selects authenticated conversation-plus-search
+routing with a distinct replay epoch per connection; restart recovery
+reconstructs the volatile search runtime empty and rejects old continuations.
 
 The v0.3 core provides bounded deterministic transitions, typed atomic refusal,
 room-local message ordering and retention, optimistic revisions, an ordered

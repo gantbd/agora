@@ -35,6 +35,8 @@ fixture|crates/agora-wire/tests/fixtures/identified-messages-reply-v2.hex|123|3b
 fixture|crates/agora-wire/tests/fixtures/local-client-hello-v1.hex|12|03372d9d8a10106f6575c707f6d43c51de692e3251612fa7162664284cb7ef43
 fixture|crates/agora-wire/tests/fixtures/local-collaboration-client-hello-v1.hex|14|90bd1c37dfd95bf27d53f60557bb4b8899604ed463c6f80f53e5d9a9b2606215
 fixture|crates/agora-wire/tests/fixtures/local-collaboration-server-hello-v1.hex|42|c185dbca85dade644e2c32b101446339fa9f6628a1ff25c71cba68e3367cf768
+fixture|crates/agora-wire/tests/fixtures/local-search-client-hello-v1.hex|14|805badd1f97e876ab7b7ae474fa0f3ff9acd6b1441b8f3ebf2f570caf463798d
+fixture|crates/agora-wire/tests/fixtures/local-search-server-hello-v1.hex|42|171ccedc5b997c10640b08de1f03481b23a507d60016a278ee35094d6f618136
 fixture|crates/agora-wire/tests/fixtures/local-server-hello-v1.hex|40|01d73f25289710bec38abf9b8c2d0a12961c135ff56eed4b1e758a44b740b868
 fixture|crates/agora-wire/tests/fixtures/local-session-hello-v1.hex|40|004f71ee1c672e7ce16d910184dcc956feecb1c075a3ed45c827968291705e11
 fixture|crates/agora-wire/tests/fixtures/message-edited-change-reply-v2.hex|96|d5cd5a7ef862e469ae674b59c215ffa5761dcc68d7c90d7b903f3dc98b61c04e
