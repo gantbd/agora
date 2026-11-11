@@ -225,3 +225,73 @@ fn attachment_history_cursor_and_receipts_recover_exactly() {
     assert_eq!(second.messages[0].attachments.len(), 1);
     assert!(second.next.is_none());
 }
+
+#[test]
+fn attachment_change_feed_is_profile_isolated_and_projects_full_messages() {
+    let (mut service, agent) = setup();
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        agent,
+        request(
+            1,
+            CommandV2::OpenAttachmentChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 4,
+            },
+        ),
+    ) else {
+        panic!("attachment change cursor expected");
+    };
+    assert!(matches!(
+        service.execute(
+            agent,
+            request(
+                2,
+                CommandV2::IdentifiedChanges {
+                    room_id: "room".to_owned(),
+                    cursor,
+                    limit: 4,
+                },
+            ),
+        ),
+        ReplyV2::Refused(agora_protocol::v2::RefusalV2::InvalidCursor)
+    ));
+    assert!(matches!(
+        service.execute(
+            agent,
+            request(
+                3,
+                CommandV2::SpeakWithAttachments {
+                    room_id: "room".to_owned(),
+                    expected_revision: 4,
+                    target: AttachmentMessageTargetV1::Room,
+                    logical_time: 1,
+                    body: "attached".to_owned(),
+                    addressed_to: vec![],
+                    attachments: vec![descriptor(8, 9)],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::AttachmentMessageAccepted { revision: 5, .. })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::AttachmentChanges(page)) = service.execute(
+        agent,
+        request(
+            4,
+            CommandV2::AttachmentChanges {
+                room_id: "room".to_owned(),
+                cursor,
+                limit: 4,
+            },
+        ),
+    ) else {
+        panic!("attachment changes expected");
+    };
+    assert_eq!(page.identified.changes.len(), 1);
+    assert_eq!(page.accepted_messages.len(), 1);
+    assert_eq!(page.accepted_messages[0].attachments.len(), 1);
+    assert!(
+        page.accepted_messages[0].attachments[0]
+            .descriptor
+            .is_some()
+    );
+}

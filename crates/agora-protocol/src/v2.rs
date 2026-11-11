@@ -238,6 +238,15 @@ pub enum CommandV2 {
         cursor: PageCursorV2,
         limit: u32,
     },
+    OpenAttachmentChanges {
+        room_id: String,
+        observed_revision: u64,
+    },
+    AttachmentChanges {
+        room_id: String,
+        cursor: PageCursorV2,
+        limit: u32,
+    },
     ThreadRoots {
         room_id: String,
         cursor: Option<PageCursorV2>,
@@ -602,6 +611,24 @@ impl fmt::Debug for CommandV2 {
                 limit,
             } => formatter
                 .debug_struct("IdentifiedChanges")
+                .field("room_id_bytes", &room_id.len())
+                .field("cursor", cursor)
+                .field("limit", limit)
+                .finish(),
+            Self::OpenAttachmentChanges {
+                room_id,
+                observed_revision,
+            } => formatter
+                .debug_struct("OpenAttachmentChanges")
+                .field("room_id_bytes", &room_id.len())
+                .field("observed_revision", observed_revision)
+                .finish(),
+            Self::AttachmentChanges {
+                room_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("AttachmentChanges")
                 .field("room_id_bytes", &room_id.len())
                 .field("cursor", cursor)
                 .field("limit", limit)
@@ -1112,6 +1139,7 @@ pub enum CapabilityV2 {
     TopicSupersessionV1,
     TopicAliasesV1,
     TopicTagsV1,
+    ImmutableAttachmentReferencesV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -2925,6 +2953,26 @@ pub struct IdentifiedRoomChangePageV1 {
     pub has_more: bool,
 }
 
+/// Identified change feed plus one full attachment-aware projection for every
+/// message-acceptance event, in the same order as those events.
+#[derive(Clone, Eq, PartialEq)]
+pub struct AttachmentRoomChangePageV1 {
+    pub identified: IdentifiedRoomChangePageV1,
+    pub accepted_messages: Vec<AttachmentMessageV1>,
+}
+
+impl fmt::Debug for AttachmentRoomChangePageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AttachmentRoomChangePageV1")
+            .field("revision", &self.identified.revision)
+            .field("change_count", &self.identified.changes.len())
+            .field("accepted_message_count", &self.accepted_messages.len())
+            .field("has_more", &self.identified.has_more)
+            .finish()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ThreadedRoomChangeV1 {
     pub event_sequence: u64,
@@ -3066,6 +3114,7 @@ pub enum OutcomeV2 {
     },
     Changes(RoomChangePageV2),
     IdentifiedChanges(IdentifiedRoomChangePageV1),
+    AttachmentChanges(AttachmentRoomChangePageV1),
     ThreadedChanges(ThreadedRoomChangePageV1),
     TopicChanges(TopicRoomChangePageV1),
     ChangeGap {

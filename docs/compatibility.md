@@ -224,13 +224,13 @@ event-copied message. Each
 entry is either a complete canonical descriptor or an identity-only tombstone;
 partial metadata cannot recover. Service and Host advance because their
 canonical records nest the engine checkpoint. The additive admission and
-retained-history protocol then advance service and Host to 23/23 because their
-cursor grammar now retains an attachment-history cursor. Historical fixtures
-through 20/22/22 remain frozen; new 20/23/23 fixtures and active fuzz seeds pin
-the current shape. Public Wire V2 appends command tags 58/59 and outcome tags
-56/57. All older tags, frames, message projections, and Wire V1 remain
-byte-identical. Capability discovery intentionally remains unchanged until the
-attachment-aware change profile closes.
+retained-history protocol advances service and Host to 23/23; the isolated
+attachment-change cursor advances them to 24/24. Historical fixtures through
+20/23/23 remain frozen; new 20/24/24 fixtures and active fuzz seeds pin the
+current shape. Public Wire V2 appends command tags 58 through 61, outcome tags
+56 through 58, and capability tag 23. All older tags, frames, message
+projections, and Wire V1 remain byte-identical. Two frozen attachment frames
+raise compatibility closure to 73 fixtures.
 
 Transient collaboration Wire V1 is a new, separately invoked grammar. Its
 profile byte `01`, presence command/outcome tags `01` through `03`, typing

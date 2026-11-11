@@ -17,18 +17,18 @@ use agora_engine::{
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessagePageV1, AttachmentMessageTargetV1, AttachmentMessageV1, AttachmentObjectKeyV1,
-    AttachmentStoreIdV1, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
-    CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
-    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageAttachmentV1,
-    MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1,
-    MessageRevisionV1, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1,
-    ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
-    RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, Sha256DigestV1,
-    ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
-    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
-    TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1, TopicRoomChangePageV1,
-    TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1, TopicSupersessionStatusV1,
-    TopicTagStatusV1, TopicV1,
+    AttachmentRoomChangePageV1, AttachmentStoreIdV1, BanPageV2, BannedParticipantV2, CapabilityV2,
+    ChangeGapV2, ClientIdV2, CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1,
+    IdentifiedRoomChangePageV1, IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2,
+    MemberV2, MessageAttachmentV1, MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1,
+    MessageRevisionPageV1, MessageRevisionV1, MessageV2, OutcomeV2, PageCursorV2,
+    ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2,
+    ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
+    RoomPageV2, RoomSummaryV2, Sha256DigestV1, ThreadLifecycleStateV1, ThreadMessagePageV1,
+    ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1,
+    ThreadedRoomEventV1, TopicAliasStatusV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1,
+    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1,
+    TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -120,6 +120,10 @@ enum CursorPage {
         position: RoomChangePosition,
     },
     IdentifiedChanges {
+        room_id: RoomId,
+        position: RoomChangePosition,
+    },
+    AttachmentChanges {
         room_id: RoomId,
         position: RoomChangePosition,
     },
@@ -326,6 +330,7 @@ impl ServiceV2 {
                 CapabilityV2::TopicSupersessionV1,
                 CapabilityV2::TopicAliasesV1,
                 CapabilityV2::TopicTagsV1,
+                CapabilityV2::ImmutableAttachmentReferencesV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -371,6 +376,15 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.identified_changes(client, participant, room_id, *cursor, *limit),
+            CommandV2::OpenAttachmentChanges {
+                room_id,
+                observed_revision,
+            } => self.open_attachment_changes(client, participant, room_id, *observed_revision),
+            CommandV2::AttachmentChanges {
+                room_id,
+                cursor,
+                limit,
+            } => self.attachment_changes(client, participant, room_id, *cursor, *limit),
             CommandV2::ThreadRoots {
                 room_id,
                 cursor,
@@ -2280,6 +2294,110 @@ impl ServiceV2 {
         }
     }
 
+    fn open_attachment_changes(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        observed_revision: u64,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let position = self
+            .engine
+            .room_change_position(observer, &room, Revision(observed_revision))
+            .map_err(map_observation_refusal)?;
+        let cursor = self
+            .replace_cursor(
+                client,
+                None,
+                Some(CursorPage::AttachmentChanges {
+                    room_id: room,
+                    position,
+                }),
+            )?
+            .ok_or(RefusalV2::Unavailable)?;
+        Ok(OutcomeV2::ChangesOpened {
+            revision: observed_revision,
+            cursor,
+        })
+    }
+
+    fn attachment_changes(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        cursor_id: PageCursorV2,
+        limit: u32,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let position = match self.cursor_for(client, cursor_id)? {
+            CursorPage::AttachmentChanges {
+                room_id: bound_room,
+                position,
+            } if bound_room == room => position,
+            _ => return Err(RefusalV2::InvalidCursor),
+        };
+        match self
+            .engine
+            .room_change_page(observer, &room, &position, limit as usize)
+            .map_err(map_observation_refusal)?
+        {
+            RoomChangeResult::Gap {
+                cause,
+                current_revision,
+            } => {
+                self.replace_cursor(client, Some(cursor_id), None)?;
+                Ok(OutcomeV2::ChangeGap {
+                    current_revision: current_revision.0,
+                    cause: match cause {
+                        RoomChangeGap::ChangeRetention { discarded_through } => {
+                            ChangeGapV2::ChangeRetention {
+                                discarded_through: discarded_through.0,
+                            }
+                        }
+                        RoomChangeGap::MembershipChanged => ChangeGapV2::MembershipChanged,
+                    },
+                })
+            }
+            RoomChangeResult::Page(page) => {
+                let next = self
+                    .replace_cursor(
+                        client,
+                        Some(cursor_id),
+                        Some(CursorPage::AttachmentChanges {
+                            room_id: room,
+                            position: page.next,
+                        }),
+                    )?
+                    .ok_or(RefusalV2::Unavailable)?;
+                let mut changes = Vec::with_capacity(page.changes.len());
+                let mut accepted_messages = Vec::new();
+                for change in page.changes {
+                    if let agora_engine::DomainEventV2::MessageAccepted { message, .. } =
+                        &change.event
+                    {
+                        accepted_messages.push(map_attachment_message_from_engine(message.clone()));
+                    }
+                    changes.push(IdentifiedRoomChangeV1 {
+                        event_sequence: change.sequence.0,
+                        revision: change.revision.0,
+                        event: map_identified_room_event(change.event)?,
+                    });
+                }
+                Ok(OutcomeV2::AttachmentChanges(AttachmentRoomChangePageV1 {
+                    identified: IdentifiedRoomChangePageV1 {
+                        revision: page.revision.0,
+                        changes,
+                        next,
+                        has_more: page.has_more,
+                    },
+                    accepted_messages,
+                }))
+            }
+        }
+    }
+
     fn open_threaded_changes(
         &mut self,
         client: ClientIdV2,
@@ -2545,6 +2663,7 @@ impl ServiceV2 {
             }
             CommandV2::OpenChanges { room_id, .. }
             | CommandV2::OpenIdentifiedChanges { room_id, .. }
+            | CommandV2::OpenAttachmentChanges { room_id, .. }
             | CommandV2::OpenThreadedChanges { room_id, .. }
             | CommandV2::OpenTopicChanges { room_id, .. }
             | CommandV2::ThreadStatus { room_id, .. }
@@ -2553,6 +2672,7 @@ impl ServiceV2 {
             | CommandV2::AdvanceReadPosition { room_id, .. } => valid_room(room_id),
             CommandV2::Changes { room_id, limit, .. }
             | CommandV2::IdentifiedChanges { room_id, limit, .. }
+            | CommandV2::AttachmentChanges { room_id, limit, .. }
             | CommandV2::ThreadedChanges { room_id, limit, .. }
             | CommandV2::TopicChanges { room_id, limit, .. } => {
                 valid_room(room_id) && valid_page(*limit)

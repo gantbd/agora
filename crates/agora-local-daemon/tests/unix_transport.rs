@@ -38,8 +38,10 @@ use agora_protocol::transient::{
     TransientRequestIdV1, TransientRequestV1, TypingTargetV1, TypingViewStateV1,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, CommandV2 as ProtocolCommand, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
-    RequestV2,
+    AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
+    AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1,
+    CommandV2 as ProtocolCommand, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
+    Sha256DigestV1,
 };
 use agora_service::search::port::{
     SearchCursorV1, SearchGenerationV1, SearchHitV1, SearchObservationV1, SearchPageV1,
@@ -743,6 +745,41 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
         first,
         "exact replay must be stable"
     );
+    let attachment = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: ProtocolCommand::SpeakWithAttachments {
+                    room_id: "room".to_owned(),
+                    expected_revision: 3,
+                    target: AttachmentMessageTargetV1::Room,
+                    logical_time: 4,
+                    body: "attached".to_owned(),
+                    addressed_to: vec![],
+                    attachments: vec![AttachmentDescriptorV1 {
+                        attachment_id: AttachmentIdV1::new([1; 16]),
+                        store_id: AttachmentStoreIdV1::new([2; 16]),
+                        object_key: AttachmentObjectKeyV1::new([3; 32]),
+                        declared_bytes: 4,
+                        media_type: "text/plain".to_owned(),
+                        display_label: "note.txt".to_owned(),
+                        integrity: AttachmentIntegrityV1::Sha256(Sha256DigestV1::new([4; 32])),
+                    }],
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &attachment);
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::AttachmentMessageAccepted {
+            revision: 4,
+            ..
+        }))
+    ));
     drop(stream);
 
     let (result, daemon) = server.join().unwrap();
@@ -762,12 +799,12 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert_eq!(observation.transport, daemon.health());
     assert_eq!(observation.host.open_offers, 1);
     assert_eq!(observation.host.authenticated, 1);
-    assert_eq!(observation.host.frame_offers, 2);
-    assert_eq!(observation.host.executed, 2);
+    assert_eq!(observation.host.frame_offers, 3);
+    assert_eq!(observation.host.executed, 3);
     assert_eq!(observation.service.connect_offers, 1);
     assert_eq!(observation.service.connected, 1);
-    assert_eq!(observation.service.request_offers, 2);
-    assert_eq!(observation.service.accepted, 1);
+    assert_eq!(observation.service.request_offers, 3);
+    assert_eq!(observation.service.accepted, 2);
     assert_eq!(observation.service.replayed, 1);
     assert_eq!(observation.service.disconnected, 1);
     assert!(!observation.fidelity_lost);
@@ -775,7 +812,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert!(!diagnostic.contains("alice"));
     assert!(!diagnostic.contains("room"));
     assert!(!diagnostic.contains("Room"));
-    assert_eq!(calls.lock().unwrap().len(), 3);
+    assert_eq!(calls.lock().unwrap().len(), 4);
     drop(daemon);
     assert!(!path.exists());
     remove_parent(&path);

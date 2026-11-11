@@ -131,9 +131,10 @@ recovery. Engine/service/Host persistence profiles first advance together to
 adds two canonical wire scenarios, two service scenarios, authenticated Host
 actor binding, exact client uncertainty, and both SDK facades for unified
 admission plus participant-bound retained history. Service and Host recovery
-advance to 23/23 for the new history cursor; compatibility closure is 69
-fixtures. Capability advertisement, attachment-aware changes, explicit private
-local transport, and release qualification remain open. This evidence does not
+advance to 23/23 for the history cursor and 24/24 for the isolated change
+cursor. Three wire and three service scenarios, two frozen attachment frames,
+capability discovery, and a real private Unix-socket admission raise
+compatibility closure to 73 fixtures. Release qualification remains open. This evidence does not
 establish blob availability, byte verification, download authority, scanning,
 deletion, or cross-engine atomicity.
 

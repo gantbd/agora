@@ -871,9 +871,14 @@ its cursor is participant, room, and revision bound and may therefore return an
 empty intermediate page when that sequence contains only legacy messages.
 Available messages disclose complete descriptors; withdrawn or redacted
 messages disclose the same ordered attachment identities with no descriptor.
-Service and Host checkpoint profile 23 retain the cursor and exact request
-receipts. The attachment-aware change feed and capability advertisement remain
-open, so clients must not infer support from the unchanged capability list.
+Service and Host checkpoint profile 23 retain the history cursor and exact
+request receipts. A separate attachment-aware change cursor carries the ordinary
+identified event sequence plus one full message projection for every acceptance
+event, including empty attachment lists for ordinary messages and identity-only
+tombstones after content withdrawal. Cursor profiles cannot be substituted.
+Checkpoint profile 24 retains this cursor. Capability tag 23 advertises the
+closed profile, and the ordinary private-local conversation route carries it
+without a new transport handshake.
 
 ## Wire profile V1
 

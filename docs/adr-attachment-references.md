@@ -1,8 +1,7 @@
 # ADR: bounded immutable attachment references
 
-Status: implementation in progress; core admission, attachment-aware retained
-history, canonical wire, replay, actor binding, and recovery implemented;
-attachment-aware changes and capability qualification open
+Status: implementation complete through advertised private-local transport;
+release qualification open
 
 Date: 2026-11-11
 
@@ -76,9 +75,10 @@ publication commits the message, descriptors, outbox, and receipt as one Agora
 unit before success is visible. It does not make the prior blob upload atomic
 with Agora. The protocol, canonical wire, service replay, Host actor binding,
 client uncertainty, and both SDK facades now close for admission and
-participant-bound retained history. The attachment-aware change profile, frozen
-attachment wire fixtures, explicit local-transport evidence, and capability
-discovery must still close before the profile is advertised.
+participant-bound retained history. The isolated attachment-aware change
+profile, frozen wire fixtures, private-local transport route, and separately
+advertised capability now close the conversation profile. Release qualification
+remains separate.
 
 ## Consequences
 
