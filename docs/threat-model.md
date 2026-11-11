@@ -255,6 +255,11 @@ Every actual store operation does revalidate the pinned directory, lock, head,
 and residue state. Any validation error makes the owner fence sticky before the
 specific error escapes; later calls refuse before another filesystem access, so
 restoring attacker-replaced paths cannot silently reactivate that owner.
+Even after validation succeeds, an exclusive pending-file creation error may
+reflect a raced or degraded filesystem. The owner therefore fences before
+returning the exact definitely-uncommitted I/O error. Once pending publication
+begins, any I/O failure remains indeterminate and fenced; neither class permits
+automatic retry by that owner.
 
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.

@@ -476,6 +476,14 @@ change, metadata I/O, or pending residue—sets one sticky owner fence before th
 first specific error is returned. Later operations return `Fenced` without
 touching the filesystem or incrementing that fence again.
 
+Once active validation succeeds, failure to exclusively create the pending
+publication file also establishes one sticky owner fence before returning its
+specific I/O class. No head or pending file was published at that point, so the
+result is definitely uncommitted rather than indeterminate. Failures after the
+pending file is created remain outcome-unknown and use the indeterminate fence.
+Together with active validation, this means no operational filesystem error can
+leave a constructed owner Active.
+
 The `AGDIRCP` version-1 record contains the store revision, UTF-8 key, bounded
 checkpoint bytes, declared lengths, and CRC32C binding the header and payload.
 Compare-and-exchange writes a new mode-0600 `.pending` file, synchronizes the

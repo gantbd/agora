@@ -449,6 +449,15 @@
   fence again. This covers active resource validation only; constructor/open
   errors and pre-publication I/O failures outside validation retain their
   separately documented behavior.
+- **R70 — Sticky operational store-I/O fence:** after a private-directory owner
+  is constructed, every filesystem error returned by a load or
+  compare-and-exchange must leave that owner Fenced before the error escapes.
+  A failure to create the pending publication file is definitely uncommitted,
+  reports its exact I/O class, counts one resource fence, and permits no later
+  operation or silent retry on that owner. Write, synchronization, rename, and
+  post-rename metadata failures retain their stricter indeterminate-publication
+  classification. Constructor/open errors remain outside this owner-lifecycle
+  claim.
 
 ## Explicitly open
 

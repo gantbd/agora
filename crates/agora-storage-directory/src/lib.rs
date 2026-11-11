@@ -146,6 +146,8 @@ pub struct DirectoryCheckpointStoreV1 {
     counters: RefCell<DirectoryCountersV1>,
     #[cfg(test)]
     crash_point: Cell<Option<TestCrashPoint>>,
+    #[cfg(test)]
+    pending_open_error: Cell<Option<std::io::ErrorKind>>,
 }
 
 impl std::fmt::Debug for DirectoryCheckpointStoreV1 {
@@ -204,6 +206,8 @@ impl DirectoryCheckpointStoreV1 {
             counters: RefCell::new(DirectoryCountersV1::default()),
             #[cfg(test)]
             crash_point: Cell::new(None),
+            #[cfg(test)]
+            pending_open_error: Cell::new(None),
         })
     }
 
@@ -251,6 +255,8 @@ impl DirectoryCheckpointStoreV1 {
             counters: RefCell::new(DirectoryCountersV1::default()),
             #[cfg(test)]
             crash_point: Cell::new(None),
+            #[cfg(test)]
+            pending_open_error: Cell::new(None),
         })
     }
 
@@ -355,6 +361,18 @@ impl DirectoryCheckpointStoreV1 {
     fn crash_at(&self, point: TestCrashPoint) -> bool {
         self.crash_point.get() == Some(point)
     }
+
+    fn open_pending(&self, path: &Path) -> std::io::Result<File> {
+        #[cfg(test)]
+        if let Some(kind) = self.pending_open_error.take() {
+            return Err(std::io::Error::from(kind));
+        }
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+    }
 }
 
 impl CheckpointStore for DirectoryCheckpointStoreV1 {
@@ -413,17 +431,12 @@ impl CheckpointStore for DirectoryCheckpointStoreV1 {
         };
         let record = encode_record(key, revision, bytes, self.limits)?;
         let pending_path = self.path.join(PENDING);
-        let mut pending = match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&pending_path)
-        {
+        let mut pending = match self.open_pending(&pending_path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 return self.fence(DirectoryErrorV1::CrashResidue);
             }
-            Err(error) => return Err(io(error)),
+            Err(error) => return self.fence(io(error)),
         };
         #[cfg(test)]
         if self.crash_at(TestCrashPoint::PendingCreated) {
@@ -978,6 +991,33 @@ mod tests {
             },
             DirectoryErrorV1::LostResource,
         );
+    }
+
+    #[test]
+    fn pending_publication_open_failure_fences_before_returning_io() {
+        let temp = TempDirectory::new();
+        let path = temp.store();
+        let mut store =
+            DirectoryCheckpointStoreV1::create_new(&path, DirectoryLimitsV1::default()).unwrap();
+        store
+            .pending_open_error
+            .set(Some(std::io::ErrorKind::PermissionDenied));
+
+        assert_eq!(
+            store.compare_exchange("key", None, b"value").unwrap_err(),
+            DirectoryErrorV1::Io(std::io::ErrorKind::PermissionDenied)
+        );
+        let observation = store.observation();
+        assert_eq!(observation.state, DirectoryOwnerStateV1::Fenced);
+        assert_eq!(observation.offers, 1);
+        assert_eq!(observation.commits, 0);
+        assert_eq!(observation.indeterminate, 0);
+        assert_eq!(observation.resource_fences, 1);
+        assert!(!path.join(PENDING).exists());
+        assert!(!path.join(HEAD).exists());
+
+        assert_eq!(store.load("key").unwrap_err(), DirectoryErrorV1::Fenced);
+        assert_eq!(store.observation().resource_fences, 1);
     }
 
     #[test]

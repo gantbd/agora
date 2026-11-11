@@ -427,6 +427,13 @@ state to Fenced, and records exactly one resource fence. A second operation
 returns Fenced without another filesystem-validation count. Existing head
 replacement evidence covers stamp substitution under the same law.
 
+A deterministic pending-open fault passes active validation, fails the exact
+exclusive-create boundary with PermissionDenied, and checks the specific I/O
+error, absent pending/head files, Fenced observation, one offer, zero commits,
+zero indeterminate publications, and one resource fence. A later load returns
+Fenced without another fence count. Existing injected write/sync/rename and
+post-rename cases cover the indeterminate half of the operational-I/O law.
+
 Client V2 scenarios distinguish definitely-not-sent from outcome-unknown,
 retain and resend the exact request identity only for an equal command, fence a
 different command without transport access, keep uncertainty through a later

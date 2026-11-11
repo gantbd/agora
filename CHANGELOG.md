@@ -38,6 +38,9 @@ follow Semantic Versioning once a public release contract is selected.
   operations refuse without revalidation or a duplicate fence count. Revision
   `5093b538b60bfa7fc7c3b7cec19d2480950e77bc` passed the integrated release
   profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
+- Fenced the physical store owner on pending-publication creation I/O errors,
+  closing the remaining operational path that could return a filesystem error
+  while still reporting the constructed owner Active.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque
