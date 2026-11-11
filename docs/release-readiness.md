@@ -31,6 +31,9 @@ not ready for a network service or crates.io release.
   explicit source-distribution policy;
 - conservative supply inventory closure over sixteen locked local components with
   missing, changed-version, and empty-inventory mutants;
+- deterministic CycloneDX 1.5 stable-source SBOM closure over the same sixteen
+  components and their dependency graph, with exact license/publication facts,
+  offline byte-for-byte regeneration, and adversarial schema/claim mutants;
 - a checksum-closed self-contained stable source directory for revision
   `e5a02b4ce5bda9c92542b0e5ea59ea3a746b295b`, reproduced byte-identically
   twice and qualified locked/offline from its isolated sixteen-component local

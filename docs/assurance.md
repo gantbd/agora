@@ -30,8 +30,12 @@ The release-contract adversarial fixture separately proves that enabling root
 publication, weakening the toolchain pin, or removing the security policy is
 refused.
 The supply gate closes over sixteen local locked components and exact local-path
-dependency declarations. It is not an advisory scan, legal conclusion, binary
-SBOM, remote source proof, or artifact provenance claim.
+dependency declarations. It also regenerates and strictly validates the
+canonical CycloneDX 1.5 source SBOM, including exact component and dependency
+closure, licenses, publication denial, deterministic ordering, host-path
+exclusion, and five adversarial mutants. It makes no advisory, legal
+compatibility, binary-content, binary-SBOM, remote source proof, signature,
+attestation, or artifact provenance claim.
 
 The source-candidate contract pins a reduced two-package Keystone workspace,
 requires a clean tracked Agora revision, separates sibling contextual revisions

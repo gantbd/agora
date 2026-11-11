@@ -25,6 +25,7 @@ for file in assurance.md compatibility.md release-policy.md release-qualificatio
   source-candidate.md supply-chain.md threat-model.md traceability.md; do
   cp "docs/$file" "$fixture_root/docs/$file"
 done
+cp docs/agora-source.cdx.json "$fixture_root/docs/agora-source.cdx.json"
 for manifest in Cargo.toml crates/agora-wire/Cargo.toml crates/agora-aegis-verifier/Cargo.toml crates/agora-client/Cargo.toml \
   crates/agora-host/Cargo.toml crates/agora-protocol/Cargo.toml \
   crates/agora-service/Cargo.toml crates/agora-storage-directory/Cargo.toml \

@@ -8,6 +8,10 @@ existing sibling-relative layout is preserved under `agora/`, `aegis/`, and
 workspace manifest is a reviewed repository input because those package
 manifests inherit workspace metadata.
 
+The tracked canonical source SBOM is part of the Agora tree and is therefore
+included in, and checksum-closed by, every source candidate. It describes the
+same sixteen-component stable graph; it does not describe built binary contents.
+
 Construction requires a clean tracked Agora tree and records its exact commit.
 The selected sibling bytes are copied from the local Aegis and Keystone trees.
 Their current revisions are context only: the manifest separately records
@@ -23,7 +27,7 @@ all stable workspace targets, doctests, and warning-denied documentation from
 `agora/Cargo.toml` with the lock file and offline mode. Success establishes a
 self-contained stable local source directory for those exact bytes.
 
-This profile is not a tarball, binary artifact, registry package, SBOM,
+This profile is not a tarball, binary artifact, registry package, binary SBOM,
 signature, attestation, advisory report, legal conclusion, remote-source proof,
 reproducible binary, installer, or publication authorization. The standalone
 fuzz workspace retains registry-sourced test tooling and is not part of the

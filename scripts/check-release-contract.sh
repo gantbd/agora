@@ -15,6 +15,7 @@ required_files=(
   specification.md
   rust-toolchain.toml
   docs/assurance.md
+  docs/agora-source.cdx.json
   docs/compatibility.md
   docs/release-policy.md
   docs/release-qualification.md

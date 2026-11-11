@@ -20,6 +20,7 @@ check-baseline:
 check-supply-chain:
 	./scripts/check-supply-chain.sh
 	./scripts/check-supply-chain-mutants.sh
+	./scripts/check-source-sbom.sh
 
 check-boundaries:
 	./scripts/check-boundaries.sh

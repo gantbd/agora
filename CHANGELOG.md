@@ -8,6 +8,9 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added a deterministic CycloneDX 1.5 source SBOM for the exact sixteen-package
+  stable graph, with offline canonical regeneration, closed dependency and
+  claim validation, host-path exclusion, and focused adversarial mutants.
 - Added a fail-closed self-contained stable source-candidate contract with exact
   local Aegis/Keystone content closure, contextual cleanliness evidence,
   complete SHA-256 inventory, adversarial verification, and isolated locked

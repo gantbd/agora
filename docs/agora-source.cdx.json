@@ -1,0 +1,482 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/aegis-client@0.1.0",
+      "name": "aegis-client",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/aegis-client@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/aegis-protocol@0.1.0",
+      "name": "aegis-protocol",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/aegis-protocol@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-aegis-verifier@0.1.0",
+      "name": "agora-aegis-verifier",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-aegis-verifier@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-client@0.1.0",
+      "name": "agora-client",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-client@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-durable@0.1.0",
+      "name": "agora-durable",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-durable@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-engine@0.3.0",
+      "name": "agora-engine",
+      "version": "0.3.0",
+      "purl": "pkg:cargo/agora-engine@0.3.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-host@0.1.0",
+      "name": "agora-host",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-host@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-local-daemon@0.1.0",
+      "name": "agora-local-daemon",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-local-daemon@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-protocol@0.1.0",
+      "name": "agora-protocol",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-protocol@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-sdk-client@0.1.0",
+      "name": "agora-sdk-client",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-sdk-client@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-sdk-embedded@0.1.0",
+      "name": "agora-sdk-embedded",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-sdk-embedded@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-service@0.1.0",
+      "name": "agora-service",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-service@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-storage-directory@0.1.0",
+      "name": "agora-storage-directory",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-storage-directory@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/agora-wire@0.1.0",
+      "name": "agora-wire",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-wire@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/keystone-codec@0.0.1",
+      "name": "keystone-codec",
+      "version": "0.0.1",
+      "purl": "pkg:cargo/keystone-codec@0.0.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/keystone-storage@0.0.1",
+      "name": "keystone-storage",
+      "version": "0.0.1",
+      "purl": "pkg:cargo/keystone-storage@0.0.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:cargo/aegis-client@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/aegis-protocol@0.1.0"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/aegis-protocol@0.1.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:cargo/agora-aegis-verifier@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/aegis-client@0.1.0",
+        "pkg:cargo/aegis-protocol@0.1.0",
+        "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-host@0.1.0",
+        "pkg:cargo/agora-service@0.1.0",
+        "pkg:cargo/agora-wire@0.1.0"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/agora-client@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-service@0.1.0"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/agora-durable@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-host@0.1.0",
+        "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-service@0.1.0",
+        "pkg:cargo/agora-wire@0.1.0",
+        "pkg:cargo/keystone-storage@0.0.1"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/agora-engine@0.3.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:cargo/agora-host@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-service@0.1.0",
+        "pkg:cargo/agora-wire@0.1.0"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/agora-local-daemon@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/aegis-client@0.1.0",
+        "pkg:cargo/aegis-protocol@0.1.0",
+        "pkg:cargo/agora-aegis-verifier@0.1.0",
+        "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-host@0.1.0",
+        "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-service@0.1.0",
+        "pkg:cargo/agora-wire@0.1.0"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/agora-protocol@0.1.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:cargo/agora-sdk-client@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-client@0.1.0",
+        "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-wire@0.1.0"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/agora-sdk-embedded@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-host@0.1.0",
+        "pkg:cargo/agora-service@0.1.0"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/agora-service@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-wire@0.1.0"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/agora-storage-directory@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-durable@0.1.0",
+        "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-host@0.1.0",
+        "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-service@0.1.0",
+        "pkg:cargo/agora-wire@0.1.0",
+        "pkg:cargo/keystone-storage@0.0.1"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/agora-wire@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/keystone-codec@0.0.1"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/keystone-codec@0.0.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:cargo/keystone-storage@0.0.1",
+      "dependsOn": []
+    }
+  ]
+}

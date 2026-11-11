@@ -1,6 +1,7 @@
 # Supply-chain profile
 
-Status: conservative local-source inventory; not a release SBOM or legal review.
+Status: deterministic local-source inventory and source SBOM; not a binary SBOM
+or legal review.
 
 The current stable locked graph contains sixteen components: twelve Agora
 packages, two Aegis packages, and the sibling `keystone-codec` and
@@ -12,6 +13,16 @@ exact version and a local path.
 inventory in `supply-chain-baseline.txt`, rejects source/checksum records and
 non-path or non-exact manifest dependency declarations, and exercises missing,
 changed-version, and empty-inventory mutants.
+
+The same gate regenerates `docs/agora-source.cdx.json` from locked offline Cargo
+metadata and requires byte equality. This canonical CycloneDX 1.5 document
+contains exactly the sixteen stable local-path components, their closed Cargo
+dependency edges, exact versions, declared `MIT OR Apache-2.0` expressions, and
+denied publication state. Its SHA-256 digest is
+`5d5e21a24990ff56c122091c2c7be59d554a56c29f7da755e69f1fe4be89a319`.
+The validator rejects vocabulary drift, noncanonical order, missing or duplicate
+components and edges, unknown references, host paths, altered licenses, and
+publication-enabled records; focused mutants exercise those boundaries.
 
 The opt-in standalone `fuzz/` workspace is deliberately outside that release
 graph. Its separate lock contains the registry-sourced libFuzzer build tooling;
@@ -36,6 +47,6 @@ are not promoted into provenance.
 
 This evidence does not establish remote availability of Aegis or Keystone, registry
 packaging, transitive source integrity outside the local checkouts, advisory
-status, license compatibility, binary contents, an SPDX/CycloneDX SBOM, origin
-provenance, signatures, or reproducibility from a clean Cargo home. Those remain
-release blockers.
+status, license compatibility, binary contents or a binary SBOM, origin
+provenance, signatures, attestations, or reproducibility from a clean Cargo home.
+Those remain release blockers.

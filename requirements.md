@@ -315,6 +315,15 @@
   extra, changed, symbolic, special, or claim-mutated content before a locked
   offline isolated build, doctest, and warning-denied documentation run. This
   grants no origin provenance, binary reproducibility, support, or publication.
+- **R57 — Deterministic stable-source SBOM:** the exact locked stable workspace
+  must reproduce one canonical CycloneDX 1.5 JSON inventory offline. It must
+  enumerate exactly the sixteen local-path packages and their closed dependency
+  edges with exact names, versions, declared license expressions, and denied
+  publication state; canonical ordering and vocabulary are part of the profile.
+  Validation must reject missing, altered, escaped, host-path-bearing, or
+  publication-enabled records. This source inventory makes no binary-content,
+  advisory, legal-compatibility, origin-provenance, signature, or attestation
+  claim.
 
 ## Explicitly open
 
