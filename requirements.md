@@ -299,6 +299,12 @@
   must contain no participant, subject, grant, room, message, credential, or
   frame data. Process-local counters make no latency, SLO, delivery, attention,
   audit, or recovery-continuity claim.
+- **R55 — Irreversible idle drain fence:** the sequential local daemon must
+  support an explicit idempotent transition from ready to draining that refuses
+  every later `serve_next` before socket accept, authentication, authority, host,
+  or service work. The endpoint remains owned until ordinary teardown. Because
+  the transition requires exclusive mutable ownership, this profile covers only
+  an idle daemon and makes no concurrent or in-flight graceful-drain claim.
 
 ## Explicitly open
 

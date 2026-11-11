@@ -180,6 +180,34 @@ fn connect_frame(participant_id: &str) -> Vec<u8> {
 }
 
 #[test]
+fn idle_drain_is_irreversible_and_refuses_before_accept_or_authority() {
+    let path = socket_path();
+    let port = Port::default();
+    let calls = port.calls.clone();
+    let mut daemon =
+        DaemonV1::bind_new(&path, host(port), Authentication, Clock(1), daemon_limits()).unwrap();
+
+    assert!(daemon.health().ready);
+    assert!(!daemon.health().draining);
+    assert!(daemon.begin_drain());
+    assert!(!daemon.begin_drain(), "drain transition must be idempotent");
+    assert!(!daemon.health().ready);
+    assert!(daemon.health().draining);
+    assert!(matches!(daemon.serve_next(), Err(DaemonErrorV1::Draining)));
+
+    let observation = daemon.observation();
+    assert_eq!(observation.transport.accepted_connections, 0);
+    assert_eq!(observation.host.open_offers, 0);
+    assert_eq!(observation.service.connect_offers, 0);
+    assert!(calls.lock().unwrap().is_empty());
+    assert!(path.exists(), "drain retains endpoint ownership until drop");
+
+    drop(daemon);
+    assert!(!path.exists());
+    remove_parent(&path);
+}
+
+#[test]
 fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     let path = socket_path();
     let port = Port::default();

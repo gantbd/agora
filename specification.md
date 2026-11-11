@@ -596,6 +596,14 @@ part of semantic recovery. These counters are operational facts, not proof of
 delivery, attention, authorization success beyond the named boundary, or an
 SLO.
 
+While idle, the sequential daemon owner may irreversibly enter draining state.
+That transition clears readiness and every later `serve_next` returns a typed
+draining refusal before socket accept or any authentication, authority, host, or
+service work. Repeating the transition is inert. The socket remains owned until
+normal teardown. Exclusive mutable ownership means this profile cannot overlap
+an active connection; concurrent in-flight drain requires a different runtime
+composition.
+
 This profile is deliberately sequential: one caller of `serve_next` accepts and
 serves one connection at a time. It does not authenticate an OS peer or
 credential, protect against a same-UID process controlling the private parent,

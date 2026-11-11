@@ -91,6 +91,9 @@ not ready for a network service or crates.io release.
 - passive content-free local-daemon observations preserving separate transport,
   host, and service measurement boundaries with sticky saturation/fidelity-loss
   evidence and no semantic or authority effect;
+- explicit irreversible idle drain fencing that withdraws readiness and refuses
+  before accept or authority work while retaining endpoint ownership until
+  pinned teardown;
 - independently versioned, scope-bound Service V2 checkpoints preserving engine,
   outbox, recent-change journal, clients, retired tombstones, exact request
   replies, and live cursor consequences across semantic recovery;
@@ -135,7 +138,7 @@ not ready for a network service or crates.io release.
   connector conformance package; Aegis context provenance remains trusted
   wiring;
 - no transport handshake, server-incarnation evidence, concurrent admission,
-  graceful drain, signal/socket-activation/crash-residue qualification, or
+  in-flight drain, signal/socket-activation/crash-residue qualification, or
   cross-disconnect replay; recovered Aegis and Agora state do not share one
   atomic commit boundary;
 - no qualified store beyond the single-owner local Unix directory profile; no

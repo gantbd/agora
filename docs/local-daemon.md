@@ -52,8 +52,8 @@ new connection can safely repeat it.
 ## Observable operations
 
 `DaemonHealthV1` is deliberately content-free. It reports readiness, current
-connections, accepted connections, cleanly completed connections, refused
-connections, transport errors, and counter saturation. It exposes no
+drain state, connections, accepted connections, cleanly completed connections,
+refused connections, transport errors, and counter saturation. It exposes no
 participant, subject, grant, room, message, or frame data.
 
 `DaemonObservationV1` is the read-only composition view. It retains distinct
@@ -64,6 +64,13 @@ Reading the view performs no I/O or authority call, changes no counter, and
 cannot change a request result. The snapshot contains no identifiers, content,
 credentials, frame bytes, timings, or refusal detail; it is process-local and
 excluded from semantic recovery.
+
+`begin_drain` is an irreversible, idempotent idle transition. It clears
+readiness and sets the drain fact; every later `serve_next` refuses before
+accepting a socket or invoking authentication, authority, Host V2, or Service
+V2. The endpoint remains pinned and owned until normal drop. Since the method
+requires exclusive mutable access to this sequential owner, it cannot overlap an
+in-flight connection and is not a concurrent graceful-drain mechanism.
 
 ## Trust boundary and non-claims
 
@@ -76,10 +83,11 @@ provide its own availability and context provenance.
 The profile makes no claim for TCP or other network transports, confidentiality,
 peer-credential extraction, protocol negotiation, server-incarnation evidence,
 exclusive lifetime locking, crash-residue recovery, concurrent clients,
-overload queues, graceful drain, signal handling, socket activation,
+overload queues, concurrent in-flight drain, signal handling, socket activation,
 installation, cross-restart request identity, or atomic Aegis/Agora recovery.
 The exclusive directory checkpoint adapter remains a separate durability
-mechanism; this transport currently owns a volatile `HostV2`.
+mechanism; this transport currently owns a volatile `HostV2`. The qualified idle
+drain fence does not add concurrent in-flight drain or signal integration.
 
 ## Qualification evidence
 
@@ -92,4 +100,6 @@ replacement endpoint. Dependency and effect gates keep the adapter limited to
 the Aegis verifier, Host V2, Wire V2, and Unix filesystem/socket effects. The
 successful path additionally verifies exact layer-separated observation,
 repeated-read passivity, content-safe diagnostics, and sticky counter
-saturation without wraparound.
+saturation without wraparound. A separate real-endpoint scenario verifies the
+idle drain transition, zero downstream work after its fence, endpoint retention,
+and pinned teardown.

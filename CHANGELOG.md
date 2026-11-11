@@ -8,6 +8,9 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added an irreversible idempotent idle drain fence for the sequential local
+  daemon, refusing before accept or authority work while retaining pinned
+  endpoint ownership through teardown.
 - Added a passive content-free local-daemon observation snapshot with distinct
   transport, host, and service counter boundaries plus sticky aggregate
   fidelity-loss evidence.

@@ -46,6 +46,7 @@ impl Default for DaemonLimitsV1 {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DaemonHealthV1 {
     pub ready: bool,
+    pub draining: bool,
     pub active_connections: u64,
     pub accepted_connections: u64,
     pub completed_connections: u64,
@@ -87,6 +88,7 @@ pub struct ServiceObservationV1 {
 #[derive(Debug)]
 pub enum DaemonErrorV1 {
     InvalidLimits,
+    Draining,
     UnsafeEndpoint,
     Io(io::Error),
     Authentication,
@@ -208,7 +210,23 @@ where
         &self.host
     }
 
+    /// Irreversibly fences this sequential daemon from accepting more work.
+    ///
+    /// The mutable borrow means no connection can be in flight through this
+    /// owner when the transition occurs. The endpoint remains owned until drop.
+    pub fn begin_drain(&mut self) -> bool {
+        if self.health.draining {
+            return false;
+        }
+        self.health.ready = false;
+        self.health.draining = true;
+        true
+    }
+
     pub fn serve_next(&mut self) -> Result<(), DaemonErrorV1> {
+        if self.health.draining {
+            return Err(DaemonErrorV1::Draining);
+        }
         let (mut stream, _) = self.listener.accept().map_err(DaemonErrorV1::Io)?;
         increment(
             &mut self.health.active_connections,

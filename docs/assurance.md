@@ -204,6 +204,14 @@ saturation and proves the sticky fidelity indicator without wraparound. This is
 passive process-local diagnostic evidence, not durable audit, metric export,
 latency measurement, concurrency evidence, or an SLO.
 
+The idle-drain scenario uses a real bound endpoint and proves that the first
+transition clears readiness, records draining, and is irreversible; repeated
+transition is inert; and every later serve attempt returns before socket accept,
+authenticator/Aegis invocation, Host V2 open, or Service V2 connect. The daemon
+retains its pinned endpoint until drop removes it. Exclusive sequential
+ownership excludes concurrent in-flight drain, deadlines, signals, and
+service-manager behavior from this evidence.
+
 Service V2 persistence scenarios recover byte-identical engine state and pending
 outbox, active clients, retained exact replies, and live room-page continuation.
 They replay a committed mutation without advancing the engine, preserve
