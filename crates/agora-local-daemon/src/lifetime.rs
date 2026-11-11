@@ -323,7 +323,10 @@ mod tests {
     use std::os::unix::fs::DirBuilderExt;
     use std::os::unix::net::UnixListener;
     use std::process::{Command, Stdio};
+    use std::sync::Mutex;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    static PROCESS_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn paths() -> (PathBuf, PathBuf, PathBuf) {
         static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -348,6 +351,7 @@ mod tests {
 
     #[test]
     fn every_rotation_interruption_is_exact_and_resumable() {
+        let _process_test_guard = PROCESS_TEST_LOCK.lock().unwrap();
         let previous = ServerIncarnationV1::new([0xa5; 16]);
         let published = ServerIncarnationV1::new([0xb6; 16]);
         let resumed = ServerIncarnationV1::new([0xc7; 16]);
@@ -392,6 +396,7 @@ mod tests {
 
     #[test]
     fn every_rotation_process_cut_is_exact_and_resumable() {
+        let _process_test_guard = PROCESS_TEST_LOCK.lock().unwrap();
         const CHILD_PARENT: &str = "AGORA_R81_LIFETIME_PARENT";
         const CHILD_POINT: &str = "AGORA_R81_LIFETIME_POINT";
         const CUT_EXIT: i32 = 86;
