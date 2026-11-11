@@ -8,6 +8,14 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Refreshed the checksum-closed source-candidate and canonical source-archive
+  evidence after the stable graph expanded to seventeen components: revision
+  `46098fb3cd1a6f9164365d8c49cf7edbc0957ef7` produced two byte-identical
+  291-payload candidates and two byte-identical 2,450,432-byte/362-entry
+  archives at SHA-256
+  `4437ccfa263ff913b36679706a5585be5170cc1abd5f32869db8f4d20544c0c5`;
+  direct-candidate and extracted-archive locked/offline qualification passed.
+
 - Added collaboration handshake profile 2 for the private Unix daemon, with
   closed conversation/transient/control routing, a server-only session hello
   binding replay to the declared server incarnation and exact authenticated

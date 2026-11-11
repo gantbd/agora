@@ -36,15 +36,16 @@ support remain unauthorized until a channel and policy are explicitly selected.
 
 ## Qualified local candidate
 
-Agora revision `651374a3e9cf4b51cb21da7c7af03bb746604d25` produced two
+Agora revision `46098fb3cd1a6f9164365d8c49cf7edbc0957ef7` produced two
 byte-identical candidate directories on Darwin 25.6.0 arm64 / macOS 26.6.2.
-Each contained 248 payload files plus `SHA256SUMS`, including the canonical
-source SBOM and R58 archive tooling. The manifest digest was
-`521912b3d03cb40799638cc510f75bf7eddc3d76bf1b2c57e1d532b68fb6b646` and
+Each contained 291 payload files plus `SHA256SUMS`, including the canonical
+seventeen-component source SBOM, R58 archive tooling, and R71 observation port.
+The manifest digest was
+`21aae72df2634c215fc1075161d51e4046a66c5f06e341ab73e623cc15ad521f` and
 the checksum-inventory digest was
-`54e92c656f80e15d6c1eb4115cb0e6ed3b0b3cd197af71565c54ee95b657d905`.
+`3c5c1781b9592a92e700e8023b46f6096a547205328adbdfb9de1e087679c8f3`.
 The manifest truthfully recorded both selected sibling trees as unclean, so
 their exact checksummed bytes—not their contextual revisions—are the qualified
-inputs. One candidate was archive-extracted and passed all stable workspace
-targets, doctests, and warning-denied documentation with a fresh target
-directory, the lock file, and offline mode.
+inputs. One directly built candidate and one archive-extracted candidate passed
+all stable workspace targets, doctests, and warning-denied documentation with a
+fresh target directory, the lock file, and offline mode.

@@ -52,9 +52,9 @@ Actual candidate construction and isolated qualification are opt-in because
 they copy sibling inputs and rebuild the complete stable workspace. They do not
 authorize distributing the resulting directory.
 
-Revision `651374a3e9cf4b51cb21da7c7af03bb746604d25` has one qualified local
+Revision `46098fb3cd1a6f9164365d8c49cf7edbc0957ef7` has one qualified local
 candidate/archive profile: two candidate constructions and their canonical
-archives were byte-identical, the 248-file payload closure
+archives were byte-identical, the 291-file payload closure
 was checksummed, both sibling selections were explicitly unclean, and one copy
 passed the stable locked/offline isolated build. This narrows the former
 self-contained-source blocker; one archive also passed validation, platform

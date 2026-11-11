@@ -467,6 +467,17 @@
   not implement the optional port retain the existing durable observation
   surface. This composition does not make process-local counters persistent,
   atomic across concurrent owners, or suitable as an integrity probe.
+- **R72 — Current-graph source artifact qualification:** after the stable local
+  component graph changes, two independently constructed R56 candidates for one
+  exact tracked Agora revision must be byte-identical and one must pass the
+  complete locked/offline isolated qualification. Canonical R58 archives built
+  independently from those candidates must be byte-identical; one archive must
+  pass sidecar and canonical validation, platform extraction, exact rearchive,
+  and complete extracted-source qualification. The evidence must record exact
+  counts and digests and must preserve unclean sibling selections as byte-level
+  inputs rather than promote contextual Git revisions into provenance. This
+  refresh grants no remote origin, signature, attestation, binary, installer,
+  support, distribution, or publication claim.
 
 ## Explicitly open
 

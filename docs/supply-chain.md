@@ -39,17 +39,19 @@ metadata for the two selected packages. Isolated locked/offline build evidence
 establishes content closure, not origin, advisory, or legal provenance.
 
 The qualified candidate for Agora revision
-`651374a3e9cf4b51cb21da7c7af03bb746604d25` was reproduced byte-for-byte,
-closed over 248 payload files including the canonical source SBOM and archive tooling, and passed
+`46098fb3cd1a6f9164365d8c49cf7edbc0957ef7` was reproduced byte-for-byte,
+closed over 291 payload files including the canonical source SBOM, archive tooling,
+and storage-observation port, and passed
 the complete stable locked/offline workspace build from an isolated target.
 Its manifest digest is
-`521912b3d03cb40799638cc510f75bf7eddc3d76bf1b2c57e1d532b68fb6b646` and
+`21aae72df2634c215fc1075161d51e4046a66c5f06e341ab73e623cc15ad521f` and
 its checksum-inventory digest is
-`54e92c656f80e15d6c1eb4115cb0e6ed3b0b3cd197af71565c54ee95b657d905`.
+`3c5c1781b9592a92e700e8023b46f6096a547205328adbdfb9de1e087679c8f3`.
 Both sibling selections were recorded unclean; the content hashes are evidence,
 while their contextual Git revisions are not promoted into provenance.
 Two canonical archives over those independent candidates were byte-identical at
-SHA-256 `41e22b596d32c6bd44578afde4421c4834d2b87c45b4d4a7dd3a5637976f4ad2`;
+2,450,432 bytes and 362 entries at SHA-256
+`4437ccfa263ff913b36679706a5585be5170cc1abd5f32869db8f4d20544c0c5`;
 one passed complete extracted-source qualification.
 
 This evidence does not establish remote availability of Aegis or Keystone, registry

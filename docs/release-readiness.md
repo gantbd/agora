@@ -69,12 +69,13 @@ not ready for a network service or crates.io release.
   including SHA-256 closure, platform listing/extraction, exact rearchive, and
   checksum/framing/traversal/link mutants;
 - a checksum-closed self-contained stable source directory for revision
-  `651374a3e9cf4b51cb21da7c7af03bb746604d25`, including the canonical source
-  SBOM and archive tooling, reproduced byte-identically twice across 248 payload files and qualified
-  locked/offline from its isolated sixteen-component local content closure while
+  `46098fb3cd1a6f9164365d8c49cf7edbc0957ef7`, including the canonical source
+  SBOM, archive tooling, and storage-observation port, reproduced byte-identically
+  twice across 291 payload files and qualified locked/offline from its isolated
+  seventeen-component local content closure while
   truthfully marking both sibling selections unclean;
-- two byte-identical canonical USTAR archives for that revision, each 1,984,512
-  bytes and 316 entries with SHA-256 `41e22b596d32c6bd44578afde4421c4834d2b87c45b4d4a7dd3a5637976f4ad2`;
+- two byte-identical canonical USTAR archives for that revision, each 2,450,432
+  bytes and 362 entries with SHA-256 `4437ccfa263ff913b36679706a5585be5170cc1abd5f32869db8f4d20544c0c5`;
   one passed validation, platform extraction, exact rearchive, and complete
   locked/offline extracted-source qualification;
 - membership-filtered, revision-bound in-process room/member/message pages with

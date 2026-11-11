@@ -32,11 +32,11 @@ advisory status, legal compatibility, support, or a publication channel.
 
 ## Qualified local archive
 
-Agora revision `651374a3e9cf4b51cb21da7c7af03bb746604d25` produced two
+Agora revision `46098fb3cd1a6f9164365d8c49cf7edbc0957ef7` produced two
 byte-identical canonical archives from two independently built candidates on
-Darwin 25.6.0 arm64 / macOS 26.6.2. Each archive is 1,984,512 bytes with 316
+Darwin 25.6.0 arm64 / macOS 26.6.2. Each archive is 2,450,432 bytes with 362
 entries and SHA-256
-`41e22b596d32c6bd44578afde4421c4834d2b87c45b4d4a7dd3a5637976f4ad2`.
+`4437ccfa263ff913b36679706a5585be5170cc1abd5f32869db8f4d20544c0c5`.
 One archive passed checksum and canonical validation, platform extraction,
 extracted R56 closure, exact rearchive, every stable workspace target, doctests,
 and warning-denied documentation with locked/offline dependencies and a fresh
