@@ -30,6 +30,8 @@ follow Semantic Versioning once a public release contract is selected.
 - Composed physical restore and durable session sanitization with bounded
   distinct-incarnation generation, exact endpoint-residue rotation, and a fresh
   collaboration handshake as an explicit non-atomic local operator procedure.
+  Revision `2649605b00a33167b4edb1555720a18b0596181d` passed the integrated
+  release profile with 10,000 soak cycles and 1,000,000 cases per fuzz target.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,
