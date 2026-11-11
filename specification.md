@@ -857,7 +857,23 @@ object, length, media type, label, and digest from current messages and retained
 message-acceptance event copies. This is logical non-disclosure, not external
 object deletion. Engine checkpoint profile 20 encodes only complete descriptors
 or identity-only tombstones; enclosing service and Host profiles advance to 22.
-The existing public protocol and wire profiles do not yet expose the feature.
+The additive public slice exposes one unified attachment admission command and
+one participant-bound retained-history page without changing any legacy message
+projection. Protocol target values are room, stable reply root, or stable topic;
+the service derives the author exclusively from its bound client. Canonical Wire
+V2 uses appended command tags 58/59 and outcome tags 56/57, rejects malformed
+descriptor grammar before reconstruction, and redacts locator, label, digest,
+and body content from diagnostics. Client uncertainty retains the complete
+command and replays only equal descriptor input.
+
+Attachment history filters the ordinary snapshot-bound room message sequence;
+its cursor is participant, room, and revision bound and may therefore return an
+empty intermediate page when that sequence contains only legacy messages.
+Available messages disclose complete descriptors; withdrawn or redacted
+messages disclose the same ordered attachment identities with no descriptor.
+Service and Host checkpoint profile 23 retain the cursor and exact request
+receipts. The attachment-aware change feed and capability advertisement remain
+open, so clients must not infer support from the unchanged capability list.
 
 ## Wire profile V1
 

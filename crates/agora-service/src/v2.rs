@@ -1,26 +1,34 @@
 //! Serialized volatile implementation of Agora Protocol V2.
 
 use agora_engine::{
-    AdmissionPolicy, BanPageCursor, CommandV2 as EngineCommand, Engine, MAX_REACTION_KEY_BYTES_V1,
-    MemberPageCursor, MessageId, MessagePageCursor, MessageRevisionPageCursorV1,
-    ModerationCausationV1, ModerationReasonV1, ObservationRefusal, OutcomeV2 as EngineOutcome,
-    ParticipantId, ParticipantKind, ReadPositionRefusalV1, ReadScopeV1 as EngineReadScopeV1,
-    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomChangeGap,
-    RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor, ThreadMessagePageCursor, TopicId,
+    AdmissionPolicy, AttachmentDescriptorV1 as EngineAttachmentDescriptorV1,
+    AttachmentIdV1 as EngineAttachmentIdV1, AttachmentIntegrityV1 as EngineAttachmentIntegrityV1,
+    AttachmentMessageTargetV1 as EngineAttachmentMessageTargetV1,
+    AttachmentObjectKeyV1 as EngineAttachmentObjectKeyV1,
+    AttachmentStoreIdV1 as EngineAttachmentStoreIdV1, BanPageCursor, CommandV2 as EngineCommand,
+    Engine, MAX_REACTION_KEY_BYTES_V1, MemberPageCursor, MessageId, MessagePageCursor,
+    MessageRevisionPageCursorV1, ModerationCausationV1, ModerationReasonV1, ObservationRefusal,
+    OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind, ReadPositionRefusalV1,
+    ReadScopeV1 as EngineReadScopeV1, Refusal as EngineRefusal, Revision, RevisionedCommandV2,
+    Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
+    Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicId,
     TopicMessagePageCursorV1, TopicPageCursorV1,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
+    AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
+    AttachmentMessagePageV1, AttachmentMessageTargetV1, AttachmentMessageV1, AttachmentObjectKeyV1,
+    AttachmentStoreIdV1, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
     CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
-    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
-    MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
-    MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
-    ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
-    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
-    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
-    ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1, TopicIdV1, TopicMessagePageV1,
-    TopicMessageV1, TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1,
-    TopicStatusV1, TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1,
+    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageAttachmentV1,
+    MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1,
+    MessageRevisionV1, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1,
+    ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
+    RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, Sha256DigestV1,
+    ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
+    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
+    TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1, TopicRoomChangePageV1,
+    TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1, TopicSupersessionStatusV1,
+    TopicTagStatusV1, TopicV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -100,6 +108,10 @@ enum CursorPage {
         cursor: MessagePageCursor,
     },
     IdentifiedMessages {
+        room_id: RoomId,
+        cursor: MessagePageCursor,
+    },
+    AttachmentMessages {
         room_id: RoomId,
         cursor: MessagePageCursor,
     },
@@ -336,6 +348,11 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.identified_messages(client, participant, room_id, *cursor, *limit),
+            CommandV2::AttachmentMessages {
+                room_id,
+                cursor,
+                limit,
+            } => self.attachment_messages(client, participant, room_id, *cursor, *limit),
             CommandV2::OpenChanges {
                 room_id,
                 observed_revision,
@@ -798,6 +815,30 @@ impl ServiceV2 {
                     addressed_to: addressed_to.iter().map(ParticipantId::new).collect(),
                 },
             ),
+            CommandV2::SpeakWithAttachments {
+                room_id,
+                expected_revision,
+                target,
+                logical_time,
+                body,
+                addressed_to,
+                attachments,
+            } => self.mutate_attachments(
+                *expected_revision,
+                EngineCommand::SpeakWithAttachments {
+                    room_id: RoomId::new(room_id),
+                    author: participant.clone(),
+                    target: map_attachment_target_to_engine(*target),
+                    at: agora_engine::LogicalTime(*logical_time),
+                    body: body.clone(),
+                    addressed_to: addressed_to.iter().map(ParticipantId::new).collect(),
+                    attachments: attachments
+                        .iter()
+                        .cloned()
+                        .map(map_attachment_descriptor_to_engine)
+                        .collect(),
+                },
+            ),
             CommandV2::WithdrawMessage {
                 room_id,
                 expected_revision,
@@ -877,6 +918,35 @@ impl ServiceV2 {
             revision: transition.revision.0,
             message_id: MessageIdV1::new(message_id.into_bytes()),
             sequence,
+        })
+    }
+
+    fn mutate_attachments(
+        &mut self,
+        expected_revision: u64,
+        command: EngineCommand,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let transition = self
+            .engine
+            .apply_revisioned(RevisionedCommandV2 {
+                expected_revision: Revision(expected_revision),
+                command,
+            })
+            .map_err(map_engine_refusal)?;
+        let EngineOutcome::AttachmentMessageAccepted {
+            message_id,
+            sequence,
+            attachment_count,
+            ..
+        } = transition.outcome
+        else {
+            return Err(RefusalV2::Unavailable);
+        };
+        Ok(OutcomeV2::AttachmentMessageAccepted {
+            revision: transition.revision.0,
+            message_id: MessageIdV1::new(message_id.into_bytes()),
+            sequence,
+            attachment_count: u32::from(attachment_count),
         })
     }
 
@@ -1335,6 +1405,50 @@ impl ServiceV2 {
             .map(map_identified_message_from_engine)
             .collect();
         Ok(OutcomeV2::IdentifiedMessages(IdentifiedMessagePageV1 {
+            revision: page.revision.0,
+            room_id: page.room_id.as_str().to_owned(),
+            messages,
+            oldest_retained_sequence: page.oldest_retained_sequence,
+            next_message_sequence: page.next_message_sequence,
+            next,
+        }))
+    }
+
+    fn attachment_messages(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        cursor_id: Option<PageCursorV2>,
+        limit: u32,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let cursor = match cursor_id {
+            Some(id) => match self.cursor_for(client, id)? {
+                CursorPage::AttachmentMessages {
+                    room_id: bound_room,
+                    cursor,
+                } if bound_room == room => Some(cursor),
+                _ => return Err(RefusalV2::InvalidCursor),
+            },
+            None => None,
+        };
+        let page = self
+            .engine
+            .message_page(observer, &room, cursor.as_ref(), limit as usize)
+            .map_err(map_observation_refusal)?;
+        let next_page = page.next.map(|cursor| CursorPage::AttachmentMessages {
+            room_id: room.clone(),
+            cursor,
+        });
+        let next = self.replace_cursor(client, cursor_id, next_page)?;
+        let messages = page
+            .messages
+            .into_iter()
+            .filter(|message| !message.attachments().is_empty())
+            .map(map_attachment_message_from_engine)
+            .collect();
+        Ok(OutcomeV2::AttachmentMessages(AttachmentMessagePageV1 {
             revision: page.revision.0,
             room_id: page.room_id.as_str().to_owned(),
             messages,
@@ -2421,6 +2535,7 @@ impl ServiceV2 {
             | CommandV2::Bans { room_id, limit, .. }
             | CommandV2::Messages { room_id, limit, .. }
             | CommandV2::IdentifiedMessages { room_id, limit, .. }
+            | CommandV2::AttachmentMessages { room_id, limit, .. }
             | CommandV2::ThreadRoots { room_id, limit, .. }
             | CommandV2::ThreadReplies { room_id, limit, .. }
             | CommandV2::MessageRevisions { room_id, limit, .. }
@@ -2549,6 +2664,21 @@ impl ServiceV2 {
                         .iter()
                         .all(|participant| valid_participant(participant))
             }
+            CommandV2::SpeakWithAttachments {
+                room_id,
+                body,
+                addressed_to,
+                attachments,
+                ..
+            } => {
+                valid_room(room_id)
+                    && valid_text(body, self.limits.max_message_body_bytes)
+                    && addressed_to.len() <= self.limits.max_addressed_participants
+                    && addressed_to
+                        .iter()
+                        .all(|participant| valid_participant(participant))
+                    && (1..=8).contains(&attachments.len())
+            }
         }
     }
 }
@@ -2627,6 +2757,87 @@ fn map_identified_message_from_engine(message: agora_engine::Message) -> Identif
             .addressed_to()
             .iter()
             .map(|participant| participant.as_str().to_owned())
+            .collect(),
+    }
+}
+
+fn map_attachment_target_to_engine(
+    target: AttachmentMessageTargetV1,
+) -> EngineAttachmentMessageTargetV1 {
+    match target {
+        AttachmentMessageTargetV1::Room => EngineAttachmentMessageTargetV1::Room,
+        AttachmentMessageTargetV1::Reply(message_id) => {
+            EngineAttachmentMessageTargetV1::Reply(MessageId::from_bytes(message_id.into_bytes()))
+        }
+        AttachmentMessageTargetV1::Topic(topic_id) => {
+            EngineAttachmentMessageTargetV1::Topic(TopicId::from_bytes(topic_id.into_bytes()))
+        }
+    }
+}
+
+fn map_attachment_descriptor_to_engine(
+    descriptor: AttachmentDescriptorV1,
+) -> EngineAttachmentDescriptorV1 {
+    EngineAttachmentDescriptorV1::new(
+        EngineAttachmentIdV1::new(descriptor.attachment_id.into_bytes()),
+        EngineAttachmentStoreIdV1::new(descriptor.store_id.into_bytes()),
+        EngineAttachmentObjectKeyV1::new(descriptor.object_key.into_bytes()),
+        descriptor.declared_bytes,
+        descriptor.media_type,
+        descriptor.display_label,
+        match descriptor.integrity {
+            AttachmentIntegrityV1::Sha256(digest) => {
+                EngineAttachmentIntegrityV1::Sha256(EngineSha256DigestV1::new(digest.into_bytes()))
+            }
+        },
+    )
+}
+
+fn map_attachment_descriptor_from_engine(
+    descriptor: &agora_engine::AttachmentDescriptorV1,
+) -> AttachmentDescriptorV1 {
+    AttachmentDescriptorV1 {
+        attachment_id: AttachmentIdV1::new(descriptor.attachment_id().into_bytes()),
+        store_id: AttachmentStoreIdV1::new(descriptor.store_id().into_bytes()),
+        object_key: AttachmentObjectKeyV1::new(descriptor.object_key().into_bytes()),
+        declared_bytes: descriptor.declared_bytes(),
+        media_type: descriptor.media_type().to_owned(),
+        display_label: descriptor.display_label().to_owned(),
+        integrity: match descriptor.integrity() {
+            agora_engine::AttachmentIntegrityV1::Sha256(digest) => {
+                AttachmentIntegrityV1::Sha256(Sha256DigestV1::new(digest.into_bytes()))
+            }
+        },
+    }
+}
+
+fn map_attachment_message_from_engine(message: agora_engine::Message) -> AttachmentMessageV1 {
+    AttachmentMessageV1 {
+        message_id: MessageIdV1::new(message.id().into_bytes()),
+        sequence: message.sequence(),
+        author: message.author().as_str().to_owned(),
+        logical_time: message.at().0,
+        body: message.body().to_owned(),
+        addressed_to: message
+            .addressed_to()
+            .iter()
+            .map(|participant| participant.as_str().to_owned())
+            .collect(),
+        reply_to_root: message
+            .reply_to_root()
+            .map(|message_id| MessageIdV1::new(message_id.into_bytes())),
+        topic_id: message
+            .topic_id()
+            .map(|topic_id| TopicIdV1::new(topic_id.into_bytes())),
+        attachments: message
+            .attachments()
+            .iter()
+            .map(|attachment| MessageAttachmentV1 {
+                attachment_id: AttachmentIdV1::new(attachment.attachment_id().into_bytes()),
+                descriptor: attachment
+                    .descriptor()
+                    .map(map_attachment_descriptor_from_engine),
+            })
             .collect(),
     }
 }

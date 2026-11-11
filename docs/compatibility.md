@@ -217,15 +217,20 @@ retains canonical bounded tag sets and their event chain; service and host
 records retain exact request/reply consequences. Profiles 18/20/20 fail closed
 rather than discard tags or infer them from aliases or names.
 
-Bounded attachment references advance engine/service/host persistence profiles
-to 20/22/22. The engine record adds three descriptor ceilings and an ordered,
-bounded attachment relation to every retained and event-copied message. Each
+Bounded attachment-reference core state advances engine/service/host
+persistence profiles to 20/22/22. The engine record adds three descriptor
+ceilings and an ordered, bounded attachment relation to every retained and
+event-copied message. Each
 entry is either a complete canonical descriptor or an identity-only tombstone;
 partial metadata cannot recover. Service and Host advance because their
-canonical records nest the engine checkpoint, even though attachment protocol
-commands and receipts remain open. Historical 19/21/21 fixtures remain frozen;
-new 20/22/22 fixtures and fuzz seeds pin the additive state shape. Public Wire
-V1/V2 and all existing message projections remain byte-identical.
+canonical records nest the engine checkpoint. The additive admission and
+retained-history protocol then advance service and Host to 23/23 because their
+cursor grammar now retains an attachment-history cursor. Historical fixtures
+through 20/22/22 remain frozen; new 20/23/23 fixtures and active fuzz seeds pin
+the current shape. Public Wire V2 appends command tags 58/59 and outcome tags
+56/57. All older tags, frames, message projections, and Wire V1 remain
+byte-identical. Capability discovery intentionally remains unchanged until the
+attachment-aware change profile closes.
 
 Transient collaboration Wire V1 is a new, separately invoked grammar. Its
 profile byte `01`, presence command/outcome tags `01` through `03`, typing

@@ -9,6 +9,37 @@ struct TransientPort;
 
 struct SearchPort;
 
+#[test]
+fn facade_names_attachment_protocol_and_wire_values() {
+    let descriptor = protocol::v2::AttachmentDescriptorV1 {
+        attachment_id: protocol::v2::AttachmentIdV1::new([1; 16]),
+        store_id: protocol::v2::AttachmentStoreIdV1::new([2; 16]),
+        object_key: protocol::v2::AttachmentObjectKeyV1::new([3; 32]),
+        declared_bytes: 4,
+        media_type: "text/plain".to_owned(),
+        display_label: "note.txt".to_owned(),
+        integrity: protocol::v2::AttachmentIntegrityV1::Sha256(protocol::v2::Sha256DigestV1::new(
+            [4; 32],
+        )),
+    };
+    let request = wire::v2::WireRequestV2::Execute {
+        client: protocol::v2::ClientIdV2(1),
+        request: protocol::v2::RequestV2 {
+            request_id: protocol::v2::RequestIdV2(1),
+            command: protocol::v2::CommandV2::SpeakWithAttachments {
+                room_id: "room".to_owned(),
+                expected_revision: 1,
+                target: protocol::v2::AttachmentMessageTargetV1::Room,
+                logical_time: 1,
+                body: "body".to_owned(),
+                addressed_to: vec![],
+                attachments: vec![descriptor],
+            },
+        },
+    };
+    assert!(wire::v2::encode_request_v2(&request, wire::WireLimits::reference()).is_ok());
+}
+
 impl client::ServicePort for Port {
     type Error = Infallible;
 

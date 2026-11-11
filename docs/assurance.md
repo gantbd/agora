@@ -126,10 +126,16 @@ diagnostics, exact caller order, unique attachment and object identities,
 human/agent-neutral room/topic/reply admission, reply topic inheritance, atomic
 pre-mutation refusal, edit preservation, withdrawal and moderator-redaction
 scrubbing in current state and retained event copies, and exact canonical
-recovery. Engine/service/Host persistence profiles advance together to
-20/22/22 because the enclosing records nest the engine state. This evidence
-does not establish a public protocol, blob availability, byte verification,
-download authority, scanning, deletion, or cross-engine atomicity.
+recovery. Engine/service/Host persistence profiles first advance together to
+20/22/22 because the enclosing records nest the engine state. The next slice
+adds two canonical wire scenarios, two service scenarios, authenticated Host
+actor binding, exact client uncertainty, and both SDK facades for unified
+admission plus participant-bound retained history. Service and Host recovery
+advance to 23/23 for the new history cursor; compatibility closure is 69
+fixtures. Capability advertisement, attachment-aware changes, explicit private
+local transport, and release qualification remain open. This evidence does not
+establish blob availability, byte verification, download authority, scanning,
+deletion, or cross-engine atomicity.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;

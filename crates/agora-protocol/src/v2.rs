@@ -56,6 +56,88 @@ impl fmt::Debug for TopicIdV1 {
     }
 }
 
+macro_rules! opaque_attachment_value {
+    ($name:ident, $bytes:expr) => {
+        #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub struct $name([u8; $bytes]);
+
+        impl $name {
+            pub const fn new(bytes: [u8; $bytes]) -> Self {
+                Self(bytes)
+            }
+
+            pub const fn into_bytes(self) -> [u8; $bytes] {
+                self.0
+            }
+        }
+
+        impl fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(concat!(stringify!($name), "(<opaque>)"))
+            }
+        }
+    };
+}
+
+opaque_attachment_value!(AttachmentIdV1, 16);
+opaque_attachment_value!(AttachmentStoreIdV1, 16);
+opaque_attachment_value!(AttachmentObjectKeyV1, 32);
+opaque_attachment_value!(Sha256DigestV1, 32);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AttachmentIntegrityV1 {
+    Sha256(Sha256DigestV1),
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct AttachmentDescriptorV1 {
+    pub attachment_id: AttachmentIdV1,
+    pub store_id: AttachmentStoreIdV1,
+    pub object_key: AttachmentObjectKeyV1,
+    pub declared_bytes: u64,
+    pub media_type: String,
+    pub display_label: String,
+    pub integrity: AttachmentIntegrityV1,
+}
+
+impl fmt::Debug for AttachmentDescriptorV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AttachmentDescriptorV1")
+            .field("attachment_id", &self.attachment_id)
+            .field("store_id", &self.store_id)
+            .field("object_key", &self.object_key)
+            .field("declared_bytes", &self.declared_bytes)
+            .field("media_type_bytes", &self.media_type.len())
+            .field("display_label_bytes", &self.display_label.len())
+            .field("integrity", &self.integrity)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AttachmentMessageTargetV1 {
+    Room,
+    Reply(MessageIdV1),
+    Topic(TopicIdV1),
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessageAttachmentV1 {
+    pub attachment_id: AttachmentIdV1,
+    pub descriptor: Option<AttachmentDescriptorV1>,
+}
+
+impl fmt::Debug for MessageAttachmentV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageAttachmentV1")
+            .field("attachment_id", &self.attachment_id)
+            .field("available", &self.descriptor.is_some())
+            .finish()
+    }
+}
+
 /// Closed selector for one participant's private read position.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ReadScopeV1 {
@@ -129,6 +211,11 @@ pub enum CommandV2 {
         limit: u32,
     },
     IdentifiedMessages {
+        room_id: String,
+        cursor: Option<PageCursorV2>,
+        limit: u32,
+    },
+    AttachmentMessages {
         room_id: String,
         cursor: Option<PageCursorV2>,
         limit: u32,
@@ -401,6 +488,15 @@ pub enum CommandV2 {
         body: String,
         addressed_to: Vec<String>,
     },
+    SpeakWithAttachments {
+        room_id: String,
+        expected_revision: u64,
+        target: AttachmentMessageTargetV1,
+        logical_time: u64,
+        body: String,
+        addressed_to: Vec<String>,
+        attachments: Vec<AttachmentDescriptorV1>,
+    },
     WithdrawMessage {
         room_id: String,
         expected_revision: u64,
@@ -460,6 +556,16 @@ impl fmt::Debug for CommandV2 {
                 limit,
             } => formatter
                 .debug_struct("IdentifiedMessages")
+                .field("room_id_bytes", &room_id.len())
+                .field("has_cursor", &cursor.is_some())
+                .field("limit", limit)
+                .finish(),
+            Self::AttachmentMessages {
+                room_id,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("AttachmentMessages")
                 .field("room_id_bytes", &room_id.len())
                 .field("has_cursor", &cursor.is_some())
                 .field("limit", limit)
@@ -682,6 +788,24 @@ impl fmt::Debug for CommandV2 {
                 .field("logical_time", logical_time)
                 .field("body_bytes", &body.len())
                 .field("addressed_count", &addressed_to.len())
+                .finish(),
+            Self::SpeakWithAttachments {
+                room_id,
+                expected_revision,
+                target,
+                logical_time,
+                body,
+                addressed_to,
+                attachments,
+            } => formatter
+                .debug_struct("SpeakWithAttachments")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("target", target)
+                .field("logical_time", logical_time)
+                .field("body_bytes", &body.len())
+                .field("addressed_count", &addressed_to.len())
+                .field("attachment_count", &attachments.len())
                 .finish(),
             Self::WithdrawMessage {
                 room_id,
@@ -1104,6 +1228,36 @@ pub struct IdentifiedMessageV1 {
     pub addressed_to: Vec<String>,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub struct AttachmentMessageV1 {
+    pub message_id: MessageIdV1,
+    pub sequence: u64,
+    pub author: String,
+    pub logical_time: u64,
+    pub body: String,
+    pub addressed_to: Vec<String>,
+    pub reply_to_root: Option<MessageIdV1>,
+    pub topic_id: Option<TopicIdV1>,
+    pub attachments: Vec<MessageAttachmentV1>,
+}
+
+impl fmt::Debug for AttachmentMessageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AttachmentMessageV1")
+            .field("message_id", &self.message_id)
+            .field("sequence", &self.sequence)
+            .field("author_bytes", &self.author.len())
+            .field("logical_time", &self.logical_time)
+            .field("body_bytes", &self.body.len())
+            .field("addressed_count", &self.addressed_to.len())
+            .field("is_reply", &self.reply_to_root.is_some())
+            .field("has_topic", &self.topic_id.is_some())
+            .field("attachment_count", &self.attachments.len())
+            .finish()
+    }
+}
+
 impl fmt::Debug for IdentifiedMessageV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -1308,6 +1462,16 @@ pub struct IdentifiedMessagePageV1 {
     pub revision: u64,
     pub room_id: String,
     pub messages: Vec<IdentifiedMessageV1>,
+    pub oldest_retained_sequence: u64,
+    pub next_message_sequence: u64,
+    pub next: Option<PageCursorV2>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct AttachmentMessagePageV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub messages: Vec<AttachmentMessageV1>,
     pub oldest_retained_sequence: u64,
     pub next_message_sequence: u64,
     pub next: Option<PageCursorV2>,
@@ -2871,6 +3035,12 @@ page_debug!(
     messages,
     "message_count"
 );
+page_debug!(
+    AttachmentMessagePageV1,
+    "AttachmentMessagePageV1",
+    messages,
+    "message_count"
+);
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum OutcomeV2 {
@@ -2880,6 +3050,7 @@ pub enum OutcomeV2 {
     Bans(BanPageV2),
     Messages(MessagePageV2),
     IdentifiedMessages(IdentifiedMessagePageV1),
+    AttachmentMessages(AttachmentMessagePageV1),
     ThreadRoots(ThreadMessagePageV1),
     ThreadReplies(ThreadMessagePageV1),
     ThreadStatus(ThreadStatusV1),
@@ -2936,6 +3107,12 @@ pub enum OutcomeV2 {
         revision: u64,
         message_id: MessageIdV1,
         sequence: u64,
+    },
+    AttachmentMessageAccepted {
+        revision: u64,
+        message_id: MessageIdV1,
+        sequence: u64,
+        attachment_count: u32,
     },
     ReplyAccepted {
         revision: u64,

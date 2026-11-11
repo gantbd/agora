@@ -1,7 +1,8 @@
 # ADR: bounded immutable attachment references
 
-Status: implementation in progress; core admission, tombstoning, and canonical
-recovery implemented, protocol-through-transport composition open
+Status: implementation in progress; core admission, attachment-aware retained
+history, canonical wire, replay, actor binding, and recovery implemented;
+attachment-aware changes and capability qualification open
 
 Date: 2026-11-11
 
@@ -69,12 +70,15 @@ label, and digest are no longer disclosed by Agora. This is logical
 non-disclosure, not object deletion. Retention eviction removes the descriptors
 with the message but neither operation instructs an external store.
 
-Checkpoint recovery retains descriptors and exact request receipts. Durable
+Checkpoint recovery retains descriptors, attachment-history cursors, and exact
+request receipts. Durable
 publication commits the message, descriptors, outbox, and receipt as one Agora
 unit before success is visible. It does not make the prior blob upload atomic
-with Agora. Protocol, canonical wire, client uncertainty, service replay, Host
-authorization, SDK exposure, compatibility fixtures, and local transport must
-close before the profile is advertised.
+with Agora. The protocol, canonical wire, service replay, Host actor binding,
+client uncertainty, and both SDK facades now close for admission and
+participant-bound retained history. The attachment-aware change profile, frozen
+attachment wire fixtures, explicit local-transport evidence, and capability
+discovery must still close before the profile is advertised.
 
 ## Consequences
 

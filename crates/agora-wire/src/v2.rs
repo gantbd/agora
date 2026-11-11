@@ -5,19 +5,22 @@ use super::{
     read_text, read_u8, read_u64, try_vec,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
+    AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
+    AttachmentMessagePageV1, AttachmentMessageTargetV1, AttachmentMessageV1, AttachmentObjectKeyV1,
+    AttachmentStoreIdV1, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
     CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
-    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageIdV1,
-    MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
-    MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
-    ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
-    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
-    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
-    ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1, TopicIdV1, TopicMessagePageV1,
-    TopicMessageV1, TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1,
-    TopicStatusV1, TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1,
+    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageAttachmentV1,
+    MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1,
+    MessageRevisionV1, MessageV2, OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1,
+    ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
+    RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, Sha256DigestV1,
+    ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
+    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
+    TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1, TopicRoomChangePageV1,
+    TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1, TopicSupersessionStatusV1,
+    TopicTagStatusV1, TopicV1,
 };
-use std::fmt;
+use std::{collections::BTreeSet, fmt};
 
 const VERSION_V2: u8 = 2;
 const CONNECT_REQUEST: u8 = 0x01;
@@ -236,6 +239,16 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             limit,
         } => {
             sink.u8(18)?;
+            sink.text(room_id)?;
+            encode_optional_cursor(sink, *cursor)?;
+            sink.u64(u64::from(*limit))
+        }
+        CommandV2::AttachmentMessages {
+            room_id,
+            cursor,
+            limit,
+        } => {
+            sink.u8(58)?;
             sink.text(room_id)?;
             encode_optional_cursor(sink, *cursor)?;
             sink.u64(u64::from(*limit))
@@ -770,6 +783,34 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             }
             Ok(())
         }
+        CommandV2::SpeakWithAttachments {
+            room_id,
+            expected_revision,
+            target,
+            logical_time,
+            body,
+            addressed_to,
+            attachments,
+        } => {
+            if !valid_attachment_descriptors(attachments) {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(59)?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            encode_attachment_target(sink, *target)?;
+            sink.u64(*logical_time)?;
+            sink.text(body)?;
+            sink.list(addressed_to.len())?;
+            for participant in addressed_to {
+                sink.text(participant)?;
+            }
+            sink.list(attachments.len())?;
+            for descriptor in attachments {
+                encode_attachment_descriptor(sink, descriptor)?;
+            }
+            Ok(())
+        }
         CommandV2::WithdrawMessage {
             room_id,
             expected_revision,
@@ -1176,6 +1217,43 @@ fn decode_command(
             room_id: read_text(decoder)?,
             topic_id: decode_topic_id(decoder)?,
         }),
+        58 => Ok(CommandV2::AttachmentMessages {
+            room_id: read_text(decoder)?,
+            cursor: decode_optional_cursor(decoder)?,
+            limit: read_u32(decoder)?,
+        }),
+        59 => {
+            let room_id = read_text(decoder)?;
+            let expected_revision = read_u64(decoder)?;
+            let target = decode_attachment_target(decoder)?;
+            let logical_time = read_u64(decoder)?;
+            let body = read_text(decoder)?;
+            let addressed_count = read_list(decoder, limits)?;
+            let mut addressed_to = try_vec(addressed_count)?;
+            for _ in 0..addressed_count {
+                addressed_to.push(read_text(decoder)?);
+            }
+            let attachment_count = read_list(decoder, limits)?;
+            if !(1..=8).contains(&attachment_count) {
+                return Err(WireDecodeError::Limit);
+            }
+            let mut attachments = try_vec(attachment_count)?;
+            for _ in 0..attachment_count {
+                attachments.push(decode_attachment_descriptor(decoder)?);
+            }
+            if !valid_attachment_descriptors(&attachments) {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(CommandV2::SpeakWithAttachments {
+                room_id,
+                expected_revision,
+                target,
+                logical_time,
+                body,
+                addressed_to,
+                attachments,
+            })
+        }
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1317,6 +1395,13 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
         OutcomeV2::IdentifiedMessages(page) => {
             sink.u8(19)?;
             encode_identified_message_page(sink, page)
+        }
+        OutcomeV2::AttachmentMessages(page) => {
+            if !valid_attachment_message_page(page) {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(56)?;
+            encode_attachment_message_page(sink, page)
         }
         OutcomeV2::ThreadRoots(page) => {
             if !valid_thread_message_page(page, None) {
@@ -1487,6 +1572,21 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             sink.u64(*revision)?;
             encode_message_id(sink, *message_id)?;
             sink.u64(*sequence)
+        }
+        OutcomeV2::AttachmentMessageAccepted {
+            revision,
+            message_id,
+            sequence,
+            attachment_count,
+        } => {
+            if !(1..=8).contains(attachment_count) {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(57)?;
+            sink.u64(*revision)?;
+            encode_message_id(sink, *message_id)?;
+            sink.u64(*sequence)?;
+            sink.u64(u64::from(*attachment_count))
         }
         OutcomeV2::ReplyAccepted {
             revision,
@@ -2126,6 +2226,28 @@ fn decode_outcome(
                 tags,
             }))
         }
+        56 => {
+            let page = decode_attachment_message_page(decoder, limits)?;
+            if !valid_attachment_message_page(&page) {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(OutcomeV2::AttachmentMessages(page))
+        }
+        57 => {
+            let revision = read_u64(decoder)?;
+            let message_id = decode_message_id(decoder)?;
+            let sequence = read_u64(decoder)?;
+            let attachment_count = read_u32(decoder)?;
+            if !(1..=8).contains(&attachment_count) {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(OutcomeV2::AttachmentMessageAccepted {
+                revision,
+                message_id,
+                sequence,
+                attachment_count,
+            })
+        }
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -2325,6 +2447,148 @@ fn decode_topic_id(
     Ok(TopicIdV1::new(bytes))
 }
 
+fn encode_attachment_target(
+    sink: &mut dyn Sink,
+    target: AttachmentMessageTargetV1,
+) -> Result<(), WireEncodeError> {
+    match target {
+        AttachmentMessageTargetV1::Room => sink.u8(1),
+        AttachmentMessageTargetV1::Reply(message_id) => {
+            sink.u8(2)?;
+            encode_message_id(sink, message_id)
+        }
+        AttachmentMessageTargetV1::Topic(topic_id) => {
+            sink.u8(3)?;
+            encode_topic_id(sink, topic_id)
+        }
+    }
+}
+
+fn decode_attachment_target(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<AttachmentMessageTargetV1, WireDecodeError> {
+    match read_u8(decoder)? {
+        1 => Ok(AttachmentMessageTargetV1::Room),
+        2 => Ok(AttachmentMessageTargetV1::Reply(decode_message_id(
+            decoder,
+        )?)),
+        3 => Ok(AttachmentMessageTargetV1::Topic(decode_topic_id(decoder)?)),
+        _ => Err(WireDecodeError::UnknownTag),
+    }
+}
+
+fn encode_attachment_descriptor(
+    sink: &mut dyn Sink,
+    descriptor: &AttachmentDescriptorV1,
+) -> Result<(), WireEncodeError> {
+    for byte in descriptor.attachment_id.into_bytes() {
+        sink.u8(byte)?;
+    }
+    for byte in descriptor.store_id.into_bytes() {
+        sink.u8(byte)?;
+    }
+    for byte in descriptor.object_key.into_bytes() {
+        sink.u8(byte)?;
+    }
+    sink.u64(descriptor.declared_bytes)?;
+    sink.text(&descriptor.media_type)?;
+    sink.text(&descriptor.display_label)?;
+    match descriptor.integrity {
+        AttachmentIntegrityV1::Sha256(digest) => {
+            sink.u8(1)?;
+            for byte in digest.into_bytes() {
+                sink.u8(byte)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn decode_attachment_descriptor(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<AttachmentDescriptorV1, WireDecodeError> {
+    let mut attachment_id = [0; 16];
+    for byte in &mut attachment_id {
+        *byte = read_u8(decoder)?;
+    }
+    let mut store_id = [0; 16];
+    for byte in &mut store_id {
+        *byte = read_u8(decoder)?;
+    }
+    let mut object_key = [0; 32];
+    for byte in &mut object_key {
+        *byte = read_u8(decoder)?;
+    }
+    let declared_bytes = read_u64(decoder)?;
+    let media_type = read_text(decoder)?;
+    let display_label = read_text(decoder)?;
+    let integrity = match read_u8(decoder)? {
+        1 => {
+            let mut digest = [0; 32];
+            for byte in &mut digest {
+                *byte = read_u8(decoder)?;
+            }
+            AttachmentIntegrityV1::Sha256(Sha256DigestV1::new(digest))
+        }
+        _ => return Err(WireDecodeError::UnknownTag),
+    };
+    Ok(AttachmentDescriptorV1 {
+        attachment_id: AttachmentIdV1::new(attachment_id),
+        store_id: AttachmentStoreIdV1::new(store_id),
+        object_key: AttachmentObjectKeyV1::new(object_key),
+        declared_bytes,
+        media_type,
+        display_label,
+        integrity,
+    })
+}
+
+fn valid_attachment_descriptors(descriptors: &[AttachmentDescriptorV1]) -> bool {
+    let mut attachment_ids = BTreeSet::new();
+    let mut object_refs = BTreeSet::new();
+    (1..=8).contains(&descriptors.len())
+        && descriptors.iter().all(|descriptor| {
+            descriptor.declared_bytes > 0
+                && canonical_media_type(&descriptor.media_type)
+                && !descriptor.display_label.is_empty()
+                && !descriptor.display_label.chars().any(char::is_control)
+                && attachment_ids.insert(descriptor.attachment_id)
+                && object_refs.insert((descriptor.store_id, descriptor.object_key))
+        })
+}
+
+fn canonical_media_type(value: &str) -> bool {
+    let Some((top, subtype)) = value.split_once('/') else {
+        return false;
+    };
+    let token = |byte: u8| {
+        byte.is_ascii_lowercase()
+            || byte.is_ascii_digit()
+            || matches!(
+                byte,
+                b'!' | b'#'
+                    | b'$'
+                    | b'%'
+                    | b'&'
+                    | b'\''
+                    | b'*'
+                    | b'+'
+                    | b'-'
+                    | b'.'
+                    | b'^'
+                    | b'_'
+                    | b'`'
+                    | b'|'
+                    | b'~'
+            )
+    };
+    !top.is_empty()
+        && !subtype.is_empty()
+        && !subtype.contains('/')
+        && top.bytes().all(token)
+        && subtype.bytes().all(token)
+}
+
 fn encode_read_scope(sink: &mut dyn Sink, scope: ReadScopeV1) -> Result<(), WireEncodeError> {
     match scope {
         ReadScopeV1::Room => sink.u8(1),
@@ -2454,6 +2718,144 @@ fn decode_identified_message_page(
         next_message_sequence: read_u64(decoder)?,
         next: decode_optional_cursor(decoder)?,
     })
+}
+
+fn encode_attachment_message(
+    sink: &mut dyn Sink,
+    message: &AttachmentMessageV1,
+) -> Result<(), WireEncodeError> {
+    encode_message_id(sink, message.message_id)?;
+    sink.u64(message.sequence)?;
+    sink.text(&message.author)?;
+    sink.u64(message.logical_time)?;
+    sink.text(&message.body)?;
+    sink.list(message.addressed_to.len())?;
+    for participant in &message.addressed_to {
+        sink.text(participant)?;
+    }
+    encode_optional_message_id(sink, message.reply_to_root)?;
+    encode_optional_topic_id(sink, message.topic_id)?;
+    sink.list(message.attachments.len())?;
+    for attachment in &message.attachments {
+        for byte in attachment.attachment_id.into_bytes() {
+            sink.u8(byte)?;
+        }
+        match &attachment.descriptor {
+            None => sink.u8(0)?,
+            Some(descriptor) => {
+                sink.u8(1)?;
+                encode_attachment_descriptor(sink, descriptor)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn decode_attachment_message(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<AttachmentMessageV1, WireDecodeError> {
+    let message_id = decode_message_id(decoder)?;
+    let sequence = read_u64(decoder)?;
+    let author = read_text(decoder)?;
+    let logical_time = read_u64(decoder)?;
+    let body = read_text(decoder)?;
+    let addressed_count = read_list(decoder, limits)?;
+    let mut addressed_to = try_vec(addressed_count)?;
+    for _ in 0..addressed_count {
+        addressed_to.push(read_text(decoder)?);
+    }
+    let reply_to_root = decode_optional_message_id(decoder)?;
+    let topic_id = decode_optional_topic_id(decoder)?;
+    let attachment_count = read_list(decoder, limits)?;
+    if !(1..=8).contains(&attachment_count) {
+        return Err(WireDecodeError::Limit);
+    }
+    let mut attachments = try_vec(attachment_count)?;
+    for _ in 0..attachment_count {
+        let mut attachment_id = [0; 16];
+        for byte in &mut attachment_id {
+            *byte = read_u8(decoder)?;
+        }
+        let attachment_id = AttachmentIdV1::new(attachment_id);
+        let descriptor = match read_u8(decoder)? {
+            0 => None,
+            1 => Some(decode_attachment_descriptor(decoder)?),
+            _ => return Err(WireDecodeError::UnknownTag),
+        };
+        attachments.push(MessageAttachmentV1 {
+            attachment_id,
+            descriptor,
+        });
+    }
+    Ok(AttachmentMessageV1 {
+        message_id,
+        sequence,
+        author,
+        logical_time,
+        body,
+        addressed_to,
+        reply_to_root,
+        topic_id,
+        attachments,
+    })
+}
+
+fn encode_attachment_message_page(
+    sink: &mut dyn Sink,
+    page: &AttachmentMessagePageV1,
+) -> Result<(), WireEncodeError> {
+    sink.u64(page.revision)?;
+    sink.text(&page.room_id)?;
+    sink.list(page.messages.len())?;
+    for message in &page.messages {
+        encode_attachment_message(sink, message)?;
+    }
+    sink.u64(page.oldest_retained_sequence)?;
+    sink.u64(page.next_message_sequence)?;
+    encode_optional_cursor(sink, page.next)
+}
+
+fn decode_attachment_message_page(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<AttachmentMessagePageV1, WireDecodeError> {
+    let revision = read_u64(decoder)?;
+    let room_id = read_text(decoder)?;
+    let length = read_list(decoder, limits)?;
+    let mut messages = try_vec(length)?;
+    for _ in 0..length {
+        messages.push(decode_attachment_message(decoder, limits)?);
+    }
+    Ok(AttachmentMessagePageV1 {
+        revision,
+        room_id,
+        messages,
+        oldest_retained_sequence: read_u64(decoder)?,
+        next_message_sequence: read_u64(decoder)?,
+        next: decode_optional_cursor(decoder)?,
+    })
+}
+
+fn valid_attachment_message_page(page: &AttachmentMessagePageV1) -> bool {
+    !page.room_id.is_empty()
+        && page.messages.iter().all(|message| {
+            let available = !message.body.is_empty();
+            let descriptors = message
+                .attachments
+                .iter()
+                .filter_map(|attachment| attachment.descriptor.clone())
+                .collect::<Vec<_>>();
+            (1..=8).contains(&message.attachments.len())
+                && message.attachments.iter().all(|attachment| {
+                    attachment.descriptor.is_some() == available
+                        && attachment.descriptor.as_ref().is_none_or(|descriptor| {
+                            descriptor.attachment_id == attachment.attachment_id
+                        })
+                })
+                && (!available || valid_attachment_descriptors(&descriptors))
+                && (available || descriptors.is_empty())
+        })
 }
 
 fn encode_optional_message_id(

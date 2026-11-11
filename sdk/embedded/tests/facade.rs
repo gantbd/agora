@@ -75,6 +75,16 @@ fn facade_alone_constructs_the_embedded_v2_stack() {
         command,
         engine::CommandV2::SetTopicSuccessor { .. }
     ));
+    let descriptor = engine::AttachmentDescriptorV1::new(
+        engine::AttachmentIdV1::new([1; 16]),
+        engine::AttachmentStoreIdV1::new([2; 16]),
+        engine::AttachmentObjectKeyV1::new([3; 32]),
+        4,
+        "text/plain",
+        "note.txt",
+        engine::AttachmentIntegrityV1::Sha256(engine::Sha256DigestV1::new([4; 32])),
+    );
+    assert_eq!(descriptor.declared_bytes(), 4);
 }
 
 #[test]

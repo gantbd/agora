@@ -1,7 +1,11 @@
 use agora_client::v2::{
     ClientErrorV2, ClientRestoreErrorV2, ClientStateV2, ClientV2, PortFailureV2, ServicePortV2,
 };
-use agora_protocol::v2::{ClientIdV2, CommandV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2};
+use agora_protocol::v2::{
+    AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1, AttachmentMessageTargetV1,
+    AttachmentObjectKeyV1, AttachmentStoreIdV1, ClientIdV2, CommandV2, RefusalV2, ReplyV2,
+    RequestIdV2, RequestV2, Sha256DigestV1,
+};
 use std::collections::VecDeque;
 
 #[derive(Default)]
@@ -30,6 +34,54 @@ fn rooms(limit: u32) -> CommandV2 {
         cursor: None,
         limit,
     }
+}
+
+fn attachment_command(label: &str) -> CommandV2 {
+    CommandV2::SpeakWithAttachments {
+        room_id: "room".to_owned(),
+        expected_revision: 4,
+        target: AttachmentMessageTargetV1::Room,
+        logical_time: 5,
+        body: "body".to_owned(),
+        addressed_to: vec![],
+        attachments: vec![AttachmentDescriptorV1 {
+            attachment_id: AttachmentIdV1::new([1; 16]),
+            store_id: AttachmentStoreIdV1::new([2; 16]),
+            object_key: AttachmentObjectKeyV1::new([3; 32]),
+            declared_bytes: 4,
+            media_type: "text/plain".to_owned(),
+            display_label: label.to_owned(),
+            integrity: AttachmentIntegrityV1::Sha256(Sha256DigestV1::new([4; 32])),
+        }],
+    }
+}
+
+#[test]
+fn attachment_uncertainty_replays_only_the_exact_descriptor_set() {
+    let port = RecordingPortV2 {
+        replies: [
+            Err(PortFailureV2::OutcomeUnknown("lost")),
+            Ok(ReplyV2::Refused(RefusalV2::Unavailable)),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let mut client = ClientV2::new(ClientIdV2(7), port);
+    assert_eq!(
+        client.execute(attachment_command("first")),
+        Err(ClientErrorV2::OutcomeUnknown("lost"))
+    );
+    assert_eq!(
+        client.execute(attachment_command("changed")),
+        Err(ClientErrorV2::UnresolvedOutcome)
+    );
+    assert_eq!(
+        client.execute(attachment_command("first")),
+        Ok(ReplyV2::Refused(RefusalV2::Unavailable))
+    );
+    let (port, pending) = client.into_parts();
+    assert!(pending.is_none());
+    assert_eq!(port.requests[0], port.requests[1]);
 }
 
 #[test]

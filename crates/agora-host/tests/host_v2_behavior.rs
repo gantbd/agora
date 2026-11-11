@@ -8,7 +8,9 @@ use agora_host::v2::persistence::{
 };
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_protocol::v2::{
-    AdmissionPolicyV2, ClientIdV2, CommandV2, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
+    AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
+    AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1, ClientIdV2, CommandV2,
+    OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1,
 };
 use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
@@ -215,6 +217,84 @@ fn v2_verified_connection_binds_actor_and_exact_replay() {
     assert_eq!(room.members[0].0.as_str(), "alice");
     assert_eq!(host.usage().executed, 2);
     assert!(!format!("{host:?}").contains("alice"));
+}
+
+#[test]
+fn v2_attachment_admission_binds_the_authenticated_actor() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(2),
+    );
+    let (session, client, context) = open(&mut host, "bot", 2);
+    let frame = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::SpeakWithAttachments {
+                    room_id: "room".to_owned(),
+                    expected_revision: 4,
+                    target: AttachmentMessageTargetV1::Room,
+                    logical_time: 5,
+                    body: "body".to_owned(),
+                    addressed_to: vec![],
+                    attachments: vec![AttachmentDescriptorV1 {
+                        attachment_id: AttachmentIdV1::new([1; 16]),
+                        store_id: AttachmentStoreIdV1::new([2; 16]),
+                        object_key: AttachmentObjectKeyV1::new([3; 32]),
+                        declared_bytes: 4,
+                        media_type: "text/plain".to_owned(),
+                        display_label: "note.txt".to_owned(),
+                        integrity: AttachmentIntegrityV1::Sha256(Sha256DigestV1::new([4; 32])),
+                    }],
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host
+                .handle(session, &frame, &context, HostTimeV1(2))
+                .unwrap(),
+            limits(2).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::AttachmentMessageAccepted {
+            revision: 5,
+            ..
+        }))
+    ));
+    assert_eq!(
+        host.service()
+            .engine()
+            .message(&RoomId::new("room"), 0)
+            .unwrap()
+            .author()
+            .as_str(),
+        "bot"
+    );
+    assert!(calls.get() >= 2);
 }
 
 #[test]
@@ -669,7 +749,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    let fixture = include_str!("fixtures/host-checkpoint-v22.hex").trim();
+    let fixture = include_str!("fixtures/host-checkpoint-v23.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -876,7 +956,7 @@ fn v2_host_checkpoint_is_scope_bound_bounded_and_closed_to_partial_state() {
 
 #[test]
 fn fixed_seed_host_checkpoint_mutations_refuse_or_remain_canonical() {
-    let checkpoint = decode_hex(include_str!("fixtures/host-checkpoint-v22.hex"));
+    let checkpoint = decode_hex(include_str!("fixtures/host-checkpoint-v23.hex"));
     let mut seed = 0x7057_c4ae_c0de_0015u64;
 
     for sample in 0..512 {
