@@ -261,6 +261,14 @@
   change-retention gap when their exclusive position predates its edge. Both
   queues, edges, redaction consequences, and live service cursors must recover
   canonically without turning observation retention into delivery authority.
+- **R50 — Reproducible coverage-guided parser evidence:** canonical wire and
+  semantic-checkpoint decoders must have separately runnable libFuzzer targets
+  under an exact driver, compiler, library, seed corpus, input ceiling, memory
+  ceiling, timeout, run count, and random seed. Every accepted candidate must
+  re-encode byte-for-byte and remain equal after decoding. The stable offline
+  gate must verify the immutable corpus and toolchain contract without claiming
+  that an opt-in campaign ran; every executed campaign must report incomplete
+  coverage honestly and preserve failures as focused ordinary regressions.
 
 ## Explicitly open
 

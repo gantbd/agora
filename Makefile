@@ -1,6 +1,6 @@
-.PHONY: check check-baseline check-boundaries check-release-contract check-supply-chain fmt lint test doc soak
+.PHONY: check check-baseline check-boundaries check-fuzz-contract check-release-contract check-supply-chain fmt lint test doc fuzz-smoke soak
 
-check: check-release-contract check-baseline check-supply-chain check-boundaries fmt lint test doc
+check: check-release-contract check-baseline check-supply-chain check-boundaries check-fuzz-contract fmt lint test doc
 
 check-release-contract:
 	./scripts/check-release-contract.sh
@@ -17,6 +17,9 @@ check-supply-chain:
 check-boundaries:
 	./scripts/check-boundaries.sh
 
+check-fuzz-contract:
+	./scripts/check-fuzz-contract.sh
+
 fmt:
 	cargo fmt --all -- --check
 
@@ -29,6 +32,9 @@ test:
 doc:
 	cargo test --workspace --doc --locked --offline
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked --offline
+
+fuzz-smoke:
+	./scripts/run-fuzz-smoke.sh
 
 soak:
 	cargo test -p agora-service --test service_v2_soak --locked --offline -- --ignored --nocapture

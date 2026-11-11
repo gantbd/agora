@@ -10,6 +10,7 @@ package|crates/agora-protocol/Cargo.toml|agora-protocol|0.1.0
 package|crates/agora-service/Cargo.toml|agora-service|0.1.0
 package|crates/agora-storage-directory/Cargo.toml|agora-storage-directory|0.1.0
 package|crates/agora-wire/Cargo.toml|agora-wire|0.1.0
+package|fuzz/Cargo.toml|agora-fuzz|0.0.0
 package|sdk/client/Cargo.toml|agora-sdk-client|0.1.0
 package|sdk/embedded/Cargo.toml|agora-sdk-embedded|0.1.0
 fixture|crates/agora-host/tests/fixtures/host-checkpoint-v16.hex|3602|2ff37eb96bf54c4fae21caf610d2aa1bdda7fd6d3eb7f98fda78a1435833c7ce

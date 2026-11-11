@@ -25,7 +25,8 @@ not ready for a network service or crates.io release.
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   twelve packages;
 - conservative package and canonical-fixture inventory closure over twelve
-  packages and twenty-nine fixtures;
+  stable workspace packages, one standalone fuzz package, and twenty-nine
+  fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
 - conservative supply inventory closure over sixteen locked local components with
@@ -45,6 +46,9 @@ not ready for a network service or crates.io release.
 - deterministic bounded mutation of every canonical V1/V2 wire fixture across
   all strict prefixes, trailing framing, and every single-bit change, with exact
   re-encoding required for every accepted candidate;
+- separately pinned coverage-guided smoke targets for all public wire decoders
+  and engine/service/host recovery, with immutable canonical seeds and exact
+  re-encoding oracles;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound
@@ -124,8 +128,9 @@ not ready for a network service or crates.io release.
 - no qualified store beyond the single-owner local Unix directory profile; no
   hardware power-loss, network-filesystem, backup/restore, encryption, or
   multi-host availability qualification;
-- no performance or coverage-guided fuzzing qualification, advisory
-  lookup, legal compatibility review, binary SBOM, or artifact provenance;
+- no performance qualification, sustained or thresholded fuzz campaign,
+  advisory lookup, legal compatibility review, binary SBOM, or artifact
+  provenance;
 - no production privacy, deletion, moderation, or abuse policy.
 
 Passing `make check` establishes only the source profile above.

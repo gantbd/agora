@@ -1,8 +1,8 @@
 # Roadmap
 
 1. Extend the implemented deterministic models, canonical wire/recovery mutation,
-   filesystem interruption, and soak gates with reproducible coverage-guided
-   fuzzing and broader command models.
+   coverage-guided fuzzing, filesystem interruption, and soak gates with broader
+   command models and sustained release-candidate campaigns.
 2. Extend the implemented stable-topic substrate only through separately
    decided rename, move, merge, resolution, and conversation-collection laws.
 3. Qualify backup/restore, upgrade/rollback, and an additional physical store only

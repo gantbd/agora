@@ -8,6 +8,9 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added pinned, opt-in cargo-fuzz targets for every public wire decoder and the
+  engine/service/host recovery stack, with immutable canonical seeds, exact
+  re-encoding oracles, a stable contract gate, and bounded campaign runner.
 - Separated the lossless acknowledged delivery outbox from a bounded recent
   change journal, with independent eviction evidence, participant-bound pull
   gaps, canonical profile-14/16/16 recovery, a closed capability, and frozen

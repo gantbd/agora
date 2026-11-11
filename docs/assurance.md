@@ -13,7 +13,7 @@ The active `make check` gate contains:
 
 1. fail-closed release-contract, conservative compatibility-baseline, and locked
    local-component supply checks with adversarial inventory mutants;
-2. dependency and effect-boundary checks;
+2. dependency, effect-boundary, and immutable fuzz-corpus contract checks;
 3. formatting and warning-denied lint;
 4. all unit, integration, and bounded-model tests offline;
 5. doctests and warning-denied documentation.
@@ -21,7 +21,8 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact twelve-package workspace and twenty-nine canonical fixtures.
+closes over the twelve-package stable workspace, the standalone fuzz package,
+and twenty-nine canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -41,6 +42,19 @@ The frozen service and host checkpoints additionally receive 512 fixed-seed
 single-bit mutations per profile. Each candidate must refuse recovery or recover
 and re-encode byte-for-byte, extending the no-silent-normalization law through
 nested private state, receipts, cursors, and authenticated sessions.
+
+The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
+nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus
+is regenerated from and checked against all twenty-five wire fixtures plus the
+current engine, service, and host checkpoint fixtures. `wire_canonical` drives
+all four public V1/V2 request/reply decoders; `checkpoint_canonical` drives all
+three semantic recovery layers. An accepted candidate must re-encode exactly.
+The qualified smoke ran 20,000 fixed-seed cases per target with 64-KiB input,
+10-second per-input, and 2-GiB memory ceilings on Apple Silicon. This is bounded
+coverage-guided counterexample search, not a coverage threshold, sustained
+campaign, parser proof, or claim about socket framing, physical storage, or
+migrations. The ordinary offline gate verifies pins and seeds but does not
+misreport the opt-in campaign as executed.
 
 The addressing model exhausts every author, recipient subset, and human/agent
 kind assignment for a three-participant room. This establishes symmetry only for

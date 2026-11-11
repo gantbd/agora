@@ -27,6 +27,12 @@ event. Delivery acknowledgment drains only the lossless/backpressured outbox;
 bounded change-journal eviction alone creates a pull-feed retention gap. Both
 suffixes and their distinct edges survive canonical recovery.
 
+An opt-in standalone fuzz profile drives all public wire decoders and the three
+semantic checkpoint layers under pinned cargo-fuzz, nightly, libFuzzer, corpus,
+and campaign bounds. The stable offline gate verifies that contract and exact
+canonical seeds; it does not claim the coverage-guided campaign ran. See
+`docs/fuzzing.md`.
+
 An additive Protocol V2 now has a separately typed serialized service, client,
 and canonical version-2 complete-frame codec. It closes participant-bound room creation, invitation, joining,
 leaving, role change, kick/ban/unban moderation, speaking, and bounded page projection with client-scoped
