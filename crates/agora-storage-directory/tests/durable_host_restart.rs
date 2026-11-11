@@ -4,12 +4,15 @@ use agora_durable::{
 use agora_engine::{CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind};
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
-use agora_host::{HostLimits, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
+use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_protocol::v2::{
     AdmissionPolicyV2, CommandV2, OutcomeV2, ReplyV2, RequestIdV2, RequestV2,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2, persistence::ServiceRecoveryLimitsV2};
-use agora_storage_directory::{DirectoryCheckpointStoreV1, DirectoryLimitsV1};
+use agora_storage_directory::{
+    DirectoryCheckpointStoreV1, DirectoryLimitsV1, export_directory_backup_v1,
+    restore_directory_backup_v1,
+};
 use agora_wire::WireLimits;
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
 use std::fs;
@@ -228,4 +231,92 @@ fn authenticated_mutation_recovers_and_replays_across_physical_restart() {
         offers_before,
         "exact replay must not offer another checkpoint"
     );
+}
+
+#[test]
+fn physical_operator_restore_durably_invalidates_old_sessions() {
+    let temp = TempDirectory::new();
+    let source_path = temp.0.join("source");
+    let backup_path = temp.0.join("backup.bin");
+    let restored_path = temp.0.join("restored");
+    let store =
+        DirectoryCheckpointStoreV1::create_new(&source_path, DirectoryLimitsV1::default()).unwrap();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store, config()).unwrap();
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame(), &Context, HostTimeV1(1))
+    else {
+        panic!("authenticated open must be durable");
+    };
+    let old_session = opened.session().unwrap();
+    let WireReplyV2::Connected(old_client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connect reply expected");
+    };
+    let frame = create_frame(old_client);
+    assert!(matches!(
+        durable.handle(old_session, &frame, &Context, HostTimeV1(2)),
+        DurableHostPublicationV2::Published {
+            value: Ok(_),
+            evidence: DurableEvidenceV2::Committed { .. }
+        }
+    ));
+    let event_count = durable
+        .host()
+        .unwrap()
+        .service()
+        .engine()
+        .pending_events()
+        .len();
+    drop(durable.into_store());
+
+    export_directory_backup_v1(&source_path, &backup_path, DirectoryLimitsV1::default()).unwrap();
+    let restored_store =
+        restore_directory_backup_v1(&backup_path, &restored_path, DirectoryLimitsV1::default())
+            .unwrap();
+    let mut restored =
+        DurableHostV2::recover_after_restore(restored_store, config(), Verifier).unwrap();
+    assert_eq!(restored.observation().store_revision, 3);
+    assert_eq!(
+        restored
+            .host()
+            .unwrap()
+            .service()
+            .engine()
+            .pending_events()
+            .len(),
+        event_count
+    );
+    assert_eq!(restored.host().unwrap().service().active_client_count(), 0);
+    assert_eq!(
+        restored.handle(old_session, &frame, &Context, HostTimeV1(3)),
+        DurableHostPublicationV2::Published {
+            value: Err(HostRefusal::Unavailable),
+            evidence: DurableEvidenceV2::PreviouslyCommitted {
+                revision: keystone_storage::Revision(3)
+            }
+        }
+    );
+    drop(restored.into_store());
+
+    let reopened =
+        DirectoryCheckpointStoreV1::open_existing(&restored_path, DirectoryLimitsV1::default())
+            .unwrap();
+    let mut restarted = DurableHostV2::recover(reopened, config(), Verifier).unwrap();
+    assert_eq!(restarted.host().unwrap().service().active_client_count(), 0);
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = restarted.open(&connect_frame(), &Context, HostTimeV1(3))
+    else {
+        panic!("fresh post-restore connection expected");
+    };
+    let WireReplyV2::Connected(new_client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connect reply expected");
+    };
+    assert_ne!(opened.session().unwrap(), old_session);
+    assert_eq!(new_client.0, 1);
 }

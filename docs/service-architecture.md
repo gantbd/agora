@@ -183,6 +183,15 @@ post-rename recovery. It does not automate cleanup or claim hardware power-loss,
 network-filesystem, encryption, remote transport, rollback resistance,
 disaster-recovery objectives, or multi-host behavior.
 
+Physical restore deliberately remains Agora-semantic-free. The higher
+`DurableHostV2::recover_after_restore` boundary decodes the restored Host unit,
+retires all recovered sessions and disconnects their Service clients, then
+durably CAS-publishes the sanitized canonical Host checkpoint before returning
+an active owner. This preserves rooms, messages, events, outbox state, and
+monotone session/client frontiers while removing private cursors and replay
+receipts tied to pre-restore connections. Ordinary clean restart continues to
+use `recover` and retains exact session replay.
+
 `ClientV2` mirrors that uncertainty boundary without assuming a transport. A
 port reports either definitely-not-sent or outcome-unknown. Unknown retains the
 exact request; only equal-command replay may cross the port until reply or

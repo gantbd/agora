@@ -172,6 +172,9 @@ not ready for a network service or crates.io release.
   source locking, private synchronized output, fail-closed mutation checks,
   preserved revision continuity, all ten export/restore interruption boundaries,
   exact residue classification, and explicit sensitive-content boundaries;
+- explicit durable operator-restore Host recovery that commits invalidation of
+  every recovered session and private Service client/cursor/receipt before
+  activation while preserving conversation state and monotone identities;
 - snapshot-aligned bounded room pull changes with stable event identity,
   exclusive continuation, explicit retention/leave-rejoin gaps, durable service
   cursors, closed Wire V2 values, and a frozen representative frame;

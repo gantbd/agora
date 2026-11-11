@@ -1,13 +1,14 @@
 use agora_durable::{
     DurableConfigV2, DurableEvidenceV2, DurableHostConfigV2, DurableHostPublicationV2,
-    DurableHostSuppressionV2, DurableHostV2, DurableOwnerStateV2, DurablePublicationV2,
-    DurableServiceV2, DurableStartErrorV2, DurableSuppressionV2, DurableTransientHostV1,
+    DurableHostStartErrorV2, DurableHostSuppressionV2, DurableHostV2, DurableOwnerStateV2,
+    DurablePublicationV2, DurableServiceV2, DurableStartErrorV2, DurableSuppressionV2,
+    DurableTransientHostV1,
 };
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, LogicalTime, Participant,
     ParticipantId, ParticipantKind, ReadScopeV1 as EngineReadScopeV1, RoomId,
 };
-use agora_host::transient::TransientHostV1;
+use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
@@ -88,6 +89,7 @@ enum NextCommit {
     IndeterminateBefore,
     IndeterminateAfter,
     Weak,
+    WrongRevision,
     Error,
 }
 
@@ -142,6 +144,11 @@ impl CheckpointStore for TestStore {
             NextCommit::Refuse => Ok(CommitOutcome::Refused(StoreRefusal::ValueLimit)),
             NextCommit::IndeterminateBefore => Ok(CommitOutcome::Indeterminate),
             NextCommit::Error => Err(()),
+            NextCommit::WrongRevision => Ok(CommitOutcome::Committed(CommitReceipt {
+                revision: Revision(revision.0 + 1),
+                mechanism: "test-store-v1",
+                strength: AcknowledgementStrength::Durable,
+            })),
             NextCommit::Normal | NextCommit::IndeterminateAfter | NextCommit::Weak => {
                 let strength = if next == NextCommit::Weak {
                     AcknowledgementStrength::Volatile
@@ -589,6 +596,216 @@ fn authenticated_host_commits_session_service_and_reply_as_one_recoverable_unit(
     let diagnostic = format!("{observation:?}");
     assert!(!diagnostic.contains("Alice"));
     assert!(!diagnostic.contains("room"));
+}
+
+#[test]
+fn operator_restore_commits_session_invalidation_before_activation() {
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame(), &context, HostTimeV1(1))
+    else {
+        panic!("connect expected");
+    };
+    let old_session = opened.session().unwrap();
+    let WireReplyV2::Connected(old_client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connected frame expected");
+    };
+    assert!(matches!(
+        durable.handle(
+            old_session,
+            &create_frame(old_client),
+            &context,
+            HostTimeV1(2),
+        ),
+        DurableHostPublicationV2::Published {
+            value: Ok(_),
+            evidence: DurableEvidenceV2::Committed {
+                revision: Revision(2)
+            }
+        }
+    ));
+    drop(durable.into_store());
+
+    let restored =
+        DurableHostV2::recover_after_restore(store.clone(), host_config(), Verifier).unwrap();
+    assert_eq!(restored.observation().store_revision, 3);
+    assert_eq!(restored.host().unwrap().service().active_client_count(), 0);
+    assert_eq!(restored.host().unwrap().service().engine().revision().0, 2);
+    assert_eq!(
+        store.commit_calls(),
+        4,
+        "restore invalidation is one commit"
+    );
+    drop(restored.into_store());
+
+    let mut restarted = DurableHostV2::recover(store.clone(), host_config(), Verifier).unwrap();
+    assert_eq!(restarted.host().unwrap().service().active_client_count(), 0);
+    assert_eq!(
+        restarted.handle(
+            old_session,
+            &create_frame(old_client),
+            &context,
+            HostTimeV1(3),
+        ),
+        DurableHostPublicationV2::Published {
+            value: Err(HostRefusal::Unavailable),
+            evidence: DurableEvidenceV2::PreviouslyCommitted {
+                revision: Revision(3)
+            }
+        }
+    );
+    assert_eq!(store.commit_calls(), 4, "invalid old session is inert");
+
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened),
+        evidence: DurableEvidenceV2::Committed {
+            revision: Revision(4),
+        },
+    } = restarted.open(&connect_frame(), &context, HostTimeV1(3))
+    else {
+        panic!("fresh post-restore connection expected");
+    };
+    let WireReplyV2::Connected(new_client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connected frame expected");
+    };
+    assert_ne!(opened.session().unwrap(), old_session);
+    assert_eq!(new_client.0, 1, "client identity frontier must not rewind");
+}
+
+#[test]
+fn operator_restore_never_activates_without_exact_durable_invalidation() {
+    for (next, expected) in [
+        (
+            NextCommit::Refuse,
+            DurableHostStartErrorV2::StoreRefused(StoreRefusal::ValueLimit),
+        ),
+        (
+            NextCommit::IndeterminateBefore,
+            DurableHostStartErrorV2::OutcomeUnknown,
+        ),
+        (
+            NextCommit::IndeterminateAfter,
+            DurableHostStartErrorV2::OutcomeUnknown,
+        ),
+        (NextCommit::Weak, DurableHostStartErrorV2::NotDurable),
+        (
+            NextCommit::WrongRevision,
+            DurableHostStartErrorV2::InvalidReceipt,
+        ),
+        (NextCommit::Error, DurableHostStartErrorV2::StoreFault),
+    ] {
+        let store = TestStore::default();
+        let host = HostV2::new(service(), Verifier, host_limits());
+        let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+        let context = Context { active: true };
+        assert!(matches!(
+            durable.open(&connect_frame(), &context, HostTimeV1(1)),
+            DurableHostPublicationV2::Published { value: Ok(_), .. }
+        ));
+        drop(durable.into_store());
+        store.next(next);
+
+        assert_eq!(
+            DurableHostV2::recover_after_restore(store, host_config(), Verifier).unwrap_err(),
+            expected,
+            "restore boundary must fail closed for {next:?}"
+        );
+    }
+
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    assert!(matches!(
+        durable.open(&connect_frame(), &context, HostTimeV1(1)),
+        DurableHostPublicationV2::Published { value: Ok(_), .. }
+    ));
+    drop(durable.into_store());
+    let foreign = DurableHostConfigV2::new(
+        "agora-host",
+        HostCheckpointScopeV1::new(*b"foreign-host-v1!"),
+        MAX,
+        HostRecoveryLimitsV2 {
+            max_snapshot_bytes: MAX,
+            max_service_snapshot_bytes: MAX,
+            maximum_host_limits: host_limits(),
+            service: ServiceRecoveryLimitsV2 {
+                max_snapshot_bytes: MAX,
+                max_engine_snapshot_bytes: MAX,
+                maximum_service_limits: ServiceLimitsV2::default(),
+                maximum_engine_limits: Limits::default(),
+            },
+        },
+    );
+    assert_eq!(
+        DurableHostV2::recover_after_restore(store.clone(), foreign, Verifier).unwrap_err(),
+        DurableHostStartErrorV2::Checkpoint(
+            agora_host::v2::persistence::HostCheckpointErrorV2::Scope
+        )
+    );
+    assert_eq!(store.commit_calls(), 2, "checkpoint refusal is precommit");
+}
+
+#[test]
+fn transient_operator_restore_validates_configuration_before_commit() {
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    assert!(matches!(
+        durable.open(&connect_frame(), &context, HostTimeV1(1)),
+        DurableHostPublicationV2::Published { value: Ok(_), .. }
+    ));
+    drop(durable.into_store());
+    assert_eq!(store.commit_calls(), 2);
+
+    assert!(matches!(
+        DurableTransientHostV1::recover_after_restore(
+            store.clone(),
+            host_config(),
+            Verifier,
+            TransientLimitsV1::default(),
+            TypingLimitsV1::default(),
+            0,
+        ),
+        Err(agora_durable::DurableTransientHostStartErrorV1::Transient(
+            TransientHostBuildRefusalV1::InvalidCursorAge
+        ))
+    ));
+    assert_eq!(
+        store.commit_calls(),
+        2,
+        "invalid transient configuration must not mutate restored storage"
+    );
+
+    let restored = DurableTransientHostV1::recover_after_restore(
+        store.clone(),
+        host_config(),
+        Verifier,
+        TransientLimitsV1::default(),
+        TypingLimitsV1::default(),
+        10,
+    )
+    .unwrap();
+    assert_eq!(restored.observation().store_revision, 2);
+    assert_eq!(
+        restored
+            .host()
+            .unwrap()
+            .host()
+            .service()
+            .active_client_count(),
+        0
+    );
+    assert_eq!(store.commit_calls(), 3);
 }
 
 #[test]

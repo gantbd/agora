@@ -542,6 +542,19 @@ and either post-rename state reopens the exact checkpoint and advances from its
 preserved revision. These classifications do not imply automatic cleanup or
 simulate device power loss.
 
+Operator restore is semantically distinct from ordinary Host restart. The
+physical adapter first restores the exact record. `HostV2` then decodes the
+canonical checkpoint, disconnects every recovered Service client (thereby
+removing its private cursors and retained request receipts), retires every Host
+session, and preserves conversation/outbox state plus the next Host-session and
+Service-client frontiers. `DurableHostV2::recover_after_restore` prepares that
+sanitized checkpoint and commits it at exactly the restored store revision plus
+one with durable strength before returning Active. Any refusal, uncertainty,
+weak or malformed receipt, checkpoint error, or store error returns no owner.
+The transient composition additionally validates its empty-runtime limits
+before the CAS. Ordinary `recover` retains sessions and exact replay semantics;
+callers must select the recovery mode from truthful operator context.
+
 “Durable” here means the specified operating-system synchronization mechanism
 completed on the qualified local profile. It does not prove storage-controller
 power-loss behavior, network filesystem semantics, disk integrity, encryption,

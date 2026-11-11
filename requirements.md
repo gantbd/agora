@@ -514,6 +514,17 @@
   revision. This is process-level boundary injection; it grants no automatic
   cleanup, retry, controller-cache, hardware power-loss, or disaster-recovery
   claim.
+- **R76 — Durable operator-restore session invalidation:** Host recovery after
+  an operator restore must be distinct from ordinary clean restart. It must
+  preserve conversation state, durable outbox state, and monotone Host/Service
+  identity frontiers while invalidating every recovered Host session and its
+  Service client, private cursor, and request receipt. The sanitized canonical
+  Host checkpoint must commit by exact next-revision durable CAS before an
+  active owner is returned. Store refusal, uncertainty, weak acknowledgement,
+  invalid receipt, checkpoint failure, and store error must never activate the
+  owner. Transient configuration must validate before this commit and transient
+  signals restart empty. Daemon-incarnation rotation, credential reissue, and
+  cross-engine restore coordination remain separate composition obligations.
 
 ## Explicitly open
 

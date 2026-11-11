@@ -492,6 +492,15 @@ explicit `.pending` residue states, or an exact post-rename revision-1 checkpoin
 that can advance by CAS to revision 2. This closes process-visible residue
 classification without claiming automatic remediation or device-level crash
 durability.
+Host-level operator-restore evidence starts from an authenticated session with a
+committed room mutation, preserves the conversation revision and event count,
+invalidates the old session without verifier I/O, continues Host and Service
+identity frontiers, and refuses activation for known refusal, indeterminate
+before/after commit, weak acknowledgement, and store error. The transient
+variant proves invalid configuration performs no store offer. A real directory
+composition exports, restores, commits the sanitized checkpoint, reopens it,
+proves the old session remains inert after another process restart, and admits a
+fresh higher-identity connection.
 
 Room change-feed scenarios bind a position to an exact completed snapshot,
 filter the independent recent-change journal by room, replay the same exclusive

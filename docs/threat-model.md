@@ -192,6 +192,14 @@ export and six restore interruption points prove that no injected operation
 reports false success and classify the visible residue. A complete but
 unsynchronized process-visible record is not promoted to a durable artifact,
 and the campaign is not hardware power-loss simulation.
+Restored Host bytes can contain authenticated sessions and private Service
+handles that are no longer live transport facts. The explicit operator-restore
+path prevents their resurrection by disconnecting every recovered client and
+retiring every Host session, then requiring a durable exact-next-revision CAS of
+that sanitized checkpoint before activation. A crash immediately afterward
+reopens the sanitized state. This does not authenticate the operator's choice
+of recovery mode, rotate endpoint incarnation, renew credentials, or coordinate
+restores with Aegis or another engine.
 
 Host persistence binds the verified subject, claimed participant, opaque host
 session, service client and monotone verification time in the same record as all

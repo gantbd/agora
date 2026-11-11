@@ -517,6 +517,57 @@ pub struct DurableHostV2<V, S> {
     counters: DurableHostCountersV2,
 }
 
+fn commit_host_restore_boundary<V: PrincipalVerifier, S: CheckpointStore>(
+    mut store: S,
+    config: &DurableHostConfigV2,
+    verifier: V,
+) -> Result<(HostV2<V>, S, Revision), DurableHostStartErrorV2> {
+    let stored = store
+        .load(config.key())
+        .map_err(|_| DurableHostStartErrorV2::StoreFault)?
+        .ok_or(DurableHostStartErrorV2::Missing)?;
+    if stored.strength != AcknowledgementStrength::Durable {
+        return Err(DurableHostStartErrorV2::NotDurable);
+    }
+    let next = stored
+        .revision
+        .0
+        .checked_add(1)
+        .map(Revision)
+        .ok_or(DurableHostStartErrorV2::InvalidReceipt)?;
+    let host = HostV2::recover_checkpoint_after_restore(
+        &stored.bytes,
+        config.scope,
+        config.recovery,
+        verifier,
+    )
+    .map_err(DurableHostStartErrorV2::Checkpoint)?;
+    let checkpoint = host
+        .prepare_checkpoint(config.scope, config.max_snapshot_bytes)
+        .map_err(DurableHostStartErrorV2::Checkpoint)?;
+    let outcome = store
+        .compare_exchange(config.key(), Some(stored.revision), checkpoint.bytes())
+        .map_err(|_| DurableHostStartErrorV2::StoreFault)?;
+    let revision = match outcome {
+        CommitOutcome::Committed(receipt)
+            if receipt.revision == next && receipt.strength == AcknowledgementStrength::Durable =>
+        {
+            receipt.revision
+        }
+        CommitOutcome::Committed(receipt)
+            if receipt.strength != AcknowledgementStrength::Durable =>
+        {
+            return Err(DurableHostStartErrorV2::NotDurable);
+        }
+        CommitOutcome::Committed(_) => return Err(DurableHostStartErrorV2::InvalidReceipt),
+        CommitOutcome::Refused(refusal) => {
+            return Err(DurableHostStartErrorV2::StoreRefused(refusal));
+        }
+        CommitOutcome::Indeterminate => return Err(DurableHostStartErrorV2::OutcomeUnknown),
+    };
+    Ok((host, store, revision))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DurableTransientHostStartErrorV1 {
     Missing,
@@ -624,6 +675,78 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableTransientHostV1<V, S> {
             store,
             config,
             store_revision: stored.revision,
+            state: DurableOwnerStateV2::Active,
+            counters: DurableHostCountersV2::default(),
+        })
+    }
+
+    /// Recovers an operator-restored checkpoint, durably invalidates recovered
+    /// sessions and their private Service state, then starts transient state
+    /// empty.
+    pub fn recover_after_restore(
+        mut store: S,
+        config: DurableHostConfigV2,
+        verifier: V,
+        presence_limits: TransientLimitsV1,
+        typing_limits: TypingLimitsV1,
+        max_cursor_age: u64,
+    ) -> Result<Self, DurableTransientHostStartErrorV1> {
+        let stored = store
+            .load(config.key())
+            .map_err(|_| DurableTransientHostStartErrorV1::StoreFault)?
+            .ok_or(DurableTransientHostStartErrorV1::Missing)?;
+        if stored.strength != AcknowledgementStrength::Durable {
+            return Err(DurableTransientHostStartErrorV1::NotDurable);
+        }
+        let next = stored
+            .revision
+            .0
+            .checked_add(1)
+            .map(Revision)
+            .ok_or(DurableTransientHostStartErrorV1::InvalidReceipt)?;
+        let host = HostV2::recover_checkpoint_after_restore(
+            &stored.bytes,
+            config.scope,
+            config.recovery,
+            verifier,
+        )
+        .map_err(DurableTransientHostStartErrorV1::Checkpoint)?;
+        let host =
+            TransientHostV1::new_with_typing(host, presence_limits, typing_limits, max_cursor_age)
+                .map_err(DurableTransientHostStartErrorV1::Transient)?;
+        let checkpoint = host
+            .prepare_host_checkpoint(config.scope, config.max_snapshot_bytes)
+            .map_err(DurableTransientHostStartErrorV1::Checkpoint)?;
+        let outcome = store
+            .compare_exchange(config.key(), Some(stored.revision), checkpoint.bytes())
+            .map_err(|_| DurableTransientHostStartErrorV1::StoreFault)?;
+        let store_revision = match outcome {
+            CommitOutcome::Committed(receipt)
+                if receipt.revision == next
+                    && receipt.strength == AcknowledgementStrength::Durable =>
+            {
+                receipt.revision
+            }
+            CommitOutcome::Committed(receipt)
+                if receipt.strength != AcknowledgementStrength::Durable =>
+            {
+                return Err(DurableTransientHostStartErrorV1::NotDurable);
+            }
+            CommitOutcome::Committed(_) => {
+                return Err(DurableTransientHostStartErrorV1::InvalidReceipt);
+            }
+            CommitOutcome::Refused(refusal) => {
+                return Err(DurableTransientHostStartErrorV1::StoreRefused(refusal));
+            }
+            CommitOutcome::Indeterminate => {
+                return Err(DurableTransientHostStartErrorV1::OutcomeUnknown);
+            }
+        };
+        Ok(Self {
+            host,
+            store,
+            config,
+            store_revision,
             state: DurableOwnerStateV2::Active,
             counters: DurableHostCountersV2::default(),
         })
@@ -883,6 +1006,25 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
             store,
             config,
             store_revision: stored.revision,
+            state: DurableOwnerStateV2::Active,
+            counters: DurableHostCountersV2::default(),
+        })
+    }
+
+    /// Recovers an operator-restored checkpoint only after durably committing
+    /// invalidation of every recovered Host session and its private Service
+    /// client state.
+    pub fn recover_after_restore(
+        store: S,
+        config: DurableHostConfigV2,
+        verifier: V,
+    ) -> Result<Self, DurableHostStartErrorV2> {
+        let (host, store, store_revision) = commit_host_restore_boundary(store, &config, verifier)?;
+        Ok(Self {
+            host,
+            store,
+            config,
+            store_revision,
             state: DurableOwnerStateV2::Active,
             counters: DurableHostCountersV2::default(),
         })

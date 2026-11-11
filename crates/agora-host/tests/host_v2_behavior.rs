@@ -545,6 +545,51 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
 }
 
 #[test]
+fn operator_restore_invalidates_sessions_and_private_client_state() {
+    let (mut host, _) = make_host(2);
+    let (old_session, old_client, context) = open(&mut host, "alice", 1);
+    let create = create_frame(old_client, 0, 2);
+    assert!(matches!(
+        decode_reply_v2(
+            &host
+                .handle(old_session, &create, &context, HostTimeV1(2))
+                .unwrap(),
+            limits(8).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 3 }))
+    ));
+    let checkpoint = host
+        .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+        .unwrap();
+
+    let calls = Rc::new(Cell::new(0));
+    let mut restored = HostV2::recover_checkpoint_after_restore(
+        checkpoint.bytes(),
+        CHECKPOINT_SCOPE,
+        recovery_limits(),
+        Verifier {
+            calls: calls.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(restored.service().engine().revision(), Revision(3));
+    assert_eq!(restored.service().active_client_count(), 0);
+    assert_eq!(
+        restored
+            .handle(old_session, &create, &context, HostTimeV1(3))
+            .unwrap_err(),
+        HostRefusal::Unavailable
+    );
+    assert_eq!(calls.get(), 0, "invalidated session must not revalidate");
+
+    let (new_session, new_client, _) = open(&mut restored, "alice", 1);
+    assert_ne!(new_session, old_session);
+    assert_eq!(new_client.0, 1, "client frontier must not rewind");
+    assert_eq!(restored.service().engine().revision(), Revision(3));
+}
+
+#[test]
 fn v2_host_checkpoint_is_scope_bound_bounded_and_closed_to_partial_state() {
     let (mut host, _) = make_host(2);
     let _ = open(&mut host, "alice", 1);

@@ -389,6 +389,35 @@ fn decode_state(
     Ok(state)
 }
 
+fn invalidate_restored_sessions(state: &mut HostStateV2) -> Result<(), HostCheckpointErrorV2> {
+    while let Some(session_id) = state.sessions.first_key_value().map(|(id, _)| *id) {
+        let session = state
+            .sessions
+            .remove(&session_id)
+            .ok_or(HostCheckpointErrorV2::Invalid)?;
+        if !state
+            .service
+            .disconnect(session.client)
+            .map_err(|_| HostCheckpointErrorV2::Invalid)?
+        {
+            return Err(HostCheckpointErrorV2::Invalid);
+        }
+        if state.limits.max_retired_sessions > 0 {
+            if state.retired.len() >= state.limits.max_retired_sessions {
+                state.retired.pop_front();
+            }
+            state.retired.push_back(session_id);
+        }
+    }
+    validate_state(
+        &state.service,
+        state.limits,
+        &state.sessions,
+        &state.retired,
+        state.next_session,
+    )
+}
+
 impl<V> HostV2<V> {
     pub fn prepare_checkpoint(
         &self,
@@ -413,6 +442,32 @@ impl<V> HostV2<V> {
         verifier: V,
     ) -> Result<Self, HostCheckpointErrorV2> {
         let state = decode_state(bytes, expected_scope, bounds)?;
+        Ok(Self {
+            service: state.service,
+            verifier,
+            limits: state.limits,
+            sessions: state.sessions,
+            retired: state.retired,
+            next_session: state.next_session,
+            usage: HostUsage::default(),
+        })
+    }
+
+    /// Recovers an operator-restored checkpoint while invalidating every
+    /// recovered Host session and its Service client state.
+    ///
+    /// Conversation state and monotone session/client frontiers remain intact,
+    /// but old transport/session handles, cursors, and request receipts cannot
+    /// cross the restore boundary. A durable owner must commit the resulting
+    /// checkpoint before admitting work.
+    pub fn recover_checkpoint_after_restore(
+        bytes: &[u8],
+        expected_scope: HostCheckpointScopeV1,
+        bounds: HostRecoveryLimitsV2,
+        verifier: V,
+    ) -> Result<Self, HostCheckpointErrorV2> {
+        let mut state = decode_state(bytes, expected_scope, bounds)?;
+        invalidate_restored_sessions(&mut state)?;
         Ok(Self {
             service: state.service,
             verifier,

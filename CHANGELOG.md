@@ -21,6 +21,10 @@ follow Semantic Versioning once a public release contract is selected.
   exact post-rename recovery with preserved revision continuity. Revision
   `cd4088ea5297655b84b4caf80f31e4284be14128` passed the integrated release
   profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
+- Added explicit operator-restore recovery for durable Host and transient Host
+  profiles. It preserves conversation state and identity frontiers, retires all
+  recovered sessions, disconnects private Service client state, and durably
+  commits the sanitized checkpoint before returning an active owner.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,
