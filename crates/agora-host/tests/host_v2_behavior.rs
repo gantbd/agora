@@ -523,10 +523,38 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
             ..
         }))
     ));
+    let resolve_topic = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(15),
+                command: CommandV2::ResolveTopic {
+                    room_id: "private".to_owned(),
+                    expected_revision: 10,
+                    topic_id,
+                },
+            },
+        },
+        limits(8).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host
+                .handle(session, &resolve_topic, &context, HostTimeV1(2))
+                .unwrap(),
+            limits(8).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicResolved {
+            revision: 11,
+            ..
+        }))
+    ));
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    let fixture = include_str!("fixtures/host-checkpoint-v17.hex").trim();
+    let fixture = include_str!("fixtures/host-checkpoint-v18.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -568,6 +596,17 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
             .name(),
         "operations"
     );
+    assert!(
+        recovered
+            .service()
+            .engine()
+            .topic(
+                &RoomId::new("private"),
+                TopicId::from_bytes(topic_id.into_bytes()),
+            )
+            .unwrap()
+            .is_resolved()
+    );
     assert_eq!(
         recovered
             .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
@@ -581,7 +620,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
             .unwrap(),
         first
     );
-    assert_eq!(recovered.service().engine().revision(), Revision(10));
+    assert_eq!(recovered.service().engine().revision(), Revision(11));
     assert_eq!(calls.get(), 1, "recovered session must be revalidated");
 }
 
@@ -683,7 +722,7 @@ fn v2_host_checkpoint_is_scope_bound_bounded_and_closed_to_partial_state() {
 
 #[test]
 fn fixed_seed_host_checkpoint_mutations_refuse_or_remain_canonical() {
-    let checkpoint = decode_hex(include_str!("fixtures/host-checkpoint-v17.hex"));
+    let checkpoint = decode_hex(include_str!("fixtures/host-checkpoint-v18.hex"));
     let mut seed = 0x7057_c4ae_c0de_0015u64;
 
     for sample in 0..512 {

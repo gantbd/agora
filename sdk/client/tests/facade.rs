@@ -284,6 +284,20 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
             topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
             name: "operations".to_owned(),
         },
+        protocol::v2::CommandV2::ResolveTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 22,
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+        },
+        protocol::v2::CommandV2::ReopenTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 23,
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+        },
+        protocol::v2::CommandV2::TopicStatus {
+            room_id: "room".to_owned(),
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+        },
         protocol::v2::CommandV2::SpeakInTopic {
             room_id: "room".to_owned(),
             expected_revision: 21,

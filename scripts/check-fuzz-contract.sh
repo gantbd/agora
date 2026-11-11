@@ -39,11 +39,11 @@ for fixture in crates/agora-wire/tests/fixtures/*.hex; do
   printf '%08x' "$bytes" | xxd -r -p >"$expected/outer/$name.bin"
   xxd -r -p "$fixture" >>"$expected/outer/$name.bin"
 done
-xxd -r -p tests/fixtures/checkpoint-v15.hex "$expected/checkpoint/engine-v15.bin"
-xxd -r -p crates/agora-service/tests/fixtures/service-checkpoint-v17.hex \
-  "$expected/checkpoint/service-v17.bin"
-xxd -r -p crates/agora-host/tests/fixtures/host-checkpoint-v17.hex \
-  "$expected/checkpoint/host-v17.bin"
+xxd -r -p tests/fixtures/checkpoint-v16.hex "$expected/checkpoint/engine-v16.bin"
+xxd -r -p crates/agora-service/tests/fixtures/service-checkpoint-v18.hex \
+  "$expected/checkpoint/service-v18.bin"
+xxd -r -p crates/agora-host/tests/fixtures/host-checkpoint-v18.hex \
+  "$expected/checkpoint/host-v18.bin"
 
 if ! diff -qr "$expected/wire" fuzz/seeds/wire_canonical \
   || ! diff -qr "$expected/outer" fuzz/seeds/outer_frame_canonical \

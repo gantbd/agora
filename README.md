@@ -91,6 +91,11 @@ moderators change only a topic's bounded display name. The stable topic ID,
 creator, existing message/reply relations, and read scopes remain unchanged;
 an ordered event retains actor, prior name, and new name in every change
 profile.
+The separately advertised `TopicResolutionV1` capability lets current owners
+and moderators resolve or reopen a topic. Resolution fences new topic roots and
+replies while preserving identity, metadata, history, relations, revisions,
+reactions, and private read scopes; reopening admits conversation again. It is
+not task-completion, approval, delivery, attention, or agent-execution evidence.
 The `PrivateReadPositionsV1` capability adds participant-private monotone room,
 thread, and topic markers. The service derives the participant from its client
 binding; an advance changes neither room revision nor room events, but its state

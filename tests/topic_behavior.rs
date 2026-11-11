@@ -190,6 +190,139 @@ fn topic_rename_preserves_identity_and_relations_with_bounded_authority() {
 }
 
 #[test]
+fn topic_resolution_is_attributable_reversible_and_reference_preserving() {
+    let mut engine = setup(Limits::default());
+    let topic = create_topic(&mut engine, "owner", "general");
+    let OutcomeV2::TopicMessageAccepted { sequence, .. } = engine
+        .apply(CommandV2::SpeakInTopic {
+            room_id: "room".into(),
+            author: "member".into(),
+            topic_id: topic,
+            at: LogicalTime(1),
+            body: "root".to_owned(),
+            addressed_to: vec![],
+        })
+        .unwrap()
+    else {
+        panic!("topic message expected");
+    };
+    let root = engine.message(&"room".into(), sequence).unwrap().id();
+    assert!(matches!(
+        engine.apply(CommandV2::SetTopicResolved {
+            room_id: "room".into(),
+            actor: "member".into(),
+            topic_id: topic,
+            resolved: true,
+        }),
+        Err(Refusal::NotAuthorized(_))
+    ));
+    engine
+        .apply(CommandV2::SetRole {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            participant: "agent".into(),
+            role: Role::Moderator,
+        })
+        .unwrap();
+
+    assert!(matches!(
+        engine
+            .apply(CommandV2::SetTopicResolved {
+                room_id: "room".into(),
+                actor: "agent".into(),
+                topic_id: topic,
+                resolved: true,
+            })
+            .unwrap(),
+        OutcomeV2::TopicLifecycleChanged {
+            topic_id,
+            previous_resolved: false,
+            resolved: true,
+            ..
+        } if topic_id == topic
+    ));
+    assert!(engine.topic(&"room".into(), topic).unwrap().is_resolved());
+    assert!(
+        engine
+            .topic_status(&"member".into(), &"room".into(), topic)
+            .unwrap()
+            .resolved
+    );
+    assert_eq!(
+        engine.message(&"room".into(), sequence).unwrap().topic_id(),
+        Some(topic)
+    );
+    for command in [
+        CommandV2::SpeakInTopic {
+            room_id: "room".into(),
+            author: "member".into(),
+            topic_id: topic,
+            at: LogicalTime(2),
+            body: "new root".to_owned(),
+            addressed_to: vec![],
+        },
+        CommandV2::SpeakReply {
+            room_id: "room".into(),
+            author: "member".into(),
+            root_message_id: root,
+            at: LogicalTime(2),
+            body: "new reply".to_owned(),
+            addressed_to: vec![],
+        },
+    ] {
+        assert_eq!(engine.apply(command), Err(Refusal::TopicResolved));
+    }
+    let revision = engine.revision();
+    let events = engine.pending_events().count();
+    assert_eq!(
+        engine.apply(CommandV2::SetTopicResolved {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: topic,
+            resolved: true,
+        }),
+        Err(Refusal::InvalidTopicLifecycleChange)
+    );
+    assert_eq!(engine.revision(), revision);
+    assert_eq!(engine.pending_events().count(), events);
+
+    assert!(matches!(
+        engine
+            .apply(CommandV2::SetTopicResolved {
+                room_id: "room".into(),
+                actor: "owner".into(),
+                topic_id: topic,
+                resolved: false,
+            })
+            .unwrap(),
+        OutcomeV2::TopicLifecycleChanged {
+            previous_resolved: true,
+            resolved: false,
+            ..
+        }
+    ));
+    assert!(!engine.topic(&"room".into(), topic).unwrap().is_resolved());
+    assert!(
+        !engine
+            .topic_status(&"member".into(), &"room".into(), topic)
+            .unwrap()
+            .resolved
+    );
+    assert!(
+        engine
+            .apply(CommandV2::SpeakReply {
+                room_id: "room".into(),
+                author: "member".into(),
+                root_message_id: root,
+                at: LogicalTime(3),
+                body: "after reopen".to_owned(),
+                addressed_to: vec![],
+            })
+            .is_ok()
+    );
+}
+
+#[test]
 fn topic_messages_preserve_relation_through_replies_edits_reactions_and_tombstones() {
     let mut engine = setup(Limits::default());
     let topic = create_topic(&mut engine, "owner", "general");

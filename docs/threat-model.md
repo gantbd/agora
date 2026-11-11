@@ -349,6 +349,12 @@ must treat both values as sensitive metadata. Collision, same-name, stale,
 unknown-topic, invalid-name, and unauthorized attempts are validate-before-
 mutate refusals. Capability discovery and knowledge of a topic ID remain
 non-authorizing.
+Resolution exposes current and historical conversation-admission metadata. It
+fences new roots and inherited replies but preserves all retained content and
+references; clients must not present it as deletion, task completion, approval,
+or external workflow truth. Same-state, stale, unknown-topic, and unauthorized
+attempts are atomic refusals, and reopening is an equally attributable role-
+authorized transition.
 
 Private read positions are sensitive behavioral metadata even though they prove
 neither delivery nor attention. The engine exposes only the actor-keyed marker

@@ -8,7 +8,8 @@ use agora_protocol::v2::{
     RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
     ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
     ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1,
-    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicV1,
+    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1,
+    TopicV1,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -161,6 +162,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::PrivateReadPositionsV1,
         CapabilityV2::IndependentChangeRetentionV1,
         CapabilityV2::TopicRenameV1,
+        CapabilityV2::TopicResolutionV1,
     ])))
 }
 
@@ -201,6 +203,47 @@ fn topic_renamed_change_reply() -> WireReplyV2 {
                 },
             }],
             next: PageCursorV2(10),
+            has_more: false,
+        },
+    )))
+}
+
+fn topic_resolve_request() -> WireRequestV2 {
+    WireRequestV2::Execute {
+        client: ClientIdV2(7),
+        request: RequestV2 {
+            request_id: RequestIdV2(89),
+            command: CommandV2::ResolveTopic {
+                room_id: "room".to_owned(),
+                expected_revision: 10,
+                topic_id: TopicIdV1::new([0x44; 16]),
+            },
+        },
+    }
+}
+
+fn topic_resolved_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicResolved {
+        revision: 11,
+        topic_id: TopicIdV1::new([0x44; 16]),
+    }))
+}
+
+fn topic_resolved_change_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicChanges(
+        TopicRoomChangePageV1 {
+            revision: 11,
+            changes: vec![TopicRoomChangeV1 {
+                event_sequence: 10,
+                revision: 11,
+                event: TopicRoomEventV1::TopicLifecycleChanged {
+                    actor_id: "agent".to_owned(),
+                    topic_id: TopicIdV1::new([0x44; 16]),
+                    previous_resolved: false,
+                    resolved: true,
+                },
+            }],
+            next: PageCursorV2(11),
             has_more: false,
         },
     )))
@@ -539,6 +582,18 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
         (
             encode_reply_v2(&topic_renamed_change_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/topic-renamed-change-reply-v2.hex")),
+        ),
+        (
+            encode_request_v2(&topic_resolve_request(), limits()).unwrap(),
+            fixture(include_str!("fixtures/topic-resolve-request-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&topic_resolved_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/topic-resolved-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&topic_resolved_change_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/topic-resolved-change-reply-v2.hex")),
         ),
         (
             encode_reply_v2(&change_retention_gap_reply(), limits()).unwrap(),
@@ -1204,6 +1259,7 @@ fn every_v2_outcome_and_refusal_round_trips() {
         RefusalV2::InvalidReadScope,
         RefusalV2::InvalidReadTarget,
         RefusalV2::ReadPositionRegression,
+        RefusalV2::TopicResolved,
     ];
     for refusal in refusals {
         for reply in [
@@ -1658,6 +1714,20 @@ fn v2_topic_commands_pages_and_mutation_outcomes_are_canonical() {
             topic_id,
             name: "operations".to_owned(),
         },
+        CommandV2::ResolveTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 10,
+            topic_id,
+        },
+        CommandV2::ReopenTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 11,
+            topic_id,
+        },
+        CommandV2::TopicStatus {
+            room_id: "room".to_owned(),
+            topic_id,
+        },
         CommandV2::SpeakInTopic {
             room_id: "room".to_owned(),
             expected_revision: 9,
@@ -1725,6 +1795,20 @@ fn v2_topic_commands_pages_and_mutation_outcomes_are_canonical() {
             revision: 10,
             topic_id,
         },
+        OutcomeV2::TopicResolved {
+            revision: 11,
+            topic_id,
+        },
+        OutcomeV2::TopicReopened {
+            revision: 12,
+            topic_id,
+        },
+        OutcomeV2::TopicStatus(TopicStatusV1 {
+            revision: 12,
+            room_id: "room".to_owned(),
+            topic_id,
+            resolved: false,
+        }),
         OutcomeV2::TopicMessageAccepted {
             revision: 10,
             message_id,
@@ -1785,6 +1869,9 @@ fn v2_topic_commands_pages_and_mutation_outcomes_are_canonical() {
     let refusal = WireReplyV2::Executed(ReplyV2::Refused(RefusalV2::UnknownTopic));
     let encoded = encode_reply_v2(&refusal, limits()).unwrap();
     assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), refusal);
+    let refusal = WireReplyV2::Executed(ReplyV2::Refused(RefusalV2::TopicResolved));
+    let encoded = encode_reply_v2(&refusal, limits()).unwrap();
+    assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), refusal);
 }
 
 #[test]
@@ -1841,6 +1928,102 @@ fn v2_topic_rename_event_round_trips_in_every_change_profile() {
             },
         ))),
         topic_renamed_change_reply(),
+    ];
+    for reply in replies {
+        let encoded = encode_reply_v2(&reply, limits()).unwrap();
+        assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), reply);
+    }
+    let invalid = WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+        revision: 11,
+        changes: vec![RoomChangeV2 {
+            event_sequence: 10,
+            revision: 11,
+            event: RoomEventV2::TopicLifecycleChanged {
+                actor_id: "agent".to_owned(),
+                topic_id,
+                previous_resolved: true,
+                resolved: true,
+            },
+        }],
+        next: PageCursorV2(11),
+        has_more: false,
+    })));
+    assert_eq!(
+        encode_reply_v2(&invalid, limits()),
+        Err(WireEncodeError::Invalid)
+    );
+}
+
+#[test]
+fn v2_topic_lifecycle_event_round_trips_in_every_change_profile() {
+    let topic_id = TopicIdV1::new([0x45; 16]);
+    let replies = [
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 11,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 10,
+                revision: 11,
+                event: RoomEventV2::TopicLifecycleChanged {
+                    actor_id: "agent".to_owned(),
+                    topic_id,
+                    previous_resolved: false,
+                    resolved: true,
+                },
+            }],
+            next: PageCursorV2(11),
+            has_more: false,
+        }))),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(
+            IdentifiedRoomChangePageV1 {
+                revision: 11,
+                changes: vec![IdentifiedRoomChangeV1 {
+                    event_sequence: 10,
+                    revision: 11,
+                    event: IdentifiedRoomEventV1::TopicLifecycleChanged {
+                        actor_id: "agent".to_owned(),
+                        topic_id,
+                        previous_resolved: false,
+                        resolved: true,
+                    },
+                }],
+                next: PageCursorV2(11),
+                has_more: false,
+            },
+        ))),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadedChanges(
+            ThreadedRoomChangePageV1 {
+                revision: 11,
+                changes: vec![ThreadedRoomChangeV1 {
+                    event_sequence: 10,
+                    revision: 11,
+                    event: ThreadedRoomEventV1::TopicLifecycleChanged {
+                        actor_id: "agent".to_owned(),
+                        topic_id,
+                        previous_resolved: false,
+                        resolved: true,
+                    },
+                }],
+                next: PageCursorV2(11),
+                has_more: false,
+            },
+        ))),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicChanges(
+            TopicRoomChangePageV1 {
+                revision: 11,
+                changes: vec![TopicRoomChangeV1 {
+                    event_sequence: 10,
+                    revision: 11,
+                    event: TopicRoomEventV1::TopicLifecycleChanged {
+                        actor_id: "agent".to_owned(),
+                        topic_id,
+                        previous_resolved: false,
+                        resolved: true,
+                    },
+                }],
+                next: PageCursorV2(11),
+                has_more: false,
+            },
+        ))),
     ];
     for reply in replies {
         let encoded = encode_reply_v2(&reply, limits()).unwrap();

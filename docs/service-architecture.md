@@ -245,6 +245,14 @@ stable ID and every message relation. Exact replay and profile-isolated change
 positions are checkpointed with the prior/new-name event; capability discovery
 does not authorize the mutation.
 
+`TopicResolutionV1` is a reversible lifecycle mutation of the same owner. The
+service derives the actor; resolve and reopen retain exact replay while the
+engine fences new topic roots and inherited replies only during the resolved
+state. A separate participant-bound status observation and all change profiles
+project the state without rewriting identity, history, or legacy topic-page
+bytes. Resolution is not Chronos task completion or agent
+orchestration evidence.
+
 ## Private read positions
 
 `PrivateReadPositionsV1` is private current-state projection inside the same

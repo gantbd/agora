@@ -182,6 +182,36 @@ fn every_v2_fixture_has_deterministic_bounded_single_bit_and_framing_mutation() 
             FrameKind::Reply,
         ),
         (
+            "topic-rename-request",
+            include_str!("fixtures/topic-rename-request-v2.hex"),
+            FrameKind::Request,
+        ),
+        (
+            "topic-renamed-change-reply",
+            include_str!("fixtures/topic-renamed-change-reply-v2.hex"),
+            FrameKind::Reply,
+        ),
+        (
+            "topic-renamed-reply",
+            include_str!("fixtures/topic-renamed-reply-v2.hex"),
+            FrameKind::Reply,
+        ),
+        (
+            "topic-resolve-request",
+            include_str!("fixtures/topic-resolve-request-v2.hex"),
+            FrameKind::Request,
+        ),
+        (
+            "topic-resolved-change-reply",
+            include_str!("fixtures/topic-resolved-change-reply-v2.hex"),
+            FrameKind::Reply,
+        ),
+        (
+            "topic-resolved-reply",
+            include_str!("fixtures/topic-resolved-reply-v2.hex"),
+            FrameKind::Reply,
+        ),
+        (
             "withdrawal-change-reply",
             include_str!("fixtures/withdrawal-change-reply-v2.hex"),
             FrameKind::Reply,

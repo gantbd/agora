@@ -59,7 +59,7 @@ not ready for a network service or crates.io release.
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   thirteen stable workspace packages;
 - conservative package and canonical-fixture inventory closure over thirteen
-  stable workspace packages, one standalone fuzz package, and forty-two
+  stable workspace packages, one standalone fuzz package, and forty-five
   fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
@@ -120,11 +120,16 @@ not ready for a network service or crates.io release.
   all-feed attribution, tombstone scrubbing, and exact replay/recovery;
 - stable room-local topics with role-bound kind-neutral creation, immutable
   message relation and reply inheritance, bounded participant-bound pages, a
-  parallel topic-aware feed, and profile-15/17/17 canonical recovery;
+  parallel topic-aware feed, and profile-16/18/18 canonical recovery;
 - separately negotiated topic rename with owner/moderator kind-neutral
   authority, unchanged stable identity and message relations, attributable
   prior/new-name events in every feed, exact replay, canonical recovery, and
   exact-revision integrated qualification;
+- separately negotiated reversible topic resolution with owner/moderator
+  kind-neutral authority, resolved-state root/reply fencing, separate
+  participant-bound status observation, stable identity/history preservation,
+  four-feed attribution, and profile-16/18/18 recovery; resolution carries no
+  task-completion or orchestration meaning;
 - independent delivery and pull retention: acknowledgment drains only the
   backpressured outbox, journal eviction carries its own exact gap, and both
   suffixes recover canonically with live service cursors;

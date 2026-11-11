@@ -19,7 +19,8 @@ use agora_protocol::v2::{
     RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
     ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
     ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1,
-    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicV1,
+    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1,
+    TopicV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -309,6 +310,7 @@ impl ServiceV2 {
                 CapabilityV2::PrivateReadPositionsV1,
                 CapabilityV2::IndependentChangeRetentionV1,
                 CapabilityV2::TopicRenameV1,
+                CapabilityV2::TopicResolutionV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -410,6 +412,9 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.topic_messages(client, participant, room_id, *topic_id, *cursor, *limit),
+            CommandV2::TopicStatus { room_id, topic_id } => {
+                self.topic_status(participant, room_id, *topic_id)
+            }
             CommandV2::ReadPosition { room_id, scope } => {
                 self.read_position(participant, room_id, *scope)
             }
@@ -449,6 +454,24 @@ impl ServiceV2 {
                     actor: participant.clone(),
                     topic_id: agora_engine::TopicId::from_bytes(topic_id.into_bytes()),
                     name: name.clone(),
+                },
+            ),
+            CommandV2::ResolveTopic {
+                room_id,
+                expected_revision,
+                topic_id,
+            }
+            | CommandV2::ReopenTopic {
+                room_id,
+                expected_revision,
+                topic_id,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetTopicResolved {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    topic_id: TopicId::from_bytes(topic_id.into_bytes()),
+                    resolved: matches!(command, CommandV2::ResolveTopic { .. }),
                 },
             ),
             CommandV2::SpeakInTopic {
@@ -864,6 +887,19 @@ impl ServiceV2 {
                 revision,
                 topic_id: TopicIdV1::new(topic_id.into_bytes()),
             }),
+            EngineOutcome::TopicLifecycleChanged {
+                topic_id, resolved, ..
+            } => Ok(if resolved {
+                OutcomeV2::TopicResolved {
+                    revision,
+                    topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                }
+            } else {
+                OutcomeV2::TopicReopened {
+                    revision,
+                    topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                }
+            }),
             EngineOutcome::ReplyAccepted { .. } => Err(RefusalV2::Unavailable),
             EngineOutcome::MessageWithdrawn {
                 message_id,
@@ -1277,6 +1313,31 @@ impl ServiceV2 {
         }))
     }
 
+    fn topic_status(
+        &self,
+        observer: &ParticipantId,
+        room_id: &str,
+        topic_id: TopicIdV1,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let status = self
+            .engine
+            .topic_status(
+                observer,
+                &RoomId::new(room_id),
+                TopicId::from_bytes(topic_id.into_bytes()),
+            )
+            .map_err(|refusal| match refusal {
+                ObservationRefusal::InvalidTarget => RefusalV2::UnknownTopic,
+                other => map_observation_refusal(other),
+            })?;
+        Ok(OutcomeV2::TopicStatus(TopicStatusV1 {
+            revision: status.revision.0,
+            room_id: status.room_id.as_str().to_owned(),
+            topic_id: TopicIdV1::new(status.topic_id.into_bytes()),
+            resolved: status.resolved,
+        }))
+    }
+
     fn topic_messages(
         &mut self,
         client: ClientIdV2,
@@ -1590,6 +1651,18 @@ impl ServiceV2 {
                                 topic_id: TopicIdV1::new(topic_id.into_bytes()),
                                 previous,
                                 name,
+                            },
+                            agora_engine::DomainEventV2::TopicLifecycleChanged {
+                                actor,
+                                topic_id,
+                                previous_resolved,
+                                resolved,
+                                ..
+                            } => RoomEventV2::TopicLifecycleChanged {
+                                actor_id: actor.as_str().to_owned(),
+                                topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                                previous_resolved,
+                                resolved,
                             },
                             agora_engine::DomainEventV2::InvitationRecorded {
                                 participant, ..
@@ -2126,6 +2199,9 @@ impl ServiceV2 {
             | CommandV2::RenameTopic { room_id, name, .. } => {
                 valid_room(room_id) && valid_text(name, self.limits.max_room_name_bytes)
             }
+            CommandV2::ResolveTopic { room_id, .. }
+            | CommandV2::ReopenTopic { room_id, .. }
+            | CommandV2::TopicStatus { room_id, .. } => valid_room(room_id),
             CommandV2::Invite {
                 room_id,
                 participant_id,
@@ -2387,6 +2463,18 @@ fn map_identified_room_event(
             previous,
             name,
         },
+        agora_engine::DomainEventV2::TopicLifecycleChanged {
+            actor,
+            topic_id,
+            previous_resolved,
+            resolved,
+            ..
+        } => IdentifiedRoomEventV1::TopicLifecycleChanged {
+            actor_id: actor.as_str().to_owned(),
+            topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            previous_resolved,
+            resolved,
+        },
         agora_engine::DomainEventV2::InvitationRecorded { participant, .. } => {
             IdentifiedRoomEventV1::InvitationRecorded {
                 participant_id: participant.as_str().to_owned(),
@@ -2561,6 +2649,18 @@ fn map_threaded_room_event(
             previous,
             name,
         },
+        agora_engine::DomainEventV2::TopicLifecycleChanged {
+            actor,
+            topic_id,
+            previous_resolved,
+            resolved,
+            ..
+        } => ThreadedRoomEventV1::TopicLifecycleChanged {
+            actor_id: actor.as_str().to_owned(),
+            topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            previous_resolved,
+            resolved,
+        },
         agora_engine::DomainEventV2::InvitationRecorded { participant, .. } => {
             ThreadedRoomEventV1::InvitationRecorded {
                 participant_id: participant.as_str().to_owned(),
@@ -2729,6 +2829,17 @@ fn map_topic_room_event(event: agora_engine::DomainEventV2) -> Result<TopicRoomE
             topic_id,
             previous,
             name,
+        },
+        ThreadedRoomEventV1::TopicLifecycleChanged {
+            actor_id,
+            topic_id,
+            previous_resolved,
+            resolved,
+        } => TopicRoomEventV1::TopicLifecycleChanged {
+            actor_id,
+            topic_id,
+            previous_resolved,
+            resolved,
         },
         ThreadedRoomEventV1::InvitationRecorded { participant_id } => {
             TopicRoomEventV1::InvitationRecorded { participant_id }
@@ -2924,6 +3035,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::OwnerCannotLeave => RefusalV2::NotAuthorized,
         EngineRefusal::ParticipantBanned(_) => RefusalV2::Banned,
         EngineRefusal::ThreadArchived => RefusalV2::ThreadArchived,
+        EngineRefusal::TopicResolved => RefusalV2::TopicResolved,
         EngineRefusal::ParticipantLimit
         | EngineRefusal::RoomLimit
         | EngineRefusal::MemberLimit
@@ -2956,6 +3068,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidReactionChange
         | EngineRefusal::InvalidMessageEdit
         | EngineRefusal::InvalidTopicName
+        | EngineRefusal::InvalidTopicLifecycleChange
         | EngineRefusal::DuplicateTopicName
         | EngineRefusal::MessageAlreadyTombstoned
         | EngineRefusal::DuplicateParticipant(_)

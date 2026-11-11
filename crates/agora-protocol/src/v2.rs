@@ -249,6 +249,20 @@ pub enum CommandV2 {
         topic_id: TopicIdV1,
         name: String,
     },
+    ResolveTopic {
+        room_id: String,
+        expected_revision: u64,
+        topic_id: TopicIdV1,
+    },
+    ReopenTopic {
+        room_id: String,
+        expected_revision: u64,
+        topic_id: TopicIdV1,
+    },
+    TopicStatus {
+        room_id: String,
+        topic_id: TopicIdV1,
+    },
     SpeakInTopic {
         room_id: String,
         expected_revision: u64,
@@ -771,6 +785,26 @@ impl fmt::Debug for CommandV2 {
                 .field("topic_id", topic_id)
                 .field("name_bytes", &name.len())
                 .finish(),
+            Self::ResolveTopic {
+                room_id,
+                expected_revision,
+                topic_id,
+            }
+            | Self::ReopenTopic {
+                room_id,
+                expected_revision,
+                topic_id,
+            } => formatter
+                .debug_struct("TopicLifecycle")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("topic_id", topic_id)
+                .finish(),
+            Self::TopicStatus { room_id, topic_id } => formatter
+                .debug_struct("TopicStatus")
+                .field("room_id_bytes", &room_id.len())
+                .field("topic_id", topic_id)
+                .finish(),
             Self::SpeakInTopic {
                 room_id,
                 expected_revision,
@@ -830,6 +864,7 @@ pub enum CapabilityV2 {
     PrivateReadPositionsV1,
     IndependentChangeRetentionV1,
     TopicRenameV1,
+    TopicResolutionV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -985,6 +1020,26 @@ impl fmt::Debug for TopicV1 {
             .field("topic_id", &self.topic_id)
             .field("name_bytes", &self.name.len())
             .field("creator_id_bytes", &self.creator_id.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicStatusV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub topic_id: TopicIdV1,
+    pub resolved: bool,
+}
+
+impl fmt::Debug for TopicStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("topic_id", &self.topic_id)
+            .field("resolved", &self.resolved)
             .finish()
     }
 }
@@ -1274,6 +1329,12 @@ pub enum RoomEventV2 {
         previous: String,
         name: String,
     },
+    TopicLifecycleChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous_resolved: bool,
+        resolved: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1369,6 +1430,18 @@ impl fmt::Debug for RoomEventV2 {
                 .field("previous_bytes", &previous.len())
                 .field("name_bytes", &name.len())
                 .finish_non_exhaustive(),
+            Self::TopicLifecycleChanged {
+                actor_id,
+                topic_id,
+                previous_resolved,
+                resolved,
+            } => formatter
+                .debug_struct("TopicLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("previous_resolved", previous_resolved)
+                .field("resolved", resolved)
+                .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
             | Self::ParticipantLeft { participant_id } => formatter
@@ -1510,6 +1583,12 @@ pub enum IdentifiedRoomEventV1 {
         previous: String,
         name: String,
     },
+    TopicLifecycleChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous_resolved: bool,
+        resolved: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1605,6 +1684,18 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .field("previous_bytes", &previous.len())
                 .field("name_bytes", &name.len())
                 .finish_non_exhaustive(),
+            Self::TopicLifecycleChanged {
+                actor_id,
+                topic_id,
+                previous_resolved,
+                resolved,
+            } => formatter
+                .debug_struct("TopicLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("previous_resolved", previous_resolved)
+                .field("resolved", resolved)
+                .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
             | Self::ParticipantLeft { participant_id } => formatter
@@ -1746,6 +1837,12 @@ pub enum ThreadedRoomEventV1 {
         previous: String,
         name: String,
     },
+    TopicLifecycleChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous_resolved: bool,
+        resolved: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1841,6 +1938,18 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .field("previous_bytes", &previous.len())
                 .field("name_bytes", &name.len())
                 .finish_non_exhaustive(),
+            Self::TopicLifecycleChanged {
+                actor_id,
+                topic_id,
+                previous_resolved,
+                resolved,
+            } => formatter
+                .debug_struct("TopicLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("previous_resolved", previous_resolved)
+                .field("resolved", resolved)
+                .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
             | Self::ParticipantLeft { participant_id } => formatter
@@ -1982,6 +2091,12 @@ pub enum TopicRoomEventV1 {
         previous: String,
         name: String,
     },
+    TopicLifecycleChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous_resolved: bool,
+        resolved: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -2082,6 +2197,18 @@ impl fmt::Debug for TopicRoomEventV1 {
                 .field("topic_id", topic_id)
                 .field("previous_bytes", &previous.len())
                 .field("name_bytes", &name.len())
+                .finish(),
+            Self::TopicLifecycleChanged {
+                actor_id,
+                topic_id,
+                previous_resolved,
+                resolved,
+            } => formatter
+                .debug_struct("TopicLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("previous_resolved", previous_resolved)
+                .field("resolved", resolved)
                 .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
@@ -2456,6 +2583,15 @@ pub enum OutcomeV2 {
         revision: u64,
         topic_id: TopicIdV1,
     },
+    TopicResolved {
+        revision: u64,
+        topic_id: TopicIdV1,
+    },
+    TopicReopened {
+        revision: u64,
+        topic_id: TopicIdV1,
+    },
+    TopicStatus(TopicStatusV1),
     TopicMessageAccepted {
         revision: u64,
         message_id: MessageIdV1,
@@ -2484,6 +2620,7 @@ pub enum RefusalV2 {
     Banned,
     ThreadArchived,
     UnknownTopic,
+    TopicResolved,
     InvalidReadScope,
     InvalidReadTarget,
     ReadPositionRegression,

@@ -315,6 +315,34 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
         ),
         ReplyV2::Refused(RefusalV2::RequestConflict)
     );
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                5,
+                CommandV2::ResolveTopic {
+                    room_id: "room".to_owned(),
+                    expected_revision: 7,
+                    topic_id,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::NotAuthorized)
+    );
+    let resolve = request(
+        5,
+        CommandV2::ResolveTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 7,
+            topic_id,
+        },
+    );
+    let resolved = ReplyV2::Accepted(OutcomeV2::TopicResolved {
+        revision: 8,
+        topic_id,
+    });
+    assert_eq!(service.execute(alice, resolve.clone()), resolved);
+    assert_eq!(service.execute(alice, resolve), resolved);
 
     let ReplyV2::Accepted(OutcomeV2::TopicChanges(changes)) = service.execute(
         alice,
@@ -323,7 +351,7 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
             CommandV2::TopicChanges {
                 room_id: "room".to_owned(),
                 cursor: topic_change_cursor,
-                limit: 3,
+                limit: 4,
             },
         ),
     ) else {
@@ -353,6 +381,15 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
             && previous == "incidents"
             && name == "operations"
     ));
+    assert!(matches!(
+        &changes.changes[3].event,
+        agora_protocol::v2::TopicRoomEventV1::TopicLifecycleChanged {
+            actor_id,
+            topic_id: event_topic,
+            previous_resolved: false,
+            resolved: true,
+        } if actor_id == "alice" && *event_topic == topic_id
+    ));
 
     let ReplyV2::Accepted(OutcomeV2::Topics(topics)) = service.execute(
         alice,
@@ -371,6 +408,55 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
     assert_eq!(topics.topics[0].topic_id, topic_id);
     assert_eq!(topics.topics[0].name, "operations");
     assert_eq!(topics.topics[0].creator_id, "alice");
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                7,
+                CommandV2::TopicStatus {
+                    room_id: "room".to_owned(),
+                    topic_id,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicStatus(status))
+            if status.revision == 8 && status.topic_id == topic_id && status.resolved
+    ));
+
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                6,
+                CommandV2::SpeakInTopic {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                    topic_id,
+                    logical_time: 8,
+                    body: "blocked".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::TopicResolved)
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                6,
+                CommandV2::ReopenTopic {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                    topic_id,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicReopened {
+            revision: 9,
+            topic_id,
+        })
+    );
 
     let ReplyV2::Accepted(OutcomeV2::TopicMessages(messages)) = service.execute(
         bot,
@@ -398,7 +484,7 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
                 3,
                 CommandV2::SpeakInTopic {
                     room_id: "room".to_owned(),
-                    expected_revision: 7,
+                    expected_revision: 9,
                     topic_id: TopicIdV1::new([0xff; 16]),
                     logical_time: 8,
                     body: "missing".to_owned(),
@@ -408,7 +494,20 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
         ),
         ReplyV2::Refused(RefusalV2::UnknownTopic)
     );
-    assert_eq!(service.engine().revision().0, 7);
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                8,
+                CommandV2::TopicStatus {
+                    room_id: "room".to_owned(),
+                    topic_id: TopicIdV1::new([0xff; 16]),
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::UnknownTopic)
+    );
+    assert_eq!(service.engine().revision().0, 9);
 }
 
 #[test]
@@ -2710,8 +2809,8 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 18);
-    assert_eq!(capabilities.last(), Some(&CapabilityV2::TopicRenameV1));
+    assert_eq!(capabilities.len(), 19);
+    assert_eq!(capabilities.last(), Some(&CapabilityV2::TopicResolutionV1));
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

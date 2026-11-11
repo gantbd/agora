@@ -107,6 +107,14 @@ fn fixture_engine() -> Engine {
             root_message_id,
         )
         .unwrap();
+    engine
+        .apply(CommandV2::SetTopicResolved {
+            room_id: "room".into(),
+            actor: "human".into(),
+            topic_id,
+            resolved: true,
+        })
+        .unwrap();
     engine.acknowledge_events(EventSequence(2)).unwrap();
     engine
         .apply(CommandV2::Ban {
@@ -154,9 +162,11 @@ fn unhex(value: &str) -> Vec<u8> {
 }
 
 #[test]
-fn canonical_v15_checkpoint_is_immutable_and_recovers() {
-    let prepared = fixture_engine().prepare_checkpoint(65_536).unwrap();
-    let expected_hex = include_str!("fixtures/checkpoint-v15.hex").trim();
+fn canonical_v16_checkpoint_is_immutable_and_recovers() {
+    let source = fixture_engine();
+    let topic_id = topic_id_from_fixture(&source);
+    let prepared = source.prepare_checkpoint(65_536).unwrap();
+    let expected_hex = include_str!("fixtures/checkpoint-v16.hex").trim();
     assert_eq!(hex(prepared.bytes()), expected_hex);
 
     let recovered = Engine::recover_checkpoint(
@@ -170,6 +180,12 @@ fn canonical_v15_checkpoint_is_immutable_and_recovers() {
     assert_eq!(
         recovered.prepare_checkpoint(65_536).unwrap().bytes(),
         prepared.bytes()
+    );
+    assert!(
+        recovered
+            .topic(&RoomId::new("room"), topic_id)
+            .unwrap()
+            .is_resolved()
     );
 
     let mut broken_history = prepared.bytes().to_vec();
@@ -188,4 +204,36 @@ fn canonical_v15_checkpoint_is_immutable_and_recovers() {
         ),
         Err(agora_engine::persistence::CheckpointError::Invalid)
     ));
+
+    let mut lifecycle_pattern = vec![18];
+    for value in ["room", "human"] {
+        lifecycle_pattern.extend_from_slice(&(value.len() as u32).to_be_bytes());
+        lifecycle_pattern.extend_from_slice(value.as_bytes());
+    }
+    lifecycle_pattern.extend_from_slice(&topic_id.into_bytes());
+    lifecycle_pattern.extend_from_slice(&[0, 1]);
+    let mut broken_lifecycle = prepared.bytes().to_vec();
+    let offset = broken_lifecycle
+        .windows(lifecycle_pattern.len())
+        .position(|bytes| bytes == lifecycle_pattern)
+        .expect("fixture retains the topic lifecycle chain");
+    broken_lifecycle[offset + lifecycle_pattern.len() - 1] = 0;
+    assert!(matches!(
+        Engine::recover_checkpoint(
+            &broken_lifecycle,
+            RecoveryLimits {
+                max_snapshot_bytes: 65_536,
+                maximum_engine_limits: Default::default(),
+            },
+        ),
+        Err(agora_engine::persistence::CheckpointError::Invalid)
+    ));
+}
+
+fn topic_id_from_fixture(engine: &Engine) -> agora_engine::TopicId {
+    engine
+        .topic_page(&"human".into(), &"room".into(), None, 1)
+        .unwrap()
+        .topics[0]
+        .id()
 }

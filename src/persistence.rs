@@ -187,6 +187,20 @@ impl Writer {
                 self.text(previous)?;
                 self.text(name)
             }
+            DomainEventV2::TopicLifecycleChanged {
+                room_id,
+                actor,
+                topic_id,
+                previous_resolved,
+                resolved,
+            } => {
+                self.byte(18)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&topic_id.into_bytes())?;
+                self.byte(u8::from(*previous_resolved))?;
+                self.byte(u8::from(*resolved))
+            }
             DomainEventV2::InvitationRecorded {
                 room_id,
                 participant,
@@ -616,6 +630,21 @@ impl<'a> Reader<'a> {
                 previous: self.text(l.max_topic_name_bytes)?,
                 name: self.text(l.max_topic_name_bytes)?,
             },
+            18 => DomainEventV2::TopicLifecycleChanged {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                topic_id: TopicId::from_bytes(self.fixed()?),
+                previous_resolved: match self.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::Invalid),
+                },
+                resolved: match self.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::Invalid),
+                },
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -724,7 +753,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(15)?;
+        w.byte(16)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -792,6 +821,7 @@ impl Engine {
                 w.raw(&topic_id.into_bytes())?;
                 w.text(&topic.name)?;
                 w.text(topic.creator.as_str())?;
+                w.byte(u8::from(topic.resolved))?;
             }
         }
         w.count(self.read_positions.len())?;
@@ -850,7 +880,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 15 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 16 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -979,6 +1009,11 @@ impl Engine {
                     id: topic_id,
                     name: r.text(l.max_topic_name_bytes)?,
                     creator: r.participant(l)?,
+                    resolved: match r.byte()? {
+                        0 => false,
+                        1 => true,
+                        _ => return Err(CheckpointError::Invalid),
+                    },
                 };
                 insert(&mut topics, topic_id, topic)?;
             }
@@ -1991,6 +2026,7 @@ fn validate_topic_event_history(
     events: &VecDeque<EventEnvelopeV2>,
 ) -> Result<(), CheckpointError> {
     let mut names = BTreeMap::<(RoomId, TopicId), String>::new();
+    let mut lifecycle = BTreeMap::<(RoomId, TopicId), bool>::new();
     for envelope in events {
         match &envelope.event {
             DomainEventV2::TopicCreated {
@@ -1998,14 +2034,17 @@ fn validate_topic_event_history(
                 topic_id,
                 name,
                 ..
-            } => match names.entry((room_id.clone(), *topic_id)) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(name.clone());
+            } => {
+                match names.entry((room_id.clone(), *topic_id)) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        entry.insert(name.clone());
+                    }
+                    std::collections::btree_map::Entry::Occupied(_) => {
+                        return Err(CheckpointError::Invalid);
+                    }
                 }
-                std::collections::btree_map::Entry::Occupied(_) => {
-                    return Err(CheckpointError::Invalid);
-                }
-            },
+                lifecycle.insert((room_id.clone(), *topic_id), false);
+            }
             DomainEventV2::TopicRenamed {
                 room_id,
                 topic_id,
@@ -2021,6 +2060,21 @@ fn validate_topic_event_history(
                 }
                 current.clone_from(name);
             }
+            DomainEventV2::TopicLifecycleChanged {
+                room_id,
+                topic_id,
+                previous_resolved,
+                resolved,
+                ..
+            } => {
+                let current = lifecycle
+                    .entry((room_id.clone(), *topic_id))
+                    .or_insert(*previous_resolved);
+                if current != previous_resolved || previous_resolved == resolved {
+                    return Err(CheckpointError::Invalid);
+                }
+                *current = *resolved;
+            }
             _ => {}
         }
     }
@@ -2031,6 +2085,16 @@ fn validate_topic_event_history(
             .and_then(|room| room.topics.get(&topic_id))
             .ok_or(CheckpointError::Invalid)?;
         if topic.name != name {
+            return Err(CheckpointError::Invalid);
+        }
+    }
+    for ((room_id, topic_id), resolved) in lifecycle {
+        let topic = engine
+            .rooms
+            .get(&room_id)
+            .and_then(|room| room.topics.get(&topic_id))
+            .ok_or(CheckpointError::Invalid)?;
+        if topic.resolved != resolved {
             return Err(CheckpointError::Invalid);
         }
     }
@@ -2084,6 +2148,19 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             bounded(previous, e.limits.max_topic_name_bytes)?;
             bounded(name, e.limits.max_topic_name_bytes)?;
             if previous == name || !r.topics.contains_key(topic_id) {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::TopicLifecycleChanged {
+            room_id,
+            actor,
+            topic_id,
+            previous_resolved,
+            resolved,
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            if previous_resolved == resolved || !r.topics.contains_key(topic_id) {
                 return Err(CheckpointError::Invalid);
             }
         }

@@ -69,6 +69,9 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `2b` | ReadPosition | room, closed read scope |
 | `2c` | AdvanceReadPosition | room, observed revision, closed read scope, target message ID |
 | `2d` | RenameTopic | room, expected revision, topic ID, bounded new name |
+| `2e` | ResolveTopic | room, expected revision, topic ID |
+| `2f` | ReopenTopic | room, expected revision, topic ID |
+| `30` | TopicStatus | room, topic ID |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -87,7 +90,8 @@ ThreadArchived `1c`, ThreadReopened `1d`, ThreadStatus `1e`, ReactionStatus
 `1f`, ReactionAdded `20`, ReactionRemoved `21`, MessageRevisions `22`, and
 MessageEdited `23`, Topics `24`, TopicMessages `25`, TopicCreated `26`,
 TopicMessageAccepted `27`, TopicChanges `28`, ReadPosition `29`, and
-ReadPositionAdvanced `2a`, and TopicRenamed `2b`.
+ReadPositionAdvanced `2a`, TopicRenamed `2b`, TopicResolved `2c`,
+TopicReopened `2d`, and TopicStatus `2e`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -183,7 +187,9 @@ message ID, message-revision number, logical time, and body in all three change
 profiles. Existing message pages continue to expose only the current body.
 
 A topic page contains revision, room text, a canonical topic-ID-ordered list of
-`(16-byte topic ID, bounded name, creator text)`, and an optional cursor. A
+`(16-byte topic ID, bounded name, creator text)`, and an optional cursor. The
+separate topic-status outcome contains revision, room, topic ID, and the current
+resolved bool without changing that established page shape. A
 topic-message page adds the exact topic selector and carries identified/threaded
 message fields plus a closed optional topic ID; every returned message must
 match the page topic. TopicCreated carries revision and topic ID.
@@ -227,6 +233,7 @@ is derived from the client binding and is never present on the wire.
 | `13` | InvalidReadScope | — |
 | `14` | InvalidReadTarget | — |
 | `15` | ReadPositionRegression | — |
+| `16` | TopicResolved | — |
 
 ## Closure and evidence
 
@@ -257,6 +264,9 @@ change retention without granting delivery authority; the frozen
 change-retention-gap reply fixes nested gap tag `03` and its discard edge.
 Capability tag `12` advertises `TopicRenameV1`; frozen rename request, receipt,
 and topic-aware change fixtures pin command `2d`, outcome `2b`, and event `12`.
+Capability tag `13` advertises `TopicResolutionV1`; frozen resolve request,
+resolved receipt, and topic-aware lifecycle change fixtures pin commands `2e`
+and `2f`, outcomes `2c` and `2d`, event `13`, and resolved-topic refusal `16`.
 Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push

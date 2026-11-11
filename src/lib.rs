@@ -287,6 +287,7 @@ pub struct TopicV1 {
     id: TopicId,
     name: String,
     creator: ParticipantId,
+    resolved: bool,
 }
 
 impl TopicV1 {
@@ -299,6 +300,9 @@ impl TopicV1 {
     pub fn creator(&self) -> &ParticipantId {
         &self.creator
     }
+    pub fn is_resolved(&self) -> bool {
+        self.resolved
+    }
 }
 
 impl fmt::Debug for TopicV1 {
@@ -308,6 +312,7 @@ impl fmt::Debug for TopicV1 {
             .field("id", &self.id)
             .field("name_bytes", &self.name.len())
             .field("creator_id_bytes", &self.creator.as_str().len())
+            .field("resolved", &self.resolved)
             .finish()
     }
 }
@@ -735,6 +740,26 @@ pub struct TopicPageV1 {
     pub room_id: RoomId,
     pub topics: Vec<TopicV1>,
     pub next: Option<TopicPageCursorV1>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicStatusV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub topic_id: TopicId,
+    pub resolved: bool,
+}
+
+impl fmt::Debug for TopicStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("topic_id", &self.topic_id)
+            .field("resolved", &self.resolved)
+            .finish()
+    }
 }
 
 impl fmt::Debug for TopicPageV1 {
@@ -1204,6 +1229,7 @@ impl CommandV2 {
             Self::RedactMessage { .. } => Some(RoomActionV1::RedactAny),
             Self::CreateTopic { .. } => Some(RoomActionV1::ManageTopics),
             Self::RenameTopic { .. } => Some(RoomActionV1::ManageTopics),
+            Self::SetTopicResolved { .. } => Some(RoomActionV1::ManageTopics),
         }
     }
 }
@@ -1296,6 +1322,12 @@ pub enum CommandV2 {
         actor: ParticipantId,
         topic_id: TopicId,
         name: String,
+    },
+    SetTopicResolved {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        resolved: bool,
     },
     SpeakInTopic {
         room_id: RoomId,
@@ -1406,6 +1438,13 @@ pub enum OutcomeV2 {
         previous: String,
         name: String,
     },
+    TopicLifecycleChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        previous_resolved: bool,
+        resolved: bool,
+    },
     TopicMessageAccepted {
         room_id: RoomId,
         topic_id: TopicId,
@@ -1505,6 +1544,8 @@ pub enum Refusal {
     TopicIdentityExhausted,
     DuplicateTopicName,
     UnknownTopic,
+    TopicResolved,
+    InvalidTopicLifecycleChange,
     MessageAlreadyTombstoned,
     RevisionConflict {
         expected: Revision,
@@ -1636,6 +1677,13 @@ pub enum DomainEventV2 {
         previous: String,
         name: String,
     },
+    TopicLifecycleChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        previous_resolved: bool,
+        resolved: bool,
+    },
     InvitationRecorded {
         room_id: RoomId,
         participant: ParticipantId,
@@ -1731,6 +1779,7 @@ impl DomainEventV2 {
             Self::RoomCreated { room_id, .. }
             | Self::TopicCreated { room_id, .. }
             | Self::TopicRenamed { room_id, .. }
+            | Self::TopicLifecycleChanged { room_id, .. }
             | Self::InvitationRecorded { room_id, .. }
             | Self::ParticipantJoined { room_id, .. }
             | Self::ParticipantLeft { room_id, .. }
@@ -2381,6 +2430,34 @@ impl Engine {
             room_id: room_id.clone(),
             topics,
             next,
+        })
+    }
+
+    pub fn topic_status(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        topic_id: TopicId,
+    ) -> Result<TopicStatusV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        let topic = room
+            .topics
+            .get(&topic_id)
+            .ok_or(ObservationRefusal::InvalidTarget)?;
+        Ok(TopicStatusV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            topic_id,
+            resolved: topic.resolved,
         })
     }
 
@@ -3146,6 +3223,12 @@ impl Engine {
                 topic_id,
                 name,
             } => self.rename_topic(room_id, actor, topic_id, name),
+            CommandV2::SetTopicResolved {
+                room_id,
+                actor,
+                topic_id,
+                resolved,
+            } => self.set_topic_resolved(room_id, actor, topic_id, resolved),
             CommandV2::SpeakInTopic {
                 room_id,
                 author,
@@ -3263,6 +3346,22 @@ impl Engine {
                 topic_id: *topic_id,
                 previous: previous.clone(),
                 name: name.clone(),
+            },
+            (
+                CommandV2::SetTopicResolved { .. },
+                OutcomeV2::TopicLifecycleChanged {
+                    room_id,
+                    actor,
+                    topic_id,
+                    previous_resolved,
+                    resolved,
+                },
+            ) => DomainEventV2::TopicLifecycleChanged {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                topic_id: *topic_id,
+                previous_resolved: *previous_resolved,
+                resolved: *resolved,
             },
             (
                 CommandV2::Join { .. },
@@ -3884,6 +3983,7 @@ impl Engine {
                 id: topic_id,
                 name: name.clone(),
                 creator: actor.clone(),
+                resolved: false,
             },
         );
         room.next_topic_identity = next_topic_identity;
@@ -3936,6 +4036,41 @@ impl Engine {
         })
     }
 
+    fn set_topic_resolved(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        resolved: bool,
+    ) -> Result<OutcomeV2, Refusal> {
+        let room = self.room_ref(&room_id)?;
+        if !matches!(
+            room.members.get(&actor),
+            Some(Role::Owner | Role::Moderator)
+        ) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        let topic = room.topics.get(&topic_id).ok_or(Refusal::UnknownTopic)?;
+        if topic.resolved == resolved {
+            return Err(Refusal::InvalidTopicLifecycleChange);
+        }
+        let previous_resolved = topic.resolved;
+        self.rooms
+            .get_mut(&room_id)
+            .expect("room established by validation")
+            .topics
+            .get_mut(&topic_id)
+            .expect("topic established by validation")
+            .resolved = resolved;
+        Ok(OutcomeV2::TopicLifecycleChanged {
+            room_id,
+            actor,
+            topic_id,
+            previous_resolved,
+            resolved,
+        })
+    }
+
     fn speak(
         &mut self,
         room_id: RoomId,
@@ -3973,16 +4108,22 @@ impl Engine {
             if room.archived_threads.contains(&root_message_id) {
                 return Err(Refusal::ThreadArchived);
             }
+            if let Some(topic_id) = root.topic_id
+                && room.topics.get(&topic_id).is_some_and(TopicV1::is_resolved)
+            {
+                return Err(Refusal::TopicResolved);
+            }
             root.topic_id
         } else {
             let requested_topic = match placement {
                 MessagePlacement::Topic(topic) => Some(topic),
                 MessagePlacement::Unscoped | MessagePlacement::Reply(_) => None,
             };
-            if let Some(topic_id) = requested_topic
-                && !room.topics.contains_key(&topic_id)
-            {
-                return Err(Refusal::UnknownTopic);
+            if let Some(topic_id) = requested_topic {
+                let topic = room.topics.get(&topic_id).ok_or(Refusal::UnknownTopic)?;
+                if topic.is_resolved() {
+                    return Err(Refusal::TopicResolved);
+                }
             }
             requested_topic
         };

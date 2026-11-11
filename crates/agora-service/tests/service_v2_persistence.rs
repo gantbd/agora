@@ -192,6 +192,20 @@ fn populated() -> (
         ),
         ReplyV2::Accepted(OutcomeV2::TopicRenamed { revision: 13, .. })
     ));
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                108,
+                CommandV2::ResolveTopic {
+                    room_id: "alpha".to_owned(),
+                    expected_revision: 13,
+                    topic_id,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicResolved { revision: 14, .. })
+    ));
     let ReplyV2::Accepted(OutcomeV2::Topics(topic_page)) = service.execute(
         alice,
         request(
@@ -228,11 +242,11 @@ fn populated() -> (
                 106,
                 CommandV2::OpenTopicChanges {
                     room_id: "alpha".to_owned(),
-                    observed_revision: 13,
+                    observed_revision: 14,
                 },
             ),
         ),
-        ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision: 13, .. })
+        ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision: 14, .. })
     ));
     let ReplyV2::Accepted(OutcomeV2::Rooms(page)) = service.execute(
         alice,
@@ -249,6 +263,15 @@ fn populated() -> (
     (service, alice, mutation, page.next.unwrap())
 }
 
+fn topic_id_from_populated(service: &ServiceV2) -> agora_engine::TopicId {
+    service
+        .engine()
+        .topic_page(&"alice".into(), &"alpha".into(), None, 1)
+        .unwrap()
+        .topics[0]
+        .id()
+}
+
 #[test]
 fn complete_service_state_round_trips_and_continues_exactly() {
     let (service, alice, mutation, cursor) = populated();
@@ -259,7 +282,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v17.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v18.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -269,6 +292,13 @@ fn complete_service_state_round_trips_and_continues_exactly() {
     let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
 
     assert_eq!(recovered.engine().revision(), revision);
+    assert!(
+        recovered
+            .engine()
+            .topic(&RoomId::new("alpha"), topic_id_from_populated(&recovered))
+            .unwrap()
+            .is_resolved()
+    );
     assert!(
         recovered
             .engine()
@@ -378,7 +408,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 18;
+    future[8] = 19;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile

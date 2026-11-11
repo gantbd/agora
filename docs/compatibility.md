@@ -16,7 +16,7 @@ fail closed on the new value. Reinterpreting an assigned tag or changing any
 existing field grammar requires a new frame version. Unknown tags, fields, or
 trailing bytes remain refusals.
 
-The immutable `tests/fixtures/checkpoint-v15.hex` artifact pins a representative
+The immutable `tests/fixtures/checkpoint-v16.hex` artifact pins a representative
 V15 state containing both participant kinds, stable message and topic identity,
 topic-scoped messages, thread lifecycle, reactions, message revisions, neutral addressing, replay-safe
 publication, ban and policy-change evidence, one private read position,
@@ -31,7 +31,7 @@ fixtures freeze representative bytes. The codec defines complete message frames,
 not stream boundaries; transport framing remains separate.
 
 Protocol, Service, Client, and Wire V2 form an additive profile with a separate
-version byte, closed grammar, and twenty-five canonical fixtures. Their separately
+version byte, closed grammar, and twenty-eight canonical fixtures. Their separately
 typed values and V2 bytes do not alter V1 tags or bytes. Authenticated Host V2
 uses the same canonical frames without reinterpreting V1.
 
@@ -63,12 +63,12 @@ continuation and binds the message identity in addition to room and observer.
 Discriminators 12 and 13 isolate topic and topic-message continuations; the
 latter binds the exact topic. Discriminator 14 isolates topic-aware room-change
 positions. A representative complete service record is pinned by
-`service-checkpoint-v17.hex`. Public wire
+`service-checkpoint-v18.hex`. Public wire
 compatibility neither implies nor migrates durable state;
 future durable schema changes require a bounded explicit migration profile.
 
 Authenticated host persistence has its own `AGORAHST` version-17 record and
-`host-checkpoint-v17.hex` fixture. It nests the service record but owns host
+`host-checkpoint-v18.hex` fixture. It nests the service record but owns host
 session compatibility independently; neither wire nor service checkpoint
 decoding implies that a host record can be recovered.
 
@@ -165,6 +165,19 @@ can retain the rename event and renamed registry state; service and host records
 also retain the exact request/reply consequence. Profiles 14/16/16 fail closed
 rather than discard the fact or reconstruct a historical name from current
 state.
+
+Reversible topic resolution is additive: resolve/reopen command tags `2e` and
+`2f`, resolved/reopened outcome tags `2c` and `2d`, capability tag `13`, room
+event tag `13`, refusal tag `16`, status command tag `30`, and status outcome tag
+`2e` were previously unassigned. The separate status observation keeps the
+established topic-page bytes unchanged. Frozen resolve, receipt, and topic-aware
+change frames pin the grammar; every change profile carries actor, stable topic
+ID, prior state, and new state.
+
+Engine/service/host persistence profiles advance to 16/18/18. The engine record
+retains current lifecycle state and its event chain; service and host records
+retain the exact request/reply consequence. Profiles 15/17/17 fail closed rather
+than admit conversation into a resolved topic or invent lifecycle history.
 
 Transient collaboration Wire V1 is a new, separately invoked grammar. Its
 profile byte `01`, presence command/outcome tags `01` through `03`, typing

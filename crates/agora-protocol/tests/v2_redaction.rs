@@ -7,7 +7,7 @@ use agora_protocol::v2::{
     ReadPositionV1, ReadScopeV1, ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
     RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1,
     ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
-    TopicIdV1,
+    TopicIdV1, TopicStatusV1,
 };
 
 #[test]
@@ -151,8 +151,28 @@ fn v2_debug_output_is_content_safe() {
             topic_id: TopicIdV1::new([0x72; 16]),
             name: "secret-topic-name".to_owned(),
         },
+        CommandV2::ResolveTopic {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 62,
+            topic_id: TopicIdV1::new([0x72; 16]),
+        },
+        CommandV2::ReopenTopic {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 63,
+            topic_id: TopicIdV1::new([0x72; 16]),
+        },
+        CommandV2::TopicStatus {
+            room_id: "secret-room".to_owned(),
+            topic_id: TopicIdV1::new([0x72; 16]),
+        },
     ];
     let replies = [
+        ReplyV2::Accepted(OutcomeV2::TopicStatus(TopicStatusV1 {
+            revision: 62,
+            room_id: "secret-room".to_owned(),
+            topic_id: TopicIdV1::new([0x72; 16]),
+            resolved: true,
+        })),
         ReplyV2::Accepted(OutcomeV2::Capabilities(vec![
             CapabilityV2::RoomLifecycleV2,
             CapabilityV2::BanObservationV1,
@@ -364,6 +384,21 @@ fn v2_debug_output_is_content_safe() {
                 }),
             }],
             next: PageCursorV2(43),
+            has_more: false,
+        })),
+        ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 62,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 61,
+                revision: 62,
+                event: RoomEventV2::TopicLifecycleChanged {
+                    actor_id: "secret-actor".to_owned(),
+                    topic_id: TopicIdV1::new([0x72; 16]),
+                    previous_resolved: false,
+                    resolved: true,
+                },
+            }],
+            next: PageCursorV2(63),
             has_more: false,
         })),
         ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
