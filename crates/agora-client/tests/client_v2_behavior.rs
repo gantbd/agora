@@ -1,4 +1,6 @@
-use agora_client::v2::{ClientErrorV2, ClientV2, PortFailureV2, ServicePortV2};
+use agora_client::v2::{
+    ClientErrorV2, ClientRestoreErrorV2, ClientStateV2, ClientV2, PortFailureV2, ServicePortV2,
+};
 use agora_protocol::v2::{ClientIdV2, CommandV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2};
 use std::collections::VecDeque;
 
@@ -121,4 +123,54 @@ fn abandonment_is_explicit_and_returns_the_unresolved_request() {
         RequestIdV2(0)
     );
     assert!(client.pending_request().is_none());
+}
+
+#[test]
+fn exported_uncertainty_restores_the_exact_namespace_and_request() {
+    let port = RecordingPortV2 {
+        replies: [Err(PortFailureV2::OutcomeUnknown("lost"))].into(),
+        ..Default::default()
+    };
+    let mut client = ClientV2::new(ClientIdV2(7), port);
+    assert_eq!(
+        client.execute(rooms(2)),
+        Err(ClientErrorV2::OutcomeUnknown("lost"))
+    );
+    let (_, state) = client.into_state();
+    assert_eq!(state.next_request, 1);
+    assert_eq!(state.pending.as_ref().unwrap().request_id, RequestIdV2(0));
+
+    let port = RecordingPortV2 {
+        replies: [Ok(ReplyV2::Refused(RefusalV2::Unavailable))].into(),
+        ..Default::default()
+    };
+    let mut restored = ClientV2::restore(state, port).unwrap();
+    assert_eq!(
+        restored.execute(rooms(3)),
+        Err(ClientErrorV2::UnresolvedOutcome)
+    );
+    assert_eq!(
+        restored.execute(rooms(2)),
+        Ok(ReplyV2::Refused(RefusalV2::Unavailable))
+    );
+    let (port, state) = restored.into_state();
+    assert!(state.pending.is_none());
+    assert_eq!(state.next_request, 1);
+    assert_eq!(port.requests[0].1.request_id, RequestIdV2(0));
+}
+
+#[test]
+fn restore_refuses_a_pending_request_outside_the_exact_allocated_tail() {
+    let invalid = ClientStateV2 {
+        client: ClientIdV2(7),
+        next_request: 2,
+        pending: Some(RequestV2 {
+            request_id: RequestIdV2(0),
+            command: rooms(2),
+        }),
+    };
+    assert!(matches!(
+        ClientV2::restore(invalid, RecordingPortV2::default()),
+        Err(ClientRestoreErrorV2::InvalidPendingRequest)
+    ));
 }

@@ -2,6 +2,32 @@
 
 use agora_protocol::v2::{ClientIdV2, CommandV2, ReplyV2, RequestIdV2, RequestV2};
 
+#[derive(Clone, Eq, PartialEq)]
+pub struct ClientStateV2 {
+    pub client: ClientIdV2,
+    pub next_request: u64,
+    pub pending: Option<RequestV2>,
+}
+
+impl std::fmt::Debug for ClientStateV2 {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ClientStateV2")
+            .field("client", &self.client)
+            .field("next_request", &self.next_request)
+            .field(
+                "pending_request",
+                &self.pending.as_ref().map(|request| request.request_id),
+            )
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClientRestoreErrorV2 {
+    InvalidPendingRequest,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PortFailureV2<E> {
     NotSent(E),
@@ -41,6 +67,22 @@ impl<P: ServicePortV2> ClientV2<P> {
             pending: None,
             port,
         }
+    }
+
+    /// Restores only the client-owned request namespace. Durable storage and
+    /// endpoint/session correspondence remain caller-owned deployment policy.
+    pub fn restore(state: ClientStateV2, port: P) -> Result<Self, ClientRestoreErrorV2> {
+        if let Some(pending) = &state.pending
+            && state.next_request.checked_sub(1) != Some(pending.request_id.0)
+        {
+            return Err(ClientRestoreErrorV2::InvalidPendingRequest);
+        }
+        Ok(Self {
+            client: state.client,
+            next_request: state.next_request,
+            pending: state.pending,
+            port,
+        })
     }
 
     pub fn execute(&mut self, command: CommandV2) -> Result<ReplyV2, ClientErrorV2<P::Error>> {
@@ -83,6 +125,14 @@ impl<P: ServicePortV2> ClientV2<P> {
         self.pending.as_ref()
     }
 
+    pub fn state(&self) -> ClientStateV2 {
+        ClientStateV2 {
+            client: self.client,
+            next_request: self.next_request,
+            pending: self.pending.clone(),
+        }
+    }
+
     /// Explicitly abandons client-side uncertainty. This does not cancel or
     /// disprove a service-side result, so the exact request is returned for
     /// durable or operator accounting.
@@ -93,5 +143,14 @@ impl<P: ServicePortV2> ClientV2<P> {
     /// Extracts both the port and any unresolved exact request.
     pub fn into_parts(self) -> (P, Option<RequestV2>) {
         (self.port, self.pending)
+    }
+
+    pub fn into_state(self) -> (P, ClientStateV2) {
+        let state = ClientStateV2 {
+            client: self.client,
+            next_request: self.next_request,
+            pending: self.pending,
+        };
+        (self.port, state)
     }
 }
