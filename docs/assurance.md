@@ -646,9 +646,10 @@ scenarios cover actor derivation, exact replay/conflict behavior, and
 actor/tag/add-remove attribution in all four feeds. Three frozen frames, closed
 command/outcome/refusal/capability tags, Debug/SDK construction, and
 profile-19/21/21 nested checkpoints close the implemented bounded profile.
-Integrated qualification is pending; hierarchy, lookup authority, routing,
-search truth, subscriptions, notification policy, workflow truth, and execution
-are not claimed.
+Revision `c656e25983720b0008e689fb788f2571dcb53d59` passed the complete R53
+qualification with 10,000 soak cycles and 1,000,000 fixed-seed cases on each
+fuzz target. Hierarchy, lookup authority, routing, search truth, subscriptions,
+notification policy, workflow truth, and execution are not claimed.
 
 Private read-position core scenarios prove room/thread/topic scope validation,
 human/agent-neutral self-state, monotone and idempotent advancement, atomic

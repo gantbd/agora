@@ -298,6 +298,10 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Fixed
 
+- Qualified bounded topic tags at revision
+  `c656e25983720b0008e689fb788f2571dcb53d59` across the ordinary gate, all
+  release-mode targets, 10,000 deterministic soak cycles, and 1,000,000
+  fixed-seed cases on each of the three fuzz targets.
 - Qualified bounded topic aliases at revision
   `65230442b1bc71e1ab6342677446ad10071cf948` across the ordinary gate, all
   release-mode targets, 10,000 deterministic soak cycles, and 1,000,000

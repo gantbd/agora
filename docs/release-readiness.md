@@ -145,7 +145,8 @@ not ready for a network service or crates.io release.
   authority, an eight-tag ceiling, byte-exact canonical per-topic sets,
   stable-ID-only selection, explicit add/remove, separate participant-bound
   status, four-feed attribution, exact replay/recovery, and profile-19/21/21
-  checkpoints; integrated qualification is pending;
+  checkpoints and exact-revision integrated qualification at
+  `c656e25983720b0008e689fb788f2571dcb53d59`;
 - independent delivery and pull retention: acknowledgment drains only the
   backpressured outbox, journal eviction carries its own exact gap, and both
   suffixes recover canonically with live service cursors;
