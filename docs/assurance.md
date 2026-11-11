@@ -89,9 +89,17 @@ symmetry, current-member-only observation, explicit expiry to `Unknown`, no
 conversation revision effect, capacity refusal without eviction, bounded expiry
 reclamation, monotone-clock refusal, exact as-of/generation cursor binding,
 source and membership-transition retirement, redacted opaque handles, and an
-empty restart projection. This is substrate evidence only: the public
-Protocol/Wire/Host/SDK profile, authenticated clock/source composition, typing,
-and end-to-end lifecycle evidence remain open under R62.
+empty restart projection. A saturation unit proves that generation overflow
+sticks fidelity loss and fences publication/observation without blocking source
+cleanup.
+
+Five Host-composition scenarios bind that owner to authenticated sessions and
+qualified Host time. They cover participant-neutral publication and observation,
+close/revocation/time-regression retirement before refusal, leave reconciliation
+before its accepted reply and no rejoin resurrection, bounded expiry, and
+wrapper reconstruction to `Unknown`. This remains dark substrate evidence: the
+public Protocol/Wire/SDK profile, typing, public replay rules, mutation corpus,
+and end-to-end local-daemon evidence remain open under R62.
 
 The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
 nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus

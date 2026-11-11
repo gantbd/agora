@@ -16,7 +16,9 @@ not ready for a network service or crates.io release.
 - canonical V2 checkpoint preparation and semantic recovery;
 - immutable representative V2 compatibility fixture;
 - transport-neutral protocol, serialized participant-bound service, and client
-  request profile with bounded volatile replay;
+  request profile with bounded replay plus validated export/restore of its exact
+  pending request namespace; persistence and reconnect correspondence remain
+  host-owned;
 - canonical bounded V1 wire codec with executable golden compatibility fixtures;
 - canonical fixed-width local ClientHello/ServerHello profile selecting Wire V2
   before authentication, with explicit server limits, capability-discovery
@@ -29,6 +31,10 @@ not ready for a network service or crates.io release.
 - an unadvertised bounded transient presence owner with current-membership
   checks, opaque sources, monotone explicit time, snapshot cursors, bounded
   expiry work, lifecycle retirement, and restart-to-`Unknown` evidence;
+- an unadvertised non-durable authenticated Host wrapper for transient presence,
+  including close/revocation/regression source retirement, membership
+  reconciliation before conversation replies, fail-safe cleanup under sticky
+  fidelity loss, and wrapper reconstruction to `Unknown`;
 - transport-neutral authenticated host composition with bounded volatile
   sessions, current-context revalidation, and revocation-safe cleanup;
 - unpublished trusted-host and remote-client SDK facades with executable
@@ -157,11 +163,11 @@ not ready for a network service or crates.io release.
 
 ## Open release blockers
 
-- R62 fixes the architecture and supplies the first dark transient presence
-  owner, but no public capability is implemented or advertised. Qualified Host
-  clock/source composition, automatic lifecycle retirement, typing, the closed
-  Protocol/Wire/SDK surface, and end-to-end privacy and restart evidence remain
-  required.
+- R62 fixes the architecture and supplies the dark transient presence owner plus
+  authenticated Host clock/source and automatic lifecycle composition, but no
+  public capability is implemented or advertised. Typing, the closed
+  Protocol/Wire/SDK surface, public replay rules, mutation fixtures, and
+  end-to-end local-daemon privacy/restart evidence remain required.
 
 - no remote origin provenance or remote CI; the qualified local source candidate
   is content-addressed, but its selected Aegis and Keystone inputs were unclean

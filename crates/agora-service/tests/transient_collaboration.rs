@@ -120,8 +120,8 @@ fn source_and_membership_retirement_prevent_resurrection() {
             10,
         )
         .unwrap();
-    assert_eq!(transient.retire_source(source).unwrap(), 1);
-    assert_eq!(transient.retire_source(source).unwrap(), 0);
+    assert_eq!(transient.retire_source(source), 1);
+    assert_eq!(transient.retire_source(source), 0);
 
     transient
         .publish_presence(
@@ -134,7 +134,7 @@ fn source_and_membership_retirement_prevent_resurrection() {
             9,
         )
         .unwrap();
-    assert_eq!(transient.retire_participant_room(&room, &agent).unwrap(), 1);
+    assert_eq!(transient.retire_participant_room(&room, &agent), 1);
     engine
         .apply(EngineCommand::Leave {
             room_id: room.clone(),

@@ -12,6 +12,7 @@ use agora_wire::{
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
+pub mod transient;
 pub mod v2;
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]

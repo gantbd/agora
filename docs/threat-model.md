@@ -107,6 +107,21 @@ the base host alone leaves those obligations unchanged. The separately qualified
 store-neutral recovery profile below closes only canonical session-state
 reconstruction and pre-reply receipt gating.
 
+The dark transient Host wrapper narrows presence spoofing and stale-source
+disclosure without turning presence into durable conversation state. Only a
+currently authenticated Host session may publish or observe; its opaque session
+identity is the private source, every operation revalidates the participant at
+qualified monotone Host time, and current room membership is checked again at
+publication and observation. Close, revocation, substitution, and clock
+regression retire that source before refusal returns. Leave, kick, or ban causes
+membership reconciliation before the ordinary conversation reply is returned,
+so rejoin cannot resurrect an older signal. Generation saturation fences
+publication and observation but never security cleanup. Wrapper reconstruction
+starts `Unknown`, preventing stale post-restart presence. Presence still reveals
+activity and expiry metadata to current members; there is no consent UX,
+device roster, last-seen history, remote wire profile, notification policy, or
+proof of availability, attention, execution, or agent activation.
+
 The service checkpoint binds one caller-selected store scope and refuses foreign
 scope, malformed structure, noncanonical ordering, invalid attribution, and host
 ceiling violations. The durable owner never exposes a changed semantic result

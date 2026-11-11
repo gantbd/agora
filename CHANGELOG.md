@@ -8,10 +8,21 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added validated export/restore of the V2 public client's request namespace and
+  exact pending uncertainty, refusing any pending request outside the immediately
+  allocated tail while leaving persistence and endpoint correspondence to hosts.
 - Added an unadvertised bounded transient-collaboration owner for expiring
   presence signals, with current-membership authority, opaque session sources,
   monotone explicit time, snapshot-bound pages, lifecycle retirement, bounded
   expiry work, human/agent symmetry, and restart-to-`Unknown` evidence.
+- Added an unadvertised non-durable transient Host composition that derives
+  presence sources from authenticated sessions, uses qualified Host time,
+  retires state on close/revocation/regression, reconciles leave/kick/ban before
+  returning conversation replies, and fences observation on generation-fidelity
+  loss without blocking cleanup.
+- Added validated V2 client-state export and restoration for the client-owned
+  request namespace and exact unresolved request, while leaving durable storage,
+  endpoint/session correspondence, and reconnect policy caller-owned.
 - Added explicit fail-closed local endpoint residue recovery requiring the exact
   prior incarnation, a distinct next incarnation, and a fresh Host composition,
   with locked in-place record rotation and no implicit volatile-state adoption.

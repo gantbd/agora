@@ -37,14 +37,24 @@ Host V2 but neither imports transport state into conversation semantics nor
 exposes the opaque host session on the wire.
 
 `agora-service::transient` is a separate volatile owner beside `ServiceV2`, not
-part of its durable checkpoint. Its initial dark profile binds expiring presence
+part of its durable checkpoint. Its dark profile binds expiring presence
 signals to current engine membership, opaque session sources, explicit monotone
 time, fixed capacities, and exact snapshot cursors. Observation is
 current-member-only and projects expired or absent state as `Unknown`; it does
-not advance engine revision or publish an event. Source and participant-room
-retirement are explicit composition obligations, and expiry reclamation is a
-separate bounded drive. Protocol, wire, Host, and SDK surfaces remain absent, so
-no presence capability is advertised yet. See
+not advance engine revision or publish an event. Expiry reclamation is a
+separate bounded drive. Generation saturation is sticky fidelity loss: new
+publication and observation fence, while source and membership cleanup remain
+available.
+
+`agora-host::transient::TransientHostV1` supplies the first qualified
+composition. It derives the source from an opaque authenticated Host session,
+revalidates the subject and participant at current Host time for every
+transient operation, retires the source on disconnect, revocation, substitution,
+or clock regression, and reconciles membership after each ordinary conversation
+frame before returning its reply. Reconstructing the wrapper around a recovered
+Host deliberately starts empty. The wrapper has no checkpoint implementation,
+Protocol/Wire grammar, or SDK surface, so no presence capability is advertised
+yet. See
 [`transient-collaboration.md`](transient-collaboration.md).
 
 ## Connection and identity
@@ -131,7 +141,11 @@ multi-host behavior.
 port reports either definitely-not-sent or outcome-unknown. Unknown retains the
 exact request; only equal-command replay may cross the port until reply or
 explicit abandonment. Extraction returns the pending request. The client does
-not retry automatically or infer cancellation.
+not retry automatically or infer cancellation. `ClientStateV2` additionally
+exports the client ID, next request namespace and optional exact pending request;
+restore accepts a pending request only when it is the immediately allocated tail.
+The state carries no endpoint/session proof and does not choose durable storage
+or reconnect policy.
 
 The authenticated durable composition moves the checkpoint boundary above
 `HostV2`. Its canonical unit contains every active subject/participant/session/

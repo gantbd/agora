@@ -21,6 +21,12 @@ impl fmt::Debug for HostSessionIdV2 {
     }
 }
 
+impl HostSessionIdV2 {
+    pub(crate) const fn source_bytes(self) -> [u8; 16] {
+        self.0
+    }
+}
+
 pub struct OpenReplyV2 {
     session: Option<HostSessionIdV2>,
     frame: Vec<u8>,
@@ -162,24 +168,7 @@ impl<V: PrincipalVerifier> HostV2<V> {
         now: HostTimeV1,
     ) -> Result<Vec<u8>, HostRefusal> {
         count(&mut self.usage.frame_offers, &mut self.usage.overflowed);
-        let Some(session) = self.sessions.get(&session_id).cloned() else {
-            return self.unavailable();
-        };
-        if now < session.last_verified_at {
-            self.retire(session_id);
-            return self.unavailable();
-        }
-        if self
-            .verifier
-            .revalidate(session.subject, &session.participant, context, now)
-            .is_err()
-        {
-            self.retire(session_id);
-            return self.unavailable();
-        }
-        if let Some(active) = self.sessions.get_mut(&session_id) {
-            active.last_verified_at = now;
-        }
+        let session = self.authorize_session(session_id, context, now)?;
         let request =
             decode_request_v2(frame, self.limits.wire).map_err(HostRefusal::InvalidFrame)?;
         match request {
@@ -218,6 +207,21 @@ impl<V: PrincipalVerifier> HostV2<V> {
         true
     }
 
+    pub(crate) fn has_session(&self, session: HostSessionIdV2) -> bool {
+        self.sessions.contains_key(&session)
+    }
+
+    pub(crate) fn authorize_transient(
+        &mut self,
+        session_id: HostSessionIdV2,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<String, HostRefusal> {
+        Ok(self
+            .authorize_session(session_id, context, now)?
+            .participant)
+    }
+
     fn open_refused(&self, refusal: RefusalV2) -> Result<OpenReplyV2, HostRefusal> {
         let frame = encode_reply_v2(&WireReplyV2::ConnectRefused(refusal), self.limits.wire)
             .map_err(map_encode)?;
@@ -230,6 +234,33 @@ impl<V: PrincipalVerifier> HostV2<V> {
     fn unavailable<T>(&mut self) -> Result<T, HostRefusal> {
         count(&mut self.usage.unavailable, &mut self.usage.overflowed);
         Err(HostRefusal::Unavailable)
+    }
+
+    fn authorize_session(
+        &mut self,
+        session_id: HostSessionIdV2,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<SessionV2, HostRefusal> {
+        let Some(session) = self.sessions.get(&session_id).cloned() else {
+            return self.unavailable();
+        };
+        if now < session.last_verified_at {
+            self.retire(session_id);
+            return self.unavailable();
+        }
+        if self
+            .verifier
+            .revalidate(session.subject, &session.participant, context, now)
+            .is_err()
+        {
+            self.retire(session_id);
+            return self.unavailable();
+        }
+        if let Some(active) = self.sessions.get_mut(&session_id) {
+            active.last_verified_at = now;
+        }
+        Ok(session)
     }
 
     fn retire(&mut self, session_id: HostSessionIdV2) {

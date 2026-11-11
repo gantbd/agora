@@ -84,6 +84,7 @@ pub enum TransientRefusalV1 {
     ClockRegression,
     NotMember,
     Capacity,
+    FidelityLost,
     InvalidWorkBudget,
     InvalidPage,
     ForeignCursor,
@@ -151,6 +152,7 @@ pub struct TransientCollaborationV1 {
     limits: TransientLimitsV1,
     signals: BTreeMap<(RoomId, ParticipantId, PresenceSourceV1), PresenceSignalV1>,
     generation: u64,
+    fidelity_lost: bool,
     last_time: Option<TransientTimeV1>,
 }
 
@@ -167,6 +169,7 @@ impl TransientCollaborationV1 {
             limits,
             signals: BTreeMap::new(),
             generation: 0,
+            fidelity_lost: false,
             last_time: None,
         })
     }
@@ -177,6 +180,14 @@ impl TransientCollaborationV1 {
 
     pub fn generation(&self) -> u64 {
         self.generation
+    }
+
+    pub fn signal_count(&self) -> usize {
+        self.signals.len()
+    }
+
+    pub fn fidelity_lost(&self) -> bool {
+        self.fidelity_lost
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -191,6 +202,9 @@ impl TransientCollaborationV1 {
         lifetime: u64,
     ) -> Result<TransientTimeV1, TransientRefusalV1> {
         self.validate_time(now)?;
+        if self.fidelity_lost {
+            return Err(TransientRefusalV1::FidelityLost);
+        }
         if engine.member_role(room_id, participant).is_none() {
             return Err(TransientRefusalV1::NotMember);
         }
@@ -223,11 +237,35 @@ impl TransientCollaborationV1 {
             expires_at,
         };
         if self.signals.get(&key) != Some(&next) {
-            self.advance_generation()?;
+            self.advance_publication_generation()?;
             self.signals.insert(key, next);
         }
         self.last_time = Some(now);
         Ok(expires_at)
+    }
+
+    /// String-bound composition seam for hosts that intentionally do not
+    /// depend on engine types.
+    #[allow(clippy::too_many_arguments)]
+    pub fn publish_presence_for(
+        &mut self,
+        engine: &Engine,
+        room_id: &str,
+        participant: &str,
+        source: PresenceSourceV1,
+        state: PresenceStateV1,
+        now: TransientTimeV1,
+        lifetime: u64,
+    ) -> Result<TransientTimeV1, TransientRefusalV1> {
+        self.publish_presence(
+            engine,
+            &RoomId::new(room_id),
+            &ParticipantId::new(participant),
+            source,
+            state,
+            now,
+            lifetime,
+        )
     }
 
     pub fn clear_presence(
@@ -246,7 +284,7 @@ impl TransientCollaborationV1 {
             .signals
             .contains_key(&(room_id.clone(), participant.clone(), source));
         if removed {
-            self.advance_generation()?;
+            self.advance_cleanup_generation();
             self.signals
                 .remove(&(room_id.clone(), participant.clone(), source));
         }
@@ -254,19 +292,36 @@ impl TransientCollaborationV1 {
         Ok(removed)
     }
 
+    pub fn clear_presence_for(
+        &mut self,
+        engine: &Engine,
+        room_id: &str,
+        participant: &str,
+        source: PresenceSourceV1,
+        now: TransientTimeV1,
+    ) -> Result<bool, TransientRefusalV1> {
+        self.clear_presence(
+            engine,
+            &RoomId::new(room_id),
+            &ParticipantId::new(participant),
+            source,
+            now,
+        )
+    }
+
     /// Trusted lifecycle retirement for one Host-session source.
-    pub fn retire_source(&mut self, source: PresenceSourceV1) -> Result<usize, TransientRefusalV1> {
+    pub fn retire_source(&mut self, source: PresenceSourceV1) -> usize {
         let removed = self
             .signals
             .keys()
             .filter(|(_, _, candidate)| *candidate == source)
             .count();
         if removed > 0 {
-            self.advance_generation()?;
+            self.advance_cleanup_generation();
         }
         self.signals
             .retain(|(_, _, candidate), _| *candidate != source);
-        Ok(removed)
+        removed
     }
 
     /// Trusted transition retirement used for leave, kick, and ban composition.
@@ -274,18 +329,35 @@ impl TransientCollaborationV1 {
         &mut self,
         room_id: &RoomId,
         participant: &ParticipantId,
-    ) -> Result<usize, TransientRefusalV1> {
+    ) -> usize {
         let removed = self
             .signals
             .keys()
             .filter(|(room, actor, _)| room == room_id && actor == participant)
             .count();
         if removed > 0 {
-            self.advance_generation()?;
+            self.advance_cleanup_generation();
         }
         self.signals
             .retain(|(room, actor, _), _| room != room_id || actor != participant);
-        Ok(removed)
+        removed
+    }
+
+    /// Retires every signal whose participant is no longer a current member.
+    /// Cleanup remains available even after observation-generation fidelity is
+    /// lost, so lifecycle safety never depends on counter headroom.
+    pub fn reconcile_membership(&mut self, engine: &Engine) -> usize {
+        let removed = self
+            .signals
+            .keys()
+            .filter(|(room, participant, _)| engine.member_role(room, participant).is_none())
+            .count();
+        if removed > 0 {
+            self.advance_cleanup_generation();
+        }
+        self.signals
+            .retain(|(room, participant, _), _| engine.member_role(room, participant).is_some());
+        removed
     }
 
     /// Removes at most `budget` expired records using the qualified clock.
@@ -313,7 +385,7 @@ impl TransientCollaborationV1 {
                 .map(|(key, _)| key.clone()),
         );
         if !expired.is_empty() {
-            self.advance_generation()?;
+            self.advance_cleanup_generation();
         }
         for key in &expired {
             self.signals.remove(key);
@@ -332,6 +404,9 @@ impl TransientCollaborationV1 {
         as_of: TransientTimeV1,
     ) -> Result<PresencePageV1, TransientRefusalV1> {
         self.validate_time(as_of)?;
+        if self.fidelity_lost {
+            return Err(TransientRefusalV1::FidelityLost);
+        }
         if limit == 0 || limit > self.limits.max_page_items {
             return Err(TransientRefusalV1::InvalidPage);
         }
@@ -396,6 +471,26 @@ impl TransientCollaborationV1 {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn presence_page_for(
+        &mut self,
+        engine: &Engine,
+        observer: &str,
+        room_id: &str,
+        cursor: Option<&PresenceCursorV1>,
+        limit: usize,
+        as_of: TransientTimeV1,
+    ) -> Result<PresencePageV1, TransientRefusalV1> {
+        self.presence_page(
+            engine,
+            &ParticipantId::new(observer),
+            &RoomId::new(room_id),
+            cursor,
+            limit,
+            as_of,
+        )
+    }
+
     fn validate_time(&self, now: TransientTimeV1) -> Result<(), TransientRefusalV1> {
         if self.last_time.is_some_and(|last| now < last) {
             return Err(TransientRefusalV1::ClockRegression);
@@ -403,12 +498,22 @@ impl TransientCollaborationV1 {
         Ok(())
     }
 
-    fn advance_generation(&mut self) -> Result<(), TransientRefusalV1> {
-        self.generation = self
-            .generation
-            .checked_add(1)
-            .ok_or(TransientRefusalV1::Capacity)?;
-        Ok(())
+    fn advance_publication_generation(&mut self) -> Result<(), TransientRefusalV1> {
+        if let Some(next) = self.generation.checked_add(1) {
+            self.generation = next;
+            Ok(())
+        } else {
+            self.fidelity_lost = true;
+            Err(TransientRefusalV1::FidelityLost)
+        }
+    }
+
+    fn advance_cleanup_generation(&mut self) {
+        if let Some(next) = self.generation.checked_add(1) {
+            self.generation = next;
+        } else {
+            self.fidelity_lost = true;
+        }
     }
 }
 
@@ -425,5 +530,92 @@ fn map_observation_refusal(refusal: ObservationRefusal) -> TransientRefusalV1 {
         | ObservationRefusal::NotMember
         | ObservationRefusal::NotAuthorized => TransientRefusalV1::NotMember,
         ObservationRefusal::InvalidTarget => TransientRefusalV1::EngineChanged,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agora_engine::{AdmissionPolicy, CommandV2, Participant, ParticipantKind};
+
+    #[test]
+    fn generation_saturation_fences_observation_but_never_cleanup() {
+        let mut engine = Engine::new();
+        let participant = ParticipantId::new("participant");
+        let room = RoomId::new("room");
+        engine
+            .apply(CommandV2::RegisterParticipant(Participant::new(
+                "participant",
+                "participant",
+                ParticipantKind::Human,
+            )))
+            .unwrap();
+        engine
+            .apply(CommandV2::CreateRoom {
+                room_id: room.clone(),
+                name: "room".to_owned(),
+                owner: participant.clone(),
+                admission: AdmissionPolicy::Open,
+            })
+            .unwrap();
+        let source = PresenceSourceV1::new([7; 16]);
+        let mut owner = TransientCollaborationV1::new(TransientLimitsV1::default()).unwrap();
+        owner
+            .publish_presence(
+                &engine,
+                &room,
+                &participant,
+                source,
+                PresenceStateV1::Available,
+                TransientTimeV1(1),
+                1,
+            )
+            .unwrap();
+        owner.generation = u64::MAX;
+        assert_eq!(owner.retire_source(source), 1);
+        assert!(owner.fidelity_lost());
+        assert_eq!(
+            owner.presence_page(&engine, &participant, &room, None, 1, TransientTimeV1(2),),
+            Err(TransientRefusalV1::FidelityLost)
+        );
+    }
+
+    #[test]
+    fn generation_saturation_refuses_publication_before_mutation() {
+        let mut engine = Engine::new();
+        let participant = ParticipantId::new("participant");
+        let room = RoomId::new("room");
+        engine
+            .apply(CommandV2::RegisterParticipant(Participant::new(
+                "participant",
+                "participant",
+                ParticipantKind::Human,
+            )))
+            .unwrap();
+        engine
+            .apply(CommandV2::CreateRoom {
+                room_id: room.clone(),
+                name: "room".to_owned(),
+                owner: participant.clone(),
+                admission: AdmissionPolicy::Open,
+            })
+            .unwrap();
+        let mut owner = TransientCollaborationV1::new(TransientLimitsV1::default()).unwrap();
+        owner.generation = u64::MAX;
+
+        assert_eq!(
+            owner.publish_presence(
+                &engine,
+                &room,
+                &participant,
+                PresenceSourceV1::new([8; 16]),
+                PresenceStateV1::Available,
+                TransientTimeV1(1),
+                1,
+            ),
+            Err(TransientRefusalV1::FidelityLost)
+        );
+        assert_eq!(owner.signal_count(), 0);
+        assert!(owner.fidelity_lost());
     }
 }
