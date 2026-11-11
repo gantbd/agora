@@ -262,7 +262,8 @@
   queues, edges, redaction consequences, and live service cursors must recover
   canonically without turning observation retention into delivery authority.
 - **R50 — Reproducible coverage-guided parser evidence:** canonical wire and
-  semantic-checkpoint decoders must have separately runnable libFuzzer targets
+  semantic-checkpoint decoders plus the production outer-frame prefix parser
+  must have separately runnable libFuzzer targets
   under an exact driver, compiler, library, seed corpus, input ceiling, memory
   ceiling, timeout, run count, and random seed. Every accepted candidate must
   re-encode byte-for-byte and remain equal after decoding. The stable offline
@@ -287,7 +288,7 @@
   decision must refuse tracked source drift, record the exact source revision,
   run the complete ordinary gate, run every workspace target in release mode,
   complete a bounded release-mode lifecycle/replay/recovery soak, and complete
-  both pinned coverage-guided fuzz targets. Numeric budgets must be explicit,
+  every pinned coverage-guided fuzz target. Numeric budgets must be explicit,
   positive, bounded, and adversarially validated. A partial or interrupted run
   is not a pass, and a pass makes no artifact, provenance, performance,
   architecture-portability, or publication claim.

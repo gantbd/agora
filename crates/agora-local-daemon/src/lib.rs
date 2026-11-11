@@ -16,6 +16,7 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::{fmt, ops::Range};
 
 pub trait AuthenticatorV1 {
     type Error;
@@ -96,6 +97,92 @@ pub enum DaemonErrorV1 {
     ConnectionRefused,
     FrameLimit,
     RequestLimit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OuterFrameErrorV1 {
+    Incomplete,
+    Empty,
+    Limit,
+}
+
+/// One decoded length-prefixed frame and the unconsumed stream suffix.
+///
+/// Debug output is content-free because a frame may contain conversation data.
+#[derive(Clone, Eq, PartialEq)]
+pub struct OuterFrameV1<'a> {
+    input: &'a [u8],
+    payload: Range<usize>,
+}
+
+impl OuterFrameV1<'_> {
+    pub fn payload(&self) -> &[u8] {
+        &self.input[self.payload.clone()]
+    }
+
+    pub fn remainder(&self) -> &[u8] {
+        &self.input[self.payload.end..]
+    }
+}
+
+impl fmt::Debug for OuterFrameV1<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OuterFrameV1")
+            .field("payload_bytes", &self.payload.len())
+            .field("remainder_bytes", &self.remainder().len())
+            .finish()
+    }
+}
+
+/// Decodes exactly one canonical big-endian length-prefixed frame prefix.
+/// Any later bytes are returned as stream remainder rather than reinterpreted.
+pub fn decode_outer_frame_prefix_v1(
+    input: &[u8],
+    max_frame_bytes: usize,
+) -> Result<OuterFrameV1<'_>, OuterFrameErrorV1> {
+    let header: [u8; 4] = input
+        .get(..4)
+        .ok_or(OuterFrameErrorV1::Incomplete)?
+        .try_into()
+        .expect("four-byte slice");
+    let length = validate_outer_frame_length(u32::from_be_bytes(header) as usize, max_frame_bytes)?;
+    let end = 4_usize
+        .checked_add(length)
+        .ok_or(OuterFrameErrorV1::Limit)?;
+    if input.len() < end {
+        return Err(OuterFrameErrorV1::Incomplete);
+    }
+    Ok(OuterFrameV1 {
+        input,
+        payload: 4..end,
+    })
+}
+
+/// Encodes one canonical outer frame without interpreting its payload.
+pub fn encode_outer_frame_v1(
+    payload: &[u8],
+    max_frame_bytes: usize,
+) -> Result<Vec<u8>, OuterFrameErrorV1> {
+    validate_outer_frame_length(payload.len(), max_frame_bytes)?;
+    let length = u32::try_from(payload.len()).map_err(|_| OuterFrameErrorV1::Limit)?;
+    let mut frame = Vec::with_capacity(4 + payload.len());
+    frame.extend_from_slice(&length.to_be_bytes());
+    frame.extend_from_slice(payload);
+    Ok(frame)
+}
+
+fn validate_outer_frame_length(
+    length: usize,
+    max_frame_bytes: usize,
+) -> Result<usize, OuterFrameErrorV1> {
+    if length == 0 {
+        return Err(OuterFrameErrorV1::Empty);
+    }
+    if max_frame_bytes == 0 || length > max_frame_bytes || length > u32::MAX as usize {
+        return Err(OuterFrameErrorV1::Limit);
+    }
+    Ok(length)
 }
 
 pub struct DaemonV1<P, A, C> {
@@ -331,10 +418,8 @@ fn read_frame(
     stream
         .read_exact(&mut length[1..])
         .map_err(DaemonErrorV1::Io)?;
-    let length = u32::from_be_bytes(length) as usize;
-    if length == 0 || length > max_frame_bytes {
-        return Err(DaemonErrorV1::FrameLimit);
-    }
+    let length = validate_outer_frame_length(u32::from_be_bytes(length) as usize, max_frame_bytes)
+        .map_err(|_| DaemonErrorV1::FrameLimit)?;
     let mut frame = vec![0; length];
     stream.read_exact(&mut frame).map_err(DaemonErrorV1::Io)?;
     Ok(Some(frame))
@@ -345,9 +430,8 @@ fn write_frame(
     frame: &[u8],
     max_frame_bytes: usize,
 ) -> Result<(), DaemonErrorV1> {
-    if frame.is_empty() || frame.len() > max_frame_bytes {
-        return Err(DaemonErrorV1::FrameLimit);
-    }
+    validate_outer_frame_length(frame.len(), max_frame_bytes)
+        .map_err(|_| DaemonErrorV1::FrameLimit)?;
     let length = u32::try_from(frame.len()).map_err(|_| DaemonErrorV1::FrameLimit)?;
     stream
         .write_all(&length.to_be_bytes())
@@ -367,7 +451,8 @@ fn increment(value: &mut u64, saturated: &mut bool) {
 #[cfg(test)]
 mod tests {
     use super::{
-        DaemonHealthV1, HostUsage, ServiceObservationV1, increment, observation_fidelity_lost,
+        DaemonHealthV1, HostUsage, OuterFrameErrorV1, ServiceObservationV1,
+        decode_outer_frame_prefix_v1, encode_outer_frame_v1, increment, observation_fidelity_lost,
     };
 
     #[test]
@@ -413,5 +498,46 @@ mod tests {
                 ..ServiceObservationV1::default()
             }
         ));
+    }
+
+    #[test]
+    fn outer_frame_codec_is_bounded_prefix_exact_and_content_safe() {
+        for prefix in [b"".as_slice(), b"\0", b"\0\0", b"\0\0\0"] {
+            assert_eq!(
+                decode_outer_frame_prefix_v1(prefix, 4),
+                Err(OuterFrameErrorV1::Incomplete)
+            );
+        }
+        assert_eq!(
+            decode_outer_frame_prefix_v1(&[0, 0, 0, 0], 4),
+            Err(OuterFrameErrorV1::Empty)
+        );
+        assert_eq!(
+            decode_outer_frame_prefix_v1(&[0, 0, 0, 5], 4),
+            Err(OuterFrameErrorV1::Limit)
+        );
+        assert_eq!(
+            decode_outer_frame_prefix_v1(&[0, 0, 0, 4, 1, 2, 3], 4),
+            Err(OuterFrameErrorV1::Incomplete)
+        );
+
+        let encoded = encode_outer_frame_v1(&[1, 2, 3, 4], 4).unwrap();
+        let mut stream = encoded.clone();
+        stream.extend_from_slice(&[9, 8]);
+        let decoded = decode_outer_frame_prefix_v1(&stream, 4).unwrap();
+        assert_eq!(decoded.payload(), [1, 2, 3, 4]);
+        assert_eq!(decoded.remainder(), [9, 8]);
+        assert_eq!(
+            &stream[..4 + decoded.payload().len()],
+            encoded,
+            "accepted prefix must re-encode exactly"
+        );
+        let diagnostic = format!("{decoded:?}");
+        assert!(!diagnostic.contains("1, 2, 3, 4"));
+        assert_eq!(encode_outer_frame_v1(&[], 4), Err(OuterFrameErrorV1::Empty));
+        assert_eq!(
+            encode_outer_frame_v1(&[0; 5], 4),
+            Err(OuterFrameErrorV1::Limit)
+        );
     }
 }

@@ -52,13 +52,14 @@ not ready for a network service or crates.io release.
 - deterministic bounded mutation of every canonical V1/V2 wire fixture across
   all strict prefixes, trailing framing, and every single-bit change, with exact
   re-encoding required for every accepted candidate;
-- separately pinned coverage-guided smoke targets for all public wire decoders
-  and engine/service/host recovery, with immutable canonical seeds and exact
-  re-encoding oracles;
-- commit-pinned integrated local qualification of revision
+- separately pinned coverage-guided smoke targets for all public wire decoders,
+  engine/service/host recovery, and the production outer-frame prefix codec,
+  with immutable canonical seeds and exact re-encoding oracles;
+- prior commit-pinned integrated local qualification of revision
   `9d634327e37a1ae791bc4f0a767ea91748d08ff8` on Darwin 25.6.0 arm64 / macOS
   26.6.2 across the ordinary gate, all release-mode targets, 10,000 deterministic
-  soak cycles, and 1,000,000 fixed-seed cases on each fuzz target;
+  soak cycles, and 1,000,000 fixed-seed cases on each of the then-current two
+  fuzz targets; expanded three-target qualification is pending;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound

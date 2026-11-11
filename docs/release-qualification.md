@@ -7,7 +7,7 @@ and then runs:
 1. the complete ordinary source gate;
 2. every workspace target in the release profile;
 3. the ignored Service V2 lifecycle/replay/recovery soak in release mode; and
-4. both pinned coverage-guided fuzz targets.
+4. all three pinned coverage-guided fuzz targets.
 
 The default candidate profile uses 10,000 soak cycles and 1,000,000 libFuzzer
 runs per target. `AGORA_RELEASE_SOAK_CYCLES` may select 1 through 10,000;

@@ -10,16 +10,27 @@ if ! rg -q '^channel = "nightly-2026-11-01"$' fuzz/rust-toolchain.toml \
   exit 1
 fi
 
+for target in wire_canonical checkpoint_canonical outer_frame_canonical; do
+  if ! rg -q "^name = \"$target\"$" fuzz/Cargo.toml \
+    || ! rg -q "\\b$target\\b" scripts/run-fuzz-smoke.sh; then
+    echo "fuzz target is not declared and campaign-bound: $target" >&2
+    exit 1
+  fi
+done
+
 expected=$(mktemp -d "${TMPDIR:-/tmp}/agora-fuzz-seeds.XXXXXX")
 cleanup() {
   rm -rf "$expected"
 }
 trap cleanup EXIT
 
-mkdir -p "$expected/wire" "$expected/checkpoint"
+mkdir -p "$expected/wire" "$expected/outer" "$expected/checkpoint"
 for fixture in crates/agora-wire/tests/fixtures/*.hex; do
   name=$(basename "$fixture" .hex)
   xxd -r -p "$fixture" "$expected/wire/$name.bin"
+  bytes=$(wc -c <"$expected/wire/$name.bin" | tr -d ' ')
+  printf '%08x' "$bytes" | xxd -r -p >"$expected/outer/$name.bin"
+  xxd -r -p "$fixture" >>"$expected/outer/$name.bin"
 done
 xxd -r -p tests/fixtures/checkpoint-v14.hex "$expected/checkpoint/engine-v14.bin"
 xxd -r -p crates/agora-service/tests/fixtures/service-checkpoint-v16.hex \
@@ -28,6 +39,7 @@ xxd -r -p crates/agora-host/tests/fixtures/host-checkpoint-v16.hex \
   "$expected/checkpoint/host-v16.bin"
 
 if ! diff -qr "$expected/wire" fuzz/seeds/wire_canonical \
+  || ! diff -qr "$expected/outer" fuzz/seeds/outer_frame_canonical \
   || ! diff -qr "$expected/checkpoint" fuzz/seeds/checkpoint_canonical; then
   echo 'committed fuzz seeds drifted from canonical fixtures' >&2
   exit 1

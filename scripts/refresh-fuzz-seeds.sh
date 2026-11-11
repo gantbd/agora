@@ -5,11 +5,15 @@ cd "$(dirname "$0")/.."
 
 wire_seed_dir=fuzz/seeds/wire_canonical
 checkpoint_seed_dir=fuzz/seeds/checkpoint_canonical
-mkdir -p "$wire_seed_dir" "$checkpoint_seed_dir"
+outer_seed_dir=fuzz/seeds/outer_frame_canonical
+mkdir -p "$wire_seed_dir" "$checkpoint_seed_dir" "$outer_seed_dir"
 
 for fixture in crates/agora-wire/tests/fixtures/*.hex; do
   name=$(basename "$fixture" .hex)
   xxd -r -p "$fixture" "$wire_seed_dir/$name.bin"
+  bytes=$(wc -c <"$wire_seed_dir/$name.bin" | tr -d ' ')
+  printf '%08x' "$bytes" | xxd -r -p >"$outer_seed_dir/$name.bin"
+  xxd -r -p "$fixture" >>"$outer_seed_dir/$name.bin"
 done
 
 xxd -r -p tests/fixtures/checkpoint-v14.hex \
@@ -19,4 +23,4 @@ xxd -r -p crates/agora-service/tests/fixtures/service-checkpoint-v16.hex \
 xxd -r -p crates/agora-host/tests/fixtures/host-checkpoint-v16.hex \
   "$checkpoint_seed_dir/host-v16.bin"
 
-echo 'Refreshed Agora fuzz seeds from canonical fixtures'
+echo 'Refreshed Agora wire, outer-frame, and checkpoint fuzz seeds from canonical fixtures'

@@ -103,3 +103,9 @@ repeated-read passivity, content-safe diagnostics, and sticky counter
 saturation without wraparound. A separate real-endpoint scenario verifies the
 idle drain transition, zero downstream work after its fence, endpoint retention,
 and pinned teardown.
+
+The outer length prefix is also a pure bounded codec used by the socket path.
+Ordinary tests close empty, incomplete, over-limit, exact-prefix, remainder, and
+content-safe diagnostic behavior. A separately pinned coverage-guided target
+mutates canonical framed Wire V1/V2 seeds and requires every accepted prefix to
+re-encode exactly without consuming the next stream frame.

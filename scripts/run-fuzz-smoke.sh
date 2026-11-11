@@ -28,7 +28,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for target in wire_canonical checkpoint_canonical; do
+for target in wire_canonical checkpoint_canonical outer_frame_canonical; do
   corpus="$campaign/$target"
   artifacts="$campaign/artifacts-$target/"
   mkdir -p "$corpus" "$artifacts"
@@ -43,4 +43,4 @@ for target in wire_canonical checkpoint_canonical; do
     -artifact_prefix="$artifacts"
 done
 
-echo "Agora coverage-guided fuzz campaign completed both targets at $runs runs each"
+echo "Agora coverage-guided fuzz campaign completed all three targets at $runs runs each"

@@ -1,12 +1,16 @@
 # Coverage-guided fuzzing
 
-Agora has two opt-in libFuzzer targets:
+Agora has three opt-in libFuzzer targets:
 
 - `wire_canonical` drives every public V1/V2 request and reply decoder. Any
   accepted input must re-encode byte-for-byte and decode to the same value.
 - `checkpoint_canonical` drives the engine, Service V2, and Host V2 recovery
   profiles under production bounds. Any recovered input must prepare the exact
   same canonical bytes.
+- `outer_frame_canonical` drives the exact big-endian length-prefix parser used
+  by the local Unix daemon. Any accepted first frame must re-encode to the exact
+  consumed prefix, preserve the unconsumed stream suffix, and decode again to
+  the same payload.
 
 The standalone `fuzz/` workspace pins `libfuzzer-sys` 0.4.13 and
 `nightly-2026-11-01`. The driver is cargo-fuzz 0.13.2. Install the exact driver
@@ -16,7 +20,9 @@ The ordinary stable gate does not install or run either external tool.
 
 `make check-fuzz-contract` is part of `make check`. It verifies the exact
 toolchain/dependency pins and proves every committed binary seed is the exact
-decoded form of a canonical wire or checkpoint fixture. Refresh those seeds
+decoded form of a canonical wire or checkpoint fixture. Outer-frame seeds are
+the same canonical wire fixtures with their exact four-byte length prefix.
+Refresh those seeds
 after an intentional compatibility-profile change with
 `./scripts/refresh-fuzz-seeds.sh`.
 
@@ -32,5 +38,7 @@ adds durable seed coverage.
 
 Passing campaigns prove neither parser correctness nor exhaustive state-space
 coverage. The checkpoint target uses the frozen fixture scopes and reference
-limits; it does not fuzz physical storage, filesystem interruption, migration,
-thread-parallel linearizability, or authentication behavior.
+limits. The outer-frame target covers the pure prefix boundary, not partial
+kernel reads, deadlines, socket behavior, or authentication. The profile does
+not fuzz physical storage, filesystem interruption, migration, thread-parallel
+linearizability, or credential behavior.

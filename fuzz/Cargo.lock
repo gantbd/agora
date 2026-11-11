@@ -3,6 +3,26 @@
 version = 4
 
 [[package]]
+name = "aegis-client"
+version = "0.1.0"
+dependencies = [
+ "aegis-protocol",
+]
+
+[[package]]
+name = "aegis-protocol"
+version = "0.1.0"
+
+[[package]]
+name = "agora-aegis-verifier"
+version = "0.1.0"
+dependencies = [
+ "aegis-client",
+ "aegis-protocol",
+ "agora-host",
+]
+
+[[package]]
 name = "agora-engine"
 version = "0.3.0"
 
@@ -12,6 +32,7 @@ version = "0.0.0"
 dependencies = [
  "agora-engine",
  "agora-host",
+ "agora-local-daemon",
  "agora-service",
  "agora-wire",
  "libfuzzer-sys",
@@ -23,6 +44,15 @@ version = "0.1.0"
 dependencies = [
  "agora-protocol",
  "agora-service",
+ "agora-wire",
+]
+
+[[package]]
+name = "agora-local-daemon"
+version = "0.1.0"
+dependencies = [
+ "agora-aegis-verifier",
+ "agora-host",
  "agora-wire",
 ]
 

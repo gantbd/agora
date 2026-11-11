@@ -8,6 +8,9 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added a third pinned coverage-guided target over the local daemon's production
+  outer-frame prefix codec, with exact consumed-prefix re-encoding, stream-suffix
+  preservation, canonical framed seeds, and ordinary codec boundary tests.
 - Added an irreversible idempotent idle drain fence for the sequential local
   daemon, refusing before accept or authority work while retaining pinned
   endpoint ownership through teardown.
