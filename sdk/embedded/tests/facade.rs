@@ -48,3 +48,21 @@ fn facade_alone_constructs_the_embedded_v2_stack() {
         "private read-position substrate is reachable through the embedded facade"
     );
 }
+
+#[test]
+fn facade_constructs_the_unadvertised_transient_host_profile() {
+    let engine = engine::Engine::new();
+    let service = service::v2::ServiceV2::new(engine, service::v2::ServiceLimitsV2::default());
+    let host = host::v2::HostV2::new(service, Verifier, host::HostLimits::default());
+    let transient = host::transient::TransientHostV1::new(
+        host,
+        service::transient::TransientLimitsV1::default(),
+        5,
+    )
+    .unwrap();
+
+    assert_eq!(
+        transient.host().service().usage(),
+        service::v2::UsageV2::default()
+    );
+}

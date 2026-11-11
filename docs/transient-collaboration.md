@@ -8,9 +8,9 @@ engine, room revision, outbox, recent-change journal, or canonical engine,
 service, and Host checkpoints.
 
 This document fixes the architecture for the first transient profile. The dark
-owner, authenticated Host substrate, and separate presence-only Protocol/Wire
-grammar now exist, but no capability is advertised and the public composition
-is not yet complete.
+owner, authenticated public Host/replay composition, separate presence-only
+Protocol/Wire grammar, and client state machine now exist, but no capability is
+advertised and the public composition is not yet complete.
 
 ## Owned facts
 
@@ -85,6 +85,11 @@ or as-of time makes the cursor stale or foreign rather than mixing snapshots.
 Canonical participant ordering comes from the engine's member page. Multiple
 live sources for one participant resolve by a specified deterministic rule; the
 projection never multiplies that participant into multiple public entries.
+The public Host maps these private cursors to one opaque live token per session
+and fixes a positive maximum cursor age no greater than the signal-lifetime
+ceiling. Authentication uses current Host time while continuation projects the
+original snapshot time; expiry of the cursor refuses rather than extending that
+snapshot indefinitely.
 
 Presence and typing updates do not advance the conversation revision, publish a
 room event, consume the delivery outbox, or enter the recent-change journal.

@@ -4,7 +4,7 @@ use agora_engine::{
 };
 use agora_service::transient::{
     PresenceSourceV1, PresenceStateV1, PresenceViewStateV1, TransientCollaborationV1,
-    TransientLimitsV1, TransientRefusalV1, TransientTimeV1,
+    TransientLimitsV1, TransientParticipantKindV1, TransientRefusalV1, TransientTimeV1,
 };
 
 fn fixture() -> (Engine, ParticipantId, ParticipantId, RoomId) {
@@ -218,17 +218,37 @@ fn bounds_clock_and_snapshot_cursors_fail_closed() {
         transient.presence_page(&engine, &human, &room, Some(&cursor), 1, TransientTimeV1(8),),
         Err(TransientRefusalV1::StaleCursor)
     );
+    let continuation = transient
+        .presence_page_at(
+            &engine,
+            &human,
+            &room,
+            Some(&cursor),
+            1,
+            TransientTimeV1(8),
+            TransientTimeV1(7),
+        )
+        .unwrap();
+    assert_eq!(continuation.as_of, TransientTimeV1(7));
     transient
         .clear_presence(
             &engine,
             &room,
             &agent,
             PresenceSourceV1::new([2; 16]),
-            TransientTimeV1(7),
+            TransientTimeV1(8),
         )
         .unwrap();
     assert_eq!(
-        transient.presence_page(&engine, &human, &room, Some(&cursor), 1, TransientTimeV1(7),),
+        transient.presence_page_at(
+            &engine,
+            &human,
+            &room,
+            Some(&cursor),
+            1,
+            TransientTimeV1(8),
+            TransientTimeV1(7),
+        ),
         Err(TransientRefusalV1::StaleCursor)
     );
     assert_eq!(format!("{cursor:?}"), "PresenceCursorV1(<opaque>)");
@@ -252,10 +272,10 @@ fn empty_restarted_owner_projects_unknown() {
             .all(|entry| entry.state == PresenceViewStateV1::Unknown)
     );
     assert!(page.entries.iter().any(|entry| {
-        entry.participant_id == human && entry.participant_kind == ParticipantKind::Human
+        entry.participant_id == human && entry.participant_kind == TransientParticipantKindV1::Human
     }));
     assert!(page.entries.iter().any(|entry| {
-        entry.participant_id == agent && entry.participant_kind == ParticipantKind::Agent
+        entry.participant_id == agent && entry.participant_kind == TransientParticipantKindV1::Agent
     }));
     assert_eq!(engine.revision(), Revision(4));
 }

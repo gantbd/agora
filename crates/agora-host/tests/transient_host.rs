@@ -4,12 +4,18 @@ use agora_engine::{
 use agora_host::transient::{TransientHostRefusalV1, TransientHostV1};
 use agora_host::v2::{HostSessionIdV2, HostV2};
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
+use agora_protocol::transient::{
+    PresencePageCursorV1, PresenceStateV1 as ProtocolPresenceStateV1, TransientCommandV1,
+    TransientOutcomeV1, TransientRefusalV1 as ProtocolTransientRefusalV1, TransientReplyV1,
+    TransientRequestIdV1, TransientRequestV1,
+};
 use agora_protocol::v2::{ClientIdV2, CommandV2, OutcomeV2, ReplyV2, RequestIdV2, RequestV2};
 use agora_service::transient::{
     PresenceStateV1, PresenceViewStateV1, TransientLimitsV1, TransientRefusalV1, TransientTimeV1,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 use agora_wire::WireLimits;
+use agora_wire::transient::{decode_transient_reply_v1, encode_transient_request_v1};
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
 
 #[derive(Clone)]
@@ -108,6 +114,7 @@ fn host() -> TransientHostV1<Verifier> {
             max_lifetime: 10,
             max_page_items: 8,
         },
+        2,
     )
     .unwrap()
 }
@@ -145,6 +152,17 @@ fn execute(client: ClientIdV2, request_id: u64, command: CommandV2) -> Vec<u8> {
                 request_id: RequestIdV2(request_id),
                 command,
             },
+        },
+        wire_limits(),
+    )
+    .unwrap()
+}
+
+fn transient(request_id: u64, command: TransientCommandV1) -> Vec<u8> {
+    encode_transient_request_v1(
+        &TransientRequestV1 {
+            request_id: TransientRequestIdV1(request_id),
+            command,
         },
         wire_limits(),
     )
@@ -302,7 +320,7 @@ fn wrapper_reconstruction_is_explicit_restart_to_unknown() {
     )
     .unwrap();
     let mut restarted =
-        TransientHostV1::new(host.into_host(), TransientLimitsV1::default()).unwrap();
+        TransientHostV1::new(host.into_host(), TransientLimitsV1::default(), 2).unwrap();
     let page = restarted
         .presence_page(bot_session, "room", None, 8, &bot_context, HostTimeV1(3))
         .unwrap();
@@ -327,4 +345,288 @@ fn runtime_expiry_is_bounded_and_clock_regression_is_explicit() {
         host.expire(HostTimeV1(2), 1),
         Err(TransientRefusalV1::ClockRegression)
     ));
+}
+
+#[test]
+fn public_presence_frames_replay_exactly_and_fence_conflict_and_sequence() {
+    let mut host = host();
+    let (alice_session, _, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, _, bot_context) = open(&mut host, "bot", 2);
+    let revision = host.host().service().engine().revision();
+    let publish = transient(
+        0,
+        TransientCommandV1::PublishPresence {
+            room_id: "room".to_owned(),
+            state: ProtocolPresenceStateV1::Available,
+            lifetime: 5,
+        },
+    );
+    let first = host
+        .handle_transient(alice_session, &publish, &alice_context, HostTimeV1(2))
+        .unwrap();
+    assert_eq!(
+        decode_transient_reply_v1(&first, wire_limits()).unwrap(),
+        TransientReplyV1::Accepted(TransientOutcomeV1::PresencePublished {
+            accepted_lifetime: 5,
+        })
+    );
+    let replay = host
+        .handle_transient(alice_session, &publish, &alice_context, HostTimeV1(3))
+        .unwrap();
+    assert_eq!(replay, first);
+
+    let conflict = host
+        .handle_transient(
+            alice_session,
+            &transient(
+                0,
+                TransientCommandV1::ClearPresence {
+                    room_id: "room".to_owned(),
+                },
+            ),
+            &alice_context,
+            HostTimeV1(3),
+        )
+        .unwrap();
+    assert_eq!(
+        decode_transient_reply_v1(&conflict, wire_limits()).unwrap(),
+        TransientReplyV1::Refused(ProtocolTransientRefusalV1::RequestConflict)
+    );
+    let future = host
+        .handle_transient(
+            alice_session,
+            &transient(
+                2,
+                TransientCommandV1::ClearPresence {
+                    room_id: "room".to_owned(),
+                },
+            ),
+            &alice_context,
+            HostTimeV1(3),
+        )
+        .unwrap();
+    assert_eq!(
+        decode_transient_reply_v1(&future, wire_limits()).unwrap(),
+        TransientReplyV1::Refused(ProtocolTransientRefusalV1::RequestOutOfSequence)
+    );
+
+    let observed = host
+        .handle_transient(
+            bot_session,
+            &transient(
+                0,
+                TransientCommandV1::PresencePage {
+                    room_id: "room".to_owned(),
+                    cursor: None,
+                    limit: 8,
+                },
+            ),
+            &bot_context,
+            HostTimeV1(3),
+        )
+        .unwrap();
+    let TransientReplyV1::Accepted(TransientOutcomeV1::PresencePage(page)) =
+        decode_transient_reply_v1(&observed, wire_limits()).unwrap()
+    else {
+        panic!("presence page expected");
+    };
+    assert_eq!(
+        page.entries
+            .iter()
+            .find(|entry| entry.participant_id == "alice")
+            .unwrap()
+            .state,
+        agora_protocol::transient::PresenceViewStateV1::Available
+    );
+    assert_eq!(host.host().service().engine().revision(), revision);
+}
+
+#[test]
+fn public_cursor_continues_one_bounded_snapshot_and_then_expires() {
+    let mut host = host();
+    let (alice_session, _, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, _, bot_context) = open(&mut host, "bot", 2);
+    host.publish_presence(
+        bot_session,
+        "room",
+        PresenceStateV1::Busy,
+        5,
+        &bot_context,
+        HostTimeV1(2),
+    )
+    .unwrap();
+
+    let first = host
+        .handle_transient(
+            alice_session,
+            &transient(
+                0,
+                TransientCommandV1::PresencePage {
+                    room_id: "room".to_owned(),
+                    cursor: None,
+                    limit: 1,
+                },
+            ),
+            &alice_context,
+            HostTimeV1(2),
+        )
+        .unwrap();
+    let TransientReplyV1::Accepted(TransientOutcomeV1::PresencePage(first)) =
+        decode_transient_reply_v1(&first, wire_limits()).unwrap()
+    else {
+        panic!("presence page expected");
+    };
+    let cursor = first.next.unwrap();
+    let second = host
+        .handle_transient(
+            alice_session,
+            &transient(
+                1,
+                TransientCommandV1::PresencePage {
+                    room_id: "room".to_owned(),
+                    cursor: Some(cursor),
+                    limit: 1,
+                },
+            ),
+            &alice_context,
+            HostTimeV1(3),
+        )
+        .unwrap();
+    let TransientReplyV1::Accepted(TransientOutcomeV1::PresencePage(second)) =
+        decode_transient_reply_v1(&second, wire_limits()).unwrap()
+    else {
+        panic!("presence page expected");
+    };
+    assert_eq!(second.entries[0].participant_id, "bot");
+    assert_eq!(second.entries[0].remaining_lifetime, Some(5));
+
+    let fresh = host
+        .handle_transient(
+            alice_session,
+            &transient(
+                2,
+                TransientCommandV1::PresencePage {
+                    room_id: "room".to_owned(),
+                    cursor: None,
+                    limit: 1,
+                },
+            ),
+            &alice_context,
+            HostTimeV1(3),
+        )
+        .unwrap();
+    let TransientReplyV1::Accepted(TransientOutcomeV1::PresencePage(fresh)) =
+        decode_transient_reply_v1(&fresh, wire_limits()).unwrap()
+    else {
+        panic!("presence page expected");
+    };
+    let expired = host
+        .handle_transient(
+            alice_session,
+            &transient(
+                3,
+                TransientCommandV1::PresencePage {
+                    room_id: "room".to_owned(),
+                    cursor: fresh.next,
+                    limit: 1,
+                },
+            ),
+            &alice_context,
+            HostTimeV1(6),
+        )
+        .unwrap();
+    assert_eq!(
+        decode_transient_reply_v1(&expired, wire_limits()).unwrap(),
+        TransientReplyV1::Refused(ProtocolTransientRefusalV1::StaleCursor)
+    );
+}
+
+#[test]
+fn public_cursor_is_bound_to_session_and_room() {
+    let mut host = host();
+    let (alice_session, _, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, _, bot_context) = open(&mut host, "bot", 2);
+    let first = host
+        .handle_transient(
+            alice_session,
+            &transient(
+                0,
+                TransientCommandV1::PresencePage {
+                    room_id: "room".to_owned(),
+                    cursor: None,
+                    limit: 1,
+                },
+            ),
+            &alice_context,
+            HostTimeV1(2),
+        )
+        .unwrap();
+    let TransientReplyV1::Accepted(TransientOutcomeV1::PresencePage(first)) =
+        decode_transient_reply_v1(&first, wire_limits()).unwrap()
+    else {
+        panic!("presence page expected");
+    };
+    let foreign = host
+        .handle_transient(
+            bot_session,
+            &transient(
+                0,
+                TransientCommandV1::PresencePage {
+                    room_id: "room".to_owned(),
+                    cursor: Some(first.next.unwrap_or(PresencePageCursorV1(0))),
+                    limit: 1,
+                },
+            ),
+            &bot_context,
+            HostTimeV1(2),
+        )
+        .unwrap();
+    assert_eq!(
+        decode_transient_reply_v1(&foreign, wire_limits()).unwrap(),
+        TransientReplyV1::Refused(ProtocolTransientRefusalV1::InvalidCursor)
+    );
+}
+
+#[test]
+fn refused_public_offer_still_fences_cross_session_clock_regression() {
+    let mut host = host();
+    let (alice_session, _, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, _, bot_context) = open(&mut host, "bot", 2);
+    let invalid = host
+        .handle_transient(
+            alice_session,
+            &transient(
+                0,
+                TransientCommandV1::PresencePage {
+                    room_id: "room".to_owned(),
+                    cursor: Some(PresencePageCursorV1(77)),
+                    limit: 1,
+                },
+            ),
+            &alice_context,
+            HostTimeV1(5),
+        )
+        .unwrap();
+    assert_eq!(
+        decode_transient_reply_v1(&invalid, wire_limits()).unwrap(),
+        TransientReplyV1::Refused(ProtocolTransientRefusalV1::InvalidCursor)
+    );
+
+    assert_eq!(
+        host.handle_transient(
+            bot_session,
+            &transient(
+                0,
+                TransientCommandV1::PublishPresence {
+                    room_id: "room".to_owned(),
+                    state: ProtocolPresenceStateV1::Busy,
+                    lifetime: 2,
+                },
+            ),
+            &bot_context,
+            HostTimeV1(4),
+        ),
+        Err(HostRefusal::Unavailable)
+    );
+    assert!(!host.close(bot_session));
 }

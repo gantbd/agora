@@ -122,6 +122,18 @@ activity and expiry metadata to current members; there is no consent UX,
 device roster, last-seen history, remote wire profile, notification policy, or
 proof of availability, attention, execution, or agent activation.
 
+The unadvertised public transient handler adds one exact semantic replay receipt
+and one live cursor token per authenticated Host session. Equal request replay
+cannot reapply a presence mutation; changed input and skipped identities refuse.
+Cursor tokens are opaque, session/room bound, single-chain, and age bounded;
+current authentication time is distinct from the earlier bounded snapshot time.
+Every authenticated offer advances the wrapper's monotone transient clock even
+when decoding or semantics refuse, preventing a second session from using a
+lower time to extend a signal.
+These controls do not authenticate a transport reconnect or make a replay epoch
+self-proving: the transport must bind each client epoch to both exact server
+incarnation and authenticated session.
+
 The service checkpoint binds one caller-selected store scope and refuses foreign
 scope, malformed structure, noncanonical ordering, invalid attribution, and host
 ceiling violations. The durable owner never exposes a changed semantic result

@@ -1,7 +1,7 @@
 # Transient wire profile V1
 
-Status: canonical bounded presence grammar plus client uncertainty state,
-unadvertised and not yet connected to a public Host runtime.
+Status: canonical bounded presence grammar with authenticated Host and client
+composition, still unadvertised and not routed by a qualified transport.
 
 This profile is separate from durable Protocol/Wire V2. A transient request is
 not a `CommandV2`, does not receive a durable service receipt, and cannot replay
@@ -21,8 +21,10 @@ one command:
 
 Presence state tags are Available `01`, Away `02`, and Busy `03`. Optional
 cursors use absent `00` or present `01` followed by an opaque `u64`. Request IDs
-are scoped to one authenticated transient Host session; the future Host
-composition must enforce exact replay, conflict, and ordering rules.
+are scoped to one authenticated transient Host session. The Host retains one
+exact prior request/reply per session: an equal request ID and command replays
+that semantic reply, changed input conflicts, and skipped or exhausted request
+identity refuses without applying the command.
 
 ## Replies
 
@@ -52,6 +54,15 @@ request, permits equal-command replay, and validates exported state. Its opaque
 nonzero replay epoch is caller-supplied and must bind both the server
 incarnation and exact authenticated session; any reconnect or restart requires
 explicit `rebind`, which returns old uncertainty and starts request ID zero.
-There is no qualified Host handler or transport binding yet. Presence is not
-advertised until authenticated Host replay/cursor composition, typing,
-local-daemon lifecycle evidence, and the remaining R62 gates close.
+The authenticated Host derives the signal source from its opaque session,
+revalidates authority at current Host time, and maps public cursors to one
+private live cursor per session. A cursor binds room, participant, engine
+revision, transient generation, and snapshot time; a separately configured
+positive cursor age bounds how long that older snapshot can be continued.
+Signal or membership change stales it, and another session cannot use it.
+The wrapper's monotone transient clock advances for every authenticated offer,
+including malformed or refused requests, so another session cannot roll time
+back after a high-time refusal. Regression retires that caller and its source.
+
+There is no qualified transport binding yet. Presence is not advertised until
+typing, local-daemon lifecycle evidence, and the remaining R62 gates close.

@@ -113,6 +113,15 @@ direct crate dependency. The caller must bind the opaque replay epoch to both
 server incarnation and exact authenticated session; Agora does not infer that
 transport fact.
 
+Four additional public-Host scenarios drive the canonical frames through the
+authenticated wrapper. They prove exact semantic replay without another domain
+mutation, changed-input conflict, skipped-ID refusal, participant observation
+without conversation revision change, bounded snapshot continuation at a later
+Host time, cursor expiry, cross-session cursor refusal, and the rule that even a
+refused newer-time offer fences another session's clock regression before
+publication. The complete focused Host suite now has nine scenarios, and the
+embedded facade constructs the profile without direct crate dependencies.
+
 The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
 nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus
 is regenerated from and checked against all twenty-seven durable V1/V2 wire

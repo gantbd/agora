@@ -31,6 +31,10 @@ follow Semantic Versioning once a public release contract is selected.
   is bound to a nonzero caller-supplied replay epoch spanning the server
   incarnation and authenticated session; reconnect/restart rebind returns old
   uncertainty and begins a fresh request namespace.
+- Added an unadvertised public transient Host handler with authenticated
+  request-scoped revalidation, one bounded exact replay receipt per session,
+  explicit sequence/conflict refusal, opaque one-live-cursor pagination, and
+  independently bounded snapshot age without durable receipt contamination.
 - Added explicit fail-closed local endpoint residue recovery requiring the exact
   prior incarnation, a distinct next incarnation, and a fresh Host composition,
   with locked in-place record rotation and no implicit volatile-state adoption.

@@ -59,6 +59,12 @@ pub enum PresenceSourceClassV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransientParticipantKindV1 {
+    Human,
+    Agent,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TransientLimitsV1 {
     pub max_signals: usize,
     pub max_sources_per_participant: usize,
@@ -102,7 +108,7 @@ struct PresenceSignalV1 {
 #[derive(Clone, Eq, PartialEq)]
 pub struct PresenceEntryV1 {
     pub participant_id: ParticipantId,
-    pub participant_kind: ParticipantKind,
+    pub participant_kind: TransientParticipantKindV1,
     pub state: PresenceViewStateV1,
     pub source: Option<PresenceSourceClassV1>,
     pub expires_at: Option<TransientTimeV1>,
@@ -403,7 +409,24 @@ impl TransientCollaborationV1 {
         limit: usize,
         as_of: TransientTimeV1,
     ) -> Result<PresencePageV1, TransientRefusalV1> {
-        self.validate_time(as_of)?;
+        self.presence_page_at(engine, observer, room_id, cursor, limit, as_of, as_of)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn presence_page_at(
+        &mut self,
+        engine: &Engine,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        cursor: Option<&PresenceCursorV1>,
+        limit: usize,
+        now: TransientTimeV1,
+        as_of: TransientTimeV1,
+    ) -> Result<PresencePageV1, TransientRefusalV1> {
+        self.validate_time(now)?;
+        if as_of > now {
+            return Err(TransientRefusalV1::StaleCursor);
+        }
         if self.fidelity_lost {
             return Err(TransientRefusalV1::FidelityLost);
         }
@@ -441,7 +464,7 @@ impl TransientCollaborationV1 {
             entries.push(if let Some((_, signal)) = winner {
                 PresenceEntryV1 {
                     participant_id: member.participant_id,
-                    participant_kind: member.kind,
+                    participant_kind: map_participant_kind(member.kind),
                     state: signal.state.into(),
                     source: Some(PresenceSourceClassV1::ParticipantSession),
                     expires_at: Some(signal.expires_at),
@@ -449,7 +472,7 @@ impl TransientCollaborationV1 {
             } else {
                 PresenceEntryV1 {
                     participant_id: member.participant_id,
-                    participant_kind: member.kind,
+                    participant_kind: map_participant_kind(member.kind),
                     state: PresenceViewStateV1::Unknown,
                     source: None,
                     expires_at: None,
@@ -463,7 +486,7 @@ impl TransientCollaborationV1 {
             as_of,
             member_cursor,
         });
-        self.last_time = Some(as_of);
+        self.last_time = Some(now);
         Ok(PresencePageV1 {
             entries,
             next,
@@ -487,6 +510,28 @@ impl TransientCollaborationV1 {
             &RoomId::new(room_id),
             cursor,
             limit,
+            as_of,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn presence_page_at_for(
+        &mut self,
+        engine: &Engine,
+        observer: &str,
+        room_id: &str,
+        cursor: Option<&PresenceCursorV1>,
+        limit: usize,
+        now: TransientTimeV1,
+        as_of: TransientTimeV1,
+    ) -> Result<PresencePageV1, TransientRefusalV1> {
+        self.presence_page_at(
+            engine,
+            &ParticipantId::new(observer),
+            &RoomId::new(room_id),
+            cursor,
+            limit,
+            now,
             as_of,
         )
     }
@@ -530,6 +575,13 @@ fn map_observation_refusal(refusal: ObservationRefusal) -> TransientRefusalV1 {
         | ObservationRefusal::NotMember
         | ObservationRefusal::NotAuthorized => TransientRefusalV1::NotMember,
         ObservationRefusal::InvalidTarget => TransientRefusalV1::EngineChanged,
+    }
+}
+
+fn map_participant_kind(kind: ParticipantKind) -> TransientParticipantKindV1 {
+    match kind {
+        ParticipantKind::Human => TransientParticipantKindV1::Human,
+        ParticipantKind::Agent => TransientParticipantKindV1::Agent,
     }
 }
 

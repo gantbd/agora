@@ -211,6 +211,10 @@ impl<V: PrincipalVerifier> HostV2<V> {
         self.sessions.contains_key(&session)
     }
 
+    pub(crate) fn wire_limits(&self) -> agora_wire::WireLimits {
+        self.limits.wire
+    }
+
     pub(crate) fn authorize_transient(
         &mut self,
         session_id: HostSessionIdV2,

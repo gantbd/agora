@@ -53,9 +53,11 @@ transient operation, retires the source on disconnect, revocation, substitution,
 or clock regression, and reconciles membership after each ordinary conversation
 frame before returning its reply. Reconstructing the wrapper around a recovered
 Host deliberately starts empty. The wrapper has no checkpoint implementation,
-public Host handler or replay registry. A separate presence-only Protocol/Wire
-grammar and replay-epoch-bound client state machine are canonical but not yet
-composed here, so no presence capability is advertised. See
+but its separate public handler authenticates each request and owns one exact
+volatile replay receipt plus one opaque live page cursor per Host session. The
+presence-only Protocol/Wire grammar and replay-epoch-bound client state machine
+are composed without entering durable Service V2 receipts. No transport routes
+the profile and no presence capability is advertised. See
 [`transient-collaboration.md`](transient-collaboration.md).
 
 ## Connection and identity
