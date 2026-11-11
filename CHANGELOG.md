@@ -29,12 +29,12 @@ follow Semantic Versioning once a public release contract is selected.
 - Replaced independent daemon readiness, drain, and fence flags with one closed
   sequential lifecycle and added explicit terminal stop evidence that
   distinguishes clean teardown, preserved ambiguous residue, and incomplete
-  cleanup. Revision `afea9769a9435c69d48978487f2825e1e93b5c08` passed the
-  integrated release profile with 10,000 soak cycles and 1,000,000 cases on
-  each fuzz target.
+  cleanup.
 - Replaced the directory adapter's raw internal signals with a passive,
   content-free physical-owner observation covering revision, load/CAS outcomes,
-  indeterminate publication, resource fencing, and sticky saturation.
+  indeterminate publication, resource fencing, and sticky saturation. Revision
+  `ed3c503d8d9d2cff89fd92cd6a6b6c726d19bd69` passed the integrated release
+  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque
