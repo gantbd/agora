@@ -23,7 +23,7 @@ The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
 closes over the twelve-package stable workspace, the standalone fuzz package,
-and thirty-one canonical fixtures.
+and thirty-two canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -230,7 +230,7 @@ resource, and action; reject participant mismatch before authority I/O; erase
 refusal, expiry, malformed success, and port failure; retire host/service state
 on revoked revalidation; and keep diagnostics content-safe.
 
-Seven real Unix-socket daemon scenarios compose that adapter with Host V2. They
+Eight real Unix-socket daemon scenarios compose that adapter with Host V2. They
 verify mode-0700 parent enforcement and mode-0600 endpoint creation, Aegis
 authorization on Connect and every later frame, exact pre-authentication
 handshake values, incompatible-profile refusal with zero downstream work, exact
@@ -241,8 +241,8 @@ refusal before allocation or host admission, existing-path refusal, pinned
 replacement preservation, and content-free counters. I/O deadlines are present
 in the configured profile; the tests do not claim timing determinism. Credential
 and Unix-peer authentication, hostile same-UID parent defense, truthful durable
-incarnation generation and lifetime locking, concurrency, operational
-drain/crash recovery, cross-disconnect replay, and network transport remain
+incarnation generation, concurrency, operational drain/crash recovery,
+cross-disconnect replay, and network transport remain
 unqualified. Physical storage is separate and narrowly qualified below.
 
 The fixed-width handshake codec is owned by `agora-wire`, not the daemon. Two
@@ -254,6 +254,18 @@ handshake decoders in addition to all complete-frame decoders. This establishes
 closed profile selection and visible server-lifetime evidence, not credential
 authentication, compatibility-range negotiation, incarnation provenance,
 resume, or replay safety.
+
+The endpoint-scoped lifetime lease adds one exact mode-0600 record containing
+the declared incarnation beneath the already trusted mode-0700 parent. The
+daemon holds an exclusive kernel lock, pins the parent and record identities,
+checks exact record bytes and endpoint ownership before and after accept, and
+fences readiness before authentication if any resource is replaced. A live
+owner and unlocked residue are distinct typed refusals. Exact clean teardown
+removes socket and lease; uncertain or replaced resources are preserved. The
+frozen 24-byte record and real-filesystem scenario cover canonical bytes, live
+exclusion, stale residue, replacement fencing, zero downstream work, and
+non-destructive teardown. This does not generate incarnation entropy, repair
+crash residue, recover service state, or establish multi-process handoff.
 
 The daemon's composed operational snapshot preserves transport, host, and
 service counters as three named measurement boundaries. The successful socket

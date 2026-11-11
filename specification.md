@@ -558,11 +558,14 @@ session recovery requires the separate combined profile above.
 `agora-local-daemon` is a Unix-only outer transport composition over
 `HostV2<AegisVerifierV1<_>>`. Construction requires a real existing mode-0700
 parent directory and a previously absent socket path within it. The adapter
-binds the path, changes its permissions to mode 0600, validates that it is a
-socket, and pins its device and inode. Construction refuses a symlink or
-permissive parent and any existing endpoint path without following it. Teardown
-removes the endpoint only while its type and pinned identity still match, so a
-replacement object is preserved.
+first creates an endpoint-derived mode-0600 record containing the declared
+incarnation and holds an exclusive kernel lock. A live owner and unlocked
+residue refuse distinctly. It then binds the path, changes its permissions to
+mode 0600, validates that it is a socket, and pins parent, record, and endpoint
+identities. Ownership is checked before and after accept; loss irreversibly
+clears readiness and fences before authentication. Teardown removes socket and
+record only while every pinned resource still matches, so ambiguous or replaced
+objects are preserved.
 
 Before authentication, the peer sends the exact fixed-width handshake-profile-1
 ClientHello selecting Wire V2. An incompatible hello refuses before
@@ -617,7 +620,7 @@ composition.
 This profile is deliberately sequential: one caller of `serve_next` accepts and
 serves one connection at a time. It does not authenticate an OS peer or
 credential, protect against a same-UID process controlling the private parent,
-encrypt content, generate or durably bind the incarnation, preserve request
+encrypt content, generate the incarnation, repair crash residue, preserve request
 receipts across disconnect, recover a crashed endpoint, implement concurrent
 admission, in-flight draining, signals, socket activation, installation, or
 atomically recover Aegis and Agora. Those are separate composition and

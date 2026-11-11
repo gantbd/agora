@@ -103,18 +103,22 @@ opaque identities and aggregate counts.
 
 The Unix-only daemon requires a real mode-0700 parent, binds a previously absent
 path, applies and verifies socket mode 0600, pins the socket's device/inode
-identity, and removes it only while that identity remains unchanged. Four-byte
+identity, and removes it only while that identity remains unchanged. An
+endpoint-scoped mode-0600 record binds the declared incarnation under an
+exclusive lock; parent, record, and socket replacement fence readiness. Four-byte
 big-endian outer lengths are checked before allocation; zero, overflow,
 truncation, deadline expiry, and response
-overflow terminate the connection. The first payload must be a Wire V2 Connect,
-and a fixed positive budget bounds later payloads.
+overflow terminate the connection. A fixed-width handshake selects Wire V2 and
+reports limits and incarnation before authentication. The first framed payload
+must be a Wire V2 Connect, and a fixed positive budget bounds later payloads.
 
 Serving is deliberately sequential. Content-free counters distinguish clean
 completion, authentication/host refusal, and transport failure. The profile
 trusts same-UID control of the private parent, the authenticator, clock, and Aegis
 port. It supplies neither peer-credential extraction nor endpoint lifecycle
-locking, crash recovery, incarnation negotiation, concurrent admission,
-graceful drain, signal handling, or durable Host V2 composition. See
+recovery, fresh incarnation generation, compatibility-range negotiation,
+concurrent admission, in-flight graceful drain, signal handling, or durable Host
+V2 composition. See
 [`local-daemon.md`](local-daemon.md).
 
 ## Deliberate exclusions

@@ -43,6 +43,12 @@ limits/incarnation refuse; this is exact profile selection, not version-range or
 feature negotiation. The incarnation is lifecycle evidence, not identity,
 authority, a resume token, or a compatibility promise.
 
+The local daemon's separate 24-byte `AGORALF1` lifetime record binds that opaque
+incarnation to an endpoint-scoped exclusive lock. Its frozen fixture is a local
+ownership-format contract, not a recoverable checkpoint. Existing, malformed,
+or replaced records are never interpreted as conversation state or repaired by
+the compatibility layer.
+
 Service persistence is versioned independently. `AGORASV` version 16 captures
 the complete V2 service owner and embeds private `AGORACUR` version-1 cursor
 records. Cursor kind 4 is the snapshot-aligned room change position and kind 5

@@ -8,6 +8,9 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added an endpoint-scoped exclusive local-daemon lifetime lease with a frozen
+  incarnation-bound record, pinned resource revalidation, live-versus-residue
+  refusals, and conservative fencing and teardown under replacement.
 - Added a canonical fixed-width pre-authentication local handshake selecting
   Wire V2 and reporting explicit transport budgets, capability-discovery
   support, and content-safe server-incarnation evidence, with frozen fixtures,

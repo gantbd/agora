@@ -151,7 +151,9 @@ The private local daemon requires a mode-0700 parent, bounds the unauthenticated
 handshake and outer length before payload allocation, applies read/write deadlines and a fixed request budget, keeps host
 session identity out of frames, and closes the service client after every
 terminal connection path. A mode-0600 socket narrows accidental local access;
-device/inode-pinned teardown avoids deleting an observed replacement. A claimed
+an endpoint-scoped exclusive lock and exact incarnation record bind the declared
+server lifetime, while pinned revalidation and teardown avoid accepting or
+deleting an observed replacement. A claimed
 participant still reaches no service operation until an exact handshake profile
 has been selected and the trusted connection
 authenticator supplies its Aegis context and Host V2 authorizes it, and every
@@ -163,8 +165,8 @@ authenticate Unix peer credentials, hide socket metadata or
 traffic from the host, encrypt content, or recover a crashed endpoint. The
 authenticator can forge context if its credential binding is wrong. The
 handshake incarnation is caller-supplied, unauthenticated lifecycle evidence;
-without an external fresh-generation, persistence, and exclusive-lifetime
-discipline it cannot prove a restart boundary. There is no cross-disconnect
+the lease excludes a second live owner but cannot prove fresh generation or
+repair residue, so it does not establish a restart boundary. There is no cross-disconnect
 receipt retention or reconnect resumption: a lost mutation reply remains
 outcome-unknown and must not be blindly retried on a new connection. Sequential
 service and finite request budgets are explicit availability limits, not

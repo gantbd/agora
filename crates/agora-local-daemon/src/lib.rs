@@ -7,6 +7,8 @@
 #[cfg(not(unix))]
 compile_error!("agora-local-daemon currently qualifies only Unix hosts");
 
+mod lifetime;
+
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
 use agora_host::v2::HostV2;
 use agora_host::{HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier};
@@ -15,6 +17,7 @@ pub use agora_wire::local_handshake::{
     ServerIncarnationV1, decode_client_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
     encode_server_hello_v1,
 };
+use lifetime::LifetimeLeaseV1;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
@@ -53,6 +56,7 @@ impl Default for DaemonLimitsV1 {
 pub struct DaemonHealthV1 {
     pub ready: bool,
     pub draining: bool,
+    pub fenced: bool,
     pub active_connections: u64,
     pub accepted_connections: u64,
     pub handshake_accepted: u64,
@@ -101,6 +105,9 @@ pub enum DaemonErrorV1 {
     Io(io::Error),
     Authentication,
     Handshake,
+    LifetimeBusy,
+    CrashResidue,
+    Fenced,
     Host(HostRefusal),
     ConnectionRefused,
     FrameLimit,
@@ -198,6 +205,7 @@ pub struct DaemonV1<P, A, C> {
     socket_path: PathBuf,
     socket_device: u64,
     socket_inode: u64,
+    lifetime: LifetimeLeaseV1,
     host: HostV2<AegisVerifierV1<P>>,
     authenticator: A,
     clock: C,
@@ -231,10 +239,7 @@ where
         }
         let socket_path = socket_path.as_ref().to_path_buf();
         let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
-        let parent_metadata = fs::symlink_metadata(parent).map_err(DaemonErrorV1::Io)?;
-        if !parent_metadata.is_dir() || parent_metadata.permissions().mode() & 0o777 != 0o700 {
-            return Err(DaemonErrorV1::UnsafeEndpoint);
-        }
+        let lifetime = LifetimeLeaseV1::acquire_new(parent, &socket_path, server_incarnation)?;
         match fs::symlink_metadata(&socket_path) {
             Ok(_) => {
                 return Err(DaemonErrorV1::Io(io::Error::new(
@@ -268,6 +273,7 @@ where
             socket_path,
             socket_device: metadata.dev(),
             socket_inode: metadata.ino(),
+            lifetime,
             host,
             authenticator,
             clock,
@@ -327,6 +333,7 @@ where
         if self.health.draining {
             return Err(DaemonErrorV1::Draining);
         }
+        self.check_ownership()?;
         let (mut stream, _) = self.listener.accept().map_err(DaemonErrorV1::Io)?;
         increment(
             &mut self.health.active_connections,
@@ -336,7 +343,9 @@ where
             &mut self.health.accepted_connections,
             &mut self.health.saturated,
         );
-        let result = self.serve_stream(&mut stream);
+        let result = self
+            .check_ownership()
+            .and_then(|()| self.serve_stream(&mut stream));
         self.health.active_connections = self.health.active_connections.saturating_sub(1);
         match &result {
             Ok(()) => increment(
@@ -355,6 +364,22 @@ where
             ),
         }
         result
+    }
+
+    fn check_ownership(&mut self) -> Result<(), DaemonErrorV1> {
+        let socket_owned = fs::symlink_metadata(&self.socket_path).is_ok_and(|metadata| {
+            metadata.file_type().is_socket()
+                && metadata.permissions().mode() & 0o777 == 0o600
+                && metadata.dev() == self.socket_device
+                && metadata.ino() == self.socket_inode
+        });
+        if socket_owned && self.lifetime.intact() {
+            return Ok(());
+        }
+        self.health.ready = false;
+        self.health.fenced = true;
+        self.lifetime.preserve();
+        Err(DaemonErrorV1::Fenced)
     }
 
     fn serve_stream(&mut self, stream: &mut UnixStream) -> Result<(), DaemonErrorV1> {
@@ -425,12 +450,17 @@ where
 impl<P, A, C> Drop for DaemonV1<P, A, C> {
     fn drop(&mut self) {
         self.health.ready = false;
-        if let Ok(metadata) = fs::symlink_metadata(&self.socket_path)
-            && metadata.file_type().is_socket()
-            && metadata.dev() == self.socket_device
-            && metadata.ino() == self.socket_inode
-        {
-            let _ = fs::remove_file(&self.socket_path);
+        let endpoint_owned = fs::symlink_metadata(&self.socket_path).is_ok_and(|metadata| {
+            metadata.file_type().is_socket()
+                && metadata.dev() == self.socket_device
+                && metadata.ino() == self.socket_inode
+        });
+        if endpoint_owned && self.lifetime.intact() {
+            if fs::remove_file(&self.socket_path).is_err() {
+                self.lifetime.preserve();
+            }
+        } else {
+            self.lifetime.preserve();
         }
     }
 }

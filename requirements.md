@@ -349,6 +349,17 @@
   service lifetime; it grants no participant identity or authority and makes no
   claim for truthful generation, exclusive lifetime locking, restart
   persistence, reconnect resumption, or replay safety.
+- **R60 — Pinned local-daemon lifetime lease:** daemon construction must create
+  a new endpoint-scoped mode-0600 record binding the declared server
+  incarnation, hold an exclusive kernel lock for the complete socket lifetime,
+  and pin the parent, record, and endpoint identities. A live owner and unlocked
+  residue must be distinct refusals. Ownership must be revalidated before and
+  after accept; loss or replacement must irreversibly clear readiness and fence
+  authentication, authority, host, and service work. Clean teardown may remove
+  only the exact owned socket and record; ambiguity must preserve evidence. The
+  record bytes must be frozen and compatibility-inventoried. This grants no
+  incarnation entropy, crash-residue repair, state recovery, process handoff,
+  concurrency, or protection from the trusted same-UID parent controller.
 
 ## Explicitly open
 

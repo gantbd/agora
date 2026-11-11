@@ -177,6 +177,27 @@ fn remove_parent(path: &Path) {
     fs::remove_dir(path.parent().unwrap()).unwrap();
 }
 
+fn lifetime_path(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap().to_os_string();
+    name.push(".owner.lock");
+    path.parent().unwrap().join(name)
+}
+
+fn fixture(input: &str) -> Vec<u8> {
+    let compact: String = input
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect();
+    compact
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            u8::from_str_radix(std::str::from_utf8(pair).expect("ASCII fixture"), 16)
+                .expect("hex fixture")
+        })
+        .collect()
+}
+
 fn write_frame(stream: &mut UnixStream, frame: &[u8]) {
     stream
         .write_all(&(frame.len() as u32).to_be_bytes())
@@ -452,6 +473,109 @@ fn incompatible_handshake_refuses_before_authentication_authority_or_host() {
     assert_eq!(daemon.health().handshake_refused, 1);
     drop(stream);
     drop(daemon);
+    remove_parent(&path);
+}
+
+#[test]
+fn lifetime_record_excludes_live_and_stale_owners_and_fences_replacement() {
+    let path = socket_path();
+    let lock_path = lifetime_path(&path);
+    let daemon = DaemonV1::bind_new(
+        &path,
+        host(Port::default()),
+        Authentication,
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let lock_metadata = fs::symlink_metadata(&lock_path).unwrap();
+    assert!(lock_metadata.file_type().is_file());
+    assert_eq!(lock_metadata.permissions().mode() & 0o777, 0o600);
+    assert_eq!(
+        fs::read(&lock_path).unwrap(),
+        fixture(include_str!("fixtures/lifetime-record-v1.hex"))
+    );
+    assert!(matches!(
+        DaemonV1::bind_new(
+            &path,
+            host(Port::default()),
+            Authentication,
+            Clock(1),
+            incarnation(),
+            daemon_limits(),
+        ),
+        Err(DaemonErrorV1::LifetimeBusy)
+    ));
+    drop(daemon);
+    assert!(!path.exists());
+    assert!(!lock_path.exists());
+
+    fs::write(
+        &lock_path,
+        fixture(include_str!("fixtures/lifetime-record-v1.hex")),
+    )
+    .unwrap();
+    fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(matches!(
+        DaemonV1::bind_new(
+            &path,
+            host(Port::default()),
+            Authentication,
+            Clock(1),
+            incarnation(),
+            daemon_limits(),
+        ),
+        Err(DaemonErrorV1::CrashResidue)
+    ));
+    assert!(
+        lock_path.exists(),
+        "residue refusal must not repair implicitly"
+    );
+    fs::remove_file(&lock_path).unwrap();
+
+    let authentication_calls = Arc::new(AtomicU64::new(0));
+    let daemon = DaemonV1::bind_new(
+        &path,
+        host(Port::default()),
+        CountingAuthentication(authentication_calls.clone()),
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let displaced_lock = path.parent().unwrap().join("displaced-owner.lock");
+    fs::rename(&lock_path, &displaced_lock).unwrap();
+    fs::write(&lock_path, b"replacement").unwrap();
+    fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let result = daemon.serve_next();
+        (result, daemon)
+    });
+    let stream = UnixStream::connect(&path).unwrap();
+    let (result, daemon) = server.join().unwrap();
+    assert!(matches!(result, Err(DaemonErrorV1::Fenced)));
+    assert_eq!(authentication_calls.load(Ordering::Relaxed), 0);
+    assert!(daemon.health().fenced);
+    assert!(!daemon.health().ready);
+    assert_eq!(daemon.health().accepted_connections, 0);
+    assert_eq!(daemon.health().refused_connections, 0);
+    drop(stream);
+    drop(daemon);
+    assert!(
+        path.exists(),
+        "fenced teardown must preserve endpoint residue"
+    );
+    assert!(lock_path.exists(), "replacement lock must be preserved");
+    assert!(
+        displaced_lock.exists(),
+        "displaced owned lock must be preserved"
+    );
+    fs::remove_file(&path).unwrap();
+    fs::remove_file(&lock_path).unwrap();
+    fs::remove_file(&displaced_lock).unwrap();
     remove_parent(&path);
 }
 

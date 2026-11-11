@@ -1,0 +1,198 @@
+use crate::{DaemonErrorV1, ServerIncarnationV1};
+use std::fs::{self, File, OpenOptions};
+use std::io;
+use std::os::unix::fs::{FileExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+
+const MAGIC_V1: [u8; 8] = *b"AGORALF1";
+const RECORD_BYTES_V1: usize = 24;
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+struct ResourceIdentityV1 {
+    device: u64,
+    inode: u64,
+}
+
+impl ResourceIdentityV1 {
+    fn of(metadata: &fs::Metadata) -> Self {
+        Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        }
+    }
+}
+
+pub(crate) struct LifetimeLeaseV1 {
+    parent: File,
+    parent_path: PathBuf,
+    parent_identity: ResourceIdentityV1,
+    lock: File,
+    lock_path: PathBuf,
+    lock_identity: ResourceIdentityV1,
+    record: [u8; RECORD_BYTES_V1],
+    remove_on_drop: bool,
+}
+
+impl LifetimeLeaseV1 {
+    pub(crate) fn acquire_new(
+        parent_path: &Path,
+        socket_path: &Path,
+        server_incarnation: ServerIncarnationV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        let parent_metadata = fs::symlink_metadata(parent_path).map_err(DaemonErrorV1::Io)?;
+        if !parent_metadata.is_dir() || parent_metadata.permissions().mode() & 0o777 != 0o700 {
+            return Err(DaemonErrorV1::UnsafeEndpoint);
+        }
+        let parent = File::open(parent_path).map_err(DaemonErrorV1::Io)?;
+        let parent_identity =
+            ResourceIdentityV1::of(&parent.metadata().map_err(DaemonErrorV1::Io)?);
+        if parent_identity != ResourceIdentityV1::of(&parent_metadata) {
+            return Err(DaemonErrorV1::UnsafeEndpoint);
+        }
+
+        let lock_path = lifetime_path(socket_path)?;
+        let lock = match OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&lock_path)
+        {
+            Ok(lock) => lock,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                return Err(classify_existing_lifetime(&lock_path));
+            }
+            Err(error) => return Err(DaemonErrorV1::Io(error)),
+        };
+        if let Err(error) = lock.try_lock() {
+            let _ = fs::remove_file(&lock_path);
+            return Err(DaemonErrorV1::Io(error.into()));
+        }
+        let lock_metadata = match lock.metadata() {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                let _ = fs::remove_file(&lock_path);
+                return Err(DaemonErrorV1::Io(error));
+            }
+        };
+        if !private_regular_file(&lock_metadata) {
+            let _ = fs::remove_file(&lock_path);
+            return Err(DaemonErrorV1::UnsafeEndpoint);
+        }
+        let mut record = [0_u8; RECORD_BYTES_V1];
+        record[..8].copy_from_slice(&MAGIC_V1);
+        record[8..].copy_from_slice(&server_incarnation.as_bytes());
+        if let Err(error) = lock
+            .write_all_at(&record, 0)
+            .and_then(|()| lock.set_len(record.len() as u64))
+            .and_then(|()| lock.sync_all())
+            .and_then(|()| parent.sync_all())
+        {
+            let _ = fs::remove_file(&lock_path);
+            return Err(DaemonErrorV1::Io(error));
+        }
+        let lock_identity = match lock.metadata() {
+            Ok(metadata) => ResourceIdentityV1::of(&metadata),
+            Err(error) => {
+                let _ = fs::remove_file(&lock_path);
+                return Err(DaemonErrorV1::Io(error));
+            }
+        };
+        Ok(Self {
+            parent,
+            parent_path: parent_path.to_path_buf(),
+            parent_identity,
+            lock,
+            lock_path,
+            lock_identity,
+            record,
+            remove_on_drop: true,
+        })
+    }
+
+    pub(crate) fn intact(&self) -> bool {
+        let Ok(parent_path_metadata) = fs::symlink_metadata(&self.parent_path) else {
+            return false;
+        };
+        let Ok(parent_metadata) = self.parent.metadata() else {
+            return false;
+        };
+        if !parent_path_metadata.is_dir()
+            || parent_path_metadata.permissions().mode() & 0o777 != 0o700
+            || ResourceIdentityV1::of(&parent_path_metadata) != self.parent_identity
+            || ResourceIdentityV1::of(&parent_metadata) != self.parent_identity
+        {
+            return false;
+        }
+        let Ok(lock_path_metadata) = fs::symlink_metadata(&self.lock_path) else {
+            return false;
+        };
+        let Ok(lock_metadata) = self.lock.metadata() else {
+            return false;
+        };
+        if !private_regular_file(&lock_path_metadata)
+            || !private_regular_file(&lock_metadata)
+            || ResourceIdentityV1::of(&lock_path_metadata) != self.lock_identity
+            || ResourceIdentityV1::of(&lock_metadata) != self.lock_identity
+            || lock_metadata.len() != RECORD_BYTES_V1 as u64
+        {
+            return false;
+        }
+        let mut actual = [0_u8; RECORD_BYTES_V1];
+        self.lock.read_exact_at(&mut actual, 0).is_ok() && actual == self.record
+    }
+
+    pub(crate) fn preserve(&mut self) {
+        self.remove_on_drop = false;
+    }
+}
+
+impl Drop for LifetimeLeaseV1 {
+    fn drop(&mut self) {
+        if self.remove_on_drop && self.intact() {
+            let _ = fs::remove_file(&self.lock_path);
+            let _ = self.parent.sync_all();
+        }
+    }
+}
+
+fn lifetime_path(socket_path: &Path) -> Result<PathBuf, DaemonErrorV1> {
+    let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
+    let mut name = socket_path
+        .file_name()
+        .ok_or(DaemonErrorV1::UnsafeEndpoint)?
+        .to_os_string();
+    name.push(".owner.lock");
+    Ok(parent.join(name))
+}
+
+fn classify_existing_lifetime(path: &Path) -> DaemonErrorV1 {
+    let Ok(path_metadata) = fs::symlink_metadata(path) else {
+        return DaemonErrorV1::UnsafeEndpoint;
+    };
+    if !private_regular_file(&path_metadata) {
+        return DaemonErrorV1::UnsafeEndpoint;
+    }
+    let Ok(lock) = OpenOptions::new().read(true).write(true).open(path) else {
+        return DaemonErrorV1::UnsafeEndpoint;
+    };
+    let Ok(open_metadata) = lock.metadata() else {
+        return DaemonErrorV1::UnsafeEndpoint;
+    };
+    if !private_regular_file(&open_metadata)
+        || ResourceIdentityV1::of(&path_metadata) != ResourceIdentityV1::of(&open_metadata)
+    {
+        return DaemonErrorV1::UnsafeEndpoint;
+    }
+    match lock.try_lock() {
+        Ok(()) => DaemonErrorV1::CrashResidue,
+        Err(fs::TryLockError::WouldBlock) => DaemonErrorV1::LifetimeBusy,
+        Err(error) => DaemonErrorV1::Io(error.into()),
+    }
+}
+
+fn private_regular_file(metadata: &fs::Metadata) -> bool {
+    metadata.file_type().is_file()
+        && metadata.permissions().mode() & 0o777 == 0o600
+        && metadata.nlink() == 1
+}

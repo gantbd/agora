@@ -16,30 +16,34 @@ The application supplies:
   accepted Unix connection;
 - a `HostClockV1` that supplies explicit monotone host time; and
 - a nonzero opaque 128-bit value naming the declared logical server
-  incarnation; and
+  incarnation;
 - positive frame, request, and I/O deadline limits.
 
 The daemon requires a real existing mode-0700 parent directory, creates a new
 Unix-domain socket within it, hardens the socket to mode 0600, validates its
 type, and pins its device/inode identity. A symlink or permissive parent and an
 existing regular file, symlink, socket, or other endpoint object refuse
-construction. Drop removes only the exact socket object it created; replacement
-is never unlinked.
+construction. Before binding, it creates an endpoint-derived mode-0600 lifetime
+record containing the declared incarnation, holds an exclusive kernel lock, and
+pins the parent and record identities. A live lock and an unlocked prior record
+refuse distinctly. Drop removes the socket and record only when every pinned
+resource still matches; replacement or ambiguity is preserved.
 
 ## Connection state machine
 
-1. Accept one connection and apply the configured read/write deadline.
-2. Read the exact fixed-width handshake-profile-1 ClientHello selecting Wire V2.
-3. Return the fixed-width ServerHello with the selected profiles, configured
+1. Revalidate the parent, lifetime record, and socket, then accept one connection.
+2. Revalidate ownership again and apply the configured read/write deadline.
+3. Read the exact fixed-width handshake-profile-1 ClientHello selecting Wire V2.
+4. Return the fixed-width ServerHello with the selected profiles, configured
    frame and request limits, capability-discovery support, and server incarnation.
-4. Derive the trusted Aegis context from that connection.
-5. Read one bounded length-prefixed canonical Wire V2 Connect frame.
-6. Return the Host V2 connected frame or its shared unavailable refusal.
-7. Keep the opaque host session only in daemon memory.
-8. For at most the configured number of later frames, supply fresh host time and
+5. Derive the trusted Aegis context from that connection.
+6. Read one bounded length-prefixed canonical Wire V2 Connect frame.
+7. Return the Host V2 connected frame or its shared unavailable refusal.
+8. Keep the opaque host session only in daemon memory.
+9. For at most the configured number of later frames, supply fresh host time and
    the same connection context to Host V2. Host V2 and the Aegis adapter bind and
    reauthorize the retained subject and participant before Service V2 executes.
-9. On EOF or any later error, close the host session and service client
+10. On EOF or any later error, close the host session and service client
    unconditionally.
 
 Each outer record is `u32_be length || frame`. Length zero and values above the
@@ -57,7 +61,7 @@ new connection can safely repeat it.
 ## Observable operations
 
 `DaemonHealthV1` is deliberately content-free. It reports readiness, current
-drain state, connections, accepted and refused handshakes, cleanly completed
+drain and ownership-fenced state, connections, accepted and refused handshakes, cleanly completed
 connections, refused connections, transport errors, and counter saturation. It
 exposes no incarnation bytes, participant, subject, grant, room, message, or
 frame data.
@@ -87,11 +91,11 @@ that credential mechanism. The clock is trusted and the Aegis service port must
 provide its own availability and context provenance.
 
 The handshake selects one exact protocol profile; it is not version-range or
-feature negotiation. Its caller-supplied incarnation is not authenticated and
-does not itself prove fresh generation, persistence, exclusive process
-ownership, or a restart boundary. The profile makes no claim for TCP or other
-network transports, confidentiality, peer-credential extraction, exclusive
-lifetime locking, crash-residue recovery, concurrent clients, overload queues,
+feature negotiation. Its caller-supplied incarnation is not authenticated; the
+lifetime record binds that value to one exclusive live endpoint but does not
+prove fresh generation or a restart boundary. The profile makes no claim for
+TCP or other network transports, confidentiality, peer-credential extraction,
+crash-residue recovery, concurrent clients, overload queues,
 concurrent in-flight drain, signal handling, socket activation, installation,
 cross-restart request identity, reconnect resumption, or atomic Aegis/Agora
 recovery.
@@ -101,7 +105,10 @@ drain fence does not add concurrent in-flight drain or signal integration.
 
 ## Qualification evidence
 
-The seven real-socket scenarios verify private-parent/socket modes and type,
+The eight real-socket scenarios verify private-parent/socket modes and type,
+canonical incarnation-bound lifetime bytes, live-owner exclusion, distinct
+stale-residue refusal, replacement fencing before authentication, and
+conservative teardown,
 the exact ServerHello fields, refusal of an incompatible ClientHello before any
 authentication, authority, Host, or Service work, Aegis-authorized Connect and
 per-frame execution, byte-identical request replay, EOF cleanup, erased
