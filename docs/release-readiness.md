@@ -3,7 +3,7 @@
 Status: source-ready for the declared v0.3 core, volatile service v0.1,
 authenticated host profile v0.1, store-neutral durable service/host boundary,
 single-owner local Unix directory-store profile, and bounded private local Unix
-transport composition on 2026-11-10;
+transport composition on 2026-11-11;
 not ready for a network service or crates.io release.
 
 ## Established
@@ -106,7 +106,7 @@ not ready for a network service or crates.io release.
   engine/service/host recovery, and the production outer-frame prefix codec,
   with immutable canonical seeds and exact re-encoding oracles;
 - commit-pinned integrated local qualification of revision
-  `eacc767bcb27560372036de940f3f98b773200bc` on Darwin 25.6.0 arm64 / macOS
+  `04f723e2e6dbf0f7917ff9c933fc3a93957dccb5` on Darwin 25.6.0 arm64 / macOS
   26.6.2 across the ordinary gate, all release-mode targets, 10,000 deterministic
   soak cycles, and 1,000,000 fixed-seed cases on each of the three fuzz targets,
   with locked fuzz-target compilation and unchanged tracked bytes afterward;
@@ -123,7 +123,8 @@ not ready for a network service or crates.io release.
   parallel topic-aware feed, and profile-15/17/17 canonical recovery;
 - separately negotiated topic rename with owner/moderator kind-neutral
   authority, unchanged stable identity and message relations, attributable
-  prior/new-name events in every feed, exact replay, and canonical recovery;
+  prior/new-name events in every feed, exact replay, canonical recovery, and
+  exact-revision integrated qualification;
 - independent delivery and pull retention: acknowledgment drains only the
   backpressured outbox, journal eviction carries its own exact gap, and both
   suffixes recover canonically with live service cursors;

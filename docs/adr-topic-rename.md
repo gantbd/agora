@@ -1,6 +1,6 @@
 # ADR: stable topic rename
 
-Status: implemented
+Status: implemented and qualified
 
 Date: 2026-11-11
 
