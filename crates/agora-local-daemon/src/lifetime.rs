@@ -322,6 +322,7 @@ mod tests {
     use super::*;
     use std::os::unix::fs::DirBuilderExt;
     use std::os::unix::net::UnixListener;
+    use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     fn paths() -> (PathBuf, PathBuf, PathBuf) {
@@ -370,6 +371,72 @@ mod tests {
             assert!(
                 matches!(result, Err(DaemonErrorV1::Io(error)) if error.kind() == io::ErrorKind::Interrupted),
                 "point {selected} must not report success"
+            );
+            assert_eq!(fs::read(&lock).unwrap(), record(published));
+            assert_eq!(
+                socket.exists(),
+                selected <= 2,
+                "socket classification mismatch at point {selected}"
+            );
+
+            let lease =
+                LifetimeLeaseV1::recover_stale(&parent, &socket, published, resumed).unwrap();
+            assert!(lease.intact());
+            assert_eq!(fs::read(&lock).unwrap(), record(resumed));
+            assert!(!socket.exists());
+            drop(lease);
+            assert!(!lock.exists());
+            fs::remove_dir(&parent).unwrap();
+        }
+    }
+
+    #[test]
+    fn every_rotation_process_cut_is_exact_and_resumable() {
+        const CHILD_PARENT: &str = "AGORA_R81_LIFETIME_PARENT";
+        const CHILD_POINT: &str = "AGORA_R81_LIFETIME_POINT";
+        const CUT_EXIT: i32 = 86;
+        let previous = ServerIncarnationV1::new([0xa5; 16]);
+        let published = ServerIncarnationV1::new([0xb6; 16]);
+        let resumed = ServerIncarnationV1::new([0xc7; 16]);
+
+        if let (Ok(parent), Ok(selected)) =
+            (std::env::var(CHILD_PARENT), std::env::var(CHILD_POINT))
+        {
+            let parent = PathBuf::from(parent);
+            let socket = parent.join("agora.sock");
+            let selected: u8 = selected.parse().unwrap();
+            let _ = LifetimeLeaseV1::recover_stale_inner(
+                &parent,
+                &socket,
+                previous,
+                published,
+                |point| {
+                    if point == selected {
+                        std::process::exit(CUT_EXIT);
+                    }
+                    Ok(())
+                },
+            );
+            panic!("selected process cut was not reached");
+        }
+
+        for selected in 1..=4_u8 {
+            let (parent, socket, lock) = paths();
+            prepare_residue(&socket, &lock, previous);
+            let status = Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("lifetime::tests::every_rotation_process_cut_is_exact_and_resumable")
+                .arg("--test-threads=1")
+                .env(CHILD_PARENT, &parent)
+                .env(CHILD_POINT, selected.to_string())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap();
+            assert_eq!(
+                status.code(),
+                Some(CUT_EXIT),
+                "point {selected} must terminate inside rotation"
             );
             assert_eq!(fs::read(&lock).unwrap(), record(published));
             assert_eq!(

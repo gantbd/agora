@@ -47,6 +47,9 @@ follow Semantic Versioning once a public release contract is selected.
   correlation evidence without claiming atomic cross-engine recovery. Revision
   `89fec4c12a7a4ac1d4f51b92a47a5c137344816e` passed the integrated release profile with 10,000 soak cycles and
   1,000,000 cases per fuzz target.
+- Added no-unwind subprocess termination after every endpoint-rotation
+  persistence boundary, proving the exact record/socket residue classes unlock
+  and resume to another distinct incarnation.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,

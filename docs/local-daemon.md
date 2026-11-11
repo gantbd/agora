@@ -76,6 +76,11 @@ returns `Interrupted`, retains the exact next record, and leaves either the old
 validated socket or no socket. Retrying from that recorded incarnation reaches
 a second distinct record in every case. A public daemon scenario separately
 proves exact-record/missing-socket residue rebinds without runtime adoption.
+The same four boundaries are exercised by child processes that call
+`process::exit` before unwinding. Every child releases the operating-system lock,
+leaves the same exact record/socket class as deterministic injection, and
+resumes to another distinct incarnation. This strengthens process-death
+evidence only; it does not simulate power loss.
 
 ## Connection state machine
 

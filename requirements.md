@@ -568,6 +568,13 @@
   correlation evidence binding the decision to the loaded Agora revision.
   That evidence must not claim an atomic Aegis/Agora transaction, credential
   authentication, grant issuance, rollback resistance, or coordinated restore.
+- **R81 — Endpoint-rotation process-cut evidence:** a subprocess must terminate
+  without unwinding immediately after each of R79's four rotation boundaries.
+  Every resulting process-visible state must contain the exact next lifetime
+  record, retain the old socket only before removal, release the lifetime lock,
+  and resume successfully from that recorded incarnation to another distinct
+  incarnation. This is real process-death evidence, not controller-cache or
+  device power-loss durability.
 
 ## Explicitly open
 

@@ -584,7 +584,12 @@ post-rotation state has that sanitized checkpoint plus new-incarnation endpoint
 record and stale socket. Recovery inspects those resources, repeats sanitation
 safely when endpoint rotation has not occurred, and rotates from the incarnation
 actually present. This classification does not cover interruption within an
-individual store or lifetime filesystem operation.
+individual store operation. For lifetime rotation, a subprocess also terminates
+without unwinding after next-record write, record synchronization, stale-socket
+removal, and parent synchronization. Each process-visible residue has the exact
+next record, the socket only before removal, and an unlocked record from which
+exact retry reaches another distinct incarnation. Neither schedule models
+controller caches or device power loss.
 
 “Durable” here means the specified operating-system synchronization mechanism
 completed on the qualified local profile. It does not prove storage-controller
