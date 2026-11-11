@@ -44,7 +44,9 @@ follow Semantic Versioning once a public release contract is selected.
   profile with 10,000 soak cycles and 1,000,000 cases per fuzz target.
 - Added mandatory exact key/scope/revision authority before operator-restore
   sanitization, plus an Aegis `Administer` adapter that retains decision/revision
-  correlation evidence without claiming atomic cross-engine recovery.
+  correlation evidence without claiming atomic cross-engine recovery. Revision
+  `89fec4c12a7a4ac1d4f51b92a47a5c137344816e` passed the integrated release profile with 10,000 soak cycles and
+  1,000,000 cases per fuzz target.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,
