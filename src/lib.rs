@@ -9,6 +9,7 @@ pub mod persistence;
 
 pub const MAX_TOPIC_ALIASES_PER_TOPIC_V1: usize = 16;
 pub const MAX_TOPIC_TAGS_PER_TOPIC_V1: usize = 8;
+pub const MAX_ATTACHMENTS_PER_MESSAGE_V1: usize = 8;
 
 /// Resource ceilings for one engine profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -141,6 +142,212 @@ pub enum Role {
 /// A caller-supplied timestamp in a host-defined logical epoch.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LogicalTime(pub u64);
+
+/// Opaque room-local identity for one immutable attachment relation.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AttachmentIdV1([u8; 16]);
+
+/// Opaque logical namespace for an external object store. This is not a URL,
+/// path, credential, or authority decision.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AttachmentStoreIdV1([u8; 16]);
+
+/// Opaque logical object key. Its bytes are correlation data, not a bearer
+/// credential or proof that an object exists.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AttachmentObjectKeyV1([u8; 32]);
+
+/// Caller-asserted SHA-256 value. Agora does not verify referenced bytes.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Sha256DigestV1([u8; 32]);
+
+macro_rules! opaque_attachment_value {
+    ($name:ident, $length:literal) => {
+        impl $name {
+            pub const fn new(bytes: [u8; $length]) -> Self {
+                Self(bytes)
+            }
+
+            pub const fn into_bytes(self) -> [u8; $length] {
+                self.0
+            }
+        }
+
+        impl fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(concat!(stringify!($name), "(<opaque>)"))
+            }
+        }
+    };
+}
+
+opaque_attachment_value!(AttachmentIdV1, 16);
+opaque_attachment_value!(AttachmentStoreIdV1, 16);
+opaque_attachment_value!(AttachmentObjectKeyV1, 32);
+opaque_attachment_value!(Sha256DigestV1, 32);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AttachmentIntegrityV1 {
+    Sha256(Sha256DigestV1),
+}
+
+/// Bounds for validating one attachment descriptor before message mutation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AttachmentDescriptorLimitsV1 {
+    pub max_declared_bytes: u64,
+    pub max_media_type_bytes: usize,
+    pub max_display_label_bytes: usize,
+}
+
+impl Default for AttachmentDescriptorLimitsV1 {
+    fn default() -> Self {
+        Self {
+            max_declared_bytes: 1024 * 1024 * 1024,
+            max_media_type_bytes: 127,
+            max_display_label_bytes: 256,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AttachmentDescriptorRefusalV1 {
+    InvalidDeclaredLength,
+    InvalidMediaType,
+    InvalidDisplayLabel,
+}
+
+/// Immutable logical reference metadata. Construction records caller input;
+/// [`AttachmentDescriptorV1::validate`] must succeed before admission.
+#[derive(Clone, Eq, PartialEq)]
+pub struct AttachmentDescriptorV1 {
+    attachment_id: AttachmentIdV1,
+    store_id: AttachmentStoreIdV1,
+    object_key: AttachmentObjectKeyV1,
+    declared_bytes: u64,
+    media_type: String,
+    display_label: String,
+    integrity: AttachmentIntegrityV1,
+}
+
+impl AttachmentDescriptorV1 {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        attachment_id: AttachmentIdV1,
+        store_id: AttachmentStoreIdV1,
+        object_key: AttachmentObjectKeyV1,
+        declared_bytes: u64,
+        media_type: impl Into<String>,
+        display_label: impl Into<String>,
+        integrity: AttachmentIntegrityV1,
+    ) -> Self {
+        Self {
+            attachment_id,
+            store_id,
+            object_key,
+            declared_bytes,
+            media_type: media_type.into(),
+            display_label: display_label.into(),
+            integrity,
+        }
+    }
+
+    pub fn attachment_id(&self) -> AttachmentIdV1 {
+        self.attachment_id
+    }
+
+    pub fn store_id(&self) -> AttachmentStoreIdV1 {
+        self.store_id
+    }
+
+    pub fn object_key(&self) -> AttachmentObjectKeyV1 {
+        self.object_key
+    }
+
+    pub fn declared_bytes(&self) -> u64 {
+        self.declared_bytes
+    }
+
+    pub fn media_type(&self) -> &str {
+        &self.media_type
+    }
+
+    pub fn display_label(&self) -> &str {
+        &self.display_label
+    }
+
+    pub fn integrity(&self) -> AttachmentIntegrityV1 {
+        self.integrity
+    }
+
+    pub fn validate(
+        &self,
+        limits: AttachmentDescriptorLimitsV1,
+    ) -> Result<(), AttachmentDescriptorRefusalV1> {
+        if self.declared_bytes == 0 || self.declared_bytes > limits.max_declared_bytes {
+            return Err(AttachmentDescriptorRefusalV1::InvalidDeclaredLength);
+        }
+        if self.media_type.len() > limits.max_media_type_bytes
+            || !canonical_media_type_v1(&self.media_type)
+        {
+            return Err(AttachmentDescriptorRefusalV1::InvalidMediaType);
+        }
+        if self.display_label.is_empty()
+            || self.display_label.len() > limits.max_display_label_bytes
+            || self.display_label.chars().any(char::is_control)
+        {
+            return Err(AttachmentDescriptorRefusalV1::InvalidDisplayLabel);
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for AttachmentDescriptorV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AttachmentDescriptorV1")
+            .field("attachment_id", &self.attachment_id)
+            .field("store_id", &self.store_id)
+            .field("object_key", &self.object_key)
+            .field("declared_bytes", &self.declared_bytes)
+            .field("media_type_bytes", &self.media_type.len())
+            .field("display_label_bytes", &self.display_label.len())
+            .field("integrity", &self.integrity)
+            .finish()
+    }
+}
+
+fn canonical_media_type_v1(value: &str) -> bool {
+    let Some((top_level, subtype)) = value.split_once('/') else {
+        return false;
+    };
+    !top_level.is_empty()
+        && !subtype.is_empty()
+        && !subtype.contains('/')
+        && top_level.bytes().all(canonical_media_type_token_byte_v1)
+        && subtype.bytes().all(canonical_media_type_token_byte_v1)
+}
+
+fn canonical_media_type_token_byte_v1(value: u8) -> bool {
+    value.is_ascii_lowercase()
+        || value.is_ascii_digit()
+        || matches!(
+            value,
+            b'!' | b'#'
+                | b'$'
+                | b'%'
+                | b'&'
+                | b'\''
+                | b'*'
+                | b'+'
+                | b'-'
+                | b'.'
+                | b'^'
+                | b'_'
+                | b'`'
+                | b'|'
+                | b'~'
+        )
+}
 
 /// Stable room-local message reference. The byte representation is opaque and
 /// carries no ordering contract; use message sequence or event position to order.
