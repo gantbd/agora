@@ -183,7 +183,7 @@ control fixtures are deliberately excluded). An accepted
 candidate must re-encode exactly, and an accepted frame prefix must preserve its
 unconsumed stream suffix. The qualified smoke ran 20,000 fixed-seed cases on all
 three targets. The latest integrated local release-candidate campaign, for
-revision `2649605b00a33167b4edb1555720a18b0596181d`, ran 1,000,000 fixed-seed
+revision `33a2f61093bae785767ec9d817ae77e6e5be189c`, ran 1,000,000 fixed-seed
 cases on each of those three targets. All campaigns use a 64-KiB input,
 10-second per-input, and 2-GiB memory ceiling on Apple Silicon. This is bounded
 coverage-guided counterexample search, not a coverage threshold, parser proof,
@@ -252,7 +252,7 @@ latency/throughput benchmark, crash-durability proof, or concurrency proof.
 records the exact HEAD before running the complete ordinary gate, all workspace
 targets in release mode, the soak in release mode, and all three pinned fuzz
 targets and verifies the tracked tree is unchanged afterward. Revision
-`2649605b00a33167b4edb1555720a18b0596181d` completed the expanded profile
+`33a2f61093bae785767ec9d817ae77e6e5be189c` completed the expanded profile
 with 10,000 soak cycles and 1,000,000 fuzz cases on each target on Darwin
 25.6.0 arm64 / macOS 26.6.2. A pass qualifies one source revision on
 one host. It does not create

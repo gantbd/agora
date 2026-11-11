@@ -34,7 +34,9 @@ follow Semantic Versioning once a public release contract is selected.
   release profile with 10,000 soak cycles and 1,000,000 cases per fuzz target.
 - Added real process termination after every ordered operator-restore boundary,
   exact partial-state classification, and conservative successful resume from
-  each restored/sanitized/generated/endpoint-rotated class.
+  each restored/sanitized/generated/endpoint-rotated class. Revision
+  `33a2f61093bae785767ec9d817ae77e6e5be189c` passed the integrated release
+  profile with 10,000 soak cycles and 1,000,000 cases per fuzz target.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,
