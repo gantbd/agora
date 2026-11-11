@@ -266,4 +266,15 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
             request
         );
     }
+
+    let gap = wire::v2::WireReplyV2::Executed(protocol::v2::ReplyV2::Accepted(
+        protocol::v2::OutcomeV2::ChangeGap {
+            current_revision: 24,
+            cause: protocol::v2::ChangeGapV2::ChangeRetention {
+                discarded_through: 20,
+            },
+        },
+    ));
+    let encoded = wire::v2::encode_reply_v2(&gap, limits).unwrap();
+    assert_eq!(wire::v2::decode_reply_v2(&encoded, limits).unwrap(), gap);
 }

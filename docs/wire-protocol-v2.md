@@ -135,8 +135,9 @@ MessageAccepted `06` (message), ParticipantKicked `07`, ParticipantBanned `08`,
 ParticipantUnbanned `09`, and RoomPolicyChanged `0a` (actor, prior admission,
 new admission). Each moderation event carries actor and subject
 text, bounded reason text, and fixed 16-byte causation encoded as two big-endian
-`u64` words. ChangeGap carries current revision and either
-Retention `01` plus acknowledged-through sequence or MembershipChanged `02`.
+`u64` words. ChangeGap carries current revision and either legacy delivery-
+Retention `01` plus acknowledged-through sequence, MembershipChanged `02`, or
+independent ChangeRetention `03` plus discarded-through event sequence.
 Unknown event, gap, or Boolean tags refuse.
 
 OpenIdentifiedChanges reuses the ChangesOpened scalar result, but the service
@@ -248,7 +249,9 @@ malformed-shape evidence; the expanded capability fixture freezes tag `0f`.
 Private read-position commands, optional and present outcomes, all three scope
 tags, and three specific refusals have closed round-trip evidence. The expanded
 capability fixture freezes tag `10`, and the read-position reply fixture freezes
-the complete private marker grammar.
+the complete private marker grammar. Capability tag `11` advertises independent
+change retention without granting delivery authority; the frozen
+change-retention-gap reply fixes nested gap tag `03` and its discard edge.
 Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push

@@ -1094,6 +1094,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::MessageRevisionsV1 => 14,
                     CapabilityV2::TopicsV1 => 15,
                     CapabilityV2::PrivateReadPositionsV1 => 16,
+                    CapabilityV2::IndependentChangeRetentionV1 => 17,
                 })?;
             }
             Ok(())
@@ -1262,6 +1263,10 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     sink.u64(*acknowledged_through)
                 }
                 ChangeGapV2::MembershipChanged => sink.u8(2),
+                ChangeGapV2::ChangeRetention { discarded_through } => {
+                    sink.u8(3)?;
+                    sink.u64(*discarded_through)
+                }
             }
         }
         OutcomeV2::RoomCreated { revision } => encode_revision_outcome(sink, 4, *revision),
@@ -1444,6 +1449,9 @@ fn decode_outcome(
                     acknowledged_through: read_u64(decoder)?,
                 },
                 2 => ChangeGapV2::MembershipChanged,
+                3 => ChangeGapV2::ChangeRetention {
+                    discarded_through: read_u64(decoder)?,
+                },
                 _ => return Err(WireDecodeError::UnknownTag),
             };
             Ok(OutcomeV2::ChangeGap {
@@ -1485,6 +1493,7 @@ fn decode_outcome(
                     14 => CapabilityV2::MessageRevisionsV1,
                     15 => CapabilityV2::TopicsV1,
                     16 => CapabilityV2::PrivateReadPositionsV1,
+                    17 => CapabilityV2::IndependentChangeRetentionV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }

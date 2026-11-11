@@ -26,10 +26,12 @@ content and therefore inherit the deployment's memory-protection obligations.
 Room change positions are observer/room-bound correlation state, not bearer
 authority. Every pull rechecks current membership, cross-client and cross-room
 handles are non-enumerating, and a leave/rejoin crossing becomes a gap rather
-than exposing events from the absence interval. Outbox retention loss likewise
-requires resnapshot. This does not provide per-client retention: a deployment
-that acknowledges the shared outbox may force lagging observers to resnapshot,
-and must size retention and request rates accordingly.
+than exposing events from the absence interval. Pull history is retained in a
+separate bounded journal: delivery acknowledgment cannot hide it, while journal
+eviction exposes an exact discard edge requiring resnapshot. This does not
+provide per-client retained copies; one busy global journal can still force a
+lagging observer to resnapshot, so deployments must size its independent limit
+and request rates accordingly.
 
 The wire decoder treats every byte as hostile: total bytes, field bytes, field
 count, and list counts are bounded before owned reconstruction; unknown grammar

@@ -11,7 +11,8 @@ not ready for a network service or crates.io release.
 - closed bounded deterministic conversation transitions;
 - participant-neutral admission, roles, speaking, and addressing;
 - atomic typed refusal and optimistic revision fencing;
-- bounded outbox and replay-safe plain response publication;
+- bounded lossless delivery outbox, independently bounded recent-change journal,
+  and replay-safe plain response publication;
 - canonical V2 checkpoint preparation and semantic recovery;
 - immutable representative V2 compatibility fixture;
 - transport-neutral protocol, serialized participant-bound service, and client
@@ -24,7 +25,7 @@ not ready for a network service or crates.io release.
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   twelve packages;
 - conservative package and canonical-fixture inventory closure over twelve
-  packages and twenty-eight fixtures;
+  packages and twenty-nine fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
 - conservative supply inventory closure over sixteen locked local components with
@@ -54,7 +55,10 @@ not ready for a network service or crates.io release.
   all-feed attribution, tombstone scrubbing, and exact replay/recovery;
 - stable room-local topics with role-bound kind-neutral creation, immutable
   message relation and reply inheritance, bounded participant-bound pages, a
-  parallel topic-aware feed, and profile-13/15/15 canonical recovery;
+  parallel topic-aware feed, and profile-14/16/16 canonical recovery;
+- independent delivery and pull retention: acknowledgment drains only the
+  backpressured outbox, journal eviction carries its own exact gap, and both
+  suffixes recover canonically with live service cursors;
 - private monotone room/thread/topic read positions with participant-derived
   authority, closed public values and canonical bytes, exact receipt recovery,
   zero room revision/event effect, and durable lost-reply replay;
@@ -67,11 +71,12 @@ not ready for a network service or crates.io release.
   cleanup, and closed dependency direction;
 - bounded sequential private Unix transport composition with required mode-0700
   parent, mode-0600 new-path endpoint, preallocation length bound, deadlines,
-  fixed request budget, server-owned Host V2 session, per-frame Aegis reauthorization, unconditional
-  cleanup, pinned teardown, and content-free health;
+  fixed request budget, server-owned Host V2 session, per-frame Aegis
+  reauthorization, unconditional cleanup, pinned teardown, and content-free
+  health;
 - independently versioned, scope-bound Service V2 checkpoints preserving engine,
-  outbox, clients, retired tombstones, exact request replies, and live cursor
-  consequences across semantic recovery;
+  outbox, recent-change journal, clients, retired tombstones, exact request
+  replies, and live cursor consequences across semantic recovery;
 - `agora-durable` pre-reply compare-and-exchange gating with durable-strength
   receipt validation, known-refusal rollback, replay-without-store, and
   indeterminate-outcome fencing;

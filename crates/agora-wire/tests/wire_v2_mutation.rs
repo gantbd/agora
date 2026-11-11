@@ -92,6 +92,11 @@ fn every_v2_fixture_has_deterministic_bounded_single_bit_and_framing_mutation() 
             FrameKind::Reply,
         ),
         (
+            "change-retention-gap-reply",
+            include_str!("fixtures/change-retention-gap-reply-v2.hex"),
+            FrameKind::Reply,
+        ),
+        (
             "changes-reply",
             include_str!("fixtures/changes-reply-v2.hex"),
             FrameKind::Reply,

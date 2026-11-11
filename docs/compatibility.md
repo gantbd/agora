@@ -4,8 +4,8 @@ Agora is pre-1.0 and currently source-distributed. Public schemas still change
 only through an explicit profile revision.
 
 The v0.3 command, event, publication, and checkpoint values use the `V2` suffix.
-The `AGORACP` header version is 13. Earlier checkpoint bytes are refused with
-`CheckpointError::Profile`; they are never interpreted as V13. V1 agent activation
+The `AGORACP` header version is 14. Earlier checkpoint bytes are refused with
+`CheckpointError::Profile`; they are never interpreted as V14. V1 agent activation
 has no migration because activation is orchestration behavior, not conversation
 state. A host retaining V1 state must export conversation facts through a
 purpose-built migration tool before adopting V2.
@@ -16,11 +16,12 @@ fail closed on the new value. Reinterpreting an assigned tag or changing any
 existing field grammar requires a new frame version. Unknown tags, fields, or
 trailing bytes remain refusals.
 
-The immutable `tests/fixtures/checkpoint-v13.hex` artifact pins a representative
-V13 state containing both participant kinds, stable message and topic identity,
+The immutable `tests/fixtures/checkpoint-v14.hex` artifact pins a representative
+V14 state containing both participant kinds, stable message and topic identity,
 topic-scoped messages, thread lifecycle, reactions, message revisions, neutral addressing, replay-safe
 publication, ban and policy-change evidence, one private read position,
-acknowledgment, and the exact pending outbox suffix.
+acknowledgment, the exact pending outbox suffix, and the independently retained
+change-journal suffix and discard edge.
 
 The operational protocol is separately versioned as `V1` values. `agora-wire`
 defines its canonical binary representation and refuses unknown versions, tags,
@@ -29,11 +30,11 @@ fixtures freeze representative bytes. The codec defines complete message frames,
 not stream boundaries; transport framing remains separate.
 
 Protocol, Service, Client, and Wire V2 form an additive profile with a separate
-version byte, closed grammar, and twenty canonical fixtures. Their separately
+version byte, closed grammar, and twenty-one canonical fixtures. Their separately
 typed values and V2 bytes do not alter V1 tags or bytes. Authenticated Host V2
 uses the same canonical frames without reinterpreting V1.
 
-Service persistence is versioned independently. `AGORASV` version 15 captures
+Service persistence is versioned independently. `AGORASV` version 16 captures
 the complete V2 service owner and embeds private `AGORACUR` version-1 cursor
 records. Cursor kind 4 is the snapshot-aligned room change position and kind 5
 is the authority-scoped ban page; neither reinterprets kinds 1–3. Service page
@@ -46,12 +47,12 @@ continuation and binds the message identity in addition to room and observer.
 Discriminators 12 and 13 isolate topic and topic-message continuations; the
 latter binds the exact topic. Discriminator 14 isolates topic-aware room-change
 positions. A representative complete service record is pinned by
-`service-checkpoint-v15.hex`. Public wire
+`service-checkpoint-v16.hex`. Public wire
 compatibility neither implies nor migrates durable state;
 future durable schema changes require a bounded explicit migration profile.
 
-Authenticated host persistence has its own `AGORAHST` version-15 record and
-`host-checkpoint-v15.hex` fixture. It nests the service record but owns host
+Authenticated host persistence has its own `AGORAHST` version-16 record and
+`host-checkpoint-v16.hex` fixture. It nests the service record but owns host
 session compatibility independently; neither wire nor service checkpoint
 decoding implies that a host record can be recovered.
 
@@ -120,6 +121,21 @@ Engine/service/host persistence profiles advance to 13/15/15. The engine record
 appends one canonical participant/room/scope-keyed registry after room state;
 each marker retains exact target identity, sequence, and observed revision.
 Earlier checkpoint profiles fail closed rather than dropping private state.
+
+Independent change retention is additive on the wire: capability tag `11`
+advertises `IndependentChangeRetentionV1`, and the previously unassigned nested
+ChangeGap tag `03` carries the exact discarded-through event sequence. Existing
+Retention tag `01` remains decodable for older implementations and is not
+reinterpreted; the current service emits tag `03` for its independent journal.
+The frozen change-retention-gap fixture pins the new representation, while all
+older request, reply, and event fixtures remain byte-identical except the
+intentionally expanded capability list.
+
+Engine/service/host persistence profiles advance to 14/16/16. Engine V14 adds
+the independent journal ceiling, discard edge, and canonical retained suffix;
+the service and host records nest that state with live cursors and exact
+receipts. Profiles 13/15/15 fail closed rather than infer missing change history
+from the delivery outbox or silently couple acknowledgment back to observation.
 
 ## Conservative baseline gate
 

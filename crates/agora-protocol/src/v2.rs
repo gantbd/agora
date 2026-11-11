@@ -810,6 +810,7 @@ pub enum CapabilityV2 {
     MessageRevisionsV1,
     TopicsV1,
     PrivateReadPositionsV1,
+    IndependentChangeRetentionV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -2228,6 +2229,7 @@ impl fmt::Debug for RoomChangePageV2 {
 pub enum ChangeGapV2 {
     Retention { acknowledged_through: u64 },
     MembershipChanged,
+    ChangeRetention { discarded_through: u64 },
 }
 
 macro_rules! page_debug {

@@ -159,7 +159,17 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::MessageRevisionsV1,
         CapabilityV2::TopicsV1,
         CapabilityV2::PrivateReadPositionsV1,
+        CapabilityV2::IndependentChangeRetentionV1,
     ])))
+}
+
+fn change_retention_gap_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ChangeGap {
+        current_revision: 42,
+        cause: ChangeGapV2::ChangeRetention {
+            discarded_through: 38,
+        },
+    }))
 }
 
 fn identified_messages_reply() -> WireReplyV2 {
@@ -474,6 +484,10 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
         (
             encode_reply_v2(&capabilities_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/capabilities-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&change_retention_gap_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/change-retention-gap-reply-v2.hex")),
         ),
         (
             encode_reply_v2(&identified_messages_reply(), limits()).unwrap(),
@@ -1080,6 +1094,12 @@ fn every_v2_outcome_and_refusal_round_trips() {
         OutcomeV2::ChangeGap {
             current_revision: 11,
             cause: ChangeGapV2::MembershipChanged,
+        },
+        OutcomeV2::ChangeGap {
+            current_revision: 12,
+            cause: ChangeGapV2::ChangeRetention {
+                discarded_through: 9,
+            },
         },
         OutcomeV2::Kicked { revision: 12 },
         OutcomeV2::Banned { revision: 13 },

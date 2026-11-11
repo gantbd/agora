@@ -640,7 +640,7 @@ fn read_role(v: u8) -> Result<Role, CheckpointError> {
         _ => Err(CheckpointError::Invalid),
     }
 }
-fn limits_values(l: Limits) -> [usize; 17] {
+fn limits_values(l: Limits) -> [usize; 18] {
     [
         l.max_participants,
         l.max_rooms,
@@ -650,6 +650,7 @@ fn limits_values(l: Limits) -> [usize; 17] {
         l.max_messages_per_room,
         l.max_topics_per_room,
         l.max_pending_events,
+        l.max_retained_changes,
         l.max_publication_receipts,
         l.max_addressed_participants_per_message,
         l.max_participant_id_bytes,
@@ -671,6 +672,7 @@ fn read_limits(r: &mut Reader<'_>, c: Limits) -> Result<Limits, CheckpointError>
         max_messages_per_room: r.size(c.max_messages_per_room)?,
         max_topics_per_room: r.size(c.max_topics_per_room)?,
         max_pending_events: r.size(c.max_pending_events)?,
+        max_retained_changes: r.size(c.max_retained_changes)?,
         max_publication_receipts: r.size(c.max_publication_receipts)?,
         max_addressed_participants_per_message: r.size(c.max_addressed_participants_per_message)?,
         max_participant_id_bytes: r.size(c.max_participant_id_bytes)?,
@@ -701,7 +703,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(13)?;
+        w.byte(14)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -709,6 +711,7 @@ impl Engine {
         w.number(self.next_event_sequence.0)?;
         w.option(self.last_published_event)?;
         w.option(self.acknowledged_through)?;
+        w.option(self.discarded_changes_through)?;
         w.count(self.participants.len())?;
         for (id, p) in &self.participants {
             w.text(id.as_str())?;
@@ -810,6 +813,12 @@ impl Engine {
             w.number(e.revision.0)?;
             w.event(&e.event)?
         }
+        w.count(self.retained_changes.len())?;
+        for e in &self.retained_changes {
+            w.number(e.sequence.0)?;
+            w.number(e.revision.0)?;
+            w.event(&e.event)?
+        }
         Ok(CheckpointV2(w.bytes))
     }
     pub fn recover_checkpoint(
@@ -820,7 +829,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 13 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 14 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -829,6 +838,7 @@ impl Engine {
         e.next_event_sequence = EventSequence(r.number()?);
         e.last_published_event = r.option()?;
         e.acknowledged_through = r.option()?;
+        e.discarded_changes_through = r.option()?;
         let n = r.count(l.max_participants)?;
         for _ in 0..n {
             let id = r.participant(l)?;
@@ -1032,6 +1042,17 @@ impl Engine {
             .map_err(|_| CheckpointError::Capacity)?;
         for _ in 0..n {
             e.pending_events.push_back(EventEnvelopeV2 {
+                sequence: EventSequence(r.number()?),
+                revision: Revision(r.number()?),
+                event: r.event(l)?,
+            })
+        }
+        let n = r.count(l.max_retained_changes)?;
+        e.retained_changes
+            .try_reserve(n)
+            .map_err(|_| CheckpointError::Capacity)?;
+        for _ in 0..n {
+            e.retained_changes.push_back(EventEnvelopeV2 {
                 sequence: EventSequence(r.number()?),
                 revision: Revision(r.number()?),
                 event: r.event(l)?,
@@ -1597,6 +1618,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         || e.rooms.len() > l.max_rooms
         || e.publications.len() > l.max_publication_receipts
         || e.pending_events.len() > l.max_pending_events
+        || e.retained_changes.len() > l.max_retained_changes
         || e.read_positions.len() > MAX_READ_POSITIONS_V1
     {
         return Err(CheckpointError::Limit);
@@ -1616,6 +1638,18 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         .map_or(Some(0), |a| a.0.checked_add(1))
         .ok_or(CheckpointError::Invalid)?;
     if e.revision.0.checked_sub(first) != Some(e.pending_events.len() as u64) {
+        return Err(CheckpointError::Invalid);
+    }
+    if e.discarded_changes_through
+        .is_some_and(|discarded| e.last_published_event.is_none_or(|last| discarded > last))
+    {
+        return Err(CheckpointError::Invalid);
+    }
+    let first_retained_change = e
+        .discarded_changes_through
+        .map_or(Some(0), |discarded| discarded.0.checked_add(1))
+        .ok_or(CheckpointError::Invalid)?;
+    if e.revision.0.checked_sub(first_retained_change) != Some(e.retained_changes.len() as u64) {
         return Err(CheckpointError::Invalid);
     }
     let mut minimum = (e.participants.len() as u64)
@@ -1857,6 +1891,42 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
     }
     for (i, envelope) in e.pending_events.iter().enumerate() {
         if envelope.sequence.0 != first + i as u64 || envelope.revision.0 != envelope.sequence.0 + 1
+        {
+            return Err(CheckpointError::Invalid);
+        }
+        validate_event(e, &envelope.event)?;
+        if let Some(p) = revisions.get(&envelope.revision) {
+            let DomainEventV2::MessageAccepted {
+                room_id, message, ..
+            } = &envelope.event
+            else {
+                return Err(CheckpointError::Invalid);
+            };
+            let OutcomeV2::MessageAccepted { sequence, .. } = &p.transition.outcome else {
+                return Err(CheckpointError::Invalid);
+            };
+            let expected_message_id = MessageId::allocated(
+                e.rooms
+                    .get(room_id)
+                    .ok_or(CheckpointError::Invalid)?
+                    .message_identity_incarnation,
+                *sequence,
+            );
+            if room_id != &p.room_id
+                || message.id != expected_message_id
+                || message.sequence != *sequence
+                || message.author != p.author
+                || message.at != p.at
+                || (!message.is_withdrawn() && message.body != p.body)
+                || !message.addressed_to.is_empty()
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+    }
+    for (i, envelope) in e.retained_changes.iter().enumerate() {
+        if envelope.sequence.0 != first_retained_change + i as u64
+            || envelope.revision.0 != envelope.sequence.0 + 1
         {
             return Err(CheckpointError::Invalid);
         }

@@ -53,6 +53,22 @@ accepted revision, and typed domain event. Saturation refuses before state chang
 Acknowledgment may advance only through the published edge and cannot regress.
 Acknowledged prefixes are removed. The in-memory outbox is not durable evidence.
 
+## Recent change journal
+
+Every accepted command also appends the same ordered envelope to an independent
+bounded recent-change journal. This journal is pull-observation state, not a
+delivery queue: reaching `max_retained_changes` evicts the oldest journal copy
+and advances an exact `discarded_changes_through` edge without refusing the
+domain mutation or acknowledging the delivery outbox. Conversely, delivery
+acknowledgment removes no journal entry. Outbox backpressure and journal
+eviction therefore cannot substitute for each other.
+
+The outbox and journal copies are appended within the same deterministic engine
+transition and retain equal event sequence, revision, and event value. Message
+withdrawal or moderation redaction scrubs every still-retained copy in both
+structures. Canonical profile-14 recovery preserves the independent suffixes
+and edges; neither queue is reconstructed by inference from the other.
+
 ## Message retention
 
 Each accepted message receives the room's current sequence and caller-supplied
@@ -63,10 +79,11 @@ Eviction affects retrieval, not sequence continuity.
 ## Bounds and observation
 
 `Limits` bounds participants, rooms, members, invitations, messages, pending
-events, publication receipts, addressed participants, and UTF-8 bytes for IDs,
-names, and bodies. Empty identifiers, names, and bodies are refused. Arithmetic
-overflow is refused. Message and publication debug output reports sizes and
-closed metadata without message bodies or idempotency keys.
+delivery events, retained changes, publication receipts, addressed participants,
+and UTF-8 bytes for IDs, names, and bodies. Empty identifiers, names, and bodies
+are refused. Arithmetic overflow is refused. Message and publication debug
+output reports sizes and closed metadata without message bodies or idempotency
+keys.
 
 ### Bounded core observation profile v0.1
 
@@ -104,15 +121,16 @@ and capture returns `Stale`, preventing a silent observation window. A position
 binds observer, room, revision, and the exclusive global event sequence. It is a
 correlation value, not authority; every pull rechecks current membership.
 
-`room_change_page` filters the retained outbox to that room and returns at most
+`room_change_page` filters the retained change journal to that room and returns at most
 the requested positive bounded count. Reusing a position returns the same
 retained prefix. The returned next position is exclusive, so continuation has no
 overlap; when no room changes remain it advances across unrelated events to the
 current edge. Domain event sequence and accepted revision are stable deduplication
 identities and survive canonical engine recovery.
 
-If outbox acknowledgement removed any required prefix, the result is an explicit
-retention gap with the acknowledged edge. If the observer left and later rejoined
+If journal eviction removed any required prefix, the result is a distinct
+change-retention gap with the discarded edge. Delivery acknowledgment has no
+effect on this decision. If the observer left and later rejoined
 after the supplied position, the result is a membership-epoch gap even when all
 events remain retained. Either gap requires a new bounded snapshot and position;
 an empty page never implies continuity across lost visibility. This is pull
@@ -607,8 +625,8 @@ participant's marker to another. Service identity is actor-derived and durable
 publication must commit marker state plus the exact request receipt before
 reply. The engine owns the bounded registry. Participant-bound service commands
 expose only the connected actor's marker; protocol and wire use closed scopes,
-outcomes, refusals, and capability values. Canonical engine profile 13 and
-enclosing service/host profile 15 records retain private markers and exact
+outcomes, refusals, and capability values. Canonical engine profile 14 and
+enclosing service/host profile 16 records retain private markers and exact
 receipts through nested recovery without publishing them. Durable execution
 commits both before reply, and exact lost-reply replay performs no second store
 write.

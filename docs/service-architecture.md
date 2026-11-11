@@ -70,10 +70,12 @@ After completing bounded room state pages at one revision, a client can open a
 room change position at that exact revision and pull retained room events through
 an opaque client-owned cursor. Pages are exclusive-after and replayable by exact
 request identity. The service consumes each successful cursor into a next cursor;
-foreign, cross-room, or consumed handles share `InvalidCursor`. Outbox retention
-loss and leave/rejoin visibility discontinuity are explicit gap outcomes that
-require resnapshot. The cursor is included in complete service recovery, but the
-feed remains pull observation rather than delivery acknowledgment or presence.
+foreign, cross-room, or consumed handles share `InvalidCursor`. Independent
+change-journal eviction and leave/rejoin visibility discontinuity are explicit
+gap outcomes that require resnapshot. Delivery acknowledgment does not consume
+the journal. Both the cursor and journal suffix are included in complete service
+recovery, but the feed remains pull observation rather than delivery
+acknowledgment or presence.
 The additive identified-change feed uses the same engine log and continuity
 laws but a distinct service cursor kind and outcome vocabulary. Cross-profile
 cursor substitution refuses without consuming either cursor. Stable message

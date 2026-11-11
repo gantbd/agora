@@ -1,5 +1,5 @@
 use agora_engine::{
-    AdmissionPolicy, CommandV2 as EngineCommand, Engine, Participant, ParticipantKind,
+    AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind,
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, IdentifiedRoomEventV1,
@@ -986,7 +986,11 @@ fn v2_thread_lifecycle_is_authorized_observable_replayable_and_feed_visible() {
 }
 
 fn participant_engine() -> Engine {
-    let mut engine = Engine::new();
+    participant_engine_with_limits(Limits::default())
+}
+
+fn participant_engine_with_limits(limits: Limits) -> Engine {
+    let mut engine = Engine::with_limits(limits);
     for (id, name, kind) in [
         ("alice", "Alice", ParticipantKind::Human),
         ("bot", "Bot", ParticipantKind::Agent),
@@ -1529,6 +1533,95 @@ fn v2_change_feed_opens_at_snapshot_and_advances_exclusively() {
     ));
     assert_eq!(service.execute(alice, change_request), reply);
     assert_eq!(service.usage().replayed, 1);
+}
+
+#[test]
+fn v2_change_feed_reports_independent_journal_retention() {
+    let engine = participant_engine_with_limits(Limits {
+        max_pending_events: 16,
+        max_retained_changes: 1,
+        ..Limits::default()
+    });
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                0,
+                CommandV2::CreateRoom {
+                    room_id: "room".to_owned(),
+                    name: "Room".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 5 })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened { cursor, .. }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 5,
+            },
+        ),
+    ) else {
+        panic!("change position expected");
+    };
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                2,
+                CommandV2::Speak {
+                    room_id: "room".to_owned(),
+                    expected_revision: 5,
+                    logical_time: 1,
+                    body: "will be evicted from pull history".to_owned(),
+                    addressed_to: vec![],
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::MessageAccepted { revision: 6, .. })
+    ));
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                3,
+                CommandV2::CreateRoom {
+                    room_id: "other".to_owned(),
+                    name: "Other".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 6,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 7 })
+    ));
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                4,
+                CommandV2::Changes {
+                    room_id: "room".to_owned(),
+                    cursor,
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ChangeGap {
+            current_revision: 7,
+            cause: ChangeGapV2::ChangeRetention {
+                discarded_through: 5,
+            },
+        })
+    );
+    assert_eq!(service.engine().pending_events().count(), 7);
 }
 
 #[test]
@@ -2558,10 +2651,10 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 16);
+    assert_eq!(capabilities.len(), 17);
     assert_eq!(
         capabilities.last(),
-        Some(&CapabilityV2::PrivateReadPositionsV1)
+        Some(&CapabilityV2::IndependentChangeRetentionV1)
     );
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);

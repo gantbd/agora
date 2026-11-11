@@ -497,7 +497,7 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    let fixture = include_str!("fixtures/host-checkpoint-v15.hex").trim();
+    let fixture = include_str!("fixtures/host-checkpoint-v16.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -597,7 +597,7 @@ fn v2_host_checkpoint_is_scope_bound_bounded_and_closed_to_partial_state() {
 
 #[test]
 fn fixed_seed_host_checkpoint_mutations_refuse_or_remain_canonical() {
-    let checkpoint = decode_hex(include_str!("fixtures/host-checkpoint-v15.hex"));
+    let checkpoint = decode_hex(include_str!("fixtures/host-checkpoint-v16.hex"));
     let mut seed = 0x7057_c4ae_c0de_0015u64;
 
     for sample in 0..512 {

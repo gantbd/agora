@@ -5,11 +5,12 @@ use agora_engine::{
     RoomChangeResult, RoomId,
 };
 
-fn engine() -> Engine {
+fn engine_with_change_limit(max_retained_changes: usize) -> Engine {
     let mut engine = Engine::with_limits(Limits {
         max_rooms: 4,
         max_members_per_room: 4,
-        max_pending_events: 32,
+        max_pending_events: 64,
+        max_retained_changes,
         ..Limits::default()
     });
     for (id, kind) in [
@@ -34,6 +35,10 @@ fn engine() -> Engine {
             .unwrap();
     }
     engine
+}
+
+fn engine() -> Engine {
+    engine_with_change_limit(32)
 }
 
 fn speak(engine: &mut Engine, room: &str, body: &str) {
@@ -141,8 +146,8 @@ fn feed_is_exclusive_replayable_room_filtered_and_bounded() {
 }
 
 #[test]
-fn acknowledged_prefix_is_an_explicit_gap_requiring_resnapshot() {
-    let mut engine = engine();
+fn delivery_acknowledgement_is_independent_and_change_eviction_is_an_explicit_gap() {
+    let mut engine = engine_with_change_limit(1);
     let alice = ParticipantId::from("alice");
     let alpha = RoomId::from("alpha");
     let position = engine
@@ -151,13 +156,42 @@ fn acknowledged_prefix_is_an_explicit_gap_requiring_resnapshot() {
     speak(&mut engine, "alpha", "change");
     let acknowledged = engine.pending_events().last().unwrap().sequence;
     engine.acknowledge_events(acknowledged).unwrap();
+    assert_eq!(engine.pending_events().len(), 0);
+    let RoomChangeResult::Page(retained) = engine
+        .room_change_page(&alice, &alpha, &position, 1)
+        .unwrap()
+    else {
+        panic!("delivery acknowledgement must not consume pull history");
+    };
+    assert_eq!(retained.changes.len(), 1);
+
+    let checkpoint = engine.prepare_checkpoint(1_000_000).unwrap();
+    engine = Engine::recover_checkpoint(
+        checkpoint.bytes(),
+        RecoveryLimits {
+            max_snapshot_bytes: 1_000_000,
+            maximum_engine_limits: Limits::default(),
+        },
+    )
+    .unwrap();
+    assert_eq!(engine.pending_events().len(), 0);
+    assert_eq!(engine.retained_changes().len(), 1);
+    assert!(matches!(
+        engine
+            .room_change_page(&alice, &alpha, &position, 1)
+            .unwrap(),
+        RoomChangeResult::Page(page) if page.changes.len() == 1
+    ));
+
+    speak(&mut engine, "beta", "evicts the retained alpha change");
+    let discarded = engine.discarded_changes_through().unwrap();
     assert_eq!(
         engine
-            .room_change_page(&alice, &alpha, &position, 4)
+            .room_change_page(&alice, &alpha, &position, 1)
             .unwrap(),
         RoomChangeResult::Gap {
-            cause: RoomChangeGap::Retention {
-                acknowledged_through: acknowledged
+            cause: RoomChangeGap::ChangeRetention {
+                discarded_through: discarded
             },
             current_revision: engine.revision(),
         }
@@ -174,7 +208,7 @@ fn acknowledged_prefix_is_an_explicit_gap_requiring_resnapshot() {
         .unwrap();
     assert!(matches!(
         engine
-            .room_change_page(&alice, &alpha, &resnapshot, 4)
+            .room_change_page(&alice, &alpha, &resnapshot, 1)
             .unwrap(),
         RoomChangeResult::Page(page) if page.changes.is_empty()
     ));

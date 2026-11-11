@@ -18,6 +18,7 @@ pub struct Limits {
     pub max_messages_per_room: usize,
     pub max_topics_per_room: usize,
     pub max_pending_events: usize,
+    pub max_retained_changes: usize,
     pub max_publication_receipts: usize,
     pub max_addressed_participants_per_message: usize,
     pub max_participant_id_bytes: usize,
@@ -40,6 +41,7 @@ impl Default for Limits {
             max_messages_per_room: 1_024,
             max_topics_per_room: 256,
             max_pending_events: 4_096,
+            max_retained_changes: 4_096,
             max_publication_receipts: 4_096,
             max_addressed_participants_per_message: 64,
             max_participant_id_bytes: 128,
@@ -1021,7 +1023,7 @@ impl fmt::Debug for RoomChangePage {
 /// Why a room feed can no longer prove continuous visibility.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RoomChangeGap {
-    Retention { acknowledged_through: EventSequence },
+    ChangeRetention { discarded_through: EventSequence },
     MembershipChanged,
 }
 
@@ -1777,6 +1779,8 @@ pub struct Engine {
     last_published_event: Option<EventSequence>,
     acknowledged_through: Option<EventSequence>,
     pending_events: VecDeque<EventEnvelopeV2>,
+    discarded_changes_through: Option<EventSequence>,
+    retained_changes: VecDeque<EventEnvelopeV2>,
     publications: BTreeMap<PublicationKeyV2, PublicationRecordV2>,
     read_positions: BTreeMap<(ParticipantId, RoomId, ReadScopeV1), ReadPositionV1>,
 }
@@ -1802,6 +1806,8 @@ impl Engine {
             last_published_event: None,
             acknowledged_through: None,
             pending_events: VecDeque::new(),
+            discarded_changes_through: None,
+            retained_changes: VecDeque::new(),
             publications: BTreeMap::new(),
             read_positions: BTreeMap::new(),
         }
@@ -2741,9 +2747,10 @@ impl Engine {
     /// Pulls retained room-scoped events strictly after `position`.
     ///
     /// Reusing the same position returns the same retained prefix. Advancing to
-    /// `page.next` yields no overlap. Global outbox acknowledgement may remove a
-    /// position's required prefix; that is an explicit `Gap`, never an empty
-    /// page that implies continuity.
+    /// `page.next` yields no overlap. Independent bounded change retention may
+    /// remove a position's required prefix; that is an explicit `Gap`, never an
+    /// empty page that implies continuity. Delivery-outbox acknowledgement has
+    /// no effect on this journal.
     pub fn room_change_page(
         &self,
         observer: &ParticipantId,
@@ -2754,7 +2761,7 @@ impl Engine {
         if !self.participants.contains_key(observer) {
             return Err(ObservationRefusal::UnknownParticipant);
         }
-        if limit == 0 || limit > self.limits.max_pending_events {
+        if limit == 0 || limit > self.limits.max_retained_changes {
             return Err(ObservationRefusal::InvalidLimit);
         }
         let room = self
@@ -2774,15 +2781,11 @@ impl Engine {
         if !position_is_canonical || position.observed_revision > self.revision {
             return Err(ObservationRefusal::InconsistentState);
         }
-        if let Some(acknowledged_through) = self.acknowledged_through
-            && position
-                .after
-                .is_none_or(|after| after < acknowledged_through)
+        if let Some(discarded_through) = self.discarded_changes_through
+            && position.after.is_none_or(|after| after < discarded_through)
         {
             return Ok(RoomChangeResult::Gap {
-                cause: RoomChangeGap::Retention {
-                    acknowledged_through,
-                },
+                cause: RoomChangeGap::ChangeRetention { discarded_through },
                 current_revision: self.revision,
             });
         }
@@ -2791,7 +2794,7 @@ impl Engine {
         changes
             .try_reserve_exact(limit)
             .map_err(|_| ObservationRefusal::Capacity)?;
-        for event in &self.pending_events {
+        for event in &self.retained_changes {
             if position.after.is_some_and(|after| event.sequence <= after) {
                 continue;
             }
@@ -2854,6 +2857,14 @@ impl Engine {
 
     pub fn acknowledged_through(&self) -> Option<EventSequence> {
         self.acknowledged_through
+    }
+
+    pub fn retained_changes(&self) -> impl ExactSizeIterator<Item = &EventEnvelopeV2> {
+        self.retained_changes.iter()
+    }
+
+    pub fn discarded_changes_through(&self) -> Option<EventSequence> {
+        self.discarded_changes_through
     }
 
     /// Publishes one message under a durable-store-compatible idempotency key.
@@ -2976,11 +2987,20 @@ impl Engine {
         self.revision = next_revision;
         self.next_event_sequence = next_event_sequence;
         self.last_published_event = Some(event_sequence);
-        self.pending_events.push_back(EventEnvelopeV2 {
+        let event = EventEnvelopeV2 {
             sequence: event_sequence,
             revision: next_revision,
             event,
-        });
+        };
+        self.pending_events.push_back(event.clone());
+        self.retained_changes.push_back(event);
+        while self.retained_changes.len() > self.limits.max_retained_changes {
+            let discarded = self
+                .retained_changes
+                .pop_front()
+                .expect("retained change length exceeded its limit");
+            self.discarded_changes_through = Some(discarded.sequence);
+        }
         Ok(TransitionV2 {
             revision: next_revision,
             event_sequence,
@@ -4215,7 +4235,11 @@ impl Engine {
             revision.body.clear();
             revision.availability = MessageRevisionAvailabilityV1::Tombstoned;
         }
-        for envelope in &mut self.pending_events {
+        for envelope in self
+            .pending_events
+            .iter_mut()
+            .chain(self.retained_changes.iter_mut())
+        {
             match &mut envelope.event {
                 DomainEventV2::MessageAccepted {
                     room_id: event_room,

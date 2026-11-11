@@ -307,6 +307,7 @@ impl ServiceV2 {
                 CapabilityV2::MessageRevisionsV1,
                 CapabilityV2::TopicsV1,
                 CapabilityV2::PrivateReadPositionsV1,
+                CapabilityV2::IndependentChangeRetentionV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -1514,11 +1515,11 @@ impl ServiceV2 {
                 Ok(OutcomeV2::ChangeGap {
                     current_revision: current_revision.0,
                     cause: match cause {
-                        RoomChangeGap::Retention {
-                            acknowledged_through,
-                        } => ChangeGapV2::Retention {
-                            acknowledged_through: acknowledged_through.0,
-                        },
+                        RoomChangeGap::ChangeRetention { discarded_through } => {
+                            ChangeGapV2::ChangeRetention {
+                                discarded_through: discarded_through.0,
+                            }
+                        }
                         RoomChangeGap::MembershipChanged => ChangeGapV2::MembershipChanged,
                     },
                 })
@@ -1770,11 +1771,11 @@ impl ServiceV2 {
                 Ok(OutcomeV2::ChangeGap {
                     current_revision: current_revision.0,
                     cause: match cause {
-                        RoomChangeGap::Retention {
-                            acknowledged_through,
-                        } => ChangeGapV2::Retention {
-                            acknowledged_through: acknowledged_through.0,
-                        },
+                        RoomChangeGap::ChangeRetention { discarded_through } => {
+                            ChangeGapV2::ChangeRetention {
+                                discarded_through: discarded_through.0,
+                            }
+                        }
                         RoomChangeGap::MembershipChanged => ChangeGapV2::MembershipChanged,
                     },
                 })
@@ -1868,11 +1869,11 @@ impl ServiceV2 {
                 Ok(OutcomeV2::ChangeGap {
                     current_revision: current_revision.0,
                     cause: match cause {
-                        RoomChangeGap::Retention {
-                            acknowledged_through,
-                        } => ChangeGapV2::Retention {
-                            acknowledged_through: acknowledged_through.0,
-                        },
+                        RoomChangeGap::ChangeRetention { discarded_through } => {
+                            ChangeGapV2::ChangeRetention {
+                                discarded_through: discarded_through.0,
+                            }
+                        }
                         RoomChangeGap::MembershipChanged => ChangeGapV2::MembershipChanged,
                     },
                 })
@@ -1966,11 +1967,11 @@ impl ServiceV2 {
                 Ok(OutcomeV2::ChangeGap {
                     current_revision: current_revision.0,
                     cause: match cause {
-                        RoomChangeGap::Retention {
-                            acknowledged_through,
-                        } => ChangeGapV2::Retention {
-                            acknowledged_through: acknowledged_through.0,
-                        },
+                        RoomChangeGap::ChangeRetention { discarded_through } => {
+                            ChangeGapV2::ChangeRetention {
+                                discarded_through: discarded_through.0,
+                            }
+                        }
                         RoomChangeGap::MembershipChanged => ChangeGapV2::MembershipChanged,
                     },
                 })

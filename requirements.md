@@ -252,6 +252,15 @@
   host session after EOF, refusal, limit, or transport failure. Existing socket
   paths must fail closed, and teardown may remove only the exact endpoint object
   created by the composition.
+- **R49 — Independent change retention:** every accepted domain event enters
+  both the lossless bounded delivery outbox and a separately bounded recent
+  change journal as one engine transition. A full outbox still backpressures
+  before mutation; journal pressure instead evicts only its oldest observation
+  copy and records the exact discarded edge. Delivery acknowledgment removes no
+  change-journal entry. Pull feeds read only the journal and return a distinct
+  change-retention gap when their exclusive position predates its edge. Both
+  queues, edges, redaction consequences, and live service cursors must recover
+  canonically without turning observation retention into delivery authority.
 
 ## Explicitly open
 

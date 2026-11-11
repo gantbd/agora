@@ -9,7 +9,8 @@ behavior, or wall-clock access.
 The v0.3 core provides bounded deterministic transitions, typed atomic refusal,
 room-local message ordering and retention, optimistic revisions, an ordered
 bounded outbox, replay-safe response publication, private read-position state,
-and canonical profile-13 checkpoints.
+an independently retained recent-change journal, and canonical profile-14
+checkpoints.
 Messages may explicitly address a canonical bounded list of current room members.
 Participant kind never changes admission, role, speaking, or addressing behavior.
 
@@ -20,6 +21,11 @@ interval rather than claiming complete history. A snapshot-aligned bounded room
 change feed continues from a stable event identity and returns explicit retention
 or leave/rejoin gaps requiring resnapshot. Protocol V2 projects these values;
 Protocol V1 remains frozen.
+
+Delivery and pull observation now retain independent copies of the same accepted
+event. Delivery acknowledgment drains only the lossless/backpressured outbox;
+bounded change-journal eviction alone creates a pull-feed retention gap. Both
+suffixes and their distinct edges survive canonical recovery.
 
 An additive Protocol V2 now has a separately typed serialized service, client,
 and canonical version-2 complete-frame codec. It closes participant-bound room creation, invitation, joining,
@@ -79,9 +85,13 @@ thread, and topic markers. The service derives the participant from its client
 binding; an advance changes neither room revision nor room events, but its state
 and exact receipt are durably committed before success is published. Markers do
 not prove delivery, attention, presence, unread policy, or execution.
+The `IndependentChangeRetentionV1` capability states that participant pull feeds
+read a separately bounded recent-change journal. Delivery acknowledgment cannot
+advance its discard edge, and journal eviction never acknowledges delivery.
 
 An independently versioned Service V2 checkpoint preserves the engine, pending
-outbox, client namespace, exact request replies, and live cursor consequences.
+outbox, recent-change journal, client namespace, exact request replies, and live
+cursor consequences.
 `agora-durable` gates changed service state on a durable compare-and-exchange
 receipt, restores known refusals, and fences indeterminate outcomes.
 `agora-storage-directory` supplies one separately qualified physical profile:

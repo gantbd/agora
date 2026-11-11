@@ -21,7 +21,7 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact twelve-package workspace and twenty-eight canonical fixtures.
+closes over the exact twelve-package workspace and twenty-nine canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -207,14 +207,16 @@ network filesystem, backup/restore, encryption, hostile same-UID process, or
 multi-host availability claim follows.
 
 Room change-feed scenarios bind a position to an exact completed snapshot,
-filter stable outbox events by room, replay the same exclusive prefix, advance
-without overlap, and surface both acknowledged-prefix loss and leave/rejoin
-visibility discontinuity as explicit resnapshot gaps. Foreign client/room use,
+filter the independent recent-change journal by room, replay the same exclusive
+prefix, and advance without overlap. Delivery acknowledgment is proven not to
+consume pull history, including across canonical recovery; only journal eviction
+surfaces the exact change-retention gap. Leave/rejoin remains a distinct
+visibility discontinuity requiring resnapshot. Foreign client/room use,
 invalid limits, debug redaction, every truncated private position, canonical
 engine recovery, durable service-cursor recovery, every wire command/outcome/
 room-event/gap variant, nested unknown tags, and frozen legacy-change fixture
 close the represented pull path. They do not establish push delivery, per-client
-event retention, read receipts, presence, or transport reconnection policy.
+retained copies, read receipts, presence, or transport reconnection policy.
 
 The additive identified-change scenarios prove cursor-profile isolation without
 consumption, one stable ID across acceptance, history, feed, checkpoint
@@ -229,7 +231,7 @@ and relationship preservation through withdrawal, redaction, checkpoint, and
 exact replay. All threaded event variants and optional-root tags round-trip;
 semantic page-shape checks, nested unknown tags, every truncation, Debug safety,
 SDK construction, and two canonical wire fixtures close the public profile.
-Canonical profile-13 engine and profile-15 service/host fixtures close recovery.
+Canonical profile-14 engine and profile-16 service/host fixtures close recovery.
 
 Thread lifecycle scenarios prove root-author and owner authority, foreign-author
 refusal, archive reply fencing, reopen admission, current status, exact replay,
@@ -250,7 +252,7 @@ agents, append-only numbering through a fixed saturation ceiling, immutable
 identity/addressing/reply/reaction relations, atomic refusal, revision-bound
 pagination, exact receipt replay, every-feed attribution, recovery continuation,
 and tombstone scrubbing of retained revision and event bodies. Closed protocol,
-wire, Debug, SDK, two canonical frames, and profile-13/15/15 checkpoints close
+wire, Debug, SDK, two canonical frames, and profile-14/16/16 checkpoints close
 the retained short-message correction surface without claiming collaborative
 document editing or physical erasure.
 
@@ -259,15 +261,15 @@ authority without participant-kind privilege, bounded canonical naming and
 capacity, immutable message relation and reply inheritance, topic/profile-bound
 pagination, exact replay, four-profile projection, and cursor continuation after
 recovery. Closed protocol/wire tags, malformed relation checks, Debug/SDK
-construction, expanded capability bytes, and profile-13/15/15 checkpoints close
+construction, expanded capability bytes, and profile-14/16/16 checkpoints close
 the retained topic surface without claiming subscriptions, notifications,
 unread state, workflow resolution, or execution authority.
 
 Private read-position core scenarios prove room/thread/topic scope validation,
 human/agent-neutral self-state, monotone and idempotent advancement, atomic
 stale/regression/target refusal, membership inaccessibility, retention survival,
-and zero domain-revision or outbox effect. Canonical profile-13 engine and
-profile-15 service/host fixtures retain exact markers through nested recovery;
+and zero domain-revision or outbox effect. Canonical profile-14 engine and
+profile-16 service/host fixtures retain exact markers through nested recovery;
 truncation, profile, scope, ceiling, and canonical-state checks remain closed.
 An exhaustive finite model additionally runs every length-three schedule over
 three ordered targets for both participant kinds and all three scope variants,
