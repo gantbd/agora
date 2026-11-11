@@ -517,6 +517,14 @@ safe sanitization or recovers it ordinarily, rotates from the observed prior
 incarnation, completes a fresh handshake, advances client identity, and reads
 the retained room in all four cases. This is inter-step process evidence, not
 intra-operation filesystem fault injection.
+Endpoint-rotation evidence injects `Interrupted` after the next record is
+written, after it is synchronized, after stale-socket removal, and after parent
+synchronization. No injection reports success. Every record is exactly the
+declared next incarnation; the first two states retain the validated old socket
+and the latter two have no socket. All four retry under that recorded
+incarnation to another distinct exact record. A public daemon test binds from
+exact unlocked record plus missing socket, serves a fresh handshake and
+connection with zero prior Host/Service offers, and tears down cleanly.
 
 Room change-feed scenarios bind a position to an exact completed snapshot,
 filter the independent recent-change journal by room, replay the same exclusive

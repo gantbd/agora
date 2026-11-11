@@ -210,8 +210,11 @@ Real process termination at every inter-step boundary makes that partial-state
 risk observable. In particular, an entropy value that was generated but not
 published grants no durable fact, while post-rotation recovery must trust the
 incarnation actually stored in the locked record rather than the operator's
-earlier intent. Internal lifetime-operation faults and hostile alteration remain
-outside this evidence.
+earlier intent. R79 separately injects every mutating lifetime-rotation
+boundary. Record-first ordering prevents old-record/missing-socket residue, and
+exact-record/missing-socket recovery closes the unavoidable post-removal window.
+It still trusts process-visible local filesystem behavior and does not simulate
+controller caches, device power loss, or hostile alteration.
 
 Host persistence binds the verified subject, claimed participant, opaque host
 session, service client and monotone verification time in the same record as all

@@ -1881,6 +1881,54 @@ fn explicit_residue_recovery_rotates_incarnation_without_adopting_runtime_state(
 }
 
 #[test]
+fn exact_missing_socket_rotation_residue_rebinds_without_runtime_adoption() {
+    let path = socket_path();
+    let lock_path = lifetime_path(&path);
+    fs::write(
+        &lock_path,
+        fixture(include_str!("fixtures/lifetime-record-v1.hex")),
+    )
+    .unwrap();
+    fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(!path.exists());
+
+    let daemon = DaemonV1::recover_stale(
+        &path,
+        host(Port::default()),
+        Authentication,
+        Clock(1),
+        incarnation(),
+        next_incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    assert_eq!(daemon.observation().host.open_offers, 0);
+    assert_eq!(daemon.observation().service.connect_offers, 0);
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let result = daemon.serve_next();
+        (result, daemon)
+    });
+    let mut stream = UnixStream::connect(&path).unwrap();
+    assert_eq!(
+        handshake(&mut stream).server_incarnation(),
+        next_incarnation()
+    );
+    write_frame(&mut stream, &connect_frame("alice"));
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Connected(_)
+    ));
+    drop(stream);
+    let (result, daemon) = server.join().unwrap();
+    result.unwrap();
+    drop(daemon);
+    assert!(!path.exists());
+    assert!(!lock_path.exists());
+    remove_parent(&path);
+}
+
+#[test]
 fn request_budget_closes_the_admitted_session_after_its_last_reply() {
     let path = socket_path();
     let daemon = DaemonV1::bind_new(

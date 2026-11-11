@@ -43,9 +43,11 @@ resource still matches; replacement or ambiguity is preserved.
 Crash residue is never repaired by ordinary construction. The separate
 `recover_stale` path requires the exact recorded prior incarnation, a distinct
 nonzero next incarnation, and a newly supplied Host composition. It acquires the
-old record lock, validates the exact record and stale socket, removes only that
-socket, rotates the locked record, and then uses the ordinary bind path. Live,
-foreign, malformed, missing, or unsafe residue refuses without adoption.
+old record lock, validates the exact record and stale socket, synchronizes the
+next locked record, removes only that socket, and then uses the ordinary bind
+path. An absent socket is accepted only beside the exact unlocked record as
+incomplete-rotation residue. Live, foreign, malformed, or unsafe-object residue
+refuses without adoption.
 For the combined durable-collaboration owner,
 `recover_stale_durable_collaboration` accepts a caller-selected owner already
 recovered from its checkpoint store, applies that same exact residue rotation,
@@ -66,6 +68,12 @@ incarnation selection has no persistent effect. After endpoint rotation, OS
 process exit leaves the sanitized store and exact new-incarnation record/socket
 residue. Conservative restart from each class reaches another distinct
 incarnation and a fresh authenticated client without losing the retained room.
+Four deterministic endpoint-rotation interruptions cover next-record write,
+record synchronization, socket removal, and parent synchronization. Each
+returns `Interrupted`, retains the exact next record, and leaves either the old
+validated socket or no socket. Retrying from that recorded incarnation reaches
+a second distinct record in every case. A public daemon scenario separately
+proves exact-record/missing-socket residue rebinds without runtime adoption.
 
 ## Connection state machine
 

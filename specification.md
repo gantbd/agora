@@ -659,11 +659,13 @@ objects are preserved.
 Ordinary construction never consumes residue. Explicit endpoint recovery
 requires the exact previous incarnation, a distinct nonzero next incarnation,
 and a new Host composition. While holding the stale record's exclusive lock, it
-validates the canonical record and mode-0600 socket, removes only that socket,
-rotates and synchronizes the record, and binds through the normal path. A live
-owner, foreign or malformed record, missing or unsafe socket, or incarnation
-reuse refuses without adopting state. An I/O error after mutation is not a
-successful recovery and may require operator inspection.
+validates the canonical record and any mode-0600 socket, publishes and
+synchronizes the next record, removes only that validated socket when present,
+and binds through the normal path. An absent socket is accepted only with the
+exact unlocked record as incomplete-rotation residue. A live owner, foreign or
+malformed record, unsafe socket object, or incarnation reuse refuses without
+adopting state. An I/O error after mutation is not successful recovery; its
+exact record/socket class can be retried from the incarnation actually stored.
 
 Before authentication, the peer sends the exact fixed-width handshake-profile-1
 ClientHello selecting Wire V2. An incompatible hello refuses before

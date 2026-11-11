@@ -180,6 +180,8 @@ not ready for a network service or crates.io release.
   generation, locked endpoint rotation, and a fresh collaboration handshake;
 - real process-cut classification and conservative successful retry after each
   operator-restore boundary, with exact store and endpoint residue evidence;
+- record-first endpoint rotation with four injected persistence boundaries and
+  resumable exact-record/socket-present-or-absent residue classification;
 - snapshot-aligned bounded room pull changes with stable event identity,
   exclusive continuation, explicit retention/leave-rejoin gaps, durable service
   cursors, closed Wire V2 values, and a frozen representative frame;

@@ -114,6 +114,22 @@ impl LifetimeLeaseV1 {
         previous_incarnation: ServerIncarnationV1,
         next_incarnation: ServerIncarnationV1,
     ) -> Result<Self, DaemonErrorV1> {
+        Self::recover_stale_inner(
+            parent_path,
+            socket_path,
+            previous_incarnation,
+            next_incarnation,
+            |_| Ok(()),
+        )
+    }
+
+    fn recover_stale_inner(
+        parent_path: &Path,
+        socket_path: &Path,
+        previous_incarnation: ServerIncarnationV1,
+        next_incarnation: ServerIncarnationV1,
+        mut interrupt: impl FnMut(u8) -> io::Result<()>,
+    ) -> Result<Self, DaemonErrorV1> {
         if previous_incarnation.is_zero()
             || next_incarnation.is_zero()
             || previous_incarnation == next_incarnation
@@ -162,22 +178,33 @@ impl LifetimeLeaseV1 {
             return Err(DaemonErrorV1::ResidueMismatch);
         }
 
-        let socket_metadata =
-            fs::symlink_metadata(socket_path).map_err(|_| DaemonErrorV1::ResidueMismatch)?;
-        if !socket_metadata.file_type().is_socket()
-            || socket_metadata.permissions().mode() & 0o777 != 0o600
-            || socket_metadata.nlink() != 1
-        {
-            return Err(DaemonErrorV1::UnsafeEndpoint);
-        }
-        fs::remove_file(socket_path).map_err(DaemonErrorV1::Io)?;
+        let socket_present = match fs::symlink_metadata(socket_path) {
+            Ok(socket_metadata) => {
+                if !socket_metadata.file_type().is_socket()
+                    || socket_metadata.permissions().mode() & 0o777 != 0o600
+                    || socket_metadata.nlink() != 1
+                {
+                    return Err(DaemonErrorV1::UnsafeEndpoint);
+                }
+                true
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+            Err(error) => return Err(DaemonErrorV1::Io(error)),
+        };
 
         let next_record = record(next_incarnation);
         lock.write_all_at(&next_record, 0)
             .and_then(|()| lock.set_len(next_record.len() as u64))
-            .and_then(|()| lock.sync_all())
-            .and_then(|()| parent.sync_all())
             .map_err(DaemonErrorV1::Io)?;
+        interrupt(1).map_err(DaemonErrorV1::Io)?;
+        lock.sync_all().map_err(DaemonErrorV1::Io)?;
+        interrupt(2).map_err(DaemonErrorV1::Io)?;
+        if socket_present {
+            fs::remove_file(socket_path).map_err(DaemonErrorV1::Io)?;
+        }
+        interrupt(3).map_err(DaemonErrorV1::Io)?;
+        parent.sync_all().map_err(DaemonErrorV1::Io)?;
+        interrupt(4).map_err(DaemonErrorV1::Io)?;
         let lock_identity = ResourceIdentityV1::of(&lock.metadata().map_err(DaemonErrorV1::Io)?);
         Ok(Self {
             parent,
@@ -288,4 +315,77 @@ fn private_regular_file(metadata: &fs::Metadata) -> bool {
     metadata.file_type().is_file()
         && metadata.permissions().mode() & 0o777 == 0o600
         && metadata.nlink() == 1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::DirBuilderExt;
+    use std::os::unix::net::UnixListener;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn paths() -> (PathBuf, PathBuf, PathBuf) {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let parent = std::env::temp_dir().join(format!(
+            "agora-lifetime-interruption-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::DirBuilder::new().mode(0o700).create(&parent).unwrap();
+        let socket = parent.join("agora.sock");
+        let lock = lifetime_path(&socket).unwrap();
+        (parent, socket, lock)
+    }
+
+    fn prepare_residue(socket: &Path, lock: &Path, incarnation: ServerIncarnationV1) {
+        let listener = UnixListener::bind(socket).unwrap();
+        fs::set_permissions(socket, fs::Permissions::from_mode(0o600)).unwrap();
+        drop(listener);
+        fs::write(lock, record(incarnation)).unwrap();
+        fs::set_permissions(lock, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    #[test]
+    fn every_rotation_interruption_is_exact_and_resumable() {
+        let previous = ServerIncarnationV1::new([0xa5; 16]);
+        let published = ServerIncarnationV1::new([0xb6; 16]);
+        let resumed = ServerIncarnationV1::new([0xc7; 16]);
+
+        for selected in 1..=4 {
+            let (parent, socket, lock) = paths();
+            prepare_residue(&socket, &lock, previous);
+            let result = LifetimeLeaseV1::recover_stale_inner(
+                &parent,
+                &socket,
+                previous,
+                published,
+                |point| {
+                    if point == selected {
+                        Err(io::Error::from(io::ErrorKind::Interrupted))
+                    } else {
+                        Ok(())
+                    }
+                },
+            );
+            assert!(
+                matches!(result, Err(DaemonErrorV1::Io(error)) if error.kind() == io::ErrorKind::Interrupted),
+                "point {selected} must not report success"
+            );
+            assert_eq!(fs::read(&lock).unwrap(), record(published));
+            assert_eq!(
+                socket.exists(),
+                selected <= 2,
+                "socket classification mismatch at point {selected}"
+            );
+
+            let lease =
+                LifetimeLeaseV1::recover_stale(&parent, &socket, published, resumed).unwrap();
+            assert!(lease.intact());
+            assert_eq!(fs::read(&lock).unwrap(), record(resumed));
+            assert!(!socket.exists());
+            drop(lease);
+            assert!(!lock.exists());
+            fs::remove_dir(&parent).unwrap();
+        }
+    }
 }

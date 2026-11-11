@@ -364,9 +364,11 @@
   separate caller-selected operation requiring the exact prior incarnation, a
   distinct nonzero next incarnation, and a newly supplied Host composition. It
   must acquire the stale lifetime lock before mutation, refuse a live owner,
-  malformed or foreign record, missing or unsafe socket, and equal incarnation
-  reuse, then remove only the validated stale socket and rotate the locked
-  record before binding the new endpoint. The resulting handshake must expose
+  malformed or foreign record, unsafe socket object, and equal incarnation
+  reuse. An absent socket is admissible only beside the exact unlocked record
+  as incomplete-rotation residue. Recovery must publish and synchronize the
+  next locked record before removing a validated stale socket when present,
+  then bind the new endpoint. The resulting handshake must expose
   the next incarnation and no prior volatile Host state may be adopted
   implicitly. I/O failure may leave operator-requiring residue and must never be
   reported as successful recovery. This grants no automatic restart, entropy
@@ -546,6 +548,15 @@
   the actually recorded incarnation, admit a fresh higher client identity, and
   expose retained conversation state. This does not classify interruption
   inside each filesystem operation or make the steps atomic.
+- **R79 — Endpoint-rotation interruption closure:** deterministic injection
+  after next-record write, next-record synchronization, stale-socket removal,
+  and parent-directory synchronization must never report success. Every result
+  must retain the exact next record under an unlocked private lifetime file;
+  the old validated socket may remain only before removal, and must be absent
+  afterward. Retrying with that exact recorded incarnation and another distinct
+  next incarnation must succeed for every class, including exact record plus
+  missing socket, and must not adopt prior volatile runtime state. This is
+  process-visible filesystem evidence, not device power-loss durability.
 
 ## Explicitly open
 
