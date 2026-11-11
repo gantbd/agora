@@ -42,6 +42,14 @@ fn fixture_engine() -> Engine {
         panic!("topic creation expected");
     };
     engine
+        .apply(CommandV2::RenameTopic {
+            room_id: "room".into(),
+            actor: "human".into(),
+            topic_id,
+            name: "Operations".to_owned(),
+        })
+        .unwrap();
+    engine
         .apply(CommandV2::SpeakInTopic {
             room_id: "room".into(),
             author: "human".into(),
@@ -146,9 +154,9 @@ fn unhex(value: &str) -> Vec<u8> {
 }
 
 #[test]
-fn canonical_v14_checkpoint_is_immutable_and_recovers() {
+fn canonical_v15_checkpoint_is_immutable_and_recovers() {
     let prepared = fixture_engine().prepare_checkpoint(65_536).unwrap();
-    let expected_hex = include_str!("fixtures/checkpoint-v14.hex").trim();
+    let expected_hex = include_str!("fixtures/checkpoint-v15.hex").trim();
     assert_eq!(hex(prepared.bytes()), expected_hex);
 
     let recovered = Engine::recover_checkpoint(
@@ -163,4 +171,21 @@ fn canonical_v14_checkpoint_is_immutable_and_recovers() {
         recovered.prepare_checkpoint(65_536).unwrap().bytes(),
         prepared.bytes()
     );
+
+    let mut broken_history = prepared.bytes().to_vec();
+    let offset = broken_history
+        .windows(b"General".len())
+        .position(|bytes| bytes == b"General")
+        .expect("fixture retains the creation/rename name chain");
+    broken_history[offset] = b'X';
+    assert!(matches!(
+        Engine::recover_checkpoint(
+            &broken_history,
+            RecoveryLimits {
+                max_snapshot_bytes: 65_536,
+                maximum_engine_limits: Default::default(),
+            },
+        ),
+        Err(agora_engine::persistence::CheckpointError::Invalid)
+    ));
 }

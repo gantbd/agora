@@ -23,7 +23,7 @@ The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
 closes over the thirteen-package stable workspace, the standalone fuzz package,
-and thirty-nine canonical fixtures.
+and forty-two canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -560,7 +560,7 @@ and relationship preservation through withdrawal, redaction, checkpoint, and
 exact replay. All threaded event variants and optional-root tags round-trip;
 semantic page-shape checks, nested unknown tags, every truncation, Debug safety,
 SDK construction, and two canonical wire fixtures close the public profile.
-Canonical profile-14 engine and profile-16 service/host fixtures close recovery.
+Canonical profile-15 engine and profile-17 service/host fixtures close recovery.
 
 Thread lifecycle scenarios prove root-author and owner authority, foreign-author
 refusal, archive reply fencing, reopen admission, current status, exact replay,
@@ -581,7 +581,7 @@ agents, append-only numbering through a fixed saturation ceiling, immutable
 identity/addressing/reply/reaction relations, atomic refusal, revision-bound
 pagination, exact receipt replay, every-feed attribution, recovery continuation,
 and tombstone scrubbing of retained revision and event bodies. Closed protocol,
-wire, Debug, SDK, two canonical frames, and profile-14/16/16 checkpoints close
+wire, Debug, SDK, two canonical frames, and profile-15/17/17 checkpoints close
 the retained short-message correction surface without claiming collaborative
 document editing or physical erasure.
 
@@ -590,15 +590,23 @@ authority without participant-kind privilege, bounded canonical naming and
 capacity, immutable message relation and reply inheritance, topic/profile-bound
 pagination, exact replay, four-profile projection, and cursor continuation after
 recovery. Closed protocol/wire tags, malformed relation checks, Debug/SDK
-construction, expanded capability bytes, and profile-14/16/16 checkpoints close
+construction, expanded capability bytes, and profile-15/17/17 checkpoints close
 the retained topic surface without claiming subscriptions, notifications,
 unread state, workflow resolution, or execution authority.
+
+Topic-rename scenarios prove owner/moderator and human/agent-neutral authority,
+atomic same-name/collision/unknown/bounds refusals, stable identity and retained
+message relation, actor derivation, exact replay/conflict behavior, and prior/
+new-name attribution in all four change profiles. Frozen command, receipt, and
+change frames plus profile-15/17/17 engine/service/host fixtures close canonical
+wire and recovery consequences without claiming aliases, move, merge,
+resolution, deletion, subscription, or connector synchronization.
 
 Private read-position core scenarios prove room/thread/topic scope validation,
 human/agent-neutral self-state, monotone and idempotent advancement, atomic
 stale/regression/target refusal, membership inaccessibility, retention survival,
 and zero domain-revision or outbox effect. Canonical profile-14 engine and
-profile-16 service/host fixtures retain exact markers through nested recovery;
+profile-17 service/host fixtures retain exact markers through nested recovery;
 truncation, profile, scope, ceiling, and canonical-state checks remain closed.
 An exhaustive finite model additionally runs every length-three schedule over
 three ordered targets for both participant kinds and all three scope variants,

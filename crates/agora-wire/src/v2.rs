@@ -471,6 +471,18 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             sink.u64(*expected_revision)?;
             sink.text(name)
         }
+        CommandV2::RenameTopic {
+            room_id,
+            expected_revision,
+            topic_id,
+            name,
+        } => {
+            sink.u8(45)?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            encode_topic_id(sink, *topic_id)?;
+            sink.text(name)
+        }
         CommandV2::SpeakInTopic {
             room_id,
             expected_revision,
@@ -982,6 +994,12 @@ fn decode_command(
             scope: decode_read_scope(decoder)?,
             target_message_id: decode_message_id(decoder)?,
         }),
+        45 => Ok(CommandV2::RenameTopic {
+            room_id: read_text(decoder)?,
+            expected_revision: read_u64(decoder)?,
+            topic_id: decode_topic_id(decoder)?,
+            name: read_text(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1095,6 +1113,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::TopicsV1 => 15,
                     CapabilityV2::PrivateReadPositionsV1 => 16,
                     CapabilityV2::IndependentChangeRetentionV1 => 17,
+                    CapabilityV2::TopicRenameV1 => 18,
                 })?;
             }
             Ok(())
@@ -1368,6 +1387,11 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             sink.u64(*revision)?;
             encode_topic_id(sink, *topic_id)
         }
+        OutcomeV2::TopicRenamed { revision, topic_id } => {
+            sink.u8(43)?;
+            sink.u64(*revision)?;
+            encode_topic_id(sink, *topic_id)
+        }
         OutcomeV2::TopicMessageAccepted {
             revision,
             message_id,
@@ -1494,6 +1518,7 @@ fn decode_outcome(
                     15 => CapabilityV2::TopicsV1,
                     16 => CapabilityV2::PrivateReadPositionsV1,
                     17 => CapabilityV2::IndependentChangeRetentionV1,
+                    18 => CapabilityV2::TopicRenameV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -1702,6 +1727,10 @@ fn decode_outcome(
         42 => Ok(OutcomeV2::ReadPositionAdvanced(decode_read_position(
             decoder,
         )?)),
+        43 => Ok(OutcomeV2::TopicRenamed {
+            revision: read_u64(decoder)?,
+            topic_id: decode_topic_id(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -2417,6 +2446,12 @@ fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<()
                 topic_id,
                 name,
             } => encode_topic_created_event(sink, actor_id, *topic_id, name)?,
+            RoomEventV2::TopicRenamed {
+                actor_id,
+                topic_id,
+                previous,
+                name,
+            } => encode_topic_renamed_event(sink, actor_id, *topic_id, previous, name)?,
         }
     }
     sink.u64(page.next.0)?;
@@ -2510,6 +2545,15 @@ fn decode_change_page(
                 RoomEventV2::TopicCreated {
                     actor_id,
                     topic_id,
+                    name,
+                }
+            }
+            18 => {
+                let (actor_id, topic_id, previous, name) = decode_topic_renamed_event(decoder)?;
+                RoomEventV2::TopicRenamed {
+                    actor_id,
+                    topic_id,
+                    previous,
                     name,
                 }
             }
@@ -2667,6 +2711,12 @@ fn encode_identified_change_page(
                 topic_id,
                 name,
             } => encode_topic_created_event(sink, actor_id, *topic_id, name)?,
+            IdentifiedRoomEventV1::TopicRenamed {
+                actor_id,
+                topic_id,
+                previous,
+                name,
+            } => encode_topic_renamed_event(sink, actor_id, *topic_id, previous, name)?,
         }
     }
     sink.u64(page.next.0)?;
@@ -2769,6 +2819,15 @@ fn decode_identified_change_page(
                 IdentifiedRoomEventV1::TopicCreated {
                     actor_id,
                     topic_id,
+                    name,
+                }
+            }
+            18 => {
+                let (actor_id, topic_id, previous, name) = decode_topic_renamed_event(decoder)?;
+                IdentifiedRoomEventV1::TopicRenamed {
+                    actor_id,
+                    topic_id,
+                    previous,
                     name,
                 }
             }
@@ -2926,6 +2985,12 @@ fn encode_threaded_change_page(
                 topic_id,
                 name,
             } => encode_topic_created_event(sink, actor_id, *topic_id, name)?,
+            ThreadedRoomEventV1::TopicRenamed {
+                actor_id,
+                topic_id,
+                previous,
+                name,
+            } => encode_topic_renamed_event(sink, actor_id, *topic_id, previous, name)?,
         }
     }
     sink.u64(page.next.0)?;
@@ -3026,6 +3091,15 @@ fn decode_threaded_change_page(
                 ThreadedRoomEventV1::TopicCreated {
                     actor_id,
                     topic_id,
+                    name,
+                }
+            }
+            18 => {
+                let (actor_id, topic_id, previous, name) = decode_topic_renamed_event(decoder)?;
+                ThreadedRoomEventV1::TopicRenamed {
+                    actor_id,
+                    topic_id,
+                    previous,
                     name,
                 }
             }
@@ -3183,6 +3257,12 @@ fn encode_topic_change_page(
                 topic_id,
                 name,
             } => encode_topic_created_event(sink, actor_id, *topic_id, name)?,
+            TopicRoomEventV1::TopicRenamed {
+                actor_id,
+                topic_id,
+                previous,
+                name,
+            } => encode_topic_renamed_event(sink, actor_id, *topic_id, previous, name)?,
         }
     }
     sink.u64(page.next.0)?;
@@ -3328,6 +3408,15 @@ fn decode_topic_change_page(
                     name,
                 }
             }
+            18 => {
+                let (actor_id, topic_id, previous, name) = decode_topic_renamed_event(decoder)?;
+                TopicRoomEventV1::TopicRenamed {
+                    actor_id,
+                    topic_id,
+                    previous,
+                    name,
+                }
+            }
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(TopicRoomChangeV1 {
@@ -3456,6 +3545,31 @@ fn decode_topic_created_event(
         *byte = read_u8(decoder)?;
     }
     Ok((actor_id, TopicIdV1::new(bytes), read_text(decoder)?))
+}
+
+fn encode_topic_renamed_event(
+    sink: &mut dyn Sink,
+    actor_id: &str,
+    topic_id: TopicIdV1,
+    previous: &str,
+    name: &str,
+) -> Result<(), WireEncodeError> {
+    sink.u8(18)?;
+    sink.text(actor_id)?;
+    encode_topic_id(sink, topic_id)?;
+    sink.text(previous)?;
+    sink.text(name)
+}
+
+fn decode_topic_renamed_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<(String, TopicIdV1, String, String), WireDecodeError> {
+    Ok((
+        read_text(decoder)?,
+        decode_topic_id(decoder)?,
+        read_text(decoder)?,
+        read_text(decoder)?,
+    ))
 }
 
 #[derive(Clone, Copy)]

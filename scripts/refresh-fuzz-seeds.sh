@@ -23,11 +23,11 @@ for fixture in crates/agora-wire/tests/fixtures/*.hex; do
   xxd -r -p "$fixture" >>"$outer_seed_dir/$name.bin"
 done
 
-xxd -r -p tests/fixtures/checkpoint-v14.hex \
-  "$checkpoint_seed_dir/engine-v14.bin"
-xxd -r -p crates/agora-service/tests/fixtures/service-checkpoint-v16.hex \
-  "$checkpoint_seed_dir/service-v16.bin"
-xxd -r -p crates/agora-host/tests/fixtures/host-checkpoint-v16.hex \
-  "$checkpoint_seed_dir/host-v16.bin"
+xxd -r -p tests/fixtures/checkpoint-v15.hex \
+  "$checkpoint_seed_dir/engine-v15.bin"
+xxd -r -p crates/agora-service/tests/fixtures/service-checkpoint-v17.hex \
+  "$checkpoint_seed_dir/service-v17.bin"
+xxd -r -p crates/agora-host/tests/fixtures/host-checkpoint-v17.hex \
+  "$checkpoint_seed_dir/host-v17.bin"
 
 echo 'Refreshed Agora wire, outer-frame, and checkpoint fuzz seeds from canonical fixtures'

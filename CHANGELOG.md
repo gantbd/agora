@@ -278,6 +278,9 @@ follow Semantic Versioning once a public release contract is selected.
 - Added stable room-local topics with opaque identity, role-bound kind-neutral
   creation, immutable message relation and reply inheritance, bounded pages, a
   parallel topic-aware feed, and canonical whole-stack recovery.
+- Added separately negotiated stable topic rename with owner/moderator
+  authority, identity- and relation-preserving semantics, attributable prior and
+  new names in every change profile, exact replay, and canonical recovery.
 
 ### Fixed
 
@@ -291,8 +294,8 @@ follow Semantic Versioning once a public release contract is selected.
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 12, 14,
-  and 14 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 15, 17,
+  and 17 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

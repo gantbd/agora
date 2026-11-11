@@ -238,6 +238,13 @@ root relation; edits, reactions, lifecycle changes, and tombstones cannot move
 messages between topics. Topic identity grants no membership, subscription,
 notification, workflow, or execution authority.
 
+`TopicRenameV1` remains a mutation of that same serialized owner. The service
+derives the actor, the engine admits only current owners/moderators, and the
+transition replaces only the current bounded display name while retaining the
+stable ID and every message relation. Exact replay and profile-isolated change
+positions are checkpointed with the prior/new-name event; capability discovery
+does not authorize the mutation.
+
 ## Private read positions
 
 `PrivateReadPositionsV1` is private current-state projection inside the same

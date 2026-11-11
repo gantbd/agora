@@ -270,6 +270,52 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
     };
     assert_eq!(accepted_topic, topic_id);
 
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                4,
+                CommandV2::RenameTopic {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    topic_id,
+                    name: "operations".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::NotAuthorized)
+    );
+    let rename = request(
+        4,
+        CommandV2::RenameTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 6,
+            topic_id,
+            name: "operations".to_owned(),
+        },
+    );
+    let renamed = ReplyV2::Accepted(OutcomeV2::TopicRenamed {
+        revision: 7,
+        topic_id,
+    });
+    assert_eq!(service.execute(alice, rename.clone()), renamed);
+    assert_eq!(service.execute(alice, rename), renamed);
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                4,
+                CommandV2::RenameTopic {
+                    room_id: "room".to_owned(),
+                    expected_revision: 7,
+                    topic_id,
+                    name: "changed".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::RequestConflict)
+    );
+
     let ReplyV2::Accepted(OutcomeV2::TopicChanges(changes)) = service.execute(
         alice,
         request(
@@ -277,7 +323,7 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
             CommandV2::TopicChanges {
                 room_id: "room".to_owned(),
                 cursor: topic_change_cursor,
-                limit: 2,
+                limit: 3,
             },
         ),
     ) else {
@@ -295,6 +341,18 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
         agora_protocol::v2::TopicRoomEventV1::MessageAccepted(message)
             if message.topic_id == Some(topic_id) && message.message_id == message_id
     ));
+    assert!(matches!(
+        &changes.changes[2].event,
+        agora_protocol::v2::TopicRoomEventV1::TopicRenamed {
+            actor_id,
+            topic_id: event_topic,
+            previous,
+            name,
+        } if actor_id == "alice"
+            && *event_topic == topic_id
+            && previous == "incidents"
+            && name == "operations"
+    ));
 
     let ReplyV2::Accepted(OutcomeV2::Topics(topics)) = service.execute(
         alice,
@@ -311,6 +369,7 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
     };
     assert_eq!(topics.topics.len(), 1);
     assert_eq!(topics.topics[0].topic_id, topic_id);
+    assert_eq!(topics.topics[0].name, "operations");
     assert_eq!(topics.topics[0].creator_id, "alice");
 
     let ReplyV2::Accepted(OutcomeV2::TopicMessages(messages)) = service.execute(
@@ -339,7 +398,7 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
                 3,
                 CommandV2::SpeakInTopic {
                     room_id: "room".to_owned(),
-                    expected_revision: 6,
+                    expected_revision: 7,
                     topic_id: TopicIdV1::new([0xff; 16]),
                     logical_time: 8,
                     body: "missing".to_owned(),
@@ -349,7 +408,7 @@ fn v2_topics_are_kind_neutral_idempotent_bounded_and_relation_preserving() {
         ),
         ReplyV2::Refused(RefusalV2::UnknownTopic)
     );
-    assert_eq!(service.engine().revision().0, 6);
+    assert_eq!(service.engine().revision().0, 7);
 }
 
 #[test]
@@ -2651,11 +2710,8 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 17);
-    assert_eq!(
-        capabilities.last(),
-        Some(&CapabilityV2::IndependentChangeRetentionV1)
-    );
+    assert_eq!(capabilities.len(), 18);
+    assert_eq!(capabilities.last(), Some(&CapabilityV2::TopicRenameV1));
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

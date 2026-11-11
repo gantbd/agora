@@ -103,8 +103,11 @@ topic-scoped message, and cursor/feed consequences.
 
 ## Nonclaims
 
-`TopicsV1` does not establish rename, move, merge, resolve, deletion, tags,
+`TopicsV1` itself does not establish rename, move, merge, resolve, deletion, tags,
 categories, forums, spaces, organizations, topic-specific membership,
 subscriptions, notifications, unread state, presence, delivery, attention,
 workflow admission, task completion, agent activation, search, or connector
 parity. Those require later profiles or product/orchestration policy.
+
+Topic rename is now defined by the separate `TopicRenameV1` decision in
+`adr-topic-rename.md`; the remaining exclusions above are unchanged.

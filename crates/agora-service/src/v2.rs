@@ -308,6 +308,7 @@ impl ServiceV2 {
                 CapabilityV2::TopicsV1,
                 CapabilityV2::PrivateReadPositionsV1,
                 CapabilityV2::IndependentChangeRetentionV1,
+                CapabilityV2::TopicRenameV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::Members {
@@ -433,6 +434,20 @@ impl ServiceV2 {
                 EngineCommand::CreateTopic {
                     room_id: RoomId::new(room_id),
                     actor: participant.clone(),
+                    name: name.clone(),
+                },
+            ),
+            CommandV2::RenameTopic {
+                room_id,
+                expected_revision,
+                topic_id,
+                name,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::RenameTopic {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    topic_id: agora_engine::TopicId::from_bytes(topic_id.into_bytes()),
                     name: name.clone(),
                 },
             ),
@@ -842,6 +857,10 @@ impl ServiceV2 {
                 })
             }
             EngineOutcome::TopicCreated { topic_id, .. } => Ok(OutcomeV2::TopicCreated {
+                revision,
+                topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            }),
+            EngineOutcome::TopicRenamed { topic_id, .. } => Ok(OutcomeV2::TopicRenamed {
                 revision,
                 topic_id: TopicIdV1::new(topic_id.into_bytes()),
             }),
@@ -1560,6 +1579,18 @@ impl ServiceV2 {
                                 topic_id: TopicIdV1::new(topic_id.into_bytes()),
                                 name,
                             },
+                            agora_engine::DomainEventV2::TopicRenamed {
+                                actor,
+                                topic_id,
+                                previous,
+                                name,
+                                ..
+                            } => RoomEventV2::TopicRenamed {
+                                actor_id: actor.as_str().to_owned(),
+                                topic_id: TopicIdV1::new(topic_id.into_bytes()),
+                                previous,
+                                name,
+                            },
                             agora_engine::DomainEventV2::InvitationRecorded {
                                 participant, ..
                             } => RoomEventV2::InvitationRecorded {
@@ -2091,7 +2122,8 @@ impl ServiceV2 {
             CommandV2::CreateRoom { room_id, name, .. } => {
                 valid_room(room_id) && valid_text(name, self.limits.max_room_name_bytes)
             }
-            CommandV2::CreateTopic { room_id, name, .. } => {
+            CommandV2::CreateTopic { room_id, name, .. }
+            | CommandV2::RenameTopic { room_id, name, .. } => {
                 valid_room(room_id) && valid_text(name, self.limits.max_room_name_bytes)
             }
             CommandV2::Invite {
@@ -2343,6 +2375,18 @@ fn map_identified_room_event(
             topic_id: TopicIdV1::new(topic_id.into_bytes()),
             name,
         },
+        agora_engine::DomainEventV2::TopicRenamed {
+            actor,
+            topic_id,
+            previous,
+            name,
+            ..
+        } => IdentifiedRoomEventV1::TopicRenamed {
+            actor_id: actor.as_str().to_owned(),
+            topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            previous,
+            name,
+        },
         agora_engine::DomainEventV2::InvitationRecorded { participant, .. } => {
             IdentifiedRoomEventV1::InvitationRecorded {
                 participant_id: participant.as_str().to_owned(),
@@ -2505,6 +2549,18 @@ fn map_threaded_room_event(
             topic_id: TopicIdV1::new(topic_id.into_bytes()),
             name,
         },
+        agora_engine::DomainEventV2::TopicRenamed {
+            actor,
+            topic_id,
+            previous,
+            name,
+            ..
+        } => ThreadedRoomEventV1::TopicRenamed {
+            actor_id: actor.as_str().to_owned(),
+            topic_id: TopicIdV1::new(topic_id.into_bytes()),
+            previous,
+            name,
+        },
         agora_engine::DomainEventV2::InvitationRecorded { participant, .. } => {
             ThreadedRoomEventV1::InvitationRecorded {
                 participant_id: participant.as_str().to_owned(),
@@ -2661,6 +2717,17 @@ fn map_topic_room_event(event: agora_engine::DomainEventV2) -> Result<TopicRoomE
         } => TopicRoomEventV1::TopicCreated {
             actor_id,
             topic_id,
+            name,
+        },
+        ThreadedRoomEventV1::TopicRenamed {
+            actor_id,
+            topic_id,
+            previous,
+            name,
+        } => TopicRoomEventV1::TopicRenamed {
+            actor_id,
+            topic_id,
+            previous,
             name,
         },
         ThreadedRoomEventV1::InvitationRecorded { participant_id } => {

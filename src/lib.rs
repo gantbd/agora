@@ -1203,6 +1203,7 @@ impl CommandV2 {
             Self::WithdrawMessage { .. } => Some(RoomActionV1::WithdrawOwn),
             Self::RedactMessage { .. } => Some(RoomActionV1::RedactAny),
             Self::CreateTopic { .. } => Some(RoomActionV1::ManageTopics),
+            Self::RenameTopic { .. } => Some(RoomActionV1::ManageTopics),
         }
     }
 }
@@ -1288,6 +1289,12 @@ pub enum CommandV2 {
     CreateTopic {
         room_id: RoomId,
         actor: ParticipantId,
+        name: String,
+    },
+    RenameTopic {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
         name: String,
     },
     SpeakInTopic {
@@ -1390,6 +1397,13 @@ pub enum OutcomeV2 {
         room_id: RoomId,
         actor: ParticipantId,
         topic_id: TopicId,
+        name: String,
+    },
+    TopicRenamed {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        previous: String,
         name: String,
     },
     TopicMessageAccepted {
@@ -1615,6 +1629,13 @@ pub enum DomainEventV2 {
         topic_id: TopicId,
         name: String,
     },
+    TopicRenamed {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        previous: String,
+        name: String,
+    },
     InvitationRecorded {
         room_id: RoomId,
         participant: ParticipantId,
@@ -1709,6 +1730,7 @@ impl DomainEventV2 {
             Self::ParticipantRegistered { .. } => None,
             Self::RoomCreated { room_id, .. }
             | Self::TopicCreated { room_id, .. }
+            | Self::TopicRenamed { room_id, .. }
             | Self::InvitationRecorded { room_id, .. }
             | Self::ParticipantJoined { room_id, .. }
             | Self::ParticipantLeft { room_id, .. }
@@ -3118,6 +3140,12 @@ impl Engine {
                 actor,
                 name,
             } => self.create_topic(room_id, actor, name),
+            CommandV2::RenameTopic {
+                room_id,
+                actor,
+                topic_id,
+                name,
+            } => self.rename_topic(room_id, actor, topic_id, name),
             CommandV2::SpeakInTopic {
                 room_id,
                 author,
@@ -3218,6 +3246,22 @@ impl Engine {
                 room_id: room_id.clone(),
                 actor: actor.clone(),
                 topic_id: *topic_id,
+                name: name.clone(),
+            },
+            (
+                CommandV2::RenameTopic { .. },
+                OutcomeV2::TopicRenamed {
+                    room_id,
+                    actor,
+                    topic_id,
+                    previous,
+                    name,
+                },
+            ) => DomainEventV2::TopicRenamed {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                topic_id: *topic_id,
+                previous: previous.clone(),
                 name: name.clone(),
             },
             (
@@ -3847,6 +3891,47 @@ impl Engine {
             room_id,
             actor,
             topic_id,
+            name,
+        })
+    }
+
+    fn rename_topic(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        name: String,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_nonempty_bounded(
+            &name,
+            self.limits.max_topic_name_bytes,
+            Refusal::InvalidTopicName,
+        )?;
+        let room = self.room_ref(&room_id)?;
+        if !matches!(
+            room.members.get(&actor),
+            Some(Role::Owner | Role::Moderator)
+        ) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        let topic = room.topics.get(&topic_id).ok_or(Refusal::UnknownTopic)?;
+        if topic.name == name || room.topics.values().any(|topic| topic.name == name) {
+            return Err(Refusal::DuplicateTopicName);
+        }
+        let previous = topic.name.clone();
+        self.rooms
+            .get_mut(&room_id)
+            .expect("room established by validation")
+            .topics
+            .get_mut(&topic_id)
+            .expect("topic established by validation")
+            .name
+            .clone_from(&name);
+        Ok(OutcomeV2::TopicRenamed {
+            room_id,
+            actor,
+            topic_id,
+            previous,
             name,
         })
     }

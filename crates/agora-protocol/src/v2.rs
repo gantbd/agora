@@ -243,6 +243,12 @@ pub enum CommandV2 {
         expected_revision: u64,
         name: String,
     },
+    RenameTopic {
+        room_id: String,
+        expected_revision: u64,
+        topic_id: TopicIdV1,
+        name: String,
+    },
     SpeakInTopic {
         room_id: String,
         expected_revision: u64,
@@ -753,6 +759,18 @@ impl fmt::Debug for CommandV2 {
                 .field("expected_revision", expected_revision)
                 .field("name_bytes", &name.len())
                 .finish(),
+            Self::RenameTopic {
+                room_id,
+                expected_revision,
+                topic_id,
+                name,
+            } => formatter
+                .debug_struct("RenameTopic")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("topic_id", topic_id)
+                .field("name_bytes", &name.len())
+                .finish(),
             Self::SpeakInTopic {
                 room_id,
                 expected_revision,
@@ -811,6 +829,7 @@ pub enum CapabilityV2 {
     TopicsV1,
     PrivateReadPositionsV1,
     IndependentChangeRetentionV1,
+    TopicRenameV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -1249,6 +1268,12 @@ pub enum RoomEventV2 {
         topic_id: TopicIdV1,
         name: String,
     },
+    TopicRenamed {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous: String,
+        name: String,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1331,6 +1356,17 @@ impl fmt::Debug for RoomEventV2 {
             Self::TopicCreated { actor_id, name, .. } => formatter
                 .debug_struct("TopicCreated")
                 .field("actor_id_bytes", &actor_id.len())
+                .field("name_bytes", &name.len())
+                .finish_non_exhaustive(),
+            Self::TopicRenamed {
+                actor_id,
+                previous,
+                name,
+                ..
+            } => formatter
+                .debug_struct("TopicRenamed")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("previous_bytes", &previous.len())
                 .field("name_bytes", &name.len())
                 .finish_non_exhaustive(),
             Self::InvitationRecorded { participant_id }
@@ -1468,6 +1504,12 @@ pub enum IdentifiedRoomEventV1 {
         topic_id: TopicIdV1,
         name: String,
     },
+    TopicRenamed {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous: String,
+        name: String,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1550,6 +1592,17 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
             Self::TopicCreated { actor_id, name, .. } => formatter
                 .debug_struct("TopicCreated")
                 .field("actor_id_bytes", &actor_id.len())
+                .field("name_bytes", &name.len())
+                .finish_non_exhaustive(),
+            Self::TopicRenamed {
+                actor_id,
+                previous,
+                name,
+                ..
+            } => formatter
+                .debug_struct("TopicRenamed")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("previous_bytes", &previous.len())
                 .field("name_bytes", &name.len())
                 .finish_non_exhaustive(),
             Self::InvitationRecorded { participant_id }
@@ -1687,6 +1740,12 @@ pub enum ThreadedRoomEventV1 {
         topic_id: TopicIdV1,
         name: String,
     },
+    TopicRenamed {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous: String,
+        name: String,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1769,6 +1828,17 @@ impl fmt::Debug for ThreadedRoomEventV1 {
             Self::TopicCreated { actor_id, name, .. } => formatter
                 .debug_struct("TopicCreated")
                 .field("actor_id_bytes", &actor_id.len())
+                .field("name_bytes", &name.len())
+                .finish_non_exhaustive(),
+            Self::TopicRenamed {
+                actor_id,
+                previous,
+                name,
+                ..
+            } => formatter
+                .debug_struct("TopicRenamed")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("previous_bytes", &previous.len())
                 .field("name_bytes", &name.len())
                 .finish_non_exhaustive(),
             Self::InvitationRecorded { participant_id }
@@ -1906,6 +1976,12 @@ pub enum TopicRoomEventV1 {
         topic_id: TopicIdV1,
         name: String,
     },
+    TopicRenamed {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        previous: String,
+        name: String,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1993,6 +2069,18 @@ impl fmt::Debug for TopicRoomEventV1 {
                 .debug_struct("TopicCreated")
                 .field("actor_id_bytes", &actor_id.len())
                 .field("topic_id", topic_id)
+                .field("name_bytes", &name.len())
+                .finish(),
+            Self::TopicRenamed {
+                actor_id,
+                topic_id,
+                previous,
+                name,
+            } => formatter
+                .debug_struct("TopicRenamed")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("previous_bytes", &previous.len())
                 .field("name_bytes", &name.len())
                 .finish(),
             Self::InvitationRecorded { participant_id }
@@ -2361,6 +2449,10 @@ pub enum OutcomeV2 {
         message_revision: u32,
     },
     TopicCreated {
+        revision: u64,
+        topic_id: TopicIdV1,
+    },
+    TopicRenamed {
         revision: u64,
         topic_id: TopicIdV1,
     },

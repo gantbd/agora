@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 const MAGIC: &[u8; 8] = b"AGORASV\0";
-const VERSION: u8 = 16;
+const VERSION: u8 = 17;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ServiceCheckpointScopeV1([u8; 16]);

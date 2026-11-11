@@ -343,6 +343,12 @@ room/observer/topic/revision/profile, and cross-profile substitution fails
 closed. Retention may remove every topic message while leaving the topic and its
 ordered creation fact; deployments must not infer completeness or resolution
 from an empty page.
+Rename preserves the same stable ID and every message relation, but exposes both
+prior and new names in retained change history. Owners and moderators therefore
+must treat both values as sensitive metadata. Collision, same-name, stale,
+unknown-topic, invalid-name, and unauthorized attempts are validate-before-
+mutate refusals. Capability discovery and knowledge of a topic ID remain
+non-authorizing.
 
 Private read positions are sensitive behavioral metadata even though they prove
 neither delivery nor attention. The engine exposes only the actor-keyed marker

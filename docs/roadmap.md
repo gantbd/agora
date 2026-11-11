@@ -4,8 +4,9 @@
    coverage-guided fuzzing, filesystem interruption, and commit-pinned local
    release qualification with broader command models plus repeated remote and
    supported-host campaigns.
-2. Extend the implemented stable-topic substrate only through separately
-   decided rename, move, merge, resolution, and conversation-collection laws.
+2. Extend the implemented stable-topic and separately negotiated rename
+   substrate only through separately decided move, merge, resolution, and
+   conversation-collection laws.
 3. Extend the qualified local exact-record offline backup/restore mechanism with
    real device/power-loss campaigns, authenticated/encrypted transport,
    retention and rollback policy, then qualify upgrade/rollback and an

@@ -150,7 +150,7 @@ fn populated() -> (
                 CommandV2::CreateTopic {
                     room_id: "alpha".to_owned(),
                     expected_revision: 9,
-                    name: "operations".to_owned(),
+                    name: "alerts".to_owned(),
                 },
             ),
         ),
@@ -177,6 +177,21 @@ fn populated() -> (
             ReplyV2::Accepted(OutcomeV2::TopicMessageAccepted { .. })
         ));
     }
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                107,
+                CommandV2::RenameTopic {
+                    room_id: "alpha".to_owned(),
+                    expected_revision: 12,
+                    topic_id,
+                    name: "operations".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicRenamed { revision: 13, .. })
+    ));
     let ReplyV2::Accepted(OutcomeV2::Topics(topic_page)) = service.execute(
         alice,
         request(
@@ -213,11 +228,11 @@ fn populated() -> (
                 106,
                 CommandV2::OpenTopicChanges {
                     room_id: "alpha".to_owned(),
-                    observed_revision: 12,
+                    observed_revision: 13,
                 },
             ),
         ),
-        ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision: 12, .. })
+        ReplyV2::Accepted(OutcomeV2::ChangesOpened { revision: 13, .. })
     ));
     let ReplyV2::Accepted(OutcomeV2::Rooms(page)) = service.execute(
         alice,
@@ -244,7 +259,7 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v16.hex").trim();
+    let fixture = include_str!("fixtures/service-checkpoint-v17.hex").trim();
     let actual = checkpoint
         .bytes()
         .iter()
@@ -363,7 +378,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 17;
+    future[8] = 18;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile
@@ -1625,6 +1640,28 @@ fn topic_change_position_continues_after_recovery_with_topic_identity() {
     ) else {
         panic!("topic creation expected");
     };
+    let rename = request(
+        4,
+        CommandV2::RenameTopic {
+            room_id: "room".to_owned(),
+            expected_revision: 3,
+            topic_id,
+            name: "operations".to_owned(),
+        },
+    );
+    let renamed = recovered.execute(alice, rename.clone());
+    assert_eq!(
+        renamed,
+        ReplyV2::Accepted(OutcomeV2::TopicRenamed {
+            revision: 4,
+            topic_id,
+        })
+    );
+    let renamed_checkpoint = recovered.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered =
+        ServiceV2::recover_checkpoint(renamed_checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(alice, rename), renamed);
+
     let ReplyV2::Accepted(OutcomeV2::TopicChanges(page)) = recovered.execute(
         alice,
         request(
@@ -1632,7 +1669,7 @@ fn topic_change_position_continues_after_recovery_with_topic_identity() {
             CommandV2::TopicChanges {
                 room_id: "room".to_owned(),
                 cursor,
-                limit: 1,
+                limit: 2,
             },
         ),
     ) else {
@@ -1645,6 +1682,33 @@ fn topic_change_position_continues_after_recovery_with_topic_identity() {
             ..
         } if *event_topic == topic_id
     ));
+    assert!(matches!(
+        &page.changes[1].event,
+        agora_protocol::v2::TopicRoomEventV1::TopicRenamed {
+            actor_id,
+            topic_id: event_topic,
+            previous,
+            name,
+        } if actor_id == "alice"
+            && *event_topic == topic_id
+            && previous == "incidents"
+            && name == "operations"
+    ));
+    let ReplyV2::Accepted(OutcomeV2::Topics(topics)) = recovered.execute(
+        alice,
+        request(
+            5,
+            CommandV2::Topics {
+                room_id: "room".to_owned(),
+                cursor: None,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("recovered topic page expected");
+    };
+    assert_eq!(topics.topics[0].topic_id, topic_id);
+    assert_eq!(topics.topics[0].name, "operations");
 }
 
 #[test]

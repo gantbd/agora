@@ -102,6 +102,94 @@ fn topic_identity_and_creation_authority_are_bounded_kind_neutral_and_atomic() {
 }
 
 #[test]
+fn topic_rename_preserves_identity_and_relations_with_bounded_authority() {
+    let mut engine = setup(Limits {
+        max_topic_name_bytes: 8,
+        ..Limits::default()
+    });
+    let topic = create_topic(&mut engine, "owner", "general");
+    create_topic(&mut engine, "owner", "ops");
+    let OutcomeV2::TopicMessageAccepted { sequence, .. } = engine
+        .apply(CommandV2::SpeakInTopic {
+            room_id: "room".into(),
+            author: "agent".into(),
+            topic_id: topic,
+            at: LogicalTime(1),
+            body: "retained".to_owned(),
+            addressed_to: vec![],
+        })
+        .unwrap()
+    else {
+        panic!("topic message expected");
+    };
+    assert!(matches!(
+        engine.apply(CommandV2::RenameTopic {
+            room_id: "room".into(),
+            actor: "member".into(),
+            topic_id: topic,
+            name: "chat".to_owned(),
+        }),
+        Err(Refusal::NotAuthorized(_))
+    ));
+    engine
+        .apply(CommandV2::SetRole {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            participant: "agent".into(),
+            role: Role::Moderator,
+        })
+        .unwrap();
+
+    let renamed = engine
+        .apply(CommandV2::RenameTopic {
+            room_id: "room".into(),
+            actor: "agent".into(),
+            topic_id: topic,
+            name: "chat".to_owned(),
+        })
+        .unwrap();
+    assert!(matches!(
+        renamed,
+        OutcomeV2::TopicRenamed {
+            topic_id,
+            ref previous,
+            ref name,
+            ..
+        } if topic_id == topic && previous == "general" && name == "chat"
+    ));
+    assert_eq!(engine.topic(&"room".into(), topic).unwrap().name(), "chat");
+    assert_eq!(
+        engine.message(&"room".into(), sequence).unwrap().topic_id(),
+        Some(topic)
+    );
+
+    let revision = engine.revision();
+    let event_count = engine.pending_events().count();
+    for (topic_id, name, refusal) in [
+        (topic, "chat", Refusal::DuplicateTopicName),
+        (topic, "ops", Refusal::DuplicateTopicName),
+        (topic, "too-long-name", Refusal::InvalidTopicName),
+        (
+            agora_engine::TopicId::from_bytes([0xff; 16]),
+            "other",
+            Refusal::UnknownTopic,
+        ),
+    ] {
+        assert_eq!(
+            engine.apply(CommandV2::RenameTopic {
+                room_id: "room".into(),
+                actor: "owner".into(),
+                topic_id,
+                name: name.to_owned(),
+            }),
+            Err(refusal)
+        );
+        assert_eq!(engine.revision(), revision);
+        assert_eq!(engine.pending_events().count(), event_count);
+    }
+}
+
+#[test]
 fn topic_messages_preserve_relation_through_replies_edits_reactions_and_tombstones() {
     let mut engine = setup(Limits::default());
     let topic = create_topic(&mut engine, "owner", "general");

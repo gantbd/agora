@@ -173,6 +173,20 @@ impl Writer {
                 self.raw(&topic_id.into_bytes())?;
                 self.text(name)
             }
+            DomainEventV2::TopicRenamed {
+                room_id,
+                actor,
+                topic_id,
+                previous,
+                name,
+            } => {
+                self.byte(17)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&topic_id.into_bytes())?;
+                self.text(previous)?;
+                self.text(name)
+            }
             DomainEventV2::InvitationRecorded {
                 room_id,
                 participant,
@@ -595,6 +609,13 @@ impl<'a> Reader<'a> {
                 topic_id: TopicId::from_bytes(self.fixed()?),
                 name: self.text(l.max_topic_name_bytes)?,
             },
+            17 => DomainEventV2::TopicRenamed {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                topic_id: TopicId::from_bytes(self.fixed()?),
+                previous: self.text(l.max_topic_name_bytes)?,
+                name: self.text(l.max_topic_name_bytes)?,
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -703,7 +724,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(14)?;
+        w.byte(15)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -829,7 +850,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 14 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 15 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -1924,6 +1945,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             }
         }
     }
+    validate_topic_event_history(e, &e.pending_events)?;
     for (i, envelope) in e.retained_changes.iter().enumerate() {
         if envelope.sequence.0 != first_retained_change + i as u64
             || envelope.revision.0 != envelope.sequence.0 + 1
@@ -1960,6 +1982,58 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             }
         }
     }
+    validate_topic_event_history(e, &e.retained_changes)?;
+    Ok(())
+}
+
+fn validate_topic_event_history(
+    engine: &Engine,
+    events: &VecDeque<EventEnvelopeV2>,
+) -> Result<(), CheckpointError> {
+    let mut names = BTreeMap::<(RoomId, TopicId), String>::new();
+    for envelope in events {
+        match &envelope.event {
+            DomainEventV2::TopicCreated {
+                room_id,
+                topic_id,
+                name,
+                ..
+            } => match names.entry((room_id.clone(), *topic_id)) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(name.clone());
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    return Err(CheckpointError::Invalid);
+                }
+            },
+            DomainEventV2::TopicRenamed {
+                room_id,
+                topic_id,
+                previous,
+                name,
+                ..
+            } => {
+                let current = names
+                    .entry((room_id.clone(), *topic_id))
+                    .or_insert_with(|| previous.clone());
+                if current != previous {
+                    return Err(CheckpointError::Invalid);
+                }
+                current.clone_from(name);
+            }
+            _ => {}
+        }
+    }
+    for ((room_id, topic_id), name) in names {
+        let topic = engine
+            .rooms
+            .get(&room_id)
+            .and_then(|room| room.topics.get(&topic_id))
+            .ok_or(CheckpointError::Invalid)?;
+        if topic.name != name {
+            return Err(CheckpointError::Invalid);
+        }
+    }
     Ok(())
 }
 fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointError> {
@@ -1994,7 +2068,22 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             participant(actor)?;
             bounded(name, e.limits.max_topic_name_bytes)?;
             let topic = r.topics.get(topic_id).ok_or(CheckpointError::Invalid)?;
-            if topic.creator != *actor || topic.name != *name {
+            if topic.creator != *actor {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::TopicRenamed {
+            room_id,
+            actor,
+            topic_id,
+            previous,
+            name,
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            bounded(previous, e.limits.max_topic_name_bytes)?;
+            bounded(name, e.limits.max_topic_name_bytes)?;
+            if previous == name || !r.topics.contains_key(topic_id) {
                 return Err(CheckpointError::Invalid);
             }
         }

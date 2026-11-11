@@ -7,6 +7,7 @@ use agora_protocol::v2::{
     ReadPositionV1, ReadScopeV1, ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
     RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1,
     ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
+    TopicIdV1,
 };
 
 #[test]
@@ -143,6 +144,12 @@ fn v2_debug_output_is_content_safe() {
             observed_revision: 60,
             scope: ReadScopeV1::Room,
             target_message_id: MessageIdV1::new([0x71; 16]),
+        },
+        CommandV2::RenameTopic {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 61,
+            topic_id: TopicIdV1::new([0x72; 16]),
+            name: "secret-topic-name".to_owned(),
         },
     ];
     let replies = [
@@ -419,6 +426,21 @@ fn v2_debug_output_is_content_safe() {
             next: PageCursorV2(44),
             has_more: false,
         })),
+        ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 61,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 60,
+                revision: 61,
+                event: RoomEventV2::TopicRenamed {
+                    actor_id: "secret-actor".to_owned(),
+                    topic_id: TopicIdV1::new([0x72; 16]),
+                    previous: "secret-prior-topic".to_owned(),
+                    name: "secret-topic-name".to_owned(),
+                },
+            }],
+            next: PageCursorV2(62),
+            has_more: false,
+        })),
     ];
     let rendered = format!("{commands:?} {replies:?} {:?}", PageCursorV2(42));
     for secret in [
@@ -435,6 +457,8 @@ fn v2_debug_output_is_content_safe() {
         "secret-reaction",
         "secret-editor",
         "secret-revision-body",
+        "secret-prior-topic",
+        "secret-topic-name",
         "42",
         "43",
         "44",
