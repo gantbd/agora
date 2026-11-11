@@ -128,14 +128,15 @@ retained-root, and stable-topic targets. It revalidates the target at both
 publication and observation, rejects replies as thread roots, binds cursors to
 the exact target and snapshot, and permits bounded lifecycle cleanup even after
 the target disappears or generation fidelity is exhausted. Restart projects all
-participants inactive. This owner is not yet reachable through Host or wire, and
-an active typing projection remains only an expiring collaboration hint—not
+participants inactive. The authenticated Host derives its source, retires it
+with presence on session loss, and binds its public cursor to session, room,
+target, snapshot, and age. An active typing projection remains only an expiring collaboration hint—not
 proof of attention, intent, authorship, execution, or agent activation.
 
 The unadvertised public transient handler adds one exact semantic replay receipt
 and one live cursor token per authenticated Host session. Equal request replay
-cannot reapply a presence mutation; changed input and skipped identities refuse.
-Cursor tokens are opaque, session/room bound, single-chain, and age bounded;
+cannot reapply a presence or typing mutation; changed input and skipped identities refuse.
+Cursor tokens are opaque, session/room/target where applicable, single-chain, and age bounded;
 current authentication time is distinct from the earlier bounded snapshot time.
 Every authenticated offer advances the wrapper's monotone transient clock even
 when decoding or semantics refuse, preventing a second session from using a

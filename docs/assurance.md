@@ -103,24 +103,24 @@ membership reconciliation; restart-to-inactive projection; and content-safe
 diagnostics. Generation exhaustion fences publication and observation before
 mutation while lifecycle cleanup remains available.
 
-Five Host-composition scenarios bind that owner to authenticated sessions and
+Ten Host-composition scenarios bind both owners to authenticated sessions and
 qualified Host time. They cover participant-neutral publication and observation,
-close/revocation/time-regression retirement before refusal, leave reconciliation
-before its accepted reply and no rejoin resurrection, bounded expiry, and
-wrapper reconstruction to `Unknown`. The presence/typing Protocol/Wire grammar
+exact public replay/conflict/sequence, close/revocation/time-regression retirement
+before refusal, leave reconciliation before its accepted reply and no rejoin
+resurrection, bounded expiry, wrapper reconstruction to `Unknown`/inactive, and
+session/room/target/snapshot/age cursor binding. The presence/typing Protocol/Wire grammar
 now has exhaustive value round trips, canonical shape and ordering checks, four
 frozen frames, content-safe Debug, and deterministic
-truncation/trailing/single-bit mutation closure. Authenticated public Host
-composition for typing, typing client closure, transport
-replay-epoch binding, and end-to-end local-daemon evidence remain open under
-R62.
+truncation/trailing/single-bit mutation closure. Transport replay-epoch binding
+and end-to-end local-daemon evidence remain open under R62.
 
-Five transient-client scenarios prove exact equal-command retry after an
+Six transient-client scenarios prove exact equal-command retry after an
 outcome-unknown failure, definitely-not-sent progression, same-epoch state
 restoration, malformed-tail and changed-epoch refusal, explicit reconnect/restart
 rebind with returned uncertainty, fresh request identity, and content-safe
 diagnostics. The remote-client facade constructs the client and codec without a
-direct crate dependency. The caller must bind the opaque replay epoch to both
+direct crate dependency; typing commands obey the same uncertainty fence. The
+caller must bind the opaque replay epoch to both
 server incarnation and exact authenticated session; Agora does not infer that
 transport fact.
 

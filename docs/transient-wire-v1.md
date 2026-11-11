@@ -1,7 +1,7 @@
 # Transient wire profile V1
 
-Status: canonical bounded presence and typing grammar; authenticated Host and
-client composition remains presence-only, unadvertised, and not routed by a
+Status: canonical bounded presence and typing grammar with authenticated Host
+and command-neutral client composition; unadvertised and not routed by a
 qualified transport.
 
 This profile is separate from durable Protocol/Wire V2. A transient request is
@@ -64,9 +64,8 @@ InvalidTarget `0b`.
 The profile adds new entry points and does not alter any V1/V2 frame, durable
 request, capability list, checkpoint, or service receipt. The remote-client SDK
 can name the raw protocol, codec, and `TransientClientV1` state machine through
-its existing facade reexports. The codec covers presence and typing values,
-while Host and client semantic composition remains presence-only. The client
-retains only one exact outcome-unknown
+its existing facade reexports. The codec, Host, and client composition cover
+both presence and typing. The client retains only one exact outcome-unknown
 request, permits equal-command replay, and validates exported state. Its opaque
 nonzero replay epoch is caller-supplied and must bind both the server
 incarnation and exact authenticated session; any reconnect or restart requires

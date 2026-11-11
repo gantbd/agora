@@ -7,12 +7,13 @@ use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, Verifie
 use agora_protocol::transient::{
     PresencePageCursorV1, PresenceStateV1 as ProtocolPresenceStateV1, TransientCommandV1,
     TransientOutcomeV1, TransientRefusalV1 as ProtocolTransientRefusalV1, TransientReplyV1,
-    TransientRequestIdV1, TransientRequestV1, TypingTargetV1,
+    TransientRequestIdV1, TransientRequestV1, TypingTargetV1, TypingViewStateV1,
 };
 use agora_protocol::v2::{ClientIdV2, CommandV2, OutcomeV2, ReplyV2, RequestIdV2, RequestV2};
 use agora_service::transient::{
     PresenceStateV1, PresenceViewStateV1, TransientLimitsV1, TransientRefusalV1, TransientTimeV1,
 };
+use agora_service::typing::TypingLimitsV1;
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 use agora_wire::WireLimits;
 use agora_wire::transient::{decode_transient_reply_v1, encode_transient_request_v1};
@@ -106,11 +107,17 @@ fn host() -> TransientHostV1<Verifier> {
             wire: wire_limits(),
         },
     );
-    TransientHostV1::new(
+    TransientHostV1::new_with_typing(
         host,
         TransientLimitsV1 {
             max_signals: 8,
             max_sources_per_participant: 2,
+            max_lifetime: 10,
+            max_page_items: 8,
+        },
+        TypingLimitsV1 {
+            max_signals: 8,
+            max_targets_per_source: 4,
             max_lifetime: 10,
             max_page_items: 8,
         },
@@ -201,6 +208,34 @@ fn authenticated_sessions_publish_observe_and_close_without_domain_mutation() {
         .presence_page(bot_session, "room", None, 8, &bot_context, HostTimeV1(2))
         .unwrap();
     assert_eq!(state(&page, "alice"), PresenceViewStateV1::Available);
+    host.publish_typing(
+        alice_session,
+        "room",
+        agora_service::typing::TypingTargetV1::Room,
+        5,
+        &alice_context,
+        HostTimeV1(2),
+    )
+    .unwrap();
+    let typing = host
+        .typing_page(
+            bot_session,
+            "room",
+            agora_service::typing::TypingTargetV1::Room,
+            None,
+            8,
+            &bot_context,
+            HostTimeV1(2),
+        )
+        .unwrap();
+    assert!(
+        typing
+            .entries
+            .iter()
+            .find(|entry| entry.participant_id.as_str() == "alice")
+            .unwrap()
+            .active
+    );
     assert_eq!(host.host().service().engine().revision(), revision);
     assert!(!format!("{host:?}").contains("alice"));
 
@@ -209,6 +244,18 @@ fn authenticated_sessions_publish_observe_and_close_without_domain_mutation() {
         .presence_page(bot_session, "room", None, 8, &bot_context, HostTimeV1(3))
         .unwrap();
     assert_eq!(state(&page, "alice"), PresenceViewStateV1::Unknown);
+    let typing = host
+        .typing_page(
+            bot_session,
+            "room",
+            agora_service::typing::TypingTargetV1::Room,
+            None,
+            8,
+            &bot_context,
+            HostTimeV1(3),
+        )
+        .unwrap();
+    assert!(typing.entries.iter().all(|entry| !entry.active));
 }
 
 #[test]
@@ -221,6 +268,15 @@ fn revocation_and_clock_regression_retire_the_session_source_before_refusal() {
             alice_session,
             "room",
             PresenceStateV1::Busy,
+            5,
+            &alice_context,
+            HostTimeV1(2),
+        )
+        .unwrap();
+        host.publish_typing(
+            alice_session,
+            "room",
+            agora_service::typing::TypingTargetV1::Room,
             5,
             &alice_context,
             HostTimeV1(2),
@@ -241,6 +297,18 @@ fn revocation_and_clock_regression_retire_the_session_source_before_refusal() {
             .presence_page(bot_session, "room", None, 8, &bot_context, HostTimeV1(3))
             .unwrap();
         assert_eq!(state(&page, "alice"), PresenceViewStateV1::Unknown);
+        let typing = host
+            .typing_page(
+                bot_session,
+                "room",
+                agora_service::typing::TypingTargetV1::Room,
+                None,
+                8,
+                &bot_context,
+                HostTimeV1(3),
+            )
+            .unwrap();
+        assert!(typing.entries.iter().all(|entry| !entry.active));
     }
 }
 
@@ -253,6 +321,15 @@ fn leave_is_reconciled_before_reply_and_rejoin_cannot_resurrect_presence() {
         bot_session,
         "room",
         PresenceStateV1::Away,
+        8,
+        &bot_context,
+        HostTimeV1(2),
+    )
+    .unwrap();
+    host.publish_typing(
+        bot_session,
+        "room",
+        agora_service::typing::TypingTargetV1::Room,
         8,
         &bot_context,
         HostTimeV1(2),
@@ -302,6 +379,18 @@ fn leave_is_reconciled_before_reply_and_rejoin_cannot_resurrect_presence() {
         )
         .unwrap();
     assert_eq!(state(&page, "bot"), PresenceViewStateV1::Unknown);
+    let typing = host
+        .typing_page(
+            alice_session,
+            "room",
+            agora_service::typing::TypingTargetV1::Room,
+            None,
+            8,
+            &alice_context,
+            HostTimeV1(4),
+        )
+        .unwrap();
+    assert!(typing.entries.iter().all(|entry| !entry.active));
     assert_eq!(host.host().service().engine().revision(), Revision(6));
 }
 
@@ -319,12 +408,33 @@ fn wrapper_reconstruction_is_explicit_restart_to_unknown() {
         HostTimeV1(2),
     )
     .unwrap();
+    host.publish_typing(
+        alice_session,
+        "room",
+        agora_service::typing::TypingTargetV1::Room,
+        8,
+        &alice_context,
+        HostTimeV1(2),
+    )
+    .unwrap();
     let mut restarted =
         TransientHostV1::new(host.into_host(), TransientLimitsV1::default(), 2).unwrap();
     let page = restarted
         .presence_page(bot_session, "room", None, 8, &bot_context, HostTimeV1(3))
         .unwrap();
     assert_eq!(state(&page, "alice"), PresenceViewStateV1::Unknown);
+    let typing = restarted
+        .typing_page(
+            bot_session,
+            "room",
+            agora_service::typing::TypingTargetV1::Room,
+            None,
+            8,
+            &bot_context,
+            HostTimeV1(3),
+        )
+        .unwrap();
+    assert!(typing.entries.iter().all(|entry| !entry.active));
 }
 
 #[test]
@@ -340,10 +450,24 @@ fn runtime_expiry_is_bounded_and_clock_regression_is_explicit() {
         HostTimeV1(2),
     )
     .unwrap();
+    host.publish_typing(
+        alice_session,
+        "room",
+        agora_service::typing::TypingTargetV1::Room,
+        1,
+        &alice_context,
+        HostTimeV1(2),
+    )
+    .unwrap();
     assert_eq!(host.expire(HostTimeV1(3), 1).unwrap(), 1);
+    assert_eq!(host.expire_typing(HostTimeV1(3), 1).unwrap(), 1);
     assert!(matches!(
         host.expire(HostTimeV1(2), 1),
         Err(TransientRefusalV1::ClockRegression)
+    ));
+    assert!(matches!(
+        host.expire_typing(HostTimeV1(2), 1),
+        Err(agora_service::typing::TypingRefusalV1::ClockRegression)
     ));
 }
 
@@ -409,7 +533,7 @@ fn public_presence_frames_replay_exactly_and_fence_conflict_and_sequence() {
         decode_transient_reply_v1(&future, wire_limits()).unwrap(),
         TransientReplyV1::Refused(ProtocolTransientRefusalV1::RequestOutOfSequence)
     );
-    let dark_typing = transient(
+    let typing = transient(
         1,
         TransientCommandV1::PublishTyping {
             room_id: "room".to_owned(),
@@ -417,17 +541,19 @@ fn public_presence_frames_replay_exactly_and_fence_conflict_and_sequence() {
             lifetime: 5,
         },
     );
-    let unavailable = host
-        .handle_transient(alice_session, &dark_typing, &alice_context, HostTimeV1(3))
+    let published = host
+        .handle_transient(alice_session, &typing, &alice_context, HostTimeV1(3))
         .unwrap();
     assert_eq!(
-        decode_transient_reply_v1(&unavailable, wire_limits()).unwrap(),
-        TransientReplyV1::Refused(ProtocolTransientRefusalV1::Unavailable)
+        decode_transient_reply_v1(&published, wire_limits()).unwrap(),
+        TransientReplyV1::Accepted(TransientOutcomeV1::TypingPublished {
+            accepted_lifetime: 5,
+        })
     );
     assert_eq!(
-        host.handle_transient(alice_session, &dark_typing, &alice_context, HostTimeV1(3),)
+        host.handle_transient(alice_session, &typing, &alice_context, HostTimeV1(3),)
             .unwrap(),
-        unavailable
+        published
     );
 
     let observed = host
@@ -457,6 +583,35 @@ fn public_presence_frames_replay_exactly_and_fence_conflict_and_sequence() {
             .unwrap()
             .state,
         agora_protocol::transient::PresenceViewStateV1::Available
+    );
+    let typing_page = host
+        .handle_transient(
+            bot_session,
+            &transient(
+                1,
+                TransientCommandV1::TypingPage {
+                    room_id: "room".to_owned(),
+                    target: TypingTargetV1::Room,
+                    cursor: None,
+                    limit: 8,
+                },
+            ),
+            &bot_context,
+            HostTimeV1(3),
+        )
+        .unwrap();
+    let TransientReplyV1::Accepted(TransientOutcomeV1::TypingPage(page)) =
+        decode_transient_reply_v1(&typing_page, wire_limits()).unwrap()
+    else {
+        panic!("typing page expected");
+    };
+    assert_eq!(
+        page.entries
+            .iter()
+            .find(|entry| entry.participant_id == "alice")
+            .unwrap()
+            .state,
+        TypingViewStateV1::Active
     );
     assert_eq!(host.host().service().engine().revision(), revision);
 }
@@ -558,6 +713,150 @@ fn public_cursor_continues_one_bounded_snapshot_and_then_expires() {
     assert_eq!(
         decode_transient_reply_v1(&expired, wire_limits()).unwrap(),
         TransientReplyV1::Refused(ProtocolTransientRefusalV1::StaleCursor)
+    );
+}
+
+#[test]
+fn public_typing_cursor_binds_session_target_snapshot_and_age() {
+    let mut host = host();
+    let (alice_session, _, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, _, bot_context) = open(&mut host, "bot", 2);
+    let publish = transient(
+        0,
+        TransientCommandV1::PublishTyping {
+            room_id: "room".to_owned(),
+            target: TypingTargetV1::Room,
+            lifetime: 8,
+        },
+    );
+    host.handle_transient(alice_session, &publish, &alice_context, HostTimeV1(2))
+        .unwrap();
+    let first = host
+        .handle_transient(
+            bot_session,
+            &transient(
+                0,
+                TransientCommandV1::TypingPage {
+                    room_id: "room".to_owned(),
+                    target: TypingTargetV1::Room,
+                    cursor: None,
+                    limit: 1,
+                },
+            ),
+            &bot_context,
+            HostTimeV1(3),
+        )
+        .unwrap();
+    let TransientReplyV1::Accepted(TransientOutcomeV1::TypingPage(first)) =
+        decode_transient_reply_v1(&first, wire_limits()).unwrap()
+    else {
+        panic!("typing page expected");
+    };
+    let cursor = first.next.unwrap();
+
+    let foreign_target = host
+        .handle_transient(
+            bot_session,
+            &transient(
+                1,
+                TransientCommandV1::TypingPage {
+                    room_id: "room".to_owned(),
+                    target: TypingTargetV1::Topic(agora_protocol::v2::TopicIdV1::new([9; 16])),
+                    cursor: Some(cursor),
+                    limit: 1,
+                },
+            ),
+            &bot_context,
+            HostTimeV1(3),
+        )
+        .unwrap();
+    assert_eq!(
+        decode_transient_reply_v1(&foreign_target, wire_limits()).unwrap(),
+        TransientReplyV1::Refused(ProtocolTransientRefusalV1::InvalidCursor)
+    );
+    let continuation = host
+        .handle_transient(
+            bot_session,
+            &transient(
+                2,
+                TransientCommandV1::TypingPage {
+                    room_id: "room".to_owned(),
+                    target: TypingTargetV1::Room,
+                    cursor: Some(cursor),
+                    limit: 1,
+                },
+            ),
+            &bot_context,
+            HostTimeV1(4),
+        )
+        .unwrap();
+    assert!(matches!(
+        decode_transient_reply_v1(&continuation, wire_limits()).unwrap(),
+        TransientReplyV1::Accepted(TransientOutcomeV1::TypingPage(_))
+    ));
+
+    let next = host
+        .handle_transient(
+            bot_session,
+            &transient(
+                3,
+                TransientCommandV1::TypingPage {
+                    room_id: "room".to_owned(),
+                    target: TypingTargetV1::Room,
+                    cursor: None,
+                    limit: 1,
+                },
+            ),
+            &bot_context,
+            HostTimeV1(4),
+        )
+        .unwrap();
+    let TransientReplyV1::Accepted(TransientOutcomeV1::TypingPage(next)) =
+        decode_transient_reply_v1(&next, wire_limits()).unwrap()
+    else {
+        panic!("typing page expected");
+    };
+    let stale = host
+        .handle_transient(
+            bot_session,
+            &transient(
+                4,
+                TransientCommandV1::TypingPage {
+                    room_id: "room".to_owned(),
+                    target: TypingTargetV1::Room,
+                    cursor: next.next,
+                    limit: 1,
+                },
+            ),
+            &bot_context,
+            HostTimeV1(7),
+        )
+        .unwrap();
+    assert_eq!(
+        decode_transient_reply_v1(&stale, wire_limits()).unwrap(),
+        TransientReplyV1::Refused(ProtocolTransientRefusalV1::StaleCursor)
+    );
+
+    let invalid_target = host
+        .handle_transient(
+            alice_session,
+            &transient(
+                1,
+                TransientCommandV1::PublishTyping {
+                    room_id: "room".to_owned(),
+                    target: TypingTargetV1::Thread(agora_protocol::v2::MessageIdV1::new(
+                        [0xff; 16],
+                    )),
+                    lifetime: 1,
+                },
+            ),
+            &alice_context,
+            HostTimeV1(7),
+        )
+        .unwrap();
+    assert_eq!(
+        decode_transient_reply_v1(&invalid_target, wire_limits()).unwrap(),
+        TransientReplyV1::Refused(ProtocolTransientRefusalV1::InvalidTarget)
     );
 }
 

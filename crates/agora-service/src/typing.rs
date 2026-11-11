@@ -17,6 +17,20 @@ pub enum TypingTargetV1 {
     Topic(TopicId),
 }
 
+impl TypingTargetV1 {
+    pub const fn room() -> Self {
+        Self::Room
+    }
+
+    pub const fn thread(bytes: [u8; 16]) -> Self {
+        Self::Thread(MessageId::from_bytes(bytes))
+    }
+
+    pub const fn topic(bytes: [u8; 16]) -> Self {
+        Self::Topic(TopicId::from_bytes(bytes))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TypingLimitsV1 {
     pub max_signals: usize,
@@ -208,6 +222,28 @@ impl TypingCollaborationV1 {
         Ok(expires_at)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn publish_for(
+        &mut self,
+        engine: &Engine,
+        room_id: &str,
+        participant: &str,
+        target: TypingTargetV1,
+        source: PresenceSourceV1,
+        now: TransientTimeV1,
+        lifetime: u64,
+    ) -> Result<TransientTimeV1, TypingRefusalV1> {
+        self.publish(
+            engine,
+            &RoomId::new(room_id),
+            &ParticipantId::new(participant),
+            target,
+            source,
+            now,
+            lifetime,
+        )
+    }
+
     pub fn clear(
         &mut self,
         engine: &Engine,
@@ -230,6 +266,26 @@ impl TypingCollaborationV1 {
         }
         self.last_time = Some(now);
         Ok(removed)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn clear_for(
+        &mut self,
+        engine: &Engine,
+        room_id: &str,
+        participant: &str,
+        target: TypingTargetV1,
+        source: PresenceSourceV1,
+        now: TransientTimeV1,
+    ) -> Result<bool, TypingRefusalV1> {
+        self.clear(
+            engine,
+            &RoomId::new(room_id),
+            &ParticipantId::new(participant),
+            target,
+            source,
+            now,
+        )
     }
 
     pub fn retire_source(&mut self, source: PresenceSourceV1) -> usize {
@@ -386,6 +442,30 @@ impl TypingCollaborationV1 {
             next,
             as_of,
         })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn page_for(
+        &mut self,
+        engine: &Engine,
+        observer: &str,
+        room_id: &str,
+        target: TypingTargetV1,
+        cursor: Option<&TypingCursorV1>,
+        limit: usize,
+        now: TransientTimeV1,
+        as_of: TransientTimeV1,
+    ) -> Result<TypingPageV1, TypingRefusalV1> {
+        self.page(
+            engine,
+            &ParticipantId::new(observer),
+            &RoomId::new(room_id),
+            target,
+            cursor,
+            limit,
+            now,
+            as_of,
+        )
     }
 
     fn validate_time(&self, now: TransientTimeV1) -> Result<(), TypingRefusalV1> {

@@ -35,7 +35,7 @@ not ready for a network service or crates.io release.
   room/retained-root/stable-topic authority, opaque session sources, bounded
   target fan-out and expiry, exact snapshot pages, lifecycle cleanup, and
   restart-to-inactive projection;
-- an unadvertised non-durable authenticated Host wrapper for transient presence,
+- an unadvertised non-durable authenticated Host wrapper for transient presence and typing,
   including close/revocation/regression source retirement, membership
   reconciliation before conversation replies, fail-safe cleanup under sticky
   fidelity loss, and wrapper reconstruction to `Unknown`;
@@ -179,9 +179,9 @@ not ready for a network service or crates.io release.
   authenticated Host clock/source and automatic lifecycle composition, but no
   public capability is implemented or advertised. The presence/typing Protocol/Wire
   grammar, authenticated Host replay/cursors, client uncertainty state, and SDK
-  values are closed, while Host/client construction is closed only for presence.
-  Typing Host/client composition, transport replay-epoch binding, and end-to-end local-daemon
-  privacy/restart evidence remain required.
+  values and Host/client construction are closed for both signal families.
+  Transport replay-epoch binding and end-to-end local-daemon privacy/restart
+  evidence remain required.
 
 - no remote origin provenance or remote CI; the qualified local source candidate
   is content-addressed, but its selected Aegis and Keystone inputs were unclean

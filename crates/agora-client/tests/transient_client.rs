@@ -4,7 +4,7 @@ use agora_client::transient::{
 };
 use agora_protocol::transient::{
     TransientCommandV1, TransientRefusalV1, TransientReplyV1, TransientRequestIdV1,
-    TransientRequestV1,
+    TransientRequestV1, TypingTargetV1,
 };
 use std::collections::VecDeque;
 
@@ -148,4 +148,38 @@ fn epoch_and_state_diagnostics_are_content_safe() {
     let debug = format!("{:?}", client.state());
     assert!(!debug.contains("414141"));
     assert!(debug.contains("<opaque>"));
+}
+
+#[test]
+fn typing_commands_share_the_exact_uncertainty_and_replay_laws() {
+    let command = TransientCommandV1::PublishTyping {
+        room_id: "room".to_owned(),
+        target: TypingTargetV1::Room,
+        lifetime: 5,
+    };
+    let port = Port {
+        replies: [
+            Err(TransientPortFailureV1::OutcomeUnknown("lost")),
+            Ok(refused()),
+        ]
+        .into(),
+        ..Port::default()
+    };
+    let mut client = TransientClientV1::new(epoch(3), port);
+    assert_eq!(
+        client.execute(command.clone()),
+        Err(TransientClientErrorV1::OutcomeUnknown("lost"))
+    );
+    assert_eq!(
+        client.execute(TransientCommandV1::ClearTyping {
+            room_id: "room".to_owned(),
+            target: TypingTargetV1::Room,
+        }),
+        Err(TransientClientErrorV1::UnresolvedOutcome)
+    );
+    assert_eq!(client.execute(command), Ok(refused()));
+    let (port, state) = client.into_state();
+    assert_eq!(port.requests[0], port.requests[1]);
+    assert_eq!(port.requests[0].request_id, TransientRequestIdV1(0));
+    assert!(state.pending.is_none());
 }

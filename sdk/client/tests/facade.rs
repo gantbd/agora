@@ -317,7 +317,7 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
 }
 
 #[test]
-fn facade_names_the_unadvertised_transient_presence_contract() {
+fn facade_names_the_unadvertised_transient_collaboration_contract() {
     let request = protocol::transient::TransientRequestV1 {
         request_id: protocol::transient::TransientRequestIdV1(3),
         command: protocol::transient::TransientCommandV1::PublishPresence {
@@ -332,13 +332,28 @@ fn facade_names_the_unadvertised_transient_presence_contract() {
         wire::transient::decode_transient_request_v1(&encoded, limits).unwrap(),
         request
     );
+    let typing = protocol::transient::TransientRequestV1 {
+        request_id: protocol::transient::TransientRequestIdV1(4),
+        command: protocol::transient::TransientCommandV1::TypingPage {
+            room_id: "room".to_owned(),
+            target: protocol::transient::TypingTargetV1::Room,
+            cursor: None,
+            limit: 8,
+        },
+    };
+    let encoded = wire::transient::encode_transient_request_v1(&typing, limits).unwrap();
+    assert_eq!(
+        wire::transient::decode_transient_request_v1(&encoded, limits).unwrap(),
+        typing
+    );
 
     let epoch = client::transient::TransientReplayEpochV1::new([7; 32]).unwrap();
     let mut client = client::transient::TransientClientV1::new(epoch, TransientPort);
     assert_eq!(
         client
-            .execute(protocol::transient::TransientCommandV1::ClearPresence {
+            .execute(protocol::transient::TransientCommandV1::ClearTyping {
                 room_id: "room".to_owned(),
+                target: protocol::transient::TypingTargetV1::Room,
             })
             .unwrap(),
         protocol::transient::TransientReplyV1::Refused(

@@ -22,7 +22,7 @@ follow Semantic Versioning once a public release contract is selected.
   monotone explicit time, snapshot-bound pages, lifecycle retirement, bounded
   expiry work, human/agent symmetry, and restart-to-`Unknown` evidence.
 - Added an unadvertised non-durable transient Host composition that derives
-  presence sources from authenticated sessions, uses qualified Host time,
+  presence and typing sources from authenticated sessions, uses qualified Host time,
   retires state on close/revocation/regression, reconciles leave/kick/ban before
   returning conversation replies, and fences observation on generation-fidelity
   loss without blocking cleanup.
@@ -34,11 +34,11 @@ follow Semantic Versioning once a public release contract is selected.
   cursors; room, retained-root, and stable-topic typing targets; remaining-only
   lifetime projection; canonical shape/order checks; frozen frames; and bounded
   deterministic mutation closure. Durable Protocol V2 remains byte-unchanged.
-- Added an unadvertised transient client state machine whose exact uncertainty
+- Added an unadvertised command-neutral transient client state machine whose exact uncertainty
   is bound to a nonzero caller-supplied replay epoch spanning the server
   incarnation and authenticated session; reconnect/restart rebind returns old
   uncertainty and begins a fresh request namespace.
-- Added an unadvertised public transient Host handler with authenticated
+- Added an unadvertised public presence/typing Host handler with authenticated
   request-scoped revalidation, one bounded exact replay receipt per session,
   explicit sequence/conflict refusal, opaque one-live-cursor pagination, and
   independently bounded snapshot age without durable receipt contamination.
