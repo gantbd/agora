@@ -8,6 +8,12 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added offline canonical backup, verification, and restore for the private
+  directory store. Export holds the source lock and synchronizes a new private
+  exact-record file; restore validates before creating a new store, preserves
+  revision continuity, and leaves failed post-creation work explicitly
+  operator-visible rather than claiming rollback.
+
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,
   the immediately prior value; erases source failures to a content-free kind;

@@ -168,6 +168,9 @@ not ready for a network service or crates.io release.
   fail-closed residue/corruption handling, all five publication interruption
   points, real authenticated-host restart, and passive content-free store-owner
   outcome observation;
+- offline exact-record directory backup/verification/restore with exclusive
+  source locking, private synchronized output, fail-closed mutation checks,
+  preserved revision continuity, and explicit sensitive-content boundaries;
 - snapshot-aligned bounded room pull changes with stable event identity,
   exclusive continuation, explicit retention/leave-rejoin gaps, durable service
   cursors, closed Wire V2 values, and a frozen representative frame;
@@ -214,7 +217,8 @@ not ready for a network service or crates.io release.
   cross-disconnect replay; recovered Aegis and Agora state do not share one
   atomic commit boundary;
 - no qualified store beyond the single-owner local Unix directory profile; no
-  hardware power-loss, network-filesystem, backup/restore, encryption, or
+  hardware power-loss, network-filesystem, encrypted/remote backup, at-rest
+  encryption, rollback resistance, disaster-recovery objectives, or
   multi-host availability qualification;
 - no performance qualification, coverage threshold, repeated/remote fuzz
   campaign, advisory lookup, legal compatibility review, binary SBOM, or

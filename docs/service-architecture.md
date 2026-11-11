@@ -174,8 +174,11 @@ file-sync/atomic-rename/directory-sync commit. Its filesystem effects are
 isolated by the dependency gate. Its passive owner-local observation separates
 loads, offers, commits, refusals, indeterminate publications, and integrity
 fences without exposing keys, paths, bytes, or record size. The mechanism is
-local Unix only and does not claim hardware power-loss, network-filesystem,
-backup/restore, encryption, or multi-host behavior.
+local Unix only. Its offline backup profile copies the exact canonical record
+under the source lock and restores only into a new private directory while
+preserving revision continuity. Backup content is sensitive, and the profile
+does not claim hardware power-loss, network-filesystem, encryption, remote
+transport, rollback resistance, disaster-recovery objectives, or multi-host behavior.
 
 `ClientV2` mirrors that uncertainty boundary without assuming a transport. A
 port reports either definitely-not-sent or outcome-unknown. Unknown retains the

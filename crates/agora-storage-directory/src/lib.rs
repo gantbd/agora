@@ -56,6 +56,7 @@ impl Default for DirectoryLimitsV1 {
 pub enum DirectoryErrorV1 {
     InvalidLimits,
     AlreadyExists,
+    Empty,
     Busy,
     UnsafeResource,
     LostResource,
@@ -74,6 +75,12 @@ fn io(error: std::io::Error) -> DirectoryErrorV1 {
 pub enum DirectoryOwnerStateV1 {
     Active,
     Fenced,
+}
+
+/// Content-free evidence for one canonical offline backup record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DirectoryBackupSummaryV1 {
+    pub revision: Revision,
 }
 
 /// Passive, content-free facts from the qualified physical store owner.
@@ -382,6 +389,70 @@ impl DirectoryCheckpointStoreV1 {
     }
 }
 
+/// Exports the exact current canonical record while holding the store's
+/// exclusive ownership lock.
+///
+/// The destination must not exist and its parent must already be a private
+/// mode-0700 directory. The resulting mode-0600 file contains checkpoint
+/// content and therefore requires the same confidentiality controls as the
+/// store itself.
+pub fn export_directory_backup_v1(
+    store_path: impl AsRef<Path>,
+    backup_path: impl AsRef<Path>,
+    limits: DirectoryLimitsV1,
+) -> Result<DirectoryBackupSummaryV1, DirectoryErrorV1> {
+    let store = DirectoryCheckpointStoreV1::open_existing(store_path, limits)?;
+    store.check_resources()?;
+    let key = store.key.as_deref().ok_or(DirectoryErrorV1::Empty)?;
+    let checkpoint = store.checkpoint.as_ref().ok_or(DirectoryErrorV1::Empty)?;
+    let record = encode_record(key, checkpoint.revision, &checkpoint.bytes, limits)?;
+    write_new_private_file(backup_path.as_ref(), &record)?;
+    Ok(DirectoryBackupSummaryV1 {
+        revision: checkpoint.revision,
+    })
+}
+
+/// Validates one canonical private backup without constructing a store owner.
+pub fn verify_directory_backup_v1(
+    backup_path: impl AsRef<Path>,
+    limits: DirectoryLimitsV1,
+) -> Result<DirectoryBackupSummaryV1, DirectoryErrorV1> {
+    validate_limits(limits)?;
+    let (_, checkpoint, _) = read_record(backup_path.as_ref(), limits)?;
+    Ok(DirectoryBackupSummaryV1 {
+        revision: checkpoint.revision,
+    })
+}
+
+/// Restores one canonical private backup into a previously absent store path.
+///
+/// Success returns the exclusively locked owner at the restored revision. A
+/// failure after destination creation can leave a partial fail-closed directory
+/// requiring operator inspection; this function makes no automatic retry or
+/// rollback claim.
+pub fn restore_directory_backup_v1(
+    backup_path: impl AsRef<Path>,
+    store_path: impl AsRef<Path>,
+    limits: DirectoryLimitsV1,
+) -> Result<DirectoryCheckpointStoreV1, DirectoryErrorV1> {
+    validate_limits(limits)?;
+    let (key, checkpoint, _) = read_record(backup_path.as_ref(), limits)?;
+    let record = encode_record(&key, checkpoint.revision, &checkpoint.bytes, limits)?;
+    let mut store = DirectoryCheckpointStoreV1::create_new(store_path, limits)?;
+    let pending_path = store.path.join(PENDING);
+    let mut pending = store.open_pending(&pending_path).map_err(io)?;
+    pending.write_all(&record).map_err(io)?;
+    pending.sync_all().map_err(io)?;
+    fs::rename(&pending_path, store.path.join(HEAD)).map_err(io)?;
+    store.directory.sync_all().map_err(io)?;
+    let metadata = fs::symlink_metadata(store.path.join(HEAD)).map_err(io)?;
+    validate_private_file(&metadata)?;
+    store.head_stamp = Some(Stamp::of(&metadata));
+    store.key = Some(key);
+    store.checkpoint = Some(checkpoint);
+    Ok(store)
+}
+
 impl CheckpointStore for DirectoryCheckpointStoreV1 {
     type Error = DirectoryErrorV1;
 
@@ -570,6 +641,31 @@ fn open_private_directory(path: &Path) -> Result<File, DirectoryErrorV1> {
         return Err(DirectoryErrorV1::UnsafeResource);
     }
     Ok(file)
+}
+
+fn write_new_private_file(path: &Path, bytes: &[u8]) -> Result<(), DirectoryErrorV1> {
+    let parent = path.parent().ok_or(DirectoryErrorV1::UnsafeResource)?;
+    let directory = open_private_directory(parent)?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                DirectoryErrorV1::AlreadyExists
+            } else {
+                io(error)
+            }
+        })?;
+    file.write_all(bytes).map_err(io)?;
+    file.sync_all().map_err(io)?;
+    let path_metadata = fs::symlink_metadata(path).map_err(io)?;
+    validate_private_file(&path_metadata)?;
+    if !Stamp::of(&path_metadata).same_object(Stamp::of(&file.metadata().map_err(io)?)) {
+        return Err(DirectoryErrorV1::LostResource);
+    }
+    directory.sync_all().map_err(io)
 }
 
 fn crc32c(bytes: &[u8]) -> u32 {
@@ -1097,6 +1193,138 @@ mod tests {
             DirectoryCheckpointStoreV1::open_existing(&path, DirectoryLimitsV1::default())
                 .unwrap_err(),
             DirectoryErrorV1::UnsafeResource
+        );
+    }
+
+    #[test]
+    fn offline_backup_restore_preserves_exact_record_and_revision_continuity() {
+        let temp = TempDirectory::new();
+        let source_path = temp.store();
+        let backup_path = temp.0.join("backup.bin");
+        let restored_path = temp.0.join("restored");
+        let mut source =
+            DirectoryCheckpointStoreV1::create_new(&source_path, DirectoryLimitsV1::default())
+                .unwrap();
+        committed(source.compare_exchange("host", None, b"one").unwrap(), 0);
+        committed(
+            source
+                .compare_exchange("host", Some(Revision(0)), b"two")
+                .unwrap(),
+            1,
+        );
+        let expected_record = fs::read(source_path.join(HEAD)).unwrap();
+        drop(source);
+
+        assert_eq!(
+            export_directory_backup_v1(&source_path, &backup_path, DirectoryLimitsV1::default())
+                .unwrap(),
+            DirectoryBackupSummaryV1 {
+                revision: Revision(1)
+            }
+        );
+        assert_eq!(fs::read(&backup_path).unwrap(), expected_record);
+        assert_eq!(
+            fs::symlink_metadata(&backup_path)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        assert_eq!(
+            verify_directory_backup_v1(&backup_path, DirectoryLimitsV1::default()).unwrap(),
+            DirectoryBackupSummaryV1 {
+                revision: Revision(1)
+            }
+        );
+
+        let mut restored =
+            restore_directory_backup_v1(&backup_path, &restored_path, DirectoryLimitsV1::default())
+                .unwrap();
+        let checkpoint = restored.load("host").unwrap().unwrap();
+        assert_eq!(checkpoint.revision, Revision(1));
+        assert_eq!(checkpoint.bytes, b"two");
+        committed(
+            restored
+                .compare_exchange("host", Some(Revision(1)), b"three")
+                .unwrap(),
+            2,
+        );
+        drop(restored);
+
+        let restored =
+            DirectoryCheckpointStoreV1::open_existing(&restored_path, DirectoryLimitsV1::default())
+                .unwrap();
+        let checkpoint = restored.load("host").unwrap().unwrap();
+        assert_eq!(checkpoint.revision, Revision(2));
+        assert_eq!(checkpoint.bytes, b"three");
+    }
+
+    #[test]
+    fn backup_and_restore_fail_closed_on_ownership_content_and_destination_drift() {
+        let temp = TempDirectory::new();
+        let source_path = temp.store();
+        let backup_path = temp.0.join("backup.bin");
+        let restored_path = temp.0.join("restored");
+        let mut source =
+            DirectoryCheckpointStoreV1::create_new(&source_path, DirectoryLimitsV1::default())
+                .unwrap();
+        assert_eq!(
+            export_directory_backup_v1(&source_path, &backup_path, DirectoryLimitsV1::default())
+                .unwrap_err(),
+            DirectoryErrorV1::Busy
+        );
+        drop(source);
+        assert_eq!(
+            export_directory_backup_v1(&source_path, &backup_path, DirectoryLimitsV1::default())
+                .unwrap_err(),
+            DirectoryErrorV1::Empty
+        );
+        assert!(!backup_path.exists());
+
+        source =
+            DirectoryCheckpointStoreV1::open_existing(&source_path, DirectoryLimitsV1::default())
+                .unwrap();
+        committed(source.compare_exchange("host", None, b"value").unwrap(), 0);
+        drop(source);
+        export_directory_backup_v1(&source_path, &backup_path, DirectoryLimitsV1::default())
+            .unwrap();
+        assert_eq!(
+            export_directory_backup_v1(&source_path, &backup_path, DirectoryLimitsV1::default())
+                .unwrap_err(),
+            DirectoryErrorV1::AlreadyExists
+        );
+
+        let original = fs::read(&backup_path).unwrap();
+        let mut corrupt = original.clone();
+        corrupt[8] ^= 1;
+        fs::write(&backup_path, corrupt).unwrap();
+        assert_eq!(
+            verify_directory_backup_v1(&backup_path, DirectoryLimitsV1::default()).unwrap_err(),
+            DirectoryErrorV1::Corrupt
+        );
+        assert_eq!(
+            restore_directory_backup_v1(&backup_path, &restored_path, DirectoryLimitsV1::default())
+                .unwrap_err(),
+            DirectoryErrorV1::Corrupt
+        );
+        assert!(!restored_path.exists());
+
+        fs::write(&backup_path, original).unwrap();
+        fs::set_permissions(&backup_path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(
+            verify_directory_backup_v1(&backup_path, DirectoryLimitsV1::default()).unwrap_err(),
+            DirectoryErrorV1::UnsafeResource
+        );
+        fs::set_permissions(&backup_path, fs::Permissions::from_mode(0o600)).unwrap();
+        let existing =
+            DirectoryCheckpointStoreV1::create_new(&restored_path, DirectoryLimitsV1::default())
+                .unwrap();
+        drop(existing);
+        assert_eq!(
+            restore_directory_backup_v1(&backup_path, &restored_path, DirectoryLimitsV1::default())
+                .unwrap_err(),
+            DirectoryErrorV1::AlreadyExists
         );
     }
 

@@ -518,11 +518,27 @@ does not revalidate resources, and cannot retry or change an operation. It
 omits the path, key, checkpoint and record bytes, record length, identity
 stamps, and refusal detail. Counts reset when a new owner opens the directory.
 
+Offline backup reuses the exact canonical `AGDIRCP` record rather than defining
+a second checkpoint encoding. Export first acquires the ordinary exclusive
+store owner, refuses an empty register, re-encodes its validated in-memory
+record, and creates a new mode-0600 backup beneath an existing mode-0700 parent.
+It synchronizes the file and parent and refuses an existing destination.
+Verification applies the ordinary private-file, size, framing, UTF-8, length,
+and CRC32C checks. Restore validates before mutation, creates a previously
+absent private store, installs and synchronizes the exact record through the
+pending/rename path, and returns the locked owner at the preserved revision.
+The next compare-and-exchange therefore advances from, rather than resets, the
+restored revision. Failure after destination creation may leave a partial
+directory or pending/head state for operator inspection; no rollback or retry
+is inferred. Export failure after file creation may likewise leave an invalid or
+complete output that must be inspected rather than treated as success.
+
 “Durable” here means the specified operating-system synchronization mechanism
 completed on the qualified local profile. It does not prove storage-controller
 power-loss behavior, network filesystem semantics, disk integrity, encryption,
-rollback resistance against the trusted same-UID environment, backup/restore,
-or disaster recovery. The parent directory and same-UID processes remain in the
+rollback resistance against the trusted same-UID environment, confidential
+backup transport or retention, or disaster-recovery objectives. The parent
+directory and same-UID processes remain in the
 trusted computing base.
 
 ## Aegis host-verifier adapter profile V1

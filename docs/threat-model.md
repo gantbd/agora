@@ -167,7 +167,7 @@ without a matching durable-strength next-revision receipt. Known refusal restore
 the pre-offer state; indeterminate, erroneous, weak, or malformed store evidence
 fences access. Scope is separation evidence, not a secret or MAC. A physical
 adapter must protect record origin, exclusive ownership, rollback, crash residue,
-backup/restore, and actual acknowledgement strength.
+backup confidentiality/retention, and actual acknowledgement strength.
 
 The qualified private-directory adapter narrows that obligation for a local Unix
 deployment. It requires mode-0700/0600 resources, an exclusive process lock,
@@ -180,8 +180,14 @@ the interrupted live owner is always fenced. This is process-state evidence,
 not a simulated power-loss device.
 parent directory and same-UID processes remain trusted; CRC32C is corruption
 detection, not authentication. Hardware power-loss behavior, controller caches,
-network filesystems, rollback by a trusted process, encryption, backup/restore,
-and disaster recovery remain unqualified.
+network filesystems, rollback by a trusted process, encryption, remote backup
+transport, retention policy, and disaster-recovery objectives remain unqualified.
+The offline backup mechanism acquires the ordinary source lock, emits the exact
+checksummed record to a new synchronized private file, and restores only into a
+new private store while retaining revision continuity. CRC32C detects accidental
+or observed corruption but authenticates no backup origin; the raw backup
+contains the full sensitive Host/Service checkpoint. A failed restore after
+destination creation may leave fail-closed residue requiring inspection.
 
 Host persistence binds the verified subject, claimed participant, opaque host
 session, service client and monotone verification time in the same record as all

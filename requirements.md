@@ -489,6 +489,20 @@
   of one generated value into the lifetime record and ServerHello. This grants
   no uniqueness proof, authority, credential quality, automatic restart,
   residue repair, service supervision, or Aegis/Agora atomic recovery claim.
+- **R74 — Offline canonical directory backup and restore:** the qualified
+  directory adapter must export only while it can acquire the source store's
+  exclusive lock, and the backup must be the exact canonical checksummed
+  `AGDIRCP` record in a newly created synchronized mode-0600 file beneath an
+  existing private directory. Verification must enforce the ordinary record
+  bounds and integrity checks. Restore must accept only a validated backup and
+  a previously absent destination, preserve the exact key, checkpoint bytes,
+  and revision, return the exclusive owner, and permit the next CAS only at the
+  preserved next revision. Empty, busy, corrupt, unsafe-mode, existing-output,
+  and existing-destination cases must fail closed. Backup bytes are sensitive;
+  encryption, remote transport, retention, rotation, rollback resistance,
+  automatic scheduling, and disaster-recovery objectives remain external. A
+  failed export or restore after output creation may leave explicit fail-closed
+  residue and must not be reported as rollback or success.
 
 ## Explicitly open
 
@@ -497,7 +511,7 @@ credential authenticators, network transports, end-to-end encryption,
 federation, delivery acknowledgment, and durable audit are not part of the
 current v0.3 claim.
 Credential authentication, network transport, concurrent daemon lifecycle,
-backup/restore qualification, and durable profiles beyond the qualified
+and durable profiles beyond the qualified
 single-owner local Unix directory remain open;
 Protocol V1 bytes and semantics are unchanged.
 

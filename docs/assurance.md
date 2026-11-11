@@ -475,8 +475,15 @@ authenticated host/service unit, and proves same-time exact replay adds neither
 an engine event nor a store offer. The adapter's durable claim is limited to
 successful temporary-file write and sync, atomic rename, and directory sync on a
 single-owner local Unix profile. No hardware power-loss, controller cache,
-network filesystem, backup/restore, encryption, hostile same-UID process, or
-multi-host availability claim follows.
+network filesystem, encryption, hostile same-UID process, or multi-host
+availability claim follows. Two additional offline scenarios acquire the source
+lock, prove the backup is byte-identical to the canonical head, verify mode 0600
+and checksum closure, restore revision 1 into a new private directory, and
+advance it by CAS to revision 2. They refuse a live or empty source, existing
+output/destination, corruption, and unsafe backup mode before widening state.
+The evidence establishes local exact-record backup/restore, not encrypted or
+remote transport, origin authentication, rollback resistance, scheduling,
+retention, or disaster-recovery objectives.
 
 Room change-feed scenarios bind a position to an exact completed snapshot,
 filter the independent recent-change journal by room, replay the same exclusive
