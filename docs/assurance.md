@@ -23,7 +23,7 @@ The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
 closes over the twelve-package stable workspace, the standalone fuzz package,
-and twenty-nine canonical fixtures.
+and thirty-one canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -86,11 +86,13 @@ nested private state, receipts, cursors, and authenticated sessions.
 
 The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
 nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus
-is regenerated from and checked against all twenty-five wire fixtures plus the
+is regenerated from and checked against all twenty-seven wire fixtures plus the
 current engine, service, and host checkpoint fixtures. `wire_canonical` drives
-all four public V1/V2 request/reply decoders; `checkpoint_canonical` drives all
-three semantic recovery layers; `outer_frame_canonical` drives the daemon's
-production length-prefix codec over canonically framed wire seeds. An accepted
+all four public V1/V2 request/reply decoders and both fixed-width handshake
+decoders; `checkpoint_canonical` drives all three semantic recovery layers;
+`outer_frame_canonical` drives the daemon's production length-prefix codec over
+the twenty-five complete-frame protocol seeds (the unframed handshake fixtures
+are deliberately excluded). An accepted
 candidate must re-encode exactly, and an accepted frame prefix must preserve its
 unconsumed stream suffix. The qualified smoke ran 20,000 fixed-seed cases on all
 three targets. The integrated local release-candidate campaign for revision
@@ -228,18 +230,30 @@ resource, and action; reject participant mismatch before authority I/O; erase
 refusal, expiry, malformed success, and port failure; retire host/service state
 on revoked revalidation; and keep diagnostics content-safe.
 
-Five real Unix-socket daemon scenarios compose that adapter with Host V2. They
+Seven real Unix-socket daemon scenarios compose that adapter with Host V2. They
 verify mode-0700 parent enforcement and mode-0600 endpoint creation, Aegis
-authorization on Connect and every later frame, exact replay, EOF cleanup, shared participant-mismatch refusal
+authorization on Connect and every later frame, exact pre-authentication
+handshake values, incompatible-profile refusal with zero downstream work, exact
+replay, EOF cleanup, shared participant-mismatch refusal
 without authority I/O, erased authenticator failure detail, post-reply
 request-budget cleanup, oversized outer-length
 refusal before allocation or host admission, existing-path refusal, pinned
 replacement preservation, and content-free counters. I/O deadlines are present
 in the configured profile; the tests do not claim timing determinism. Credential
-and Unix-peer authentication, hostile same-UID parent defense, protocol/incarnation
-handshake, concurrency, operational drain/crash recovery, cross-disconnect
-replay, and network transport remain unqualified. Physical storage is separate
-and narrowly qualified below.
+and Unix-peer authentication, hostile same-UID parent defense, truthful durable
+incarnation generation and lifetime locking, concurrency, operational
+drain/crash recovery, cross-disconnect replay, and network transport remain
+unqualified. Physical storage is separate and narrowly qualified below.
+
+The fixed-width handshake codec is owned by `agora-wire`, not the daemon. Two
+canonical fixtures close its ClientHello and ServerHello bytes; ordinary tests
+reject length, magic, profile, zero-limit, and zero-incarnation drift and require
+exact reconstruction. The client SDK facade constructs and decodes the profile.
+The pinned wire fuzz target now applies exact re-encoding oracles to both public
+handshake decoders in addition to all complete-frame decoders. This establishes
+closed profile selection and visible server-lifetime evidence, not credential
+authentication, compatibility-range negotiation, incarnation provenance,
+resume, or replay safety.
 
 The daemon's composed operational snapshot preserves transport, host, and
 service counters as three named measurement boundaries. The successful socket

@@ -34,6 +34,15 @@ version byte, closed grammar, and twenty-one canonical fixtures. Their separatel
 typed values and V2 bytes do not alter V1 tags or bytes. Authenticated Host V2
 uses the same canonical frames without reinterpreting V1.
 
+The private local transport handshake is a separate fixed-width Wire contract.
+Handshake profile 1 selects Wire V2 exactly and returns positive outer-frame and
+post-connect budgets, capability-discovery profile 1, and a nonzero opaque
+server-incarnation value. Its ClientHello and ServerHello fixtures freeze the
+complete bytes. Unknown profiles, changed magic, trailing bytes, and zero
+limits/incarnation refuse; this is exact profile selection, not version-range or
+feature negotiation. The incarnation is lifecycle evidence, not identity,
+authority, a resume token, or a compatibility promise.
+
 Service persistence is versioned independently. `AGORASV` version 16 captures
 the complete V2 service owner and embeds private `AGORACUR` version-1 cursor
 records. Cursor kind 4 is the snapshot-aligned room change position and kind 5

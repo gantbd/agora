@@ -10,6 +10,11 @@ compile_error!("agora-local-daemon currently qualifies only Unix hosts");
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
 use agora_host::v2::HostV2;
 use agora_host::{HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier};
+pub use agora_wire::local_handshake::{
+    CLIENT_HELLO_BYTES_V1, HandshakeErrorV1, SERVER_HELLO_BYTES_V1, ServerHelloV1,
+    ServerIncarnationV1, decode_client_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
+    encode_server_hello_v1,
+};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
@@ -50,6 +55,8 @@ pub struct DaemonHealthV1 {
     pub draining: bool,
     pub active_connections: u64,
     pub accepted_connections: u64,
+    pub handshake_accepted: u64,
+    pub handshake_refused: u64,
     pub completed_connections: u64,
     pub refused_connections: u64,
     pub transport_errors: u64,
@@ -93,6 +100,7 @@ pub enum DaemonErrorV1 {
     UnsafeEndpoint,
     Io(io::Error),
     Authentication,
+    Handshake,
     Host(HostRefusal),
     ConnectionRefused,
     FrameLimit,
@@ -194,6 +202,7 @@ pub struct DaemonV1<P, A, C> {
     authenticator: A,
     clock: C,
     limits: DaemonLimitsV1,
+    server_incarnation: ServerIncarnationV1,
     health: DaemonHealthV1,
 }
 
@@ -208,12 +217,15 @@ where
         host: HostV2<AegisVerifierV1<P>>,
         authenticator: A,
         clock: C,
+        server_incarnation: ServerIncarnationV1,
         limits: DaemonLimitsV1,
     ) -> Result<Self, DaemonErrorV1> {
         if limits.max_frame_bytes == 0
             || limits.max_frame_bytes > u32::MAX as usize
             || limits.max_frames_after_connect == 0
+            || limits.max_frames_after_connect > u32::MAX as usize
             || limits.io_timeout.is_zero()
+            || server_incarnation.is_zero()
         {
             return Err(DaemonErrorV1::InvalidLimits);
         }
@@ -260,6 +272,7 @@ where
             authenticator,
             clock,
             limits,
+            server_incarnation,
             health: DaemonHealthV1 {
                 ready: true,
                 ..DaemonHealthV1::default()
@@ -349,6 +362,32 @@ where
             .set_read_timeout(Some(self.limits.io_timeout))
             .and_then(|()| stream.set_write_timeout(Some(self.limits.io_timeout)))
             .map_err(DaemonErrorV1::Io)?;
+        let mut client_hello = [0_u8; CLIENT_HELLO_BYTES_V1];
+        stream
+            .read_exact(&mut client_hello)
+            .map_err(DaemonErrorV1::Io)?;
+        if decode_client_hello_v1(&client_hello).is_err() {
+            increment(
+                &mut self.health.handshake_refused,
+                &mut self.health.saturated,
+            );
+            return Err(DaemonErrorV1::Handshake);
+        }
+        let server_hello = encode_server_hello_v1(
+            self.server_incarnation,
+            u32::try_from(self.limits.max_frame_bytes).map_err(|_| DaemonErrorV1::Handshake)?,
+            u32::try_from(self.limits.max_frames_after_connect)
+                .map_err(|_| DaemonErrorV1::Handshake)?,
+        )
+        .map_err(|_| DaemonErrorV1::Handshake)?;
+        stream
+            .write_all(&server_hello)
+            .and_then(|()| stream.flush())
+            .map_err(DaemonErrorV1::Io)?;
+        increment(
+            &mut self.health.handshake_accepted,
+            &mut self.health.saturated,
+        );
         let context = self
             .authenticator
             .authenticate(stream)

@@ -336,6 +336,19 @@
   the complete stable locked/offline isolated source qualification. This grants
   no compression, remote-origin, signing, attestation, binary, installation,
   support, or publication claim.
+- **R59 — Canonical pre-authentication local handshake:** every accepted local
+  connection must exchange an exact fixed-width ClientHello and ServerHello
+  before authenticator, authority, host, or service work. The closed profile
+  must pin its handshake and Wire versions, positive frame and post-connect
+  budgets, capability-discovery support, and a nonzero caller-supplied 128-bit
+  server incarnation. Incompatible hellos must refuse before downstream work;
+  truncation and deadline failures remain transport failures. The codec must
+  have canonical fixtures, exact re-encoding and coverage-guided parser
+  evidence, and remote-client SDK reachability. Incarnation bytes and Debug
+  output must be content-safe. The value identifies one declared logical
+  service lifetime; it grants no participant identity or authority and makes no
+  claim for truthful generation, exclusive lifetime locking, restart
+  persistence, reconnect resumption, or replay safety.
 
 ## Explicitly open
 

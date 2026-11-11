@@ -8,6 +8,10 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added a canonical fixed-width pre-authentication local handshake selecting
+  Wire V2 and reporting explicit transport budgets, capability-discovery
+  support, and content-safe server-incarnation evidence, with frozen fixtures,
+  SDK reachability, fuzz oracles, and real-socket refusal before downstream work.
 - Added a canonical bounded USTAR source-archive profile over verified source
   candidates, with fixed metadata and ordering, an exact SHA-256 sidecar,
   platform extraction, byte-identical rearchive, and adversarial contract tests;

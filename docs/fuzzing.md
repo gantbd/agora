@@ -3,7 +3,9 @@
 Agora has three opt-in libFuzzer targets:
 
 - `wire_canonical` drives every public V1/V2 request and reply decoder. Any
-  accepted input must re-encode byte-for-byte and decode to the same value.
+  accepted input must re-encode byte-for-byte and decode to the same value. It
+  also drives both fixed-width local-handshake decoders with the same exact-byte
+  oracle.
 - `checkpoint_canonical` drives the engine, Service V2, and Host V2 recovery
   profiles under production bounds. Any recovered input must prepare the exact
   same canonical bytes.
@@ -21,7 +23,9 @@ The ordinary stable gate does not install or run either external tool.
 `make check-fuzz-contract` is part of `make check`. It verifies the exact
 toolchain/dependency pins and proves every committed binary seed is the exact
 decoded form of a canonical wire or checkpoint fixture. Outer-frame seeds are
-the same canonical wire fixtures with their exact four-byte length prefix.
+the twenty-five canonical complete-frame protocol fixtures with their exact
+four-byte length prefix. The two unframed handshake fixtures are deliberately
+excluded from that corpus.
 Refresh those seeds
 after an intentional compatibility-profile change with
 `./scripts/refresh-fuzz-seeds.sh`.

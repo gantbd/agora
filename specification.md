@@ -564,7 +564,17 @@ permissive parent and any existing endpoint path without following it. Teardown
 removes the endpoint only while its type and pinned identity still match, so a
 replacement object is preserved.
 
-Every transport record is a four-byte unsigned big-endian length followed by
+Before authentication, the peer sends the exact fixed-width handshake-profile-1
+ClientHello selecting Wire V2. An incompatible hello refuses before
+authenticator, authority, Host, or Service work. The daemon replies with the
+fixed-width ServerHello containing the same closed profiles, its configured
+positive frame ceiling and post-connect request budget, capability-discovery
+profile 1, and a nonzero caller-supplied 128-bit server incarnation. Truncation,
+deadline expiry, or write failure is a transport failure. The incarnation is
+content-safe evidence for one declared logical server lifetime; it grants no
+identity or authority and is not a reconnect or replay token.
+
+Every subsequent transport record is a four-byte unsigned big-endian length followed by
 exactly that many bytes. Zero, an announced length above the configured ceiling,
 truncation, and a response above the same ceiling fail closed. Read and write
 deadlines are applied before authentication. A trusted application
@@ -607,10 +617,11 @@ composition.
 This profile is deliberately sequential: one caller of `serve_next` accepts and
 serves one connection at a time. It does not authenticate an OS peer or
 credential, protect against a same-UID process controlling the private parent,
-encrypt content, provide a protocol/incarnation handshake, preserve request
-receipts across disconnect, recover a crashed endpoint, implement concurrent admission,
-signals, draining, socket activation, installation, or atomically recover Aegis
-and Agora. Those are separate composition and operational qualifications.
+encrypt content, generate or durably bind the incarnation, preserve request
+receipts across disconnect, recover a crashed endpoint, implement concurrent
+admission, in-flight draining, signals, socket activation, installation, or
+atomically recover Aegis and Agora. Those are separate composition and
+operational qualifications.
 
 ## Stable topic profile V1
 

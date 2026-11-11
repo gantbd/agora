@@ -18,6 +18,9 @@ not ready for a network service or crates.io release.
 - transport-neutral protocol, serialized participant-bound service, and client
   request profile with bounded volatile replay;
 - canonical bounded V1 wire codec with executable golden compatibility fixtures;
+- canonical fixed-width local ClientHello/ServerHello profile selecting Wire V2
+  before authentication, with explicit server limits, capability-discovery
+  profile, and caller-supplied nonzero server-incarnation evidence;
 - transport-neutral authenticated host composition with bounded volatile
   sessions, current-context revalidation, and revocation-safe cleanup;
 - unpublished trusted-host and remote-client SDK facades with executable
@@ -25,7 +28,7 @@ not ready for a network service or crates.io release.
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   twelve packages;
 - conservative package and canonical-fixture inventory closure over twelve
-  stable workspace packages, one standalone fuzz package, and twenty-nine
+  stable workspace packages, one standalone fuzz package, and thirty-one
   fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
@@ -153,8 +156,9 @@ not ready for a network service or crates.io release.
 - no qualified credential/Unix-peer authenticator, network transport, or
   connector conformance package; Aegis context provenance remains trusted
   wiring;
-- no transport handshake, server-incarnation evidence, concurrent admission,
-  in-flight drain, signal/socket-activation/crash-residue qualification, or
+- no qualified server-incarnation generator, persistent lifetime binding, or
+  exclusive lifetime lock; no concurrent admission, in-flight drain,
+  signal/socket-activation/crash-residue qualification, reconnect resumption, or
   cross-disconnect replay; recovered Aegis and Agora state do not share one
   atomic commit boundary;
 - no qualified store beyond the single-owner local Unix directory profile; no

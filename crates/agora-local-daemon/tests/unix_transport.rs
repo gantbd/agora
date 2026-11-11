@@ -9,7 +9,10 @@ use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
 use agora_engine::{CommandV2 as EngineCommand, Engine, Participant, ParticipantKind};
 use agora_host::v2::HostV2;
 use agora_host::{HostLimits, HostTimeV1, VerifiedSubjectV1};
-use agora_local_daemon::{AuthenticatorV1, DaemonErrorV1, DaemonLimitsV1, DaemonV1, HostClockV1};
+use agora_local_daemon::{
+    AuthenticatorV1, DaemonErrorV1, DaemonLimitsV1, DaemonV1, HostClockV1, SERVER_HELLO_BYTES_V1,
+    ServerHelloV1, ServerIncarnationV1, decode_server_hello_v1, encode_client_hello_v1,
+};
 use agora_protocol::v2::{
     AdmissionPolicyV2, CommandV2 as ProtocolCommand, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
     RequestV2,
@@ -69,6 +72,22 @@ impl AuthenticatorV1 for Authentication {
 }
 
 struct RejectingAuthentication;
+
+struct CountingAuthentication(Arc<AtomicU64>);
+
+impl AuthenticatorV1 for CountingAuthentication {
+    type Error = ();
+
+    fn authenticate(&mut self, _: &UnixStream) -> Result<AegisContextV1, Self::Error> {
+        self.0.fetch_add(1, Ordering::Relaxed);
+        Ok(AegisContextV1::new(
+            "alice",
+            VerifiedSubjectV1::from_verifier([7; 16]),
+            SessionHandleV1(3),
+            aegis_protocol::GrantHandleV1(4),
+        ))
+    }
+}
 
 struct SecretAuthenticationError;
 
@@ -136,6 +155,10 @@ fn daemon_limits() -> DaemonLimitsV1 {
     }
 }
 
+fn incarnation() -> ServerIncarnationV1 {
+    ServerIncarnationV1::new([0xa5; 16])
+}
+
 fn socket_path() -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let directory = std::env::temp_dir().join(format!(
@@ -169,6 +192,13 @@ fn read_frame(stream: &mut UnixStream) -> Vec<u8> {
     frame
 }
 
+fn handshake(stream: &mut UnixStream) -> ServerHelloV1 {
+    stream.write_all(&encode_client_hello_v1()).unwrap();
+    let mut reply = [0_u8; SERVER_HELLO_BYTES_V1];
+    stream.read_exact(&mut reply).unwrap();
+    decode_server_hello_v1(&reply).unwrap()
+}
+
 fn connect_frame(participant_id: &str) -> Vec<u8> {
     encode_request_v2(
         &WireRequestV2::Connect {
@@ -184,8 +214,15 @@ fn idle_drain_is_irreversible_and_refuses_before_accept_or_authority() {
     let path = socket_path();
     let port = Port::default();
     let calls = port.calls.clone();
-    let mut daemon =
-        DaemonV1::bind_new(&path, host(port), Authentication, Clock(1), daemon_limits()).unwrap();
+    let mut daemon = DaemonV1::bind_new(
+        &path,
+        host(port),
+        Authentication,
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
 
     assert!(daemon.health().ready);
     assert!(!daemon.health().draining);
@@ -212,8 +249,15 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     let path = socket_path();
     let port = Port::default();
     let calls = port.calls.clone();
-    let daemon =
-        DaemonV1::bind_new(&path, host(port), Authentication, Clock(1), daemon_limits()).unwrap();
+    let daemon = DaemonV1::bind_new(
+        &path,
+        host(port),
+        Authentication,
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
     let metadata = fs::symlink_metadata(&path).unwrap();
     assert!(metadata.file_type().is_socket());
     assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
@@ -224,6 +268,12 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
         (result, daemon)
     });
     let mut stream = UnixStream::connect(&path).unwrap();
+    let hello = handshake(&mut stream);
+    assert_eq!(hello.max_frame_bytes(), 8_192);
+    assert_eq!(hello.max_frames_after_connect(), 8);
+    assert_eq!(hello.server_incarnation(), incarnation());
+    assert!(hello.supports_capability_discovery());
+    assert!(!format!("{hello:?}").contains("a5"));
     let connect = connect_frame("alice");
     write_frame(&mut stream, &connect);
     let WireReplyV2::Connected(client) =
@@ -266,6 +316,8 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     result.unwrap();
     assert_eq!(daemon.host().service().active_client_count(), 0);
     assert_eq!(daemon.health().accepted_connections, 1);
+    assert_eq!(daemon.health().handshake_accepted, 1);
+    assert_eq!(daemon.health().handshake_refused, 0);
     assert_eq!(daemon.health().completed_connections, 1);
     assert_eq!(daemon.health().active_connections, 0);
     let observation = daemon.observation();
@@ -301,14 +353,22 @@ fn participant_mismatch_returns_shared_refusal_without_authority_io() {
     let path = socket_path();
     let port = Port::default();
     let calls = port.calls.clone();
-    let daemon =
-        DaemonV1::bind_new(&path, host(port), Authentication, Clock(1), daemon_limits()).unwrap();
+    let daemon = DaemonV1::bind_new(
+        &path,
+        host(port),
+        Authentication,
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
     let server = thread::spawn(move || {
         let mut daemon = daemon;
         let result = daemon.serve_next();
         (result, daemon)
     });
     let mut stream = UnixStream::connect(&path).unwrap();
+    handshake(&mut stream);
     write_frame(&mut stream, &connect_frame("mallory"));
     assert_eq!(
         decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
@@ -320,6 +380,8 @@ fn participant_mismatch_returns_shared_refusal_without_authority_io() {
     assert_eq!(calls.lock().unwrap().len(), 0);
     assert_eq!(daemon.host().service().active_client_count(), 0);
     assert_eq!(daemon.health().refused_connections, 1);
+    assert_eq!(daemon.health().handshake_accepted, 1);
+    assert_eq!(daemon.health().handshake_refused, 0);
     assert_eq!(daemon.health().completed_connections, 0);
     drop(daemon);
     remove_parent(&path);
@@ -333,6 +395,7 @@ fn authentication_failure_erases_adapter_detail() {
         host(Port::default()),
         RejectingAuthentication,
         Clock(1),
+        incarnation(),
         daemon_limits(),
     )
     .unwrap();
@@ -341,13 +404,53 @@ fn authentication_failure_erases_adapter_detail() {
         let result = daemon.serve_next();
         (result, daemon)
     });
-    let stream = UnixStream::connect(&path).unwrap();
+    let mut stream = UnixStream::connect(&path).unwrap();
+    handshake(&mut stream);
     let (result, daemon) = server.join().unwrap();
     drop(stream);
     assert!(matches!(result, Err(DaemonErrorV1::Authentication)));
     assert!(!format!("{result:?}").contains("credential-secret"));
     assert_eq!(daemon.health().refused_connections, 1);
     assert_eq!(daemon.health().completed_connections, 0);
+    drop(daemon);
+    remove_parent(&path);
+}
+
+#[test]
+fn incompatible_handshake_refuses_before_authentication_authority_or_host() {
+    let path = socket_path();
+    let port = Port::default();
+    let calls = port.calls.clone();
+    let authentication_calls = Arc::new(AtomicU64::new(0));
+    let daemon = DaemonV1::bind_new(
+        &path,
+        host(port),
+        CountingAuthentication(authentication_calls.clone()),
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let result = daemon.serve_next();
+        (result, daemon)
+    });
+    let mut stream = UnixStream::connect(&path).unwrap();
+    let mut incompatible = encode_client_hello_v1();
+    incompatible[11] = 3;
+    stream.write_all(&incompatible).unwrap();
+
+    let (result, daemon) = server.join().unwrap();
+    assert!(matches!(result, Err(DaemonErrorV1::Handshake)));
+    assert_eq!(authentication_calls.load(Ordering::Relaxed), 0);
+    assert!(calls.lock().unwrap().is_empty());
+    assert_eq!(daemon.observation().host.open_offers, 0);
+    assert_eq!(daemon.observation().service.connect_offers, 0);
+    assert_eq!(daemon.health().refused_connections, 1);
+    assert_eq!(daemon.health().handshake_accepted, 0);
+    assert_eq!(daemon.health().handshake_refused, 1);
+    drop(stream);
     drop(daemon);
     remove_parent(&path);
 }
@@ -360,6 +463,7 @@ fn request_budget_closes_the_admitted_session_after_its_last_reply() {
         host(Port::default()),
         Authentication,
         Clock(1),
+        incarnation(),
         DaemonLimitsV1 {
             max_frames_after_connect: 1,
             ..daemon_limits()
@@ -372,6 +476,7 @@ fn request_budget_closes_the_admitted_session_after_its_last_reply() {
         (result, daemon)
     });
     let mut stream = UnixStream::connect(&path).unwrap();
+    handshake(&mut stream);
     write_frame(&mut stream, &connect_frame("alice"));
     let WireReplyV2::Connected(client) =
         decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap()
@@ -412,6 +517,7 @@ fn oversized_frame_refuses_before_host_session_and_replacement_path_is_preserved
         host(Port::default()),
         Authentication,
         Clock(1),
+        incarnation(),
         DaemonLimitsV1 {
             max_frame_bytes: 32,
             ..daemon_limits()
@@ -424,6 +530,7 @@ fn oversized_frame_refuses_before_host_session_and_replacement_path_is_preserved
         (result, daemon)
     });
     let mut stream = UnixStream::connect(&path).unwrap();
+    handshake(&mut stream);
     stream.write_all(&33_u32.to_be_bytes()).unwrap();
     let (result, daemon) = server.join().unwrap();
     drop(stream);
@@ -442,12 +549,28 @@ fn oversized_frame_refuses_before_host_session_and_replacement_path_is_preserved
         host(Port::default()),
         Authentication,
         Clock(1),
+        incarnation(),
         daemon_limits(),
     );
     assert!(matches!(occupied, Err(DaemonErrorV1::Io(_))));
     assert_eq!(fs::read(&path).unwrap(), b"replacement");
     fs::remove_file(&path).unwrap();
     remove_parent(&path);
+
+    let invalid_incarnation_path = socket_path();
+    assert!(matches!(
+        DaemonV1::bind_new(
+            &invalid_incarnation_path,
+            host(Port::default()),
+            Authentication,
+            Clock(1),
+            ServerIncarnationV1::new([0; 16]),
+            daemon_limits(),
+        ),
+        Err(DaemonErrorV1::InvalidLimits)
+    ));
+    assert!(!invalid_incarnation_path.exists());
+    remove_parent(&invalid_incarnation_path);
 
     let unsafe_path = socket_path();
     fs::set_permissions(
@@ -461,6 +584,7 @@ fn oversized_frame_refuses_before_host_session_and_replacement_path_is_preserved
             host(Port::default()),
             Authentication,
             Clock(1),
+            incarnation(),
             daemon_limits(),
         ),
         Err(DaemonErrorV1::UnsafeEndpoint)

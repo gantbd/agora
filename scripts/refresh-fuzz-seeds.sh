@@ -11,6 +11,9 @@ mkdir -p "$wire_seed_dir" "$checkpoint_seed_dir" "$outer_seed_dir"
 for fixture in crates/agora-wire/tests/fixtures/*.hex; do
   name=$(basename "$fixture" .hex)
   xxd -r -p "$fixture" "$wire_seed_dir/$name.bin"
+  if [[ "$name" == local-client-hello-v1 || "$name" == local-server-hello-v1 ]]; then
+    continue
+  fi
   bytes=$(wc -c <"$wire_seed_dir/$name.bin" | tr -d ' ')
   printf '%08x' "$bytes" | xxd -r -p >"$outer_seed_dir/$name.bin"
   xxd -r -p "$fixture" >>"$outer_seed_dir/$name.bin"

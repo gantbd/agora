@@ -10,6 +10,7 @@ use agora_protocol::{
 use keystone_codec::{DecodeError, DecodeLimits, Decoder, encode_bytes};
 use std::fmt;
 
+pub mod local_handshake;
 pub mod v2;
 
 const VERSION_V1: u8 = 1;

@@ -53,6 +53,25 @@ fn facade_alone_constructs_protocol_client_and_wire_values() {
 }
 
 #[test]
+fn facade_exposes_the_canonical_local_handshake_without_transport_policy() {
+    use wire::local_handshake::{
+        ServerIncarnationV1, decode_client_hello_v1, decode_server_hello_v1,
+        encode_client_hello_v1, encode_server_hello_v1,
+    };
+
+    let client = encode_client_hello_v1();
+    assert_eq!(decode_client_hello_v1(&client), Ok(()));
+
+    let incarnation = ServerIncarnationV1::new([0x5a; 16]);
+    let server = encode_server_hello_v1(incarnation, 8_192, 1_024).unwrap();
+    let hello = decode_server_hello_v1(&server).unwrap();
+    assert_eq!(hello.server_incarnation(), incarnation);
+    assert_eq!(hello.max_frame_bytes(), 8_192);
+    assert_eq!(hello.max_frames_after_connect(), 1_024);
+    assert!(hello.supports_capability_discovery());
+}
+
+#[test]
 fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
     let mut client = client::v2::ClientV2::new(protocol::v2::ClientIdV2(7), PortV2);
     let reply = client

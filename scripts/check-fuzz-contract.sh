@@ -28,6 +28,9 @@ mkdir -p "$expected/wire" "$expected/outer" "$expected/checkpoint"
 for fixture in crates/agora-wire/tests/fixtures/*.hex; do
   name=$(basename "$fixture" .hex)
   xxd -r -p "$fixture" "$expected/wire/$name.bin"
+  if [[ "$name" == local-client-hello-v1 || "$name" == local-server-hello-v1 ]]; then
+    continue
+  fi
   bytes=$(wc -c <"$expected/wire/$name.bin" | tr -d ' ')
   printf '%08x' "$bytes" | xxd -r -p >"$expected/outer/$name.bin"
   xxd -r -p "$fixture" >>"$expected/outer/$name.bin"

@@ -15,6 +15,8 @@ The application supplies:
 - an `AuthenticatorV1` that derives one trusted `AegisContextV1` from the
   accepted Unix connection;
 - a `HostClockV1` that supplies explicit monotone host time; and
+- a nonzero opaque 128-bit value naming the declared logical server
+  incarnation; and
 - positive frame, request, and I/O deadline limits.
 
 The daemon requires a real existing mode-0700 parent directory, creates a new
@@ -27,14 +29,17 @@ is never unlinked.
 ## Connection state machine
 
 1. Accept one connection and apply the configured read/write deadline.
-2. Derive the trusted Aegis context from that connection.
-3. Read one bounded length-prefixed canonical Wire V2 Connect frame.
-4. Return the Host V2 connected frame or its shared unavailable refusal.
-5. Keep the opaque host session only in daemon memory.
-6. For at most the configured number of later frames, supply fresh host time and
+2. Read the exact fixed-width handshake-profile-1 ClientHello selecting Wire V2.
+3. Return the fixed-width ServerHello with the selected profiles, configured
+   frame and request limits, capability-discovery support, and server incarnation.
+4. Derive the trusted Aegis context from that connection.
+5. Read one bounded length-prefixed canonical Wire V2 Connect frame.
+6. Return the Host V2 connected frame or its shared unavailable refusal.
+7. Keep the opaque host session only in daemon memory.
+8. For at most the configured number of later frames, supply fresh host time and
    the same connection context to Host V2. Host V2 and the Aegis adapter bind and
    reauthorize the retained subject and participant before Service V2 executes.
-7. On EOF or any later error, close the host session and service client
+9. On EOF or any later error, close the host session and service client
    unconditionally.
 
 Each outer record is `u32_be length || frame`. Length zero and values above the
@@ -52,9 +57,10 @@ new connection can safely repeat it.
 ## Observable operations
 
 `DaemonHealthV1` is deliberately content-free. It reports readiness, current
-drain state, connections, accepted connections, cleanly completed connections,
-refused connections, transport errors, and counter saturation. It exposes no
-participant, subject, grant, room, message, or frame data.
+drain state, connections, accepted and refused handshakes, cleanly completed
+connections, refused connections, transport errors, and counter saturation. It
+exposes no incarnation bytes, participant, subject, grant, room, message, or
+frame data.
 
 `DaemonObservationV1` is the read-only composition view. It retains distinct
 transport, Host V2, and Service V2 counter groups so a socket acceptance cannot
@@ -80,32 +86,40 @@ session, grant, participant, and opaque host subject; this crate does not define
 that credential mechanism. The clock is trusted and the Aegis service port must
 provide its own availability and context provenance.
 
-The profile makes no claim for TCP or other network transports, confidentiality,
-peer-credential extraction, protocol negotiation, server-incarnation evidence,
-exclusive lifetime locking, crash-residue recovery, concurrent clients,
-overload queues, concurrent in-flight drain, signal handling, socket activation,
-installation, cross-restart request identity, or atomic Aegis/Agora recovery.
+The handshake selects one exact protocol profile; it is not version-range or
+feature negotiation. Its caller-supplied incarnation is not authenticated and
+does not itself prove fresh generation, persistence, exclusive process
+ownership, or a restart boundary. The profile makes no claim for TCP or other
+network transports, confidentiality, peer-credential extraction, exclusive
+lifetime locking, crash-residue recovery, concurrent clients, overload queues,
+concurrent in-flight drain, signal handling, socket activation, installation,
+cross-restart request identity, reconnect resumption, or atomic Aegis/Agora
+recovery.
 The exclusive directory checkpoint adapter remains a separate durability
 mechanism; this transport currently owns a volatile `HostV2`. The qualified idle
 drain fence does not add concurrent in-flight drain or signal integration.
 
 ## Qualification evidence
 
-The five real-socket scenarios verify private-parent/socket modes and type,
-Aegis-authorized Connect and per-frame execution, byte-identical request replay,
-EOF cleanup, erased authenticator error detail, participant mismatch without
-authority I/O, bounded request exhaustion cleanup, oversized length refusal
-before host admission, unsafe/existing-path refusal, and preservation of a
-replacement endpoint. Dependency and effect gates keep the adapter limited to
-the Aegis verifier, Host V2, Wire V2, and Unix filesystem/socket effects. The
-successful path additionally verifies exact layer-separated observation,
-repeated-read passivity, content-safe diagnostics, and sticky counter
-saturation without wraparound. A separate real-endpoint scenario verifies the
-idle drain transition, zero downstream work after its fence, endpoint retention,
-and pinned teardown.
+The seven real-socket scenarios verify private-parent/socket modes and type,
+the exact ServerHello fields, refusal of an incompatible ClientHello before any
+authentication, authority, Host, or Service work, Aegis-authorized Connect and
+per-frame execution, byte-identical request replay, EOF cleanup, erased
+authenticator error detail, participant mismatch without authority I/O, bounded
+request exhaustion cleanup, oversized length refusal before host admission,
+unsafe/existing-path refusal, and preservation of a replacement endpoint.
+Dependency and effect gates keep the adapter limited to the Aegis verifier,
+Host V2, Wire V2, and Unix filesystem/socket effects. The successful path
+additionally verifies exact layer-separated observation, repeated-read
+passivity, content-safe diagnostics, and sticky counter saturation without
+wraparound. A separate real-endpoint scenario verifies the idle drain
+transition, zero downstream work after its fence, endpoint retention, and
+pinned teardown.
 
 The outer length prefix is also a pure bounded codec used by the socket path.
 Ordinary tests close empty, incomplete, over-limit, exact-prefix, remainder, and
-content-safe diagnostic behavior. A separately pinned coverage-guided target
-mutates canonical framed Wire V1/V2 seeds and requires every accepted prefix to
-re-encode exactly without consuming the next stream frame.
+content-safe diagnostic behavior. Pinned coverage-guided targets mutate
+canonical ClientHello, ServerHello, and framed Wire V1/V2 seeds. Every
+accepted handshake or frame prefix must re-encode exactly; outer framing cannot
+consume the next stream frame. The remote-client SDK facade proves the handshake
+codec is available without depending on daemon or authentication policy.
