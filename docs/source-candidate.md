@@ -36,12 +36,13 @@ support remain unauthorized until a channel and policy are explicitly selected.
 
 ## Qualified local candidate
 
-Agora revision `e5a02b4ce5bda9c92542b0e5ea59ea3a746b295b` produced two
+Agora revision `67f634e30dda061b4d5a8fb2c8fac88c3feccd80` produced two
 byte-identical candidate directories on Darwin 25.6.0 arm64 / macOS 26.6.2.
-Each contained 233 payload files plus `SHA256SUMS`. The manifest digest was
-`d67a6dcc09198a8e237b4fb17e3ecd8dbf37d172dbe95d8e641c7561c132e146` and
+Each contained 239 payload files plus `SHA256SUMS`, including the canonical
+source SBOM and its local generators. The manifest digest was
+`51aa559d2fb0debde1bdd93dde789402bb517d19fc65f529db89412c2d0bc374` and
 the checksum-inventory digest was
-`3068c303ce5e4f7d930bbef949c781e9530bf198f0aaa278b39c6a7576b1175a`.
+`2c8c082b33bcb7e37a462b48a55fdf848deed9c4c40bc23cc7decc8f7ee92750`.
 The manifest truthfully recorded both selected sibling trees as unclean, so
 their exact checksummed bytes—not their contextual revisions—are the qualified
 inputs. One candidate passed all stable workspace targets, doctests, and

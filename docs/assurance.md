@@ -45,10 +45,12 @@ content, symbolic links, and a claim that upgrades local content closure into
 commit provenance. This ordinary gate validates the mechanism; actual candidate
 construction and isolated qualification remain separately recorded evidence.
 
-Revision `e5a02b4ce5bda9c92542b0e5ea59ea3a746b295b` then produced two
-byte-identical candidates containing 233 checksummed payload files. The
-checksum inventory digest was
-`3068c303ce5e4f7d930bbef949c781e9530bf198f0aaa278b39c6a7576b1175a`.
+Revision `67f634e30dda061b4d5a8fb2c8fac88c3feccd80` then produced two
+byte-identical candidates containing 239 checksummed payload files, including
+the canonical source SBOM. The manifest digest was
+`51aa559d2fb0debde1bdd93dde789402bb517d19fc65f529db89412c2d0bc374` and
+the checksum inventory digest was
+`2c8c082b33bcb7e37a462b48a55fdf848deed9c4c40bc23cc7decc8f7ee92750`.
 Both selected sibling trees were recorded as unclean, so only their staged byte
 digests—not contextual revisions—carry the claim. One isolated candidate passed
 every stable workspace target, doctest, and warning-denied documentation build
