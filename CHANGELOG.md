@@ -8,9 +8,10 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
-- Added validated export/restore of the V2 public client's request namespace and
-  exact pending uncertainty, refusing any pending request outside the immediately
-  allocated tail while leaving persistence and endpoint correspondence to hosts.
+- Added a sealed durable-Host selection to the existing private Unix daemon and
+  a real-socket directory-store restart scenario proving retained conversation
+  state under a fresh authenticated connection and server incarnation; reconnect
+  request replay remains explicitly unsupported.
 - Added an unadvertised bounded transient-collaboration owner for expiring
   presence signals, with current-membership authority, opaque session sources,
   monotone explicit time, snapshot-bound pages, lifecycle retirement, bounded

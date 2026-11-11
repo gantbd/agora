@@ -1,17 +1,23 @@
 # Private local daemon profile
 
-Status: qualified bounded Unix transport composition V1.
+Status: qualified bounded Unix transport composition V1 with separately selected
+volatile or receipt-gated durable authenticated Host ownership.
 
 `agora-local-daemon` owns only the outer connection and framing lifetime around
-an Aegis-authorized `HostV2`. It does not enter Agora's engine, protocol,
-service, host, wire, Aegis adapter, or SDK semantics.
+an Aegis-authorized volatile or durable Host owner. Its normal dependency
+closure reaches only the verifier adapter, Host/Durable owners, Wire, and the
+generic Keystone checkpoint-store port; the physical directory store used by
+qualification remains test-only. It does not enter Agora's engine, protocol,
+service, storage implementation, Aegis policy, or SDK semantics.
 
 ## Composition
 
 The application supplies:
 
-- a `HostV2<AegisVerifierV1<P>>` with its engine, Service V2 limits, Wire V2
-  limits, Aegis service port, and fixed Agora resource;
+- either a `HostV2<AegisVerifierV1<P>>` or Agora's
+  `DurableHostV2<AegisVerifierV1<P>, S>` with its engine, Service V2 limits,
+  Wire V2 limits, Aegis service port, fixed Agora resource, and—only for the
+  durable selection—an independently qualified checkpoint store;
 - an `AuthenticatorV1` that derives one trusted `AegisContextV1` from the
   accepted Unix connection;
 - a `HostClockV1` that supplies explicit monotone host time; and
@@ -102,17 +108,23 @@ feature negotiation. Its caller-supplied incarnation is not authenticated; the
 lifetime record binds that value to one exclusive live endpoint but does not
 prove fresh generation or a restart boundary. The profile makes no claim for
 TCP or other network transports, confidentiality, peer-credential extraction,
-automatic crash restart, durable Host recovery, concurrent clients, overload queues,
-concurrent in-flight drain, signal handling, socket activation, installation,
+automatic crash restart, concurrent clients, overload queues, concurrent
+in-flight drain, signal handling, socket activation, installation,
 cross-restart request identity, reconnect resumption, or atomic Aegis/Agora
 recovery.
-The exclusive directory checkpoint adapter remains a separate durability
-mechanism; this transport currently owns a volatile `HostV2`. The qualified idle
-drain fence does not add concurrent in-flight drain or signal integration.
+The durable selection consumes Agora's existing receipt-gated Host boundary and
+generic checkpoint-store port; the transport neither defines storage nor weakens
+its publication fence. A real-socket directory-store scenario proves clean owner
+teardown/reopen and a fresh authenticated connection observe retained conversation
+state under a distinct server incarnation. It does not preserve the old transport
+session or make a disconnected pending request replayable: terminal connection
+cleanup still closes the service client and reclaims its receipt namespace. The
+qualified idle drain fence does not add concurrent in-flight drain or signal
+integration.
 
 ## Qualification evidence
 
-The nine real-socket scenarios verify private-parent/socket modes and type,
+The ten real-socket scenarios verify private-parent/socket modes and type,
 canonical incarnation-bound lifetime bytes, live-owner exclusion, distinct
 stale-residue refusal, replacement fencing before authentication, and
 conservative teardown,
@@ -128,13 +140,18 @@ additionally verifies exact layer-separated observation, repeated-read
 passivity, content-safe diagnostics, and sticky counter saturation without
 wraparound. A separate real-endpoint scenario verifies the idle drain
 transition, zero downstream work after its fence, endpoint retention, and
-pinned teardown.
+pinned teardown. The tenth composes `DurableHostV2` with the physical private
+directory store, commits a room through the socket, tears down both owners,
+reopens them, publishes a distinct server incarnation and reads the retained
+room through a fresh authenticated connection.
 
 The recovery scenario separately proves live-owner exclusion; equal, wrong, and
 malformed prior-incarnation refusal without mutation; exact locked rotation to a
 new record; a fresh Host with zero prior offers; next-incarnation handshake; and
-clean teardown. It does not exercise every filesystem interruption point, claim
-that a failed recovery is safe to retry, or restore the prior volatile Host.
+clean teardown. It does not exercise every filesystem interruption point or
+claim that a failed endpoint recovery is safe to retry. Durable Host restoration
+is independently selected and qualified by the clean restart scenario; endpoint
+residue recovery never invents or adopts semantic state.
 
 The outer length prefix is also a pure bounded codec used by the socket path.
 Ordinary tests close empty, incomplete, over-limit, exact-prefix, remainder, and

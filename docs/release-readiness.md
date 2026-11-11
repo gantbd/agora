@@ -184,8 +184,9 @@ not ready for a network service or crates.io release.
 - no qualified credential/Unix-peer authenticator, network transport, or
   connector conformance package; Aegis context provenance remains trusted
   wiring;
-- no qualified server-incarnation generator, automatic restart, or durable Host
-  recovery; no concurrent admission, in-flight drain,
+- no qualified server-incarnation generator or automatic/crash-coupled restart;
+  clean durable Host/directory-store restart is qualified, but there is no
+  concurrent admission, in-flight drain,
   signal/socket-activation/crash-residue qualification, reconnect resumption, or
   cross-disconnect replay; recovered Aegis and Agora state do not share one
   atomic commit boundary;

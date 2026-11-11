@@ -84,13 +84,15 @@ if [[ $(printf '%s\n' "$aegis_verifier_tree" | wc -l | tr -d ' ') != 4 ]] \
 fi
 
 local_daemon_tree=$(cargo tree -p agora-local-daemon --edges normal --depth 1 --locked --offline)
-if [[ $(printf '%s\n' "$local_daemon_tree" | wc -l | tr -d ' ') != 4 ]] \
+if [[ $(printf '%s\n' "$local_daemon_tree" | wc -l | tr -d ' ') != 6 ]] \
   || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-aegis-verifier' \
+  || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-durable' \
   || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-host' \
   || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-wire' \
-  || printf '%s\n' "$local_daemon_tree" | rg -q 'agora-(engine|service|client|durable|storage)'; then
+  || ! printf '%s\n' "$local_daemon_tree" | rg -q 'keystone-storage' \
+  || printf '%s\n' "$local_daemon_tree" | rg -q 'agora-(engine|service|client|storage)'; then
   printf '%s\n' "$local_daemon_tree" >&2
-  echo 'Agora local daemon escaped its Aegis-host-wire composition closure' >&2
+  echo 'Agora local daemon escaped its Aegis-durable-host-wire-storage-port composition closure' >&2
   exit 1
 fi
 

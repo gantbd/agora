@@ -67,11 +67,14 @@ dependencies = [
  "aegis-client",
  "aegis-protocol",
  "agora-aegis-verifier",
+ "agora-durable",
  "agora-engine",
  "agora-host",
  "agora-protocol",
  "agora-service",
+ "agora-storage-directory",
  "agora-wire",
+ "keystone-storage",
 ]
 
 [[package]]

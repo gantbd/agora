@@ -416,11 +416,14 @@
         "pkg:cargo/aegis-client@0.1.0",
         "pkg:cargo/aegis-protocol@0.1.0",
         "pkg:cargo/agora-aegis-verifier@0.1.0",
+        "pkg:cargo/agora-durable@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-host@0.1.0",
         "pkg:cargo/agora-protocol@0.1.0",
         "pkg:cargo/agora-service@0.1.0",
-        "pkg:cargo/agora-wire@0.1.0"
+        "pkg:cargo/agora-storage-directory@0.1.0",
+        "pkg:cargo/agora-wire@0.1.0",
+        "pkg:cargo/keystone-storage@0.0.1"
       ]
     },
     {

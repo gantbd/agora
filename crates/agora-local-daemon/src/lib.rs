@@ -10,13 +10,15 @@ compile_error!("agora-local-daemon currently qualifies only Unix hosts");
 mod lifetime;
 
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
-use agora_host::v2::HostV2;
+use agora_durable::{DurableHostPublicationV2, DurableHostSuppressionV2, DurableHostV2};
+use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
 use agora_host::{HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier};
 pub use agora_wire::local_handshake::{
     CLIENT_HELLO_BYTES_V1, HandshakeErrorV1, SERVER_HELLO_BYTES_V1, ServerHelloV1,
     ServerIncarnationV1, decode_client_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
     encode_server_hello_v1,
 };
+use keystone_storage::CheckpointStore;
 use lifetime::LifetimeLeaseV1;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -109,10 +111,127 @@ pub enum DaemonErrorV1 {
     CrashResidue,
     ResidueMismatch,
     Fenced,
+    Durability,
     Host(HostRefusal),
     ConnectionRefused,
     FrameLimit,
     RequestLimit,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[doc(hidden)]
+pub enum DaemonHostErrorV1 {
+    Host(HostRefusal),
+    Durability,
+}
+
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Sealed transport-facing projection implemented only by Agora's volatile and
+/// durable authenticated Host V2 owners. It is not a general runtime port.
+#[doc(hidden)]
+pub trait DaemonHostV1: sealed::Sealed {
+    fn open_daemon(
+        &mut self,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<OpenReplyV2, DaemonHostErrorV1>;
+    fn handle_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1>;
+    fn close_daemon(&mut self, session: HostSessionIdV2) -> Result<bool, DaemonHostErrorV1>;
+}
+
+impl<P> sealed::Sealed for HostV2<AegisVerifierV1<P>> where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>
+{
+}
+
+impl<P> DaemonHostV1 for HostV2<AegisVerifierV1<P>>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+{
+    fn open_daemon(
+        &mut self,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<OpenReplyV2, DaemonHostErrorV1> {
+        self.open(frame, context, now)
+            .map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn handle_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        self.handle(session, frame, context, now)
+            .map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn close_daemon(&mut self, session: HostSessionIdV2) -> Result<bool, DaemonHostErrorV1> {
+        Ok(self.close(session))
+    }
+}
+
+impl<P, S> sealed::Sealed for DurableHostV2<AegisVerifierV1<P>, S>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    S: CheckpointStore,
+{
+}
+
+impl<P, S> DaemonHostV1 for DurableHostV2<AegisVerifierV1<P>, S>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    S: CheckpointStore,
+{
+    fn open_daemon(
+        &mut self,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<OpenReplyV2, DaemonHostErrorV1> {
+        durable_value(self.open(frame, context, now))?.map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn handle_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        durable_value(self.handle(session, frame, context, now))?.map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn close_daemon(&mut self, session: HostSessionIdV2) -> Result<bool, DaemonHostErrorV1> {
+        durable_value(self.close(session))
+    }
+}
+
+fn durable_value<T>(publication: DurableHostPublicationV2<T>) -> Result<T, DaemonHostErrorV1> {
+    match publication {
+        DurableHostPublicationV2::Published { value, .. } => Ok(value),
+        DurableHostPublicationV2::Suppressed(
+            DurableHostSuppressionV2::Fenced
+            | DurableHostSuppressionV2::Checkpoint(_)
+            | DurableHostSuppressionV2::StoreRefused(_)
+            | DurableHostSuppressionV2::OutcomeUnknown
+            | DurableHostSuppressionV2::NotDurable
+            | DurableHostSuppressionV2::InvalidReceipt,
+        ) => Err(DaemonHostErrorV1::Durability),
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -201,13 +320,13 @@ fn validate_outer_frame_length(
     Ok(length)
 }
 
-pub struct DaemonV1<P, A, C> {
+pub struct DaemonV1<H, A, C> {
     listener: UnixListener,
     socket_path: PathBuf,
     socket_device: u64,
     socket_inode: u64,
     lifetime: LifetimeLeaseV1,
-    host: HostV2<AegisVerifierV1<P>>,
+    host: H,
     authenticator: A,
     clock: C,
     limits: DaemonLimitsV1,
@@ -215,15 +334,15 @@ pub struct DaemonV1<P, A, C> {
     health: DaemonHealthV1,
 }
 
-impl<P, A, C> DaemonV1<P, A, C>
+impl<H, A, C> DaemonV1<H, A, C>
 where
-    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    H: DaemonHostV1,
     A: AuthenticatorV1,
     C: HostClockV1,
 {
     pub fn bind_new(
         socket_path: impl AsRef<Path>,
-        host: HostV2<AegisVerifierV1<P>>,
+        host: H,
         authenticator: A,
         clock: C,
         server_incarnation: ServerIncarnationV1,
@@ -251,7 +370,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn recover_stale(
         socket_path: impl AsRef<Path>,
-        host: HostV2<AegisVerifierV1<P>>,
+        host: H,
         authenticator: A,
         clock: C,
         previous_incarnation: ServerIncarnationV1,
@@ -282,7 +401,7 @@ where
     fn bind_owned(
         socket_path: PathBuf,
         lifetime: LifetimeLeaseV1,
-        host: HostV2<AegisVerifierV1<P>>,
+        host: H,
         authenticator: A,
         clock: C,
         server_incarnation: ServerIncarnationV1,
@@ -339,32 +458,6 @@ where
 
     pub const fn health(&self) -> DaemonHealthV1 {
         self.health
-    }
-
-    pub fn observation(&self) -> DaemonObservationV1 {
-        let host = self.host.usage();
-        let usage = self.host.service().usage();
-        let service = ServiceObservationV1 {
-            connect_offers: usage.connect_offers,
-            connected: usage.connected,
-            request_offers: usage.request_offers,
-            accepted: usage.accepted,
-            refused: usage.refused,
-            replayed: usage.replayed,
-            conflicts: usage.conflicts,
-            disconnected: usage.disconnected,
-            overflowed: usage.overflowed,
-        };
-        DaemonObservationV1 {
-            transport: self.health,
-            host,
-            service,
-            fidelity_lost: observation_fidelity_lost(self.health, host, service),
-        }
-    }
-
-    pub const fn host(&self) -> &HostV2<AegisVerifierV1<P>> {
-        &self.host
     }
 
     /// Irreversibly fences this sequential daemon from accepting more work.
@@ -471,10 +564,10 @@ where
             .map_err(|_| DaemonErrorV1::Authentication)?;
         let connect = read_frame(stream, self.limits.max_frame_bytes)?
             .ok_or_else(|| DaemonErrorV1::Io(io::Error::from(io::ErrorKind::UnexpectedEof)))?;
-        let opened = self
-            .host
-            .open(&connect, &context, self.clock.now())
-            .map_err(DaemonErrorV1::Host)?;
+        let opened = match self.host.open_daemon(&connect, &context, self.clock.now()) {
+            Ok(opened) => opened,
+            Err(error) => return Err(self.map_host_error(error)),
+        };
         let Some(session) = opened.session() else {
             write_frame(stream, opened.frame(), self.limits.max_frame_bytes)?;
             return Err(DaemonErrorV1::ConnectionRefused);
@@ -486,16 +579,87 @@ where
                 let Some(frame) = read_frame(stream, self.limits.max_frame_bytes)? else {
                     return Ok(());
                 };
-                let reply = self
-                    .host
-                    .handle(session, &frame, &context, self.clock.now())
-                    .map_err(DaemonErrorV1::Host)?;
+                let reply =
+                    match self
+                        .host
+                        .handle_daemon(session, &frame, &context, self.clock.now())
+                    {
+                        Ok(reply) => reply,
+                        Err(error) => return Err(self.map_host_error(error)),
+                    };
                 write_frame(stream, &reply, self.limits.max_frame_bytes)?;
             }
             Err(DaemonErrorV1::RequestLimit)
         })();
-        let _ = self.host.close(session);
-        result
+        match self.host.close_daemon(session) {
+            Ok(_) => result,
+            Err(error) => Err(self.map_host_error(error)),
+        }
+    }
+
+    fn map_host_error(&mut self, error: DaemonHostErrorV1) -> DaemonErrorV1 {
+        match error {
+            DaemonHostErrorV1::Host(error) => DaemonErrorV1::Host(error),
+            DaemonHostErrorV1::Durability => {
+                self.health.ready = false;
+                self.health.fenced = true;
+                DaemonErrorV1::Durability
+            }
+        }
+    }
+}
+
+impl<P, A, C> DaemonV1<HostV2<AegisVerifierV1<P>>, A, C>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+{
+    pub fn observation(&self) -> DaemonObservationV1 {
+        observation(self.health, &self.host)
+    }
+
+    pub const fn host(&self) -> &HostV2<AegisVerifierV1<P>> {
+        &self.host
+    }
+}
+
+impl<P, S, A, C> DaemonV1<DurableHostV2<AegisVerifierV1<P>, S>, A, C>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    S: CheckpointStore,
+{
+    /// Returns no semantic observation once the durable owner is fenced and no
+    /// trustworthy live Host projection remains available.
+    pub fn observation(&self) -> Option<DaemonObservationV1> {
+        self.host.host().map(|host| observation(self.health, host))
+    }
+
+    pub const fn host(&self) -> &DurableHostV2<AegisVerifierV1<P>, S> {
+        &self.host
+    }
+}
+
+fn observation<V: PrincipalVerifier>(
+    transport: DaemonHealthV1,
+    host_owner: &HostV2<V>,
+) -> DaemonObservationV1 {
+    let host = host_owner.usage();
+    let usage = host_owner.service().usage();
+    let service = ServiceObservationV1 {
+        connect_offers: usage.connect_offers,
+        connected: usage.connected,
+        request_offers: usage.request_offers,
+        accepted: usage.accepted,
+        refused: usage.refused,
+        replayed: usage.replayed,
+        conflicts: usage.conflicts,
+        disconnected: usage.disconnected,
+        overflowed: usage.overflowed,
+    };
+    DaemonObservationV1 {
+        transport,
+        host,
+        service,
+        fidelity_lost: observation_fidelity_lost(transport, host, service),
     }
 }
 
@@ -515,7 +679,7 @@ fn validate_daemon_configuration(
     Ok(())
 }
 
-impl<P, A, C> Drop for DaemonV1<P, A, C> {
+impl<H, A, C> Drop for DaemonV1<H, A, C> {
     fn drop(&mut self) {
         self.health.ready = false;
         let endpoint_owned = fs::symlink_metadata(&self.socket_path).is_ok_and(|metadata| {

@@ -311,9 +311,11 @@ real-filesystem scenario refuses a live owner and equal, wrong, or malformed
 prior incarnation without mutation; then locks exact residue, removes only the
 validated stale socket, rotates to a distinct record, binds a fresh zero-use
 Host, advertises the next incarnation, and cleans up normally. The evidence does
-not cover every I/O interruption point, automatic restart, or durable Host
-restoration; a failed mutating recovery remains operator-visible rather than a
-claimed success.
+not cover every I/O interruption point or automatic restart; a failed mutating
+recovery remains operator-visible rather than a claimed success. Durable Host
+state is a separately selected owner, not something the endpoint-residue path
+infers or adopts. Its clean teardown/reopen evidence is tracked independently
+and does not establish reconnect replay.
 
 The daemon's composed operational snapshot preserves transport, host, and
 service counters as three named measurement boundaries. The successful socket

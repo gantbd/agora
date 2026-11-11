@@ -33,8 +33,11 @@ port; it imports no credential or Aegis vocabulary.
 
 The leaf local daemon owns outer framing and one accepted connection lifetime.
 It supplies a trusted connection-derived Aegis context and explicit time to
-Host V2 but neither imports transport state into conversation semantics nor
-exposes the opaque host session on the wire.
+either the volatile Host V2 or receipt-gated Durable Host V2, but neither imports
+transport state into conversation semantics nor exposes the opaque host session
+on the wire. The durable selection reuses the generic checkpoint-store port and
+has clean physical-store restart evidence; disconnect still retires the service
+client receipt namespace, so it is not reconnect replay.
 
 `agora-service::transient` is a separate volatile owner beside `ServiceV2`, not
 part of its durable checkpoint. Its dark profile binds expiring presence

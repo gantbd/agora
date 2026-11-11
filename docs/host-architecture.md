@@ -118,8 +118,12 @@ trusts same-UID control of the private parent, the authenticator, clock, and Aeg
 port. It supplies neither peer-credential extraction nor endpoint lifecycle
 automation, fresh incarnation generation, compatibility-range negotiation,
 concurrent admission, in-flight graceful drain, signal handling, or durable Host
-V2 recovery/composition. Exact stale endpoint cleanup is an explicit
-prior-incarnation-checked operation, not automatic restart. See
+V2 reconnect recovery. The daemon can instead be constructed over the existing
+receipt-gated Durable Host and checkpoint-store port; qualification proves clean
+owner teardown/reopen and retained state through a fresh authenticated
+connection, not old-session resumption or lost-reply replay. Exact stale endpoint
+cleanup remains an explicit prior-incarnation-checked operation, not automatic
+restart. See
 [`local-daemon.md`](local-daemon.md).
 
 ## Deliberate exclusions

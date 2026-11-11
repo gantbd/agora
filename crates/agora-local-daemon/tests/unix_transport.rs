@@ -6,8 +6,10 @@ use aegis_protocol::{
     ReplyV1, SessionHandleV1,
 };
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
-use agora_engine::{CommandV2 as EngineCommand, Engine, Participant, ParticipantKind};
+use agora_durable::{DurableHostConfigV2, DurableHostV2};
+use agora_engine::{CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind};
 use agora_host::v2::HostV2;
+use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
 use agora_host::{HostLimits, HostTimeV1, VerifiedSubjectV1};
 use agora_local_daemon::{
     AuthenticatorV1, DaemonErrorV1, DaemonLimitsV1, DaemonV1, HostClockV1, SERVER_HELLO_BYTES_V1,
@@ -17,7 +19,9 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, CommandV2 as ProtocolCommand, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
     RequestV2,
 };
+use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
+use agora_storage_directory::{DirectoryCheckpointStoreV1, DirectoryLimitsV1};
 use agora_wire::WireLimits;
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
 use std::fs;
@@ -29,6 +33,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+
+const MAX_DURABLE_SNAPSHOT_BYTES: usize = 2 * 1_024 * 1_024;
+const DURABLE_HOST_SCOPE: HostCheckpointScopeV1 = HostCheckpointScopeV1::new(*b"daemon-host-v1!!");
 
 #[derive(Clone, Default)]
 struct Port {
@@ -153,6 +160,29 @@ fn daemon_limits() -> DaemonLimitsV1 {
         max_frames_after_connect: 8,
         io_timeout: Duration::from_secs(2),
     }
+}
+
+fn durable_config() -> DurableHostConfigV2 {
+    DurableHostConfigV2::new(
+        "agora-daemon-host",
+        DURABLE_HOST_SCOPE,
+        MAX_DURABLE_SNAPSHOT_BYTES,
+        HostRecoveryLimitsV2 {
+            max_snapshot_bytes: MAX_DURABLE_SNAPSHOT_BYTES,
+            max_service_snapshot_bytes: MAX_DURABLE_SNAPSHOT_BYTES,
+            maximum_host_limits: HostLimits {
+                max_sessions: 4,
+                max_retired_sessions: 8,
+                wire: wire_limits(),
+            },
+            service: ServiceRecoveryLimitsV2 {
+                max_snapshot_bytes: MAX_DURABLE_SNAPSHOT_BYTES,
+                max_engine_snapshot_bytes: MAX_DURABLE_SNAPSHOT_BYTES,
+                maximum_service_limits: ServiceLimitsV2::default(),
+                maximum_engine_limits: Limits::default(),
+            },
+        },
+    )
 }
 
 fn incarnation() -> ServerIncarnationV1 {
@@ -371,6 +401,137 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     drop(daemon);
     assert!(!path.exists());
     remove_parent(&path);
+}
+
+#[test]
+fn durable_daemon_reopens_conversation_state_through_the_same_transport_profile() {
+    let path = socket_path();
+    let store_path = path.parent().unwrap().join("checkpoint");
+    let store =
+        DirectoryCheckpointStoreV1::create_new(&store_path, DirectoryLimitsV1::default()).unwrap();
+    let durable =
+        DurableHostV2::initialize(host(Port::default()), store, durable_config()).unwrap();
+    let daemon = DaemonV1::bind_new(
+        &path,
+        durable,
+        Authentication,
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let result = daemon.serve_next();
+        (result, daemon)
+    });
+    let mut stream = UnixStream::connect(&path).unwrap();
+    handshake(&mut stream);
+    write_frame(&mut stream, &connect_frame("alice"));
+    let WireReplyV2::Connected(client) =
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap()
+    else {
+        panic!("connected reply expected");
+    };
+    let create = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(0),
+                command: ProtocolCommand::CreateRoom {
+                    room_id: "durable-room".to_owned(),
+                    name: "Durable Room".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 2,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &create);
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 3 }))
+    ));
+    drop(stream);
+    let (result, daemon) = server.join().unwrap();
+    result.unwrap();
+    assert!(daemon.observation().is_some());
+    assert!(
+        daemon
+            .host()
+            .host()
+            .unwrap()
+            .service()
+            .engine()
+            .room(&"durable-room".into())
+            .is_some()
+    );
+    drop(daemon);
+    assert!(!path.exists());
+
+    let reopened =
+        DirectoryCheckpointStoreV1::open_existing(&store_path, DirectoryLimitsV1::default())
+            .unwrap();
+    let durable = DurableHostV2::recover(
+        reopened,
+        durable_config(),
+        AegisVerifierV1::new(Port::default(), [0x55; 16]),
+    )
+    .unwrap();
+    let daemon = DaemonV1::bind_new(
+        &path,
+        durable,
+        Authentication,
+        Clock(10),
+        next_incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let result = daemon.serve_next();
+        (result, daemon)
+    });
+    let mut stream = UnixStream::connect(&path).unwrap();
+    assert_eq!(
+        handshake(&mut stream).server_incarnation(),
+        next_incarnation()
+    );
+    write_frame(&mut stream, &connect_frame("alice"));
+    let WireReplyV2::Connected(client) =
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap()
+    else {
+        panic!("recovered connection expected");
+    };
+    let rooms = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(0),
+                command: ProtocolCommand::Rooms {
+                    cursor: None,
+                    limit: 4,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &rooms);
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Rooms(page))) =
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap()
+    else {
+        panic!("recovered room page expected");
+    };
+    assert_eq!(page.rooms.len(), 1);
+    assert_eq!(page.rooms[0].room_id, "durable-room");
+    drop(stream);
+    let (result, daemon) = server.join().unwrap();
+    result.unwrap();
+    drop(daemon);
+    fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
 #[test]

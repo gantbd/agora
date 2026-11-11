@@ -193,9 +193,12 @@ traffic from the host, encrypt content, or recover a crashed endpoint. The
 authenticator can forge context if its credential binding is wrong. The
 handshake incarnation is caller-supplied, unauthenticated lifecycle evidence;
 the lease excludes a second live owner but cannot prove fresh generation or
-automatically repair residue. Explicit recovery requires exact prior-incarnation
-evidence and rotates to a distinct declared lifetime without adopting the
-volatile Host; it does not recover conversation state. There is no cross-disconnect
+automatically repair residue. Explicit endpoint recovery requires exact
+prior-incarnation evidence and rotates to a distinct declared lifetime without
+inventing Host state. A separately selected receipt-gated durable Host plus
+private directory store now retains conversation state across clean daemon-owner
+restart and exposes it only after a fresh authenticated connection; the transport
+does not choose or relax that store boundary. There is no cross-disconnect
 receipt retention or reconnect resumption: a lost mutation reply remains
 outcome-unknown and must not be blindly retried on a new connection. Sequential
 service and finite request budgets are explicit availability limits, not
