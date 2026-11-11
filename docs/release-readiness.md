@@ -31,6 +31,10 @@ not ready for a network service or crates.io release.
 - an unadvertised bounded transient presence owner with current-membership
   checks, opaque sources, monotone explicit time, snapshot cursors, bounded
   expiry work, lifecycle retirement, and restart-to-`Unknown` evidence;
+- an unadvertised bounded transient typing owner with current membership plus
+  room/retained-root/stable-topic authority, opaque session sources, bounded
+  target fan-out and expiry, exact snapshot pages, lifecycle cleanup, and
+  restart-to-inactive projection;
 - an unadvertised non-durable authenticated Host wrapper for transient presence,
   including close/revocation/regression source retirement, membership
   reconciliation before conversation replies, fail-safe cleanup under sticky
@@ -170,12 +174,14 @@ not ready for a network service or crates.io release.
 
 ## Open release blockers
 
-- R62 fixes the architecture and supplies the dark transient presence owner plus
+- R62 fixes the architecture and supplies dark transient presence and typing
+  owners plus
   authenticated Host clock/source and automatic lifecycle composition, but no
   public capability is implemented or advertised. The presence Protocol/Wire
   grammar, authenticated Host replay/cursors, client uncertainty state, and SDK
-  construction are closed for presence. Typing, transport replay-epoch binding,
-  and end-to-end local-daemon privacy/restart evidence remain required.
+  construction are closed for presence. Typing Host/Protocol/Wire/client
+  composition, transport replay-epoch binding, and end-to-end local-daemon
+  privacy/restart evidence remain required.
 
 - no remote origin provenance or remote CI; the qualified local source candidate
   is content-addressed, but its selected Aegis and Keystone inputs were unclean

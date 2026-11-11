@@ -93,6 +93,16 @@ empty restart projection. A saturation unit proves that generation overflow
 sticks fidelity loss and fences publication/observation without blocking source
 cleanup.
 
+The separate unadvertised typing owner has six integration scenarios and two
+saturation units covering room, retained-root, and stable-topic targets;
+human/agent symmetry; current membership and target authority; no conversation
+revision effect; per-source target and total-signal ceilings; atomic refusal;
+bounded expiry; clock regression; observer/room/target/generation/as-of cursor
+binding; engine-revision staleness; source and participant retirement;
+membership reconciliation; restart-to-inactive projection; and content-safe
+diagnostics. Generation exhaustion fences publication and observation before
+mutation while lifecycle cleanup remains available.
+
 Five Host-composition scenarios bind that owner to authenticated sessions and
 qualified Host time. They cover participant-neutral publication and observation,
 close/revocation/time-regression retirement before refusal, leave reconciliation
@@ -101,8 +111,9 @@ wrapper reconstruction to `Unknown`. The presence-only Protocol/Wire grammar
 now has exhaustive value round trips, canonical shape and ordering checks, two
 frozen frames, content-safe Debug, and deterministic
 truncation/trailing/single-bit mutation closure. Authenticated public Host
-composition, typing, Host replay/cursor rules, transport epoch binding, and
-end-to-end local-daemon evidence remain open under R62.
+composition for typing, typing Protocol/Wire/client closure, transport
+replay-epoch binding, and end-to-end local-daemon evidence remain open under
+R62.
 
 Five transient-client scenarios prove exact equal-command retry after an
 outcome-unknown failure, definitely-not-sent progression, same-epoch state

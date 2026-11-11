@@ -8,6 +8,11 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added an unadvertised bounded transient-typing owner for room, retained-root,
+  and stable-topic targets, with current membership/target authority, opaque
+  session sources, exact snapshot cursors, atomic capacity, lifecycle cleanup,
+  human/agent symmetry, generation-fidelity fencing, and restart-to-inactive
+  evidence. No typing protocol or capability is advertised yet.
 - Added a sealed durable-Host selection to the existing private Unix daemon and
   a real-socket directory-store restart scenario proving retained conversation
   state under a fresh authenticated connection and server incarnation; reconnect

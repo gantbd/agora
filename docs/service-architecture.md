@@ -39,15 +39,17 @@ on the wire. The durable selection reuses the generic checkpoint-store port and
 has clean physical-store restart evidence; disconnect still retires the service
 client receipt namespace, so it is not reconnect replay.
 
-`agora-service::transient` is a separate volatile owner beside `ServiceV2`, not
-part of its durable checkpoint. Its dark profile binds expiring presence
-signals to current engine membership, opaque session sources, explicit monotone
-time, fixed capacities, and exact snapshot cursors. Observation is
-current-member-only and projects expired or absent state as `Unknown`; it does
-not advance engine revision or publish an event. Expiry reclamation is a
-separate bounded drive. Generation saturation is sticky fidelity loss: new
-publication and observation fence, while source and membership cleanup remain
-available.
+`agora-service::transient` and `agora-service::typing` are separate volatile
+owners beside `ServiceV2`, not part of its durable checkpoint. Their dark
+profiles bind expiring presence or typing signals to current engine membership,
+opaque session sources, explicit monotone time, fixed capacities, and exact
+snapshot cursors. Typing additionally revalidates the room, retained non-reply
+thread root, or stable topic at publication and observation. Observation is
+current-member-only and projects expired or absent presence as `Unknown` and
+typing as inactive; neither advances engine revision or publishes an event.
+Expiry reclamation is a separate bounded drive. Generation saturation is sticky
+fidelity loss: new publication and observation fence, while source, participant,
+membership, and invalid-target cleanup remain available.
 
 `agora-host::transient::TransientHostV1` supplies the first qualified
 composition. It derives the source from an opaque authenticated Host session,
@@ -59,8 +61,9 @@ Host deliberately starts empty. The wrapper has no checkpoint implementation,
 but its separate public handler authenticates each request and owns one exact
 volatile replay receipt plus one opaque live page cursor per Host session. The
 presence-only Protocol/Wire grammar and replay-epoch-bound client state machine
-are composed without entering durable Service V2 receipts. No transport routes
-the profile and no presence capability is advertised. See
+are composed without entering durable Service V2 receipts. The typing owner is
+not yet composed through this Host. No transport routes the profile and no
+presence or typing capability is advertised. See
 [`transient-collaboration.md`](transient-collaboration.md).
 
 ## Connection and identity

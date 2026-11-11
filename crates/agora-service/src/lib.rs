@@ -11,6 +11,7 @@ use agora_protocol::{
 use std::collections::{BTreeMap, VecDeque};
 
 pub mod transient;
+pub mod typing;
 pub mod v2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

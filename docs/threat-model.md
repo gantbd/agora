@@ -122,6 +122,16 @@ activity and expiry metadata to current members; there is no consent UX,
 device roster, last-seen history, remote wire profile, notification policy, or
 proof of availability, attention, execution, or agent activation.
 
+The separate dark typing owner applies the same volatile-source, monotone-time,
+capacity, generation-fidelity, and current-membership controls to room,
+retained-root, and stable-topic targets. It revalidates the target at both
+publication and observation, rejects replies as thread roots, binds cursors to
+the exact target and snapshot, and permits bounded lifecycle cleanup even after
+the target disappears or generation fidelity is exhausted. Restart projects all
+participants inactive. This owner is not yet reachable through Host or wire, and
+an active typing projection remains only an expiring collaboration hint—not
+proof of attention, intent, authorship, execution, or agent activation.
+
 The unadvertised public transient handler adds one exact semantic replay receipt
 and one live cursor token per authenticated Host session. Equal request replay
 cannot reapply a presence mutation; changed input and skipped identities refuse.
