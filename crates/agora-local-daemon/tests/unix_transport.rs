@@ -8,21 +8,33 @@ use aegis_protocol::{
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
 use agora_durable::{DurableHostConfigV2, DurableHostV2};
 use agora_engine::{CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind};
+use agora_host::transient::TransientHostV1;
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
 use agora_host::{HostLimits, HostTimeV1, VerifiedSubjectV1};
 use agora_local_daemon::{
-    AuthenticatorV1, DaemonErrorV1, DaemonLimitsV1, DaemonV1, HostClockV1, SERVER_HELLO_BYTES_V1,
-    ServerHelloV1, ServerIncarnationV1, decode_server_hello_v1, encode_client_hello_v1,
+    AuthenticatorV1, COLLABORATION_SERVER_HELLO_BYTES_V1, CollaborationServerHelloV1,
+    DaemonErrorV1, DaemonLimitsV1, DaemonV1, HostClockV1, LOCAL_SESSION_HELLO_BYTES_V1,
+    LocalReplayEpochV1, LocalRouteV1, SERVER_HELLO_BYTES_V1, ServerHelloV1, ServerIncarnationV1,
+    decode_collaboration_server_hello_v1, decode_local_routed_frame_v1,
+    decode_local_session_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
+    encode_collaboration_client_hello_v1, encode_local_routed_frame_v1,
+};
+use agora_protocol::transient::{
+    PresenceStateV1, PresenceViewStateV1, TransientCommandV1, TransientOutcomeV1, TransientReplyV1,
+    TransientRequestIdV1, TransientRequestV1, TypingTargetV1, TypingViewStateV1,
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, CommandV2 as ProtocolCommand, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
     RequestV2,
 };
+use agora_service::transient::TransientLimitsV1;
+use agora_service::typing::TypingLimitsV1;
 use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 use agora_storage_directory::{DirectoryCheckpointStoreV1, DirectoryLimitsV1};
 use agora_wire::WireLimits;
+use agora_wire::transient::{decode_transient_reply_v1, encode_transient_request_v1};
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
 use std::fs;
 use std::io::{Read, Write};
@@ -254,6 +266,55 @@ fn handshake(stream: &mut UnixStream) -> ServerHelloV1 {
     decode_server_hello_v1(&reply).unwrap()
 }
 
+fn collaboration_handshake(stream: &mut UnixStream) -> CollaborationServerHelloV1 {
+    stream
+        .write_all(&encode_collaboration_client_hello_v1())
+        .unwrap();
+    let mut reply = [0_u8; COLLABORATION_SERVER_HELLO_BYTES_V1];
+    stream.read_exact(&mut reply).unwrap();
+    decode_collaboration_server_hello_v1(&reply).unwrap()
+}
+
+fn write_routed(stream: &mut UnixStream, route: LocalRouteV1, payload: &[u8]) {
+    let frame =
+        encode_local_routed_frame_v1(route, payload, daemon_limits().max_frame_bytes).unwrap();
+    write_frame(stream, &frame);
+}
+
+fn read_routed(stream: &mut UnixStream, expected: LocalRouteV1) -> Vec<u8> {
+    let frame = read_frame(stream);
+    let decoded = decode_local_routed_frame_v1(&frame, daemon_limits().max_frame_bytes).unwrap();
+    assert_eq!(decoded.route(), expected);
+    decoded.payload().to_vec()
+}
+
+fn collaboration_connect(
+    stream: &mut UnixStream,
+) -> (agora_protocol::v2::ClientIdV2, LocalReplayEpochV1) {
+    write_routed(stream, LocalRouteV1::Conversation, &connect_frame("alice"));
+    let WireReplyV2::Connected(client) = decode_reply_v2(
+        &read_routed(stream, LocalRouteV1::Conversation),
+        wire_limits(),
+    )
+    .unwrap() else {
+        panic!("connected reply expected");
+    };
+    let control = read_routed(stream, LocalRouteV1::Control);
+    assert_eq!(control.len(), LOCAL_SESSION_HELLO_BYTES_V1);
+    (client, decode_local_session_hello_v1(&control).unwrap())
+}
+
+fn transient_frame(request_id: u64, command: TransientCommandV1) -> Vec<u8> {
+    encode_transient_request_v1(
+        &TransientRequestV1 {
+            request_id: TransientRequestIdV1(request_id),
+            command,
+        },
+        wire_limits(),
+    )
+    .unwrap()
+}
+
 fn connect_frame(participant_id: &str) -> Vec<u8> {
     encode_request_v2(
         &WireRequestV2::Connect {
@@ -399,6 +460,213 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert!(!diagnostic.contains("Room"));
     assert_eq!(calls.lock().unwrap().len(), 3);
     drop(daemon);
+    assert!(!path.exists());
+    remove_parent(&path);
+}
+
+#[test]
+fn collaboration_profile_multiplexes_transient_frames_and_rotates_connection_epochs() {
+    let path = socket_path();
+    let transient_host = TransientHostV1::new_with_typing(
+        host(Port::default()),
+        TransientLimitsV1::default(),
+        TypingLimitsV1::default(),
+        10,
+    )
+    .unwrap();
+    let daemon = DaemonV1::bind_new_collaboration(
+        &path,
+        transient_host,
+        Authentication,
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let first = daemon.serve_next();
+        let second = daemon.serve_next();
+        (first, second, daemon)
+    });
+
+    let mut first = UnixStream::connect(&path).unwrap();
+    let hello = collaboration_handshake(&mut first);
+    assert_eq!(hello.server_incarnation(), incarnation());
+    assert_eq!(hello.max_frame_bytes(), 8_192);
+    assert_eq!(hello.max_frames_after_connect(), 8);
+    assert!(hello.supports_capability_discovery());
+    assert!(hello.supports_transient_collaboration());
+    assert!(!format!("{hello:?}").contains("a5"));
+    let (client, first_epoch) = collaboration_connect(&mut first);
+    let first_epoch_bytes = first_epoch.into_bytes();
+    assert_eq!(&first_epoch_bytes[..16], &incarnation().as_bytes());
+    assert_ne!(&first_epoch_bytes[16..], &[0; 16]);
+    assert!(!format!("{first_epoch:?}").contains("a5"));
+
+    let create = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(0),
+                command: ProtocolCommand::CreateRoom {
+                    room_id: "room".to_owned(),
+                    name: "Room".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 2,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_routed(&mut first, LocalRouteV1::Conversation, &create);
+    assert!(matches!(
+        decode_reply_v2(
+            &read_routed(&mut first, LocalRouteV1::Conversation),
+            wire_limits()
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 3 }))
+    ));
+
+    let publish_presence = transient_frame(
+        0,
+        TransientCommandV1::PublishPresence {
+            room_id: "room".to_owned(),
+            state: PresenceStateV1::Available,
+            lifetime: 20,
+        },
+    );
+    write_routed(&mut first, LocalRouteV1::Transient, &publish_presence);
+    assert_eq!(
+        decode_transient_reply_v1(
+            &read_routed(&mut first, LocalRouteV1::Transient),
+            wire_limits()
+        )
+        .unwrap(),
+        TransientReplyV1::Accepted(TransientOutcomeV1::PresencePublished {
+            accepted_lifetime: 20,
+        })
+    );
+    let publish_typing = transient_frame(
+        1,
+        TransientCommandV1::PublishTyping {
+            room_id: "room".to_owned(),
+            target: TypingTargetV1::Room,
+            lifetime: 20,
+        },
+    );
+    write_routed(&mut first, LocalRouteV1::Transient, &publish_typing);
+    assert_eq!(
+        decode_transient_reply_v1(
+            &read_routed(&mut first, LocalRouteV1::Transient),
+            wire_limits()
+        )
+        .unwrap(),
+        TransientReplyV1::Accepted(TransientOutcomeV1::TypingPublished {
+            accepted_lifetime: 20,
+        })
+    );
+    drop(first);
+
+    let mut second = UnixStream::connect(&path).unwrap();
+    let second_hello = collaboration_handshake(&mut second);
+    assert_eq!(second_hello.server_incarnation(), incarnation());
+    let (_, second_epoch) = collaboration_connect(&mut second);
+    assert_ne!(second_epoch, first_epoch);
+    assert_eq!(&second_epoch.into_bytes()[..16], &incarnation().as_bytes());
+
+    let presence_page = transient_frame(
+        0,
+        TransientCommandV1::PresencePage {
+            room_id: "room".to_owned(),
+            cursor: None,
+            limit: 8,
+        },
+    );
+    write_routed(&mut second, LocalRouteV1::Transient, &presence_page);
+    let TransientReplyV1::Accepted(TransientOutcomeV1::PresencePage(page)) =
+        decode_transient_reply_v1(
+            &read_routed(&mut second, LocalRouteV1::Transient),
+            wire_limits(),
+        )
+        .unwrap()
+    else {
+        panic!("presence page expected");
+    };
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].participant_id, "alice");
+    assert_eq!(page.entries[0].state, PresenceViewStateV1::Unknown);
+
+    let typing_page = transient_frame(
+        1,
+        TransientCommandV1::TypingPage {
+            room_id: "room".to_owned(),
+            target: TypingTargetV1::Room,
+            cursor: None,
+            limit: 8,
+        },
+    );
+    write_routed(&mut second, LocalRouteV1::Transient, &typing_page);
+    let TransientReplyV1::Accepted(TransientOutcomeV1::TypingPage(page)) =
+        decode_transient_reply_v1(
+            &read_routed(&mut second, LocalRouteV1::Transient),
+            wire_limits(),
+        )
+        .unwrap()
+    else {
+        panic!("typing page expected");
+    };
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].participant_id, "alice");
+    assert_eq!(page.entries[0].state, TypingViewStateV1::Inactive);
+    drop(second);
+
+    let (first_result, second_result, daemon) = server.join().unwrap();
+    first_result.unwrap();
+    second_result.unwrap();
+    assert_eq!(daemon.health().handshake_accepted, 2);
+    assert_eq!(daemon.health().completed_connections, 2);
+    assert_eq!(daemon.host().host().service().active_client_count(), 0);
+    assert!(!format!("{:?}", daemon.host()).contains("alice"));
+    drop(daemon);
+    assert!(!path.exists());
+
+    let restarted_host = TransientHostV1::new_with_typing(
+        host(Port::default()),
+        TransientLimitsV1::default(),
+        TypingLimitsV1::default(),
+        10,
+    )
+    .unwrap();
+    let restarted = DaemonV1::bind_new_collaboration(
+        &path,
+        restarted_host,
+        Authentication,
+        Clock(100),
+        next_incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let restarted_server = thread::spawn(move || {
+        let mut daemon = restarted;
+        let result = daemon.serve_next();
+        (result, daemon)
+    });
+    let mut restarted_stream = UnixStream::connect(&path).unwrap();
+    let restarted_hello = collaboration_handshake(&mut restarted_stream);
+    assert_eq!(restarted_hello.server_incarnation(), next_incarnation());
+    let (_, restarted_epoch) = collaboration_connect(&mut restarted_stream);
+    assert_ne!(restarted_epoch, first_epoch);
+    assert_ne!(restarted_epoch, second_epoch);
+    drop(restarted_stream);
+    let (restarted_result, restarted) = restarted_server.join().unwrap();
+    restarted_result.unwrap();
+    let diagnostic = format!("{:?}", restarted.host());
+    assert!(diagnostic.contains("presence_signal_count: 0"));
+    assert!(diagnostic.contains("typing_signal_count: 0"));
+    drop(restarted);
     assert!(!path.exists());
     remove_parent(&path);
 }

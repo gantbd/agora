@@ -47,11 +47,13 @@ The same dependency closure exposes the separately typed V2 client, protocol,
 and wire modules, including the process-local exact-request uncertainty fence;
 it does not imply that a V2 authenticated host, durable client journal, or
 transport is available.
-The protocol and wire reexports also make the unadvertised transient presence
-and typing values, codec, and replay-epoch-bound client state machine nameable
-without adding an umbrella package. The embedded facade likewise constructs the
-authenticated transient Host wrapper. No transport binding or advertised
-capability is qualified yet.
+The protocol and wire reexports also make transient presence and typing values,
+their codec, the local collaboration handshake/route/session hello, and the
+replay-epoch-bound client state machine nameable without adding an umbrella
+package. The session hello's opaque bytes construct the client replay epoch.
+The embedded facade likewise constructs the authenticated transient Host
+wrapper. The qualified transport remains caller-driven private Unix I/O; the
+facade does not own sockets, authentication, or reconnect policy.
 
 ## Laws and evidence
 

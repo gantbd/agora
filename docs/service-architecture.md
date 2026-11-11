@@ -40,7 +40,7 @@ has clean physical-store restart evidence; disconnect still retires the service
 client receipt namespace, so it is not reconnect replay.
 
 `agora-service::transient` and `agora-service::typing` are separate volatile
-owners beside `ServiceV2`, not part of its durable checkpoint. Their dark
+owners beside `ServiceV2`, not part of its durable checkpoint. Their
 profiles bind expiring presence or typing signals to current engine membership,
 opaque session sources, explicit monotone time, fixed capacities, and exact
 snapshot cursors. Typing additionally revalidates the room, retained non-reply
@@ -63,9 +63,12 @@ volatile replay receipt plus one opaque live page cursor per Host session. The
 presence/typing Protocol/Wire grammar and replay-epoch-bound client state machine
 are composed without entering durable Service V2 receipts. Presence and typing
 share authenticated replay sequencing and one live cursor slot per session,
-while retaining independent owner limits and typed cursor/target validation. No
-transport routes the profile and no
-presence or typing capability is advertised. See
+while retaining independent owner limits and typed cursor/target validation.
+The private local collaboration daemon routes this wrapper through a distinct
+handshake profile and binds each transient client replay epoch to the declared
+server incarnation plus one exact authenticated connection. The ordinary
+durable capability list and conversation-only transport profile remain
+unchanged. See
 [`transient-collaboration.md`](transient-collaboration.md).
 
 ## Connection and identity

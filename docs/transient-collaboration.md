@@ -7,11 +7,12 @@ bounded transient owner rather than storing them in the durable conversation
 engine, room revision, outbox, recent-change journal, or canonical engine,
 service, and Host checkpoints.
 
-This document fixes the architecture for the first transient profile. The dark
-presence and typing owners, authenticated public Host/replay composition,
-separate presence/typing Protocol/Wire grammar, and command-neutral client
-state machine now exist, but no capability is advertised and the transport
-composition is not yet complete.
+This document fixes the architecture for the first transient profile. Presence
+and typing owners, authenticated public Host/replay composition, a separate
+Protocol/Wire grammar, a command-neutral client state machine, and a qualified
+private local collaboration transport now exist. Collaboration handshake
+profile 2 advertises that exact local composition; the durable Protocol V2
+capability list and conversation-only handshake profile 1 remain unchanged.
 
 ## Owned facts
 
@@ -99,7 +100,7 @@ retired, refused, and fidelity-loss observations.
 
 ## Public-profile closure
 
-The first advertised profile must close the feature vertically:
+An advertised profile must close the feature vertically:
 
 - closed Protocol V2 commands, outcomes, states, refusals, and capability;
 - canonical Wire V2 tags, limits, malformed-input closure, and frozen fixtures;
@@ -115,9 +116,19 @@ The separately typed presence/typing grammar and canonical codec are closed in
 Protocol V2. The service-owned typing profile is composed through the same
 authenticated Host replay namespace and command-neutral client uncertainty
 fence as presence, with typed target/cursor validation and independent owner
-limits. Protocol V1 remains unchanged. Until
-every item above is present, Agora must not advertise transient presence or
-typing capability.
+limits. Protocol V1 remains unchanged. The private Unix collaboration profile
+routes conversation, transient, and server-only control frames under one outer
+frame ceiling. After authenticated connect, its control hello supplies a
+nonzero opaque replay epoch composed from the declared server incarnation and
+a per-daemon connection sequence. This binds the client request namespace to
+the exact authenticated Host session without granting authority or exposing the
+Host session handle. Close retires both transient owners; reconnect receives a
+new epoch, and a distinct-incarnation daemon restart starts with empty owners.
+
+This qualification is deliberately narrow: it does not combine the durable
+Host wrapper with transient ownership, add a network transport, select a
+credential authenticator, or add presence/typing to durable capability
+discovery.
 
 ## Explicit nonclaims
 

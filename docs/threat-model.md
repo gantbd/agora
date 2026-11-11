@@ -133,7 +133,7 @@ with presence on session loss, and binds its public cursor to session, room,
 target, snapshot, and age. An active typing projection remains only an expiring collaboration hint—not
 proof of attention, intent, authorship, execution, or agent activation.
 
-The unadvertised public transient handler adds one exact semantic replay receipt
+The public transient handler adds one exact semantic replay receipt
 and one live cursor token per authenticated Host session. Equal request replay
 cannot reapply a presence or typing mutation; changed input and skipped identities refuse.
 Cursor tokens are opaque, session/room/target where applicable, single-chain, and age bounded;
@@ -141,9 +141,13 @@ current authentication time is distinct from the earlier bounded snapshot time.
 Every authenticated offer advances the wrapper's monotone transient clock even
 when decoding or semantics refuse, preventing a second session from using a
 lower time to extend a signal.
-These controls do not authenticate a transport reconnect or make a replay epoch
-self-proving: the transport must bind each client epoch to both exact server
-incarnation and authenticated session.
+These controls do not make an arbitrary transport reconnect or replay epoch
+self-proving. The qualified private local collaboration profile sends its epoch
+only after authenticated connect and composes it from the declared server
+incarnation plus a per-daemon connection sequence, so it binds the client
+namespace to that exact Host session without exposing the Host handle. The
+epoch is correlation evidence, not a secret, credential, capability, or source
+of authority. Other transports must supply an equivalent binding.
 
 The service checkpoint binds one caller-selected store scope and refuses foreign
 scope, malformed structure, noncanonical ordering, invalid attribution, and host

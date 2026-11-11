@@ -11,6 +11,7 @@ use keystone_codec::{DecodeError, DecodeLimits, Decoder, encode_bytes};
 use std::fmt;
 
 pub mod local_handshake;
+pub mod local_transient;
 pub mod transient;
 pub mod v2;
 

@@ -11,12 +11,21 @@ mod lifetime;
 
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
 use agora_durable::{DurableHostPublicationV2, DurableHostSuppressionV2, DurableHostV2};
+use agora_host::transient::TransientHostV1;
 use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
 use agora_host::{HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier};
 pub use agora_wire::local_handshake::{
-    CLIENT_HELLO_BYTES_V1, HandshakeErrorV1, SERVER_HELLO_BYTES_V1, ServerHelloV1,
-    ServerIncarnationV1, decode_client_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
-    encode_server_hello_v1,
+    CLIENT_HELLO_BYTES_V1, COLLABORATION_CLIENT_HELLO_BYTES_V1,
+    COLLABORATION_SERVER_HELLO_BYTES_V1, CollaborationServerHelloV1, HandshakeErrorV1,
+    SERVER_HELLO_BYTES_V1, ServerHelloV1, ServerIncarnationV1, decode_client_hello_v1,
+    decode_collaboration_client_hello_v1, decode_collaboration_server_hello_v1,
+    decode_server_hello_v1, encode_client_hello_v1, encode_collaboration_client_hello_v1,
+    encode_collaboration_server_hello_v1, encode_server_hello_v1,
+};
+pub use agora_wire::local_transient::{
+    LOCAL_SESSION_HELLO_BYTES_V1, LocalReplayEpochV1, LocalRouteErrorV1, LocalRouteV1,
+    decode_local_routed_frame_v1, decode_local_session_hello_v1, encode_local_routed_frame_v1,
+    encode_local_session_hello_v1,
 };
 use keystone_storage::CheckpointStore;
 use lifetime::LifetimeLeaseV1;
@@ -115,7 +124,9 @@ pub enum DaemonErrorV1 {
     Host(HostRefusal),
     ConnectionRefused,
     FrameLimit,
+    Route,
     RequestLimit,
+    ReplayEpochExhausted,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -140,6 +151,13 @@ pub trait DaemonHostV1: sealed::Sealed {
         now: HostTimeV1,
     ) -> Result<OpenReplyV2, DaemonHostErrorV1>;
     fn handle_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1>;
+    fn handle_transient_daemon(
         &mut self,
         session: HostSessionIdV2,
         frame: &[u8],
@@ -182,6 +200,16 @@ where
     fn close_daemon(&mut self, session: HostSessionIdV2) -> Result<bool, DaemonHostErrorV1> {
         Ok(self.close(session))
     }
+
+    fn handle_transient_daemon(
+        &mut self,
+        _session: HostSessionIdV2,
+        _frame: &[u8],
+        _context: &AegisContextV1,
+        _now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        Err(DaemonHostErrorV1::Host(HostRefusal::ProtocolViolation))
+    }
 }
 
 impl<P, S> sealed::Sealed for DurableHostV2<AegisVerifierV1<P>, S>
@@ -217,6 +245,62 @@ where
 
     fn close_daemon(&mut self, session: HostSessionIdV2) -> Result<bool, DaemonHostErrorV1> {
         durable_value(self.close(session))
+    }
+
+    fn handle_transient_daemon(
+        &mut self,
+        _session: HostSessionIdV2,
+        _frame: &[u8],
+        _context: &AegisContextV1,
+        _now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        Err(DaemonHostErrorV1::Host(HostRefusal::ProtocolViolation))
+    }
+}
+
+impl<P> sealed::Sealed for TransientHostV1<AegisVerifierV1<P>> where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>
+{
+}
+
+impl<P> DaemonHostV1 for TransientHostV1<AegisVerifierV1<P>>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+{
+    fn open_daemon(
+        &mut self,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<OpenReplyV2, DaemonHostErrorV1> {
+        self.open(frame, context, now)
+            .map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn handle_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        self.handle(session, frame, context, now)
+            .map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn handle_transient_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        self.handle_transient(session, frame, context, now)
+            .map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn close_daemon(&mut self, session: HostSessionIdV2) -> Result<bool, DaemonHostErrorV1> {
+        Ok(self.close(session))
     }
 }
 
@@ -332,6 +416,14 @@ pub struct DaemonV1<H, A, C> {
     limits: DaemonLimitsV1,
     server_incarnation: ServerIncarnationV1,
     health: DaemonHealthV1,
+    transport_profile: DaemonTransportProfileV1,
+    next_connection_epoch: u128,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DaemonTransportProfileV1 {
+    Conversation,
+    Collaboration,
 }
 
 impl<H, A, C> DaemonV1<H, A, C>
@@ -360,6 +452,7 @@ where
             clock,
             server_incarnation,
             limits,
+            DaemonTransportProfileV1::Conversation,
         )
     }
 
@@ -394,6 +487,7 @@ where
             clock,
             next_incarnation,
             limits,
+            DaemonTransportProfileV1::Conversation,
         )
     }
 
@@ -406,6 +500,7 @@ where
         clock: C,
         server_incarnation: ServerIncarnationV1,
         limits: DaemonLimitsV1,
+        transport_profile: DaemonTransportProfileV1,
     ) -> Result<Self, DaemonErrorV1> {
         match fs::symlink_metadata(&socket_path) {
             Ok(_) => {
@@ -453,6 +548,8 @@ where
                 ready: true,
                 ..DaemonHealthV1::default()
             },
+            transport_profile,
+            next_connection_epoch: 1,
         })
     }
 
@@ -532,28 +629,7 @@ where
             .set_read_timeout(Some(self.limits.io_timeout))
             .and_then(|()| stream.set_write_timeout(Some(self.limits.io_timeout)))
             .map_err(DaemonErrorV1::Io)?;
-        let mut client_hello = [0_u8; CLIENT_HELLO_BYTES_V1];
-        stream
-            .read_exact(&mut client_hello)
-            .map_err(DaemonErrorV1::Io)?;
-        if decode_client_hello_v1(&client_hello).is_err() {
-            increment(
-                &mut self.health.handshake_refused,
-                &mut self.health.saturated,
-            );
-            return Err(DaemonErrorV1::Handshake);
-        }
-        let server_hello = encode_server_hello_v1(
-            self.server_incarnation,
-            u32::try_from(self.limits.max_frame_bytes).map_err(|_| DaemonErrorV1::Handshake)?,
-            u32::try_from(self.limits.max_frames_after_connect)
-                .map_err(|_| DaemonErrorV1::Handshake)?,
-        )
-        .map_err(|_| DaemonErrorV1::Handshake)?;
-        stream
-            .write_all(&server_hello)
-            .and_then(|()| stream.flush())
-            .map_err(DaemonErrorV1::Io)?;
+        self.exchange_handshake(stream)?;
         increment(
             &mut self.health.handshake_accepted,
             &mut self.health.saturated,
@@ -564,30 +640,54 @@ where
             .map_err(|_| DaemonErrorV1::Authentication)?;
         let connect = read_frame(stream, self.limits.max_frame_bytes)?
             .ok_or_else(|| DaemonErrorV1::Io(io::Error::from(io::ErrorKind::UnexpectedEof)))?;
-        let opened = match self.host.open_daemon(&connect, &context, self.clock.now()) {
+        let (connect_route, connect_payload) = self.decode_profile_frame(&connect, true)?;
+        let opened = match self
+            .host
+            .open_daemon(connect_payload, &context, self.clock.now())
+        {
             Ok(opened) => opened,
             Err(error) => return Err(self.map_host_error(error)),
         };
         let Some(session) = opened.session() else {
-            write_frame(stream, opened.frame(), self.limits.max_frame_bytes)?;
+            self.write_profile_frame(stream, connect_route, opened.frame())?;
             return Err(DaemonErrorV1::ConnectionRefused);
         };
 
         let result = (|| {
-            write_frame(stream, opened.frame(), self.limits.max_frame_bytes)?;
+            let replay_epoch = if self.transport_profile == DaemonTransportProfileV1::Collaboration
+            {
+                Some(self.allocate_replay_epoch()?)
+            } else {
+                None
+            };
+            self.write_profile_frame(stream, connect_route, opened.frame())?;
+            if let Some(epoch) = replay_epoch {
+                let hello = encode_local_session_hello_v1(epoch);
+                self.write_profile_frame(stream, LocalRouteV1::Control, &hello)?;
+            }
             for _ in 0..self.limits.max_frames_after_connect {
                 let Some(frame) = read_frame(stream, self.limits.max_frame_bytes)? else {
                     return Ok(());
                 };
-                let reply =
-                    match self
-                        .host
-                        .handle_daemon(session, &frame, &context, self.clock.now())
-                    {
-                        Ok(reply) => reply,
-                        Err(error) => return Err(self.map_host_error(error)),
-                    };
-                write_frame(stream, &reply, self.limits.max_frame_bytes)?;
+                let (route, payload) = self.decode_profile_frame(&frame, false)?;
+                let reply = match route {
+                    LocalRouteV1::Conversation => {
+                        self.host
+                            .handle_daemon(session, payload, &context, self.clock.now())
+                    }
+                    LocalRouteV1::Transient => self.host.handle_transient_daemon(
+                        session,
+                        payload,
+                        &context,
+                        self.clock.now(),
+                    ),
+                    LocalRouteV1::Control => return Err(DaemonErrorV1::Route),
+                };
+                let reply = match reply {
+                    Ok(reply) => reply,
+                    Err(error) => return Err(self.map_host_error(error)),
+                };
+                self.write_profile_frame(stream, route, &reply)?;
             }
             Err(DaemonErrorV1::RequestLimit)
         })();
@@ -595,6 +695,110 @@ where
             Ok(_) => result,
             Err(error) => Err(self.map_host_error(error)),
         }
+    }
+
+    fn exchange_handshake(&mut self, stream: &mut UnixStream) -> Result<(), DaemonErrorV1> {
+        let server = match self.transport_profile {
+            DaemonTransportProfileV1::Conversation => {
+                let mut client = [0; CLIENT_HELLO_BYTES_V1];
+                stream.read_exact(&mut client).map_err(DaemonErrorV1::Io)?;
+                if decode_client_hello_v1(&client).is_err() {
+                    increment(
+                        &mut self.health.handshake_refused,
+                        &mut self.health.saturated,
+                    );
+                    return Err(DaemonErrorV1::Handshake);
+                }
+                encode_server_hello_v1(
+                    self.server_incarnation,
+                    u32::try_from(self.limits.max_frame_bytes)
+                        .map_err(|_| DaemonErrorV1::Handshake)?,
+                    u32::try_from(self.limits.max_frames_after_connect)
+                        .map_err(|_| DaemonErrorV1::Handshake)?,
+                )
+                .map_err(|_| DaemonErrorV1::Handshake)?
+                .to_vec()
+            }
+            DaemonTransportProfileV1::Collaboration => {
+                let mut client = [0; COLLABORATION_CLIENT_HELLO_BYTES_V1];
+                stream.read_exact(&mut client).map_err(DaemonErrorV1::Io)?;
+                if decode_collaboration_client_hello_v1(&client).is_err() {
+                    increment(
+                        &mut self.health.handshake_refused,
+                        &mut self.health.saturated,
+                    );
+                    return Err(DaemonErrorV1::Handshake);
+                }
+                encode_collaboration_server_hello_v1(
+                    self.server_incarnation,
+                    u32::try_from(self.limits.max_frame_bytes)
+                        .map_err(|_| DaemonErrorV1::Handshake)?,
+                    u32::try_from(self.limits.max_frames_after_connect)
+                        .map_err(|_| DaemonErrorV1::Handshake)?,
+                )
+                .map_err(|_| DaemonErrorV1::Handshake)?
+                .to_vec()
+            }
+        };
+        stream.write_all(&server).map_err(DaemonErrorV1::Io)?;
+        stream.flush().map_err(DaemonErrorV1::Io)
+    }
+
+    fn decode_profile_frame<'a>(
+        &self,
+        frame: &'a [u8],
+        connect: bool,
+    ) -> Result<(LocalRouteV1, &'a [u8]), DaemonErrorV1> {
+        match self.transport_profile {
+            DaemonTransportProfileV1::Conversation => Ok((LocalRouteV1::Conversation, frame)),
+            DaemonTransportProfileV1::Collaboration => {
+                let decoded = decode_local_routed_frame_v1(frame, self.limits.max_frame_bytes)
+                    .map_err(|_| DaemonErrorV1::Route)?;
+                if decoded.route() == LocalRouteV1::Control
+                    || (connect && decoded.route() != LocalRouteV1::Conversation)
+                {
+                    return Err(DaemonErrorV1::Route);
+                }
+                Ok((decoded.route(), decoded.payload()))
+            }
+        }
+    }
+
+    fn write_profile_frame(
+        &self,
+        stream: &mut UnixStream,
+        route: LocalRouteV1,
+        payload: &[u8],
+    ) -> Result<(), DaemonErrorV1> {
+        match self.transport_profile {
+            DaemonTransportProfileV1::Conversation => {
+                write_frame(stream, payload, self.limits.max_frame_bytes)
+            }
+            DaemonTransportProfileV1::Collaboration => {
+                let encoded =
+                    encode_local_routed_frame_v1(route, payload, self.limits.max_frame_bytes)
+                        .map_err(|_| DaemonErrorV1::FrameLimit)?;
+                write_frame(stream, &encoded, self.limits.max_frame_bytes)
+            }
+        }
+    }
+
+    fn allocate_replay_epoch(&mut self) -> Result<LocalReplayEpochV1, DaemonErrorV1> {
+        let sequence = self.next_connection_epoch;
+        let Some(next) = sequence.checked_add(1) else {
+            self.health.ready = false;
+            self.health.fenced = true;
+            return Err(DaemonErrorV1::ReplayEpochExhausted);
+        };
+        self.next_connection_epoch = next;
+        let mut bytes = [0; 32];
+        bytes[..16].copy_from_slice(&self.server_incarnation.as_bytes());
+        bytes[16..].copy_from_slice(&sequence.to_be_bytes());
+        LocalReplayEpochV1::new(bytes).ok_or_else(|| {
+            self.health.ready = false;
+            self.health.fenced = true;
+            DaemonErrorV1::ReplayEpochExhausted
+        })
     }
 
     fn map_host_error(&mut self, error: DaemonHostErrorV1) -> DaemonErrorV1 {
@@ -618,6 +822,45 @@ where
     }
 
     pub const fn host(&self) -> &HostV2<AegisVerifierV1<P>> {
+        &self.host
+    }
+}
+
+impl<P, A, C> DaemonV1<TransientHostV1<AegisVerifierV1<P>>, A, C>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    A: AuthenticatorV1,
+    C: HostClockV1,
+{
+    pub fn bind_new_collaboration(
+        socket_path: impl AsRef<Path>,
+        host: TransientHostV1<AegisVerifierV1<P>>,
+        authenticator: A,
+        clock: C,
+        server_incarnation: ServerIncarnationV1,
+        limits: DaemonLimitsV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        validate_daemon_configuration(server_incarnation, limits)?;
+        let socket_path = socket_path.as_ref().to_path_buf();
+        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
+        let lifetime = LifetimeLeaseV1::acquire_new(parent, &socket_path, server_incarnation)?;
+        Self::bind_owned(
+            socket_path,
+            lifetime,
+            host,
+            authenticator,
+            clock,
+            server_incarnation,
+            limits,
+            DaemonTransportProfileV1::Collaboration,
+        )
+    }
+
+    pub fn observation(&self) -> DaemonObservationV1 {
+        observation(self.health, self.host.host())
+    }
+
+    pub const fn host(&self) -> &TransientHostV1<AegisVerifierV1<P>> {
         &self.host
     }
 }

@@ -1,10 +1,11 @@
 # Private local daemon profile
 
 Status: qualified bounded Unix transport composition V1 with separately selected
-volatile or receipt-gated durable authenticated Host ownership.
+volatile conversation, volatile collaboration, or receipt-gated durable
+authenticated Host ownership.
 
 `agora-local-daemon` owns only the outer connection and framing lifetime around
-an Aegis-authorized volatile or durable Host owner. Its normal dependency
+an Aegis-authorized volatile, transient-wrapped, or durable Host owner. Its normal dependency
 closure reaches only the verifier adapter, Host/Durable owners, Wire, and the
 generic Keystone checkpoint-store port; the physical directory store used by
 qualification remains test-only. It does not enter Agora's engine, protocol,
@@ -14,7 +15,8 @@ service, storage implementation, Aegis policy, or SDK semantics.
 
 The application supplies:
 
-- either a `HostV2<AegisVerifierV1<P>>` or Agora's
+- either a `HostV2<AegisVerifierV1<P>>`, a
+  `TransientHostV1<AegisVerifierV1<P>>`, or Agora's
   `DurableHostV2<AegisVerifierV1<P>, S>` with its engine, Service V2 limits,
   Wire V2 limits, Aegis service port, fixed Agora resource, and—only for the
   durable selection—an independently qualified checkpoint store;
@@ -58,6 +60,16 @@ foreign, malformed, missing, or unsafe residue refuses without adoption.
    reauthorize the retained subject and participant before Service V2 executes.
 10. On EOF or any later error, close the host session and service client
    unconditionally.
+
+The separately selected collaboration state machine uses fixed-width handshake
+profile 2, selecting conversation Wire V2 and transient Wire V1. Every outer
+payload is routed by one included byte: conversation, transient, or control.
+Connect must be conversation-routed. After successful authenticated connect,
+the server sends the connected reply and then a server-only `AGORATE1` control
+hello. Its opaque nonzero replay epoch combines the declared 16-byte server
+incarnation and a monotone 16-byte per-daemon connection sequence. Later
+conversation and transient requests share the exact Host session and request
+budget; client control frames refuse. Epoch exhaustion fences readiness.
 
 Each outer record is `u32_be length || frame`. Length zero and values above the
 configured ceiling refuse before payload allocation. Truncated prefixes and
@@ -112,7 +124,9 @@ automatic crash restart, concurrent clients, overload queues, concurrent
 in-flight drain, signal handling, socket activation, installation,
 cross-restart request identity, reconnect resumption, or atomic Aegis/Agora
 recovery.
-The durable selection consumes Agora's existing receipt-gated Host boundary and
+The collaboration selection binds each replay epoch to one declared server
+incarnation and authenticated connection, but the epoch is correlation evidence,
+not a credential or authority token. The durable selection consumes Agora's existing receipt-gated Host boundary and
 generic checkpoint-store port; the transport neither defines storage nor weakens
 its publication fence. A real-socket directory-store scenario proves clean owner
 teardown/reopen and a fresh authenticated connection observe retained conversation
@@ -120,11 +134,12 @@ state under a distinct server incarnation. It does not preserve the old transpor
 session or make a disconnected pending request replayable: terminal connection
 cleanup still closes the service client and reclaims its receipt namespace. The
 qualified idle drain fence does not add concurrent in-flight drain or signal
-integration.
+integration. The volatile collaboration wrapper is not combined with the
+durable owner in this profile.
 
 ## Qualification evidence
 
-The ten real-socket scenarios verify private-parent/socket modes and type,
+The eleven real-socket scenarios verify private-parent/socket modes and type,
 canonical incarnation-bound lifetime bytes, live-owner exclusion, distinct
 stale-residue refusal, replacement fencing before authentication, and
 conservative teardown,
@@ -140,10 +155,15 @@ additionally verifies exact layer-separated observation, repeated-read
 passivity, content-safe diagnostics, and sticky counter saturation without
 wraparound. A separate real-endpoint scenario verifies the idle drain
 transition, zero downstream work after its fence, endpoint retention, and
-pinned teardown. The tenth composes `DurableHostV2` with the physical private
+pinned teardown. The durable scenario composes `DurableHostV2` with the physical private
 directory store, commits a room through the socket, tears down both owners,
 reopens them, publishes a distinct server incarnation and reads the retained
 room through a fresh authenticated connection.
+
+The collaboration scenario multiplexes a conversation mutation with presence
+and typing publication, proves EOF retirement through `Unknown`/inactive
+observation on a second connection, observes distinct per-connection epochs,
+and reconstructs empty transient owners under a distinct restart incarnation.
 
 The recovery scenario separately proves live-owner exclusion; equal, wrong, and
 malformed prior-incarnation refusal without mutation; exact locked rotation to a
@@ -156,7 +176,7 @@ residue recovery never invents or adopts semantic state.
 The outer length prefix is also a pure bounded codec used by the socket path.
 Ordinary tests close empty, incomplete, over-limit, exact-prefix, remainder, and
 content-safe diagnostic behavior. Pinned coverage-guided targets mutate
-canonical ClientHello, ServerHello, and framed Wire V1/V2 seeds. Every
+canonical handshake/session-control and framed conversation/transient seeds. Every
 accepted handshake or frame prefix must re-encode exactly; outer framing cannot
 consume the next stream frame. The remote-client SDK facade proves the handshake
 codec is available without depending on daemon or authentication policy.

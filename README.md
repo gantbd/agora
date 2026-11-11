@@ -138,7 +138,8 @@ The repository also contains an initial layered operational profile:
 - `agora-aegis-verifier` maps that verifier port to bounded public Aegis
   session/grant authorization without entering conversation semantics;
 - `agora-local-daemon` owns the bounded sequential private Unix socket lifetime
-  around Aegis-authorized Host V2 and no conversation semantics;
+  around separately selected Aegis-authorized conversation, transient
+  collaboration, or durable Host V2 ownership and no conversation semantics;
 - `agora-client` owns a monotone request namespace over an abstract service port.
 
 These crates add no credential authentication, network transport, durable

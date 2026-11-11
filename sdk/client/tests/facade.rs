@@ -73,8 +73,14 @@ fn facade_alone_constructs_protocol_client_and_wire_values() {
 #[test]
 fn facade_exposes_the_canonical_local_handshake_without_transport_policy() {
     use wire::local_handshake::{
-        ServerIncarnationV1, decode_client_hello_v1, decode_server_hello_v1,
-        encode_client_hello_v1, encode_server_hello_v1,
+        ServerIncarnationV1, decode_client_hello_v1, decode_collaboration_client_hello_v1,
+        decode_collaboration_server_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
+        encode_collaboration_client_hello_v1, encode_collaboration_server_hello_v1,
+        encode_server_hello_v1,
+    };
+    use wire::local_transient::{
+        LocalReplayEpochV1, LocalRouteV1, decode_local_routed_frame_v1,
+        decode_local_session_hello_v1, encode_local_routed_frame_v1, encode_local_session_hello_v1,
     };
 
     let client = encode_client_hello_v1();
@@ -87,6 +93,27 @@ fn facade_exposes_the_canonical_local_handshake_without_transport_policy() {
     assert_eq!(hello.max_frame_bytes(), 8_192);
     assert_eq!(hello.max_frames_after_connect(), 1_024);
     assert!(hello.supports_capability_discovery());
+
+    let collaboration_client = encode_collaboration_client_hello_v1();
+    assert_eq!(
+        decode_collaboration_client_hello_v1(&collaboration_client),
+        Ok(())
+    );
+    let collaboration_server =
+        encode_collaboration_server_hello_v1(incarnation, 8_192, 1_024).unwrap();
+    let collaboration = decode_collaboration_server_hello_v1(&collaboration_server).unwrap();
+    assert_eq!(collaboration.server_incarnation(), incarnation);
+    assert!(collaboration.supports_transient_collaboration());
+
+    let routed = encode_local_routed_frame_v1(LocalRouteV1::Transient, b"frame", 32).unwrap();
+    let decoded = decode_local_routed_frame_v1(&routed, 32).unwrap();
+    assert_eq!(decoded.route(), LocalRouteV1::Transient);
+    assert_eq!(decoded.payload(), b"frame");
+    let epoch = LocalReplayEpochV1::new([7; 32]).unwrap();
+    let session = encode_local_session_hello_v1(epoch);
+    assert_eq!(decode_local_session_hello_v1(&session), Ok(epoch));
+    assert!(client::transient::TransientReplayEpochV1::new(epoch.into_bytes()).is_some());
+    assert!(!format!("{epoch:?}").contains('7'));
 }
 
 #[test]
@@ -317,7 +344,7 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
 }
 
 #[test]
-fn facade_names_the_unadvertised_transient_collaboration_contract() {
+fn facade_names_the_transient_collaboration_contract() {
     let request = protocol::transient::TransientRequestV1 {
         request_id: protocol::transient::TransientRequestIdV1(3),
         command: protocol::transient::TransientCommandV1::PublishPresence {

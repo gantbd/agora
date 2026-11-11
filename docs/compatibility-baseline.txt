@@ -15,8 +15,11 @@ package|sdk/client/Cargo.toml|agora-sdk-client|0.1.0
 package|sdk/embedded/Cargo.toml|agora-sdk-embedded|0.1.0
 fixture|crates/agora-host/tests/fixtures/host-checkpoint-v16.hex|3602|2ff37eb96bf54c4fae21caf610d2aa1bdda7fd6d3eb7f98fda78a1435833c7ce
 fixture|crates/agora-local-daemon/tests/fixtures/lifetime-record-v1.hex|24|eee7ee78b07ffe73b9b53bd8ab6d44804d7185c2977c3f6107ec5268c29eb47c
+fixture|crates/agora-wire/tests/fixtures/local-collaboration-client-hello-v1.hex|14|90bd1c37dfd95bf27d53f60557bb4b8899604ed463c6f80f53e5d9a9b2606215
+fixture|crates/agora-wire/tests/fixtures/local-collaboration-server-hello-v1.hex|42|c185dbca85dade644e2c32b101446339fa9f6628a1ff25c71cba68e3367cf768
 fixture|crates/agora-wire/tests/fixtures/local-client-hello-v1.hex|12|03372d9d8a10106f6575c707f6d43c51de692e3251612fa7162664284cb7ef43
 fixture|crates/agora-wire/tests/fixtures/local-server-hello-v1.hex|40|01d73f25289710bec38abf9b8c2d0a12961c135ff56eed4b1e758a44b740b868
+fixture|crates/agora-wire/tests/fixtures/local-session-hello-v1.hex|40|004f71ee1c672e7ce16d910184dcc956feecb1c075a3ed45c827968291705e11
 fixture|crates/agora-service/tests/fixtures/service-checkpoint-v16.hex|5287|12dd1971531ca5848a929734f60a66a99cc0973ebe57501a821c0a44a2513933
 fixture|crates/agora-storage-directory/tests/fixtures/directory-record-v1.hex|52|377cc1e927daa46ec954c5ad419ca762da86a18ee18b7e2d2169262aa0e70b16
 fixture|crates/agora-wire/tests/fixtures/bans-reply-v2.hex|56|1eceb89d5dd13236623b366cc25ac4d12535cdc87dec8101f2290615f819832a

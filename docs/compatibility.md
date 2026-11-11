@@ -158,7 +158,16 @@ command/outcome tags `04` through `06`, reply tags `81` and `82`, and refusal
 tags `01` through `0b` do not reinterpret or extend durable Wire V1/V2 frames.
 The four frozen transient frames join the compatibility inventory; every older
 fixture, capability list, and checkpoint remains byte-identical. No transient
-capability is advertised yet.
+command is added to durable Wire V2 capability discovery.
+
+Private local collaboration handshake profile 2 is additive and selects
+conversation Wire V2 plus transient Wire V1. Its 14-byte ClientHello, 42-byte
+ServerHello, and 40-byte `AGORATE1` session-control hello have separate frozen
+fixtures. The collaboration ServerHello reports support for this multiplexed
+profile; handshake profile 1 and all prior bytes remain unchanged. Routed outer
+payloads use a closed one-byte conversation/transient/control discriminator,
+and the server-only control hello binds a nonzero replay epoch to one declared
+server incarnation and connection.
 
 ## Conservative baseline gate
 

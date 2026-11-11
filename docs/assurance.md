@@ -23,7 +23,7 @@ The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
 closes over the twelve-package stable workspace, the standalone fuzz package,
-and thirty-four canonical fixtures.
+and thirty-nine canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -84,7 +84,7 @@ single-bit mutations per profile. Each candidate must refuse recovery or recover
 and re-encode byte-for-byte, extending the no-silent-normalization law through
 nested private state, receipts, cursors, and authenticated sessions.
 
-The unadvertised transient owner has focused pure-state evidence for human/agent
+The transient owner has focused pure-state evidence for human/agent
 symmetry, current-member-only observation, explicit expiry to `Unknown`, no
 conversation revision effect, capacity refusal without eviction, bounded expiry
 reclamation, monotone-clock refusal, exact as-of/generation cursor binding,
@@ -93,7 +93,7 @@ empty restart projection. A saturation unit proves that generation overflow
 sticks fidelity loss and fences publication/observation without blocking source
 cleanup.
 
-The separate unadvertised typing owner has six integration scenarios and two
+The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;
 human/agent symmetry; current membership and target authority; no conversation
 revision effect; per-source target and total-signal ceilings; atomic refusal;
@@ -109,10 +109,20 @@ exact public replay/conflict/sequence, close/revocation/time-regression retireme
 before refusal, leave reconciliation before its accepted reply and no rejoin
 resurrection, bounded expiry, wrapper reconstruction to `Unknown`/inactive, and
 session/room/target/snapshot/age cursor binding. The presence/typing Protocol/Wire grammar
-now has exhaustive value round trips, canonical shape and ordering checks, four
+has exhaustive value round trips, canonical shape and ordering checks, four
 frozen frames, content-safe Debug, and deterministic
-truncation/trailing/single-bit mutation closure. Transport replay-epoch binding
-and end-to-end local-daemon evidence remain open under R62.
+truncation/trailing/single-bit mutation closure.
+
+The additive local collaboration transport has three more frozen control
+fixtures and canonical fuzz oracles. Its real-socket scenario multiplexes
+ordinary and transient frames through one authenticated Host session, proves
+presence and typing publication, source retirement on EOF, `Unknown`/inactive
+projection after reconnect, a distinct replay epoch for each connection, and
+empty transient ownership plus a distinct epoch after daemon reconstruction
+under a new server incarnation. The transport-supplied epoch bytes are directly
+accepted by the command-neutral client facade. This closes R62 for the private
+volatile local profile, not for a durable+transient composition or network
+transport.
 
 Six transient-client scenarios prove exact equal-command retry after an
 outcome-unknown failure, definitely-not-sent progression, same-epoch state
@@ -120,9 +130,9 @@ restoration, malformed-tail and changed-epoch refusal, explicit reconnect/restar
 rebind with returned uncertainty, fresh request identity, and content-safe
 diagnostics. The remote-client facade constructs the client and codec without a
 direct crate dependency; typing commands obey the same uncertainty fence. The
-caller must bind the opaque replay epoch to both
-server incarnation and exact authenticated session; Agora does not infer that
-transport fact.
+private collaboration daemon supplies that binding after authenticated connect.
+Other transports must still bind the opaque replay epoch to both server
+incarnation and exact authenticated session themselves.
 
 Four additional public-Host scenarios drive the canonical frames through the
 authenticated wrapper. They prove exact semantic replay without another domain
@@ -135,14 +145,16 @@ embedded facade constructs the profile without direct crate dependencies.
 
 The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
 nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus
-is regenerated from and checked against all twenty-seven durable V1/V2 wire
-fixtures plus the current engine, service, and host checkpoint fixtures.
-`wire_canonical` drives all four public V1/V2 request/reply decoders and both
-fixed-width handshake decoders; `checkpoint_canonical` drives all three semantic
+is regenerated from and checked against all thirty-four wire and fixed local
+control fixtures plus the current engine, service, and host checkpoint fixtures.
+`wire_canonical` drives all six public conversation/transient request/reply
+decoders, five fixed-width handshake/session-control decoders, and the local
+route envelope;
+`checkpoint_canonical` drives all three semantic
 recovery layers;
 `outer_frame_canonical` drives the daemon's production length-prefix codec over
-the twenty-five complete-frame protocol seeds (the unframed handshake fixtures
-are deliberately excluded). An accepted
+the twenty-nine complete-frame protocol seeds (the five fixed-width local
+control fixtures are deliberately excluded). An accepted
 candidate must re-encode exactly, and an accepted frame prefix must preserve its
 unconsumed stream suffix. The qualified smoke ran 20,000 fixed-seed cases on all
 three targets. The integrated local release-candidate campaign for revision
@@ -295,12 +307,13 @@ incarnation generation, concurrency, operational drain/crash recovery,
 cross-disconnect replay, and network transport remain
 unqualified. Physical storage is separate and narrowly qualified below.
 
-The fixed-width handshake codec is owned by `agora-wire`, not the daemon. Two
-canonical fixtures close its ClientHello and ServerHello bytes; ordinary tests
+The fixed-width handshake codec is owned by `agora-wire`, not the daemon. Five
+canonical fixtures close both ClientHello/ServerHello pairs and the
+session-control hello; ordinary tests
 reject length, magic, profile, zero-limit, and zero-incarnation drift and require
 exact reconstruction. The client SDK facade constructs and decodes the profile.
-The pinned wire fuzz target now applies exact re-encoding oracles to both public
-handshake decoders in addition to all complete-frame decoders. This establishes
+The pinned wire fuzz target now applies exact re-encoding oracles to all five
+local control decoders, the route envelope, and all complete-frame decoders. This establishes
 closed profile selection and visible server-lifetime evidence, not credential
 authentication, compatibility-range negotiation, incarnation provenance,
 resume, or replay safety.

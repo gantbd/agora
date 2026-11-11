@@ -602,6 +602,20 @@ connection context, and a fresh explicit host time, causing the Aegis adapter to
 authorize the retained subject and participant again before Service V2 handles
 the request. A fixed positive post-connect frame budget bounds connection work.
 
+The separately constructed volatile collaboration profile uses fixed-width
+handshake profile 2 to select conversation Wire V2 and transient Wire V1. Each
+outer payload includes one closed route byte for conversation, transient, or
+server-only control and remains within the same advertised frame ceiling. The
+Connect payload must use the conversation route. After successful authenticated
+Connect, the daemon sends the routed connected reply followed by a fixed
+`AGORATE1` control hello. Its nonzero opaque 32-byte replay epoch combines the
+declared server incarnation with a monotone per-daemon connection sequence,
+binding transient client uncertainty to the exact authenticated Host session.
+Later conversation and transient frames share that session, context, clock, and
+request budget. Client control frames refuse, connection close retires both
+transient owners, and replay-epoch exhaustion fences readiness. This profile is
+not combined with the receipt-gated durable Host selection.
+
 EOF is a clean transport close. EOF, write failure (including the initial
 connected reply), malformed framing, request-budget exhaustion, and Host refusal
 all converge on unconditional idempotent `HostV2::close` after a session has

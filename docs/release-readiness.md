@@ -28,23 +28,26 @@ not ready for a network service or crates.io release.
   owner versus crash-residue refusal, and fail-closed replacement fencing;
 - explicit exact-incarnation endpoint-residue recovery with locked lifetime
   rotation, fresh Host composition, and next-incarnation handshake evidence;
-- an unadvertised bounded transient presence owner with current-membership
+- an additive private local collaboration handshake with bounded closed routing,
+  server-only replay-epoch control, authenticated connection binding, and
+  reconnect/restart privacy evidence;
+- a bounded transient presence owner with current-membership
   checks, opaque sources, monotone explicit time, snapshot cursors, bounded
   expiry work, lifecycle retirement, and restart-to-`Unknown` evidence;
-- an unadvertised bounded transient typing owner with current membership plus
+- a bounded transient typing owner with current membership plus
   room/retained-root/stable-topic authority, opaque session sources, bounded
   target fan-out and expiry, exact snapshot pages, lifecycle cleanup, and
   restart-to-inactive projection;
-- an unadvertised non-durable authenticated Host wrapper for transient presence and typing,
+- a non-durable authenticated Host wrapper for transient presence and typing,
   including close/revocation/regression source retirement, membership
   reconciliation before conversation replies, fail-safe cleanup under sticky
   fidelity loss, and wrapper reconstruction to `Unknown`;
-- an unadvertised separate transient presence/typing Protocol/Wire grammar with
+- a separate transient presence/typing Protocol/Wire grammar with
   canonical state and target shapes, distinct opaque cursors, remaining-only
   lifetimes, four frozen frames, and deterministic bounded mutation closure;
-- an unadvertised replay-epoch-bound transient client with exact uncertainty,
+- a replay-epoch-bound transient client with exact uncertainty,
   validated restoration, and explicit reconnect/restart rebind;
-- an unadvertised authenticated transient Host request handler with one bounded
+- an authenticated transient Host request handler with one bounded
   replay receipt and one age-bounded opaque page cursor per session;
 - transport-neutral authenticated host composition with bounded volatile
   sessions, current-context revalidation, and revocation-safe cleanup;
@@ -53,7 +56,7 @@ not ready for a network service or crates.io release.
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
   twelve packages;
 - conservative package and canonical-fixture inventory closure over twelve
-  stable workspace packages, one standalone fuzz package, and thirty-four
+  stable workspace packages, one standalone fuzz package, and thirty-nine
   fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
@@ -174,14 +177,12 @@ not ready for a network service or crates.io release.
 
 ## Open release blockers
 
-- R62 fixes the architecture and supplies dark transient presence and typing
-  owners plus
-  authenticated Host clock/source and automatic lifecycle composition, but no
-  public capability is implemented or advertised. The presence/typing Protocol/Wire
-  grammar, authenticated Host replay/cursors, client uncertainty state, and SDK
-  values and Host/client construction are closed for both signal families.
-  Transport replay-epoch binding and end-to-end local-daemon privacy/restart
-  evidence remain required.
+- R62 is qualified for an additive private local volatile profile: handshake
+  profile 2 multiplexes conversation and transient frames, supplies an exact
+  connection/server replay epoch, retires sources on close, and restarts empty.
+  A combined durable-conversation plus transient owner, network transport, and
+  production credential authenticator remain open and are not inferred from
+  this profile.
 
 - no remote origin provenance or remote CI; the qualified local source candidate
   is content-addressed, but its selected Aegis and Keystone inputs were unclean

@@ -1,8 +1,7 @@
 # Transient wire profile V1
 
-Status: canonical bounded presence and typing grammar with authenticated Host
-and command-neutral client composition; unadvertised and not routed by a
-qualified transport.
+Status: canonical bounded presence and typing grammar with authenticated Host,
+command-neutral client, and qualified private local transport composition.
 
 This profile is separate from durable Protocol/Wire V2. A transient request is
 not a `CommandV2`, does not receive a durable service receipt, and cannot replay
@@ -80,5 +79,13 @@ The wrapper's monotone transient clock advances for every authenticated offer,
 including malformed or refused requests, so another session cannot roll time
 back after a high-time refusal. Regression retires that caller and its source.
 
-There is no qualified transport binding yet. Presence is not advertised until
-typing, local-daemon lifecycle evidence, and the remaining R62 gates close.
+Local collaboration handshake profile 2 selects conversation Wire V2 and this
+transient Wire V1 together. Each outer payload begins with a closed route tag:
+conversation `01`, transient `02`, or server-only control `03`; the route byte
+is included in the advertised outer-frame ceiling. Connect must use the
+conversation route. After successful authenticated connect, the daemon sends a
+fixed `AGORATE1` control hello containing a nonzero opaque 32-byte replay epoch.
+Its first half is the declared server incarnation and its second half is a
+monotone per-daemon connection sequence, binding one client replay namespace to
+one authenticated Host session. Client control frames refuse. The
+conversation-only handshake profile and durable capability list are unchanged.

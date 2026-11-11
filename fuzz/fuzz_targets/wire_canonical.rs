@@ -5,8 +5,14 @@ use agora_wire::{
     WireLimits, decode_reply_v1, decode_request_v1, encode_reply_v1, encode_request_v1,
 };
 use agora_wire::local_handshake::{
-    decode_client_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
+    decode_client_hello_v1, decode_collaboration_client_hello_v1,
+    decode_collaboration_server_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
+    encode_collaboration_client_hello_v1, encode_collaboration_server_hello_v1,
     encode_server_hello_v1,
+};
+use agora_wire::local_transient::{
+    decode_local_routed_frame_v1, decode_local_session_hello_v1, encode_local_routed_frame_v1,
+    encode_local_session_hello_v1,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -53,5 +59,43 @@ fuzz_target!(|input: &[u8]| {
         .expect("decoded server hello must encode");
         assert_eq!(encoded.as_slice(), input, "accepted server hello was not canonical");
         assert_eq!(decode_server_hello_v1(&encoded), Ok(value));
+    }
+    if decode_collaboration_client_hello_v1(input).is_ok() {
+        assert_eq!(encode_collaboration_client_hello_v1().as_slice(), input);
+    }
+    if let Ok(value) = decode_collaboration_server_hello_v1(input) {
+        let encoded = encode_collaboration_server_hello_v1(
+            value.server_incarnation(),
+            value.max_frame_bytes(),
+            value.max_frames_after_connect(),
+        )
+        .expect("decoded collaboration server hello must encode");
+        assert_eq!(
+            encoded.as_slice(),
+            input,
+            "accepted collaboration server hello was not canonical"
+        );
+        assert_eq!(decode_collaboration_server_hello_v1(&encoded), Ok(value));
+    }
+    if let Ok(value) = decode_local_session_hello_v1(input) {
+        let encoded = encode_local_session_hello_v1(value);
+        assert_eq!(
+            encoded.as_slice(),
+            input,
+            "accepted local session hello was not canonical"
+        );
+        assert_eq!(decode_local_session_hello_v1(&encoded), Ok(value));
+    }
+    if let Ok(value) = decode_local_routed_frame_v1(input, MAX_INPUT_BYTES) {
+        let encoded = encode_local_routed_frame_v1(value.route(), value.payload(), MAX_INPUT_BYTES)
+            .expect("decoded local route must encode");
+        assert_eq!(
+            encoded, input,
+            "accepted local routed frame was not canonical"
+        );
+        let reparsed = decode_local_routed_frame_v1(&encoded, MAX_INPUT_BYTES)
+            .expect("encoded local route must decode");
+        assert_eq!(reparsed.route(), value.route());
+        assert_eq!(reparsed.payload(), value.payload());
     }
 });

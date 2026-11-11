@@ -8,20 +8,26 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
-- Added an unadvertised bounded transient-typing owner for room, retained-root,
+- Added collaboration handshake profile 2 for the private Unix daemon, with
+  closed conversation/transient/control routing, a server-only session hello
+  binding replay to the declared server incarnation and exact authenticated
+  connection, frozen wire fixtures, SDK/fuzz reachability, and real-socket
+  reconnect/restart privacy evidence. The conversation-only profile and durable
+  capability list remain unchanged.
+- Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque
   session sources, exact snapshot cursors, atomic capacity, lifecycle cleanup,
   human/agent symmetry, generation-fidelity fencing, and restart-to-inactive
-  evidence. No typing protocol or capability is advertised yet.
+  evidence.
 - Added a sealed durable-Host selection to the existing private Unix daemon and
   a real-socket directory-store restart scenario proving retained conversation
   state under a fresh authenticated connection and server incarnation; reconnect
   request replay remains explicitly unsupported.
-- Added an unadvertised bounded transient-collaboration owner for expiring
+- Added a bounded transient-collaboration owner for expiring
   presence signals, with current-membership authority, opaque session sources,
   monotone explicit time, snapshot-bound pages, lifecycle retirement, bounded
   expiry work, human/agent symmetry, and restart-to-`Unknown` evidence.
-- Added an unadvertised non-durable transient Host composition that derives
+- Added a non-durable transient Host composition that derives
   presence and typing sources from authenticated sessions, uses qualified Host time,
   retires state on close/revocation/regression, reconciles leave/kick/ban before
   returning conversation replies, and fences observation on generation-fidelity
@@ -29,16 +35,16 @@ follow Semantic Versioning once a public release contract is selected.
 - Added validated V2 client-state export and restoration for the client-owned
   request namespace and exact unresolved request, while leaving durable storage,
   endpoint/session correspondence, and reconnect policy caller-owned.
-- Added an unadvertised, separately typed transient collaboration Protocol/Wire
+- Added a separately typed transient collaboration Protocol/Wire
   V1 grammar with volatile request identities; distinct presence and typing
   cursors; room, retained-root, and stable-topic typing targets; remaining-only
   lifetime projection; canonical shape/order checks; frozen frames; and bounded
   deterministic mutation closure. Durable Protocol V2 remains byte-unchanged.
-- Added an unadvertised command-neutral transient client state machine whose exact uncertainty
+- Added a command-neutral transient client state machine whose exact uncertainty
   is bound to a nonzero caller-supplied replay epoch spanning the server
   incarnation and authenticated session; reconnect/restart rebind returns old
   uncertainty and begins a fresh request namespace.
-- Added an unadvertised public presence/typing Host handler with authenticated
+- Added a public presence/typing Host handler with authenticated
   request-scoped revalidation, one bounded exact replay receipt per session,
   explicit sequence/conflict refusal, opaque one-live-cursor pagination, and
   independently bounded snapshot age without durable receipt contamination.

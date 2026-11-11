@@ -108,9 +108,13 @@ endpoint-scoped mode-0600 record binds the declared incarnation under an
 exclusive lock; parent, record, and socket replacement fence readiness. Four-byte
 big-endian outer lengths are checked before allocation; zero, overflow,
 truncation, deadline expiry, and response
-overflow terminate the connection. A fixed-width handshake selects Wire V2 and
-reports limits and incarnation before authentication. The first framed payload
-must be a Wire V2 Connect, and a fixed positive budget bounds later payloads.
+overflow terminate the connection. Fixed-width handshake profile 1 selects
+conversation Wire V2; additive profile 2 selects Wire V2 plus transient Wire V1
+with closed conversation/transient/control routing. Both report limits and
+incarnation before authentication. The first framed payload must carry a Wire
+V2 Connect, and a fixed positive budget bounds later payloads. The collaboration
+profile emits a server-only post-connect replay epoch bound to the declared
+incarnation and exact authenticated connection.
 
 Serving is deliberately sequential. Content-free counters distinguish clean
 completion, authentication/host refusal, and transport failure. The profile
@@ -119,7 +123,9 @@ port. It supplies neither peer-credential extraction nor endpoint lifecycle
 automation, fresh incarnation generation, compatibility-range negotiation,
 concurrent admission, in-flight graceful drain, signal handling, or durable Host
 V2 reconnect recovery. The daemon can instead be constructed over the existing
-receipt-gated Durable Host and checkpoint-store port; qualification proves clean
+receipt-gated Durable Host and checkpoint-store port; the separately selected
+volatile collaboration owner is not combined with that durable wrapper.
+Qualification proves clean
 owner teardown/reopen and retained state through a fresh authenticated
 connection, not old-session resumption or lost-reply replay. Exact stale endpoint
 cleanup remains an explicit prior-incarnation-checked operation, not automatic
