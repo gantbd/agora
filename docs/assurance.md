@@ -509,6 +509,14 @@ I/O, the new client identity advances, the replay epoch embeds the generated
 incarnation, and the retained room remains readable. It does not inject failure
 between these independently recoverable steps or establish cross-resource
 atomicity.
+A four-case subprocess campaign exits without Rust cleanup immediately after
+physical restore, Host sanitization, incarnation generation, or endpoint
+rotation. It checks exact store revision/client activity and exact endpoint
+record/socket residue after every exit. Conservative retry either repeats the
+safe sanitization or recovers it ordinarily, rotates from the observed prior
+incarnation, completes a fresh handshake, advances client identity, and reads
+the retained room in all four cases. This is inter-step process evidence, not
+intra-operation filesystem fault injection.
 
 Room change-feed scenarios bind a position to an exact completed snapshot,
 filter the independent recent-change journal by room, replay the same exclusive

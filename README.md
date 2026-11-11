@@ -153,7 +153,8 @@ The repository also contains an initial layered operational profile:
   around separately selected Aegis-authorized conversation, transient
   collaboration, or durable Host V2 ownership, plus bounded OS-backed lifetime
   incarnation generation and an explicit ordered operator-restore composition,
-  and no conversation semantics;
+  including real inter-step process-cut classification, and no conversation
+  semantics;
 - `agora-client` owns a monotone request namespace over an abstract service port.
 
 These crates add no credential authentication, network transport, durable

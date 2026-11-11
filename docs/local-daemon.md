@@ -59,6 +59,13 @@ The resulting handshake and replay epoch carry the generated incarnation, while
 a fresh connection advances the restored client frontier and reads retained
 conversation state. Store recovery and endpoint rotation remain separate
 failure domains; this procedure is not atomic or automatic.
+Real subprocess cuts classify each persistent boundary. Before sanitization the
+restored Host still contains its old session. After sanitization it has the next
+store revision and zero clients while endpoint residue remains old. Generated
+incarnation selection has no persistent effect. After endpoint rotation, OS
+process exit leaves the sanitized store and exact new-incarnation record/socket
+residue. Conservative restart from each class reaches another distinct
+incarnation and a fresh authenticated client without losing the retained room.
 
 ## Connection state machine
 

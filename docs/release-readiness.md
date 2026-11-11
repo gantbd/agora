@@ -178,6 +178,8 @@ not ready for a network service or crates.io release.
 - ordered local operator-restore startup composition through exact physical
   restore, durable semantic sanitization, bounded distinct-incarnation
   generation, locked endpoint rotation, and a fresh collaboration handshake;
+- real process-cut classification and conservative successful retry after each
+  operator-restore boundary, with exact store and endpoint residue evidence;
 - snapshot-aligned bounded room pull changes with stable event identity,
   exclusive continuation, explicit retention/leave-rejoin gaps, durable service
   cursors, closed Wire V2 values, and a frozen representative frame;

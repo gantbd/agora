@@ -206,6 +206,12 @@ after Host sanitization commits. Its fresh handshake cannot revive the retired
 session, but a failure between the store and endpoint steps can leave one step
 complete without the other. Operators must inspect and retry from truthful
 state; no cross-resource rollback or atomicity is claimed.
+Real process termination at every inter-step boundary makes that partial-state
+risk observable. In particular, an entropy value that was generated but not
+published grants no durable fact, while post-rotation recovery must trust the
+incarnation actually stored in the locked record rather than the operator's
+earlier intent. Internal lifetime-operation faults and hostile alteration remain
+outside this evidence.
 
 Host persistence binds the verified subject, claimed participant, opaque host
 session, service client and monotone verification time in the same record as all

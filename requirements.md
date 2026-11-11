@@ -535,6 +535,17 @@
   unavailable without authority I/O. This is an explicit ordered operator
   procedure, not an atomic store/endpoint transaction, automatic restart,
   credential renewal, or coordinated Aegis recovery.
+- **R78 — Operator-restore inter-step interruption classification:** real
+  process termination after physical restore, semantic sanitization, bounded
+  incarnation generation, and endpoint rotation must leave inspectable state.
+  Restore-only state must retain the restored revision and sessions; sanitized
+  state must have the exact next revision and zero active clients; generation
+  must be persistence-neutral; and completed endpoint rotation must leave the
+  sanitized store plus exact new-incarnation record/socket residue. A
+  conservative retry from every class must sanitize when necessary, rotate from
+  the actually recorded incarnation, admit a fresh higher client identity, and
+  expose retained conversation state. This does not classify interruption
+  inside each filesystem operation or make the steps atomic.
 
 ## Explicitly open
 

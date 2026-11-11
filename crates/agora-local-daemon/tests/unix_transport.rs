@@ -48,6 +48,7 @@ use std::io::{self, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -211,6 +212,57 @@ fn durable_config() -> DurableHostConfigV2 {
             },
         },
     )
+}
+
+fn seed_operator_restore_source(path: &Path, room_id: &str) {
+    let store = DirectoryCheckpointStoreV1::create_new(path, DirectoryLimitsV1::default()).unwrap();
+    let transient = TransientHostV1::new_with_typing(
+        host(Port::default()),
+        TransientLimitsV1::default(),
+        TypingLimitsV1::default(),
+        10,
+    )
+    .unwrap();
+    let mut durable =
+        DurableTransientHostV1::initialize(transient, store, durable_config()).unwrap();
+    let context = AegisContextV1::new(
+        "alice",
+        VerifiedSubjectV1::from_verifier([7; 16]),
+        SessionHandleV1(3),
+        aegis_protocol::GrantHandleV1(4),
+    );
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame("alice"), &context, HostTimeV1(1))
+    else {
+        panic!("durable source connection expected");
+    };
+    let session = opened.session().unwrap();
+    let WireReplyV2::Connected(client) = decode_reply_v2(opened.frame(), wire_limits()).unwrap()
+    else {
+        panic!("connected source frame expected");
+    };
+    let create = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(0),
+                command: ProtocolCommand::CreateRoom {
+                    room_id: room_id.to_owned(),
+                    name: "Restore Boundary".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 2,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    assert!(matches!(
+        durable.handle(session, &create, &context, HostTimeV1(2)),
+        DurableHostPublicationV2::Published { value: Ok(_), .. }
+    ));
+    drop(durable.into_store());
 }
 
 fn incarnation() -> ServerIncarnationV1 {
@@ -1280,6 +1332,205 @@ fn operator_restore_sanitizes_before_generated_incarnation_endpoint_rotation() {
     result.unwrap();
     drop(daemon);
     fs::remove_dir_all(parent).unwrap();
+}
+
+#[test]
+fn operator_restore_process_cuts_classify_and_resume_exactly() {
+    const CHILD_PARENT: &str = "AGORA_R78_CHILD_PARENT";
+    const CHILD_PHASE: &str = "AGORA_R78_CHILD_PHASE";
+
+    if let (Ok(parent), Ok(phase)) = (std::env::var(CHILD_PARENT), std::env::var(CHILD_PHASE)) {
+        if phase == "restored" {
+            std::process::exit(0);
+        }
+        let parent = PathBuf::from(parent);
+        let path = parent.join("agora.sock");
+        let store = DirectoryCheckpointStoreV1::open_existing(
+            parent.join("restored-checkpoint"),
+            DirectoryLimitsV1::default(),
+        )
+        .unwrap();
+        let restored = DurableTransientHostV1::recover_after_restore(
+            store,
+            durable_config(),
+            AegisVerifierV1::new(Port::default(), [0x55; 16]),
+            TransientLimitsV1::default(),
+            TypingLimitsV1::default(),
+            10,
+        )
+        .unwrap();
+        if phase == "sanitized" {
+            std::process::exit(0);
+        }
+        let mut entropy = FixedEntropy([0xb6; 16]);
+        let generated =
+            generate_distinct_server_incarnation_v1(&mut entropy, incarnation()).unwrap();
+        if phase == "generated" {
+            std::process::exit(0);
+        }
+        let daemon = DaemonV1::recover_stale_durable_collaboration(
+            &path,
+            restored,
+            Authentication,
+            Clock(100),
+            incarnation(),
+            generated,
+            daemon_limits(),
+        )
+        .unwrap();
+        assert_eq!(daemon.health().lifecycle, DaemonLifecycleV1::Ready);
+        std::process::exit(0);
+    }
+
+    for phase in ["restored", "sanitized", "generated", "endpoint"] {
+        let path = socket_path();
+        let parent = path.parent().unwrap();
+        let source_path = parent.join("source-checkpoint");
+        let backup_path = parent.join("backup.bin");
+        let restored_path = parent.join("restored-checkpoint");
+        seed_operator_restore_source(&source_path, "interrupted-restore");
+        export_directory_backup_v1(&source_path, &backup_path, DirectoryLimitsV1::default())
+            .unwrap();
+        drop(
+            restore_directory_backup_v1(&backup_path, &restored_path, DirectoryLimitsV1::default())
+                .unwrap(),
+        );
+        let stale_listener = UnixListener::bind(&path).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        drop(stale_listener);
+        let lock_path = lifetime_path(&path);
+        fs::write(
+            &lock_path,
+            fixture(include_str!("fixtures/lifetime-record-v1.hex")),
+        )
+        .unwrap();
+        fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "operator_restore_process_cuts_classify_and_resume_exactly",
+                "--nocapture",
+            ])
+            .env(CHILD_PARENT, parent)
+            .env(CHILD_PHASE, phase)
+            .status()
+            .unwrap();
+        assert!(status.success(), "child cut failed for {phase}");
+
+        let reopened =
+            DirectoryCheckpointStoreV1::open_existing(&restored_path, DirectoryLimitsV1::default())
+                .unwrap();
+        let recovered = DurableTransientHostV1::recover(
+            reopened,
+            durable_config(),
+            AegisVerifierV1::new(Port::default(), [0x55; 16]),
+            TransientLimitsV1::default(),
+            TypingLimitsV1::default(),
+            10,
+        )
+        .unwrap();
+        let expected_sanitized = phase != "restored";
+        assert_eq!(
+            recovered
+                .host()
+                .unwrap()
+                .host()
+                .service()
+                .active_client_count()
+                == 0,
+            expected_sanitized,
+            "cut classification mismatch for {phase}"
+        );
+        assert_eq!(
+            recovered.observation().store_revision,
+            if expected_sanitized { 3 } else { 2 }
+        );
+
+        let prior_incarnation = if phase == "endpoint" {
+            next_incarnation()
+        } else {
+            incarnation()
+        };
+        let mut expected_record = b"AGORALF1".to_vec();
+        expected_record.extend_from_slice(&prior_incarnation.as_bytes());
+        assert_eq!(fs::read(&lock_path).unwrap(), expected_record);
+        assert!(
+            path.exists(),
+            "every process cut leaves exact socket residue"
+        );
+
+        let owner = if phase == "endpoint" {
+            recovered
+        } else {
+            DurableTransientHostV1::recover_after_restore(
+                recovered.into_store(),
+                durable_config(),
+                AegisVerifierV1::new(Port::default(), [0x55; 16]),
+                TransientLimitsV1::default(),
+                TypingLimitsV1::default(),
+                10,
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            owner.host().unwrap().host().service().active_client_count(),
+            0
+        );
+        let mut entropy = FixedEntropy([0xc7; 16]);
+        let final_incarnation =
+            generate_distinct_server_incarnation_v1(&mut entropy, prior_incarnation).unwrap();
+        let daemon = DaemonV1::recover_stale_durable_collaboration(
+            &path,
+            owner,
+            Authentication,
+            Clock(200),
+            prior_incarnation,
+            final_incarnation,
+            daemon_limits(),
+        )
+        .unwrap();
+        let server = thread::spawn(move || {
+            let mut daemon = daemon;
+            let result = daemon.serve_next();
+            (result, daemon)
+        });
+        let mut stream = UnixStream::connect(&path).unwrap();
+        assert_eq!(
+            collaboration_handshake(&mut stream).server_incarnation(),
+            final_incarnation
+        );
+        let (client, _) = collaboration_connect(&mut stream);
+        assert_eq!(client.0, 1);
+        let rooms = encode_request_v2(
+            &WireRequestV2::Execute {
+                client,
+                request: RequestV2 {
+                    request_id: RequestIdV2(0),
+                    command: ProtocolCommand::Rooms {
+                        cursor: None,
+                        limit: 4,
+                    },
+                },
+            },
+            wire_limits(),
+        )
+        .unwrap();
+        write_routed(&mut stream, LocalRouteV1::Conversation, &rooms);
+        let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Rooms(page))) = decode_reply_v2(
+            &read_routed(&mut stream, LocalRouteV1::Conversation),
+            wire_limits(),
+        )
+        .unwrap() else {
+            panic!("resumed room page expected for {phase}");
+        };
+        assert_eq!(page.rooms[0].room_id, "interrupted-restore");
+        drop(stream);
+        let (result, daemon) = server.join().unwrap();
+        result.unwrap();
+        drop(daemon);
+        fs::remove_dir_all(parent).unwrap();
+    }
 }
 
 #[test]

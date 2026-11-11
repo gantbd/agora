@@ -32,6 +32,9 @@ follow Semantic Versioning once a public release contract is selected.
   collaboration handshake as an explicit non-atomic local operator procedure.
   Revision `2649605b00a33167b4edb1555720a18b0596181d` passed the integrated
   release profile with 10,000 soak cycles and 1,000,000 cases per fuzz target.
+- Added real process termination after every ordered operator-restore boundary,
+  exact partial-state classification, and conservative successful resume from
+  each restored/sanitized/generated/endpoint-rotated class.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,

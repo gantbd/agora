@@ -563,6 +563,15 @@ before binding collaboration profile 2. The next handshake and replay epoch use
 that generated incarnation; a fresh authenticated connection continues the
 preserved client frontier and can read retained conversation state. These are
 ordered independently recoverable boundaries, not one atomic transaction.
+If the process stops between steps, restore-only state is the original restored
+checkpoint plus old endpoint residue; post-sanitization state is the exact next
+checkpoint with no active clients plus old endpoint residue; post-generation is
+persistently identical because entropy selection writes nothing; and
+post-rotation state has that sanitized checkpoint plus new-incarnation endpoint
+record and stale socket. Recovery inspects those resources, repeats sanitation
+safely when endpoint rotation has not occurred, and rotates from the incarnation
+actually present. This classification does not cover interruption within an
+individual store or lifetime filesystem operation.
 
 “Durable” here means the specified operating-system synchronization mechanism
 completed on the qualified local profile. It does not prove storage-controller
