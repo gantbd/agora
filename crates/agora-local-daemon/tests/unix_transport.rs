@@ -15,10 +15,12 @@ use agora_host::{HostLimits, HostTimeV1, VerifiedSubjectV1};
 use agora_local_daemon::{
     AuthenticatorV1, COLLABORATION_SERVER_HELLO_BYTES_V1, CollaborationServerHelloV1,
     DaemonCleanupV1, DaemonErrorV1, DaemonLifecycleV1, DaemonLimitsV1, DaemonV1, HostClockV1,
-    LOCAL_SESSION_HELLO_BYTES_V1, LocalReplayEpochV1, LocalRouteV1, SERVER_HELLO_BYTES_V1,
-    ServerHelloV1, ServerIncarnationV1, decode_collaboration_server_hello_v1,
-    decode_local_routed_frame_v1, decode_local_session_hello_v1, decode_server_hello_v1,
-    encode_client_hello_v1, encode_collaboration_client_hello_v1, encode_local_routed_frame_v1,
+    LOCAL_SESSION_HELLO_BYTES_V1, LocalReplayEpochV1, LocalRouteV1, OsServerIncarnationEntropyV1,
+    SERVER_HELLO_BYTES_V1, ServerHelloV1, ServerIncarnationV1,
+    decode_collaboration_server_hello_v1, decode_local_routed_frame_v1,
+    decode_local_session_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
+    encode_collaboration_client_hello_v1, encode_local_routed_frame_v1,
+    generate_server_incarnation_v1,
 };
 use agora_protocol::transient::{
     PresenceStateV1, PresenceViewStateV1, TransientCommandV1, TransientOutcomeV1, TransientReplyV1,
@@ -361,6 +363,45 @@ fn idle_drain_is_irreversible_and_refuses_before_accept_or_authority() {
     assert_eq!(stopped.health.lifecycle, DaemonLifecycleV1::Stopped);
     assert_eq!(stopped.cleanup, DaemonCleanupV1::Clean);
     assert_eq!(stopped.health.active_connections, 0);
+    assert!(!path.exists());
+    assert!(!lock_path.exists());
+    remove_parent(&path);
+}
+
+#[test]
+fn os_generated_incarnation_is_persisted_and_projected_by_the_handshake() {
+    let path = socket_path();
+    let lock_path = lifetime_path(&path);
+    let mut entropy = OsServerIncarnationEntropyV1::open().unwrap();
+    let generated = generate_server_incarnation_v1(&mut entropy).unwrap();
+    let daemon = DaemonV1::bind_new(
+        &path,
+        host(Port::default()),
+        Authentication,
+        Clock(1),
+        generated,
+        daemon_limits(),
+    )
+    .unwrap();
+
+    let record = fs::read(&lock_path).unwrap();
+    assert_eq!(&record[8..], &generated.as_bytes());
+
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let result = daemon.serve_next();
+        (result, daemon)
+    });
+    let mut stream = UnixStream::connect(&path).unwrap();
+    assert_eq!(handshake(&mut stream).server_incarnation(), generated);
+    drop(stream);
+
+    let (result, daemon) = server.join().unwrap();
+    assert!(matches!(
+        result,
+        Err(DaemonErrorV1::Io(ref error)) if error.kind() == std::io::ErrorKind::UnexpectedEof
+    ));
+    assert_eq!(daemon.stop().cleanup, DaemonCleanupV1::Clean);
     assert!(!path.exists());
     assert!(!lock_path.exists());
     remove_parent(&path);

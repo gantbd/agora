@@ -8,6 +8,12 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added an injectable, eight-attempt server-incarnation entropy boundary and a
+  validated `/dev/urandom` implementation. It rejects zero and, for recovery,
+  the immediately prior value; erases source failures to a content-free kind;
+  and has real-socket evidence that the generated value reaches the canonical
+  lifetime record and ServerHello unchanged.
+
 - Refreshed the checksum-closed source-candidate and canonical source-archive
   evidence after the stable graph expanded to seventeen components: revision
   `46098fb3cd1a6f9164365d8c49cf7edbc0957ef7` produced two byte-identical

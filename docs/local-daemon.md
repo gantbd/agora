@@ -26,7 +26,8 @@ The application supplies:
   accepted Unix connection;
 - a `HostClockV1` that supplies explicit monotone host time; and
 - a nonzero opaque 128-bit value naming the declared logical server
-  incarnation;
+  incarnation, either selected directly or obtained through the adapter's
+  injectable bounded generation boundary and OS-backed `/dev/urandom` source;
 - positive frame, request, and I/O deadline limits.
 
 The daemon requires a real existing mode-0700 parent directory, creates a new
@@ -131,9 +132,13 @@ that credential mechanism. The clock is trusted and the Aegis service port must
 provide its own availability and context provenance.
 
 The handshake selects one exact protocol profile; it is not version-range or
-feature negotiation. Its caller-supplied incarnation is not authenticated; the
+feature negotiation. Its configured incarnation is not authenticated; the
 lifetime record binds that value to one exclusive live endpoint but does not
-prove fresh generation or a restart boundary. The profile makes no claim for
+prove uniqueness or a restart boundary. The qualified OS source validates and
+reads `/dev/urandom`, rejects zero, and can reject the immediately prior value
+within eight attempts. The OS entropy facility remains trusted, and generation
+does not acquire the endpoint, select recovered state, or automate restart. The
+profile makes no claim for
 TCP or other network transports, confidentiality, peer-credential extraction,
 automatic crash restart, concurrent clients, overload queues, concurrent
 in-flight drain, signal handling, socket activation, installation,
@@ -154,7 +159,7 @@ reconstructs transient state empty.
 
 ## Qualification evidence
 
-The twelve real-socket scenarios verify private-parent/socket modes and type,
+The thirteen real-socket scenarios verify private-parent/socket modes and type,
 canonical incarnation-bound lifetime bytes, live-owner exclusion, distinct
 stale-residue refusal, replacement fencing before authentication, and
 conservative teardown,
@@ -164,6 +169,11 @@ per-frame execution, byte-identical request replay, EOF cleanup, erased
 authenticator error detail, participant mismatch without authority I/O, bounded
 request exhaustion cleanup, oversized length refusal before host admission,
 unsafe/existing-path refusal, and preservation of a replacement endpoint.
+One scenario additionally proves an OS-generated nonzero incarnation is copied
+exactly into the canonical lifetime record and pre-authentication ServerHello,
+then cleans up through the ordinary pinned path. Pure deterministic evidence
+covers zero and prior-value retry, the fixed eight-read exhaustion bound, and
+content-free entropy failure.
 Dependency and effect gates keep the adapter limited to the Aegis verifier,
 Host V2, Wire V2, and Unix filesystem/socket effects. The successful path
 additionally verifies exact layer-separated observation, repeated-read

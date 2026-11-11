@@ -7,7 +7,14 @@
 #[cfg(not(unix))]
 compile_error!("agora-local-daemon currently qualifies only Unix hosts");
 
+mod incarnation;
 mod lifetime;
+
+pub use incarnation::{
+    INCARNATION_GENERATION_ATTEMPTS_V1, IncarnationGenerationErrorV1, OsServerIncarnationEntropyV1,
+    ServerIncarnationEntropyV1, generate_distinct_server_incarnation_v1,
+    generate_server_incarnation_v1,
+};
 
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
 use agora_durable::{

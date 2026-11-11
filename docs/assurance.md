@@ -320,7 +320,7 @@ resource, and action; reject participant mismatch before authority I/O; erase
 refusal, expiry, malformed success, and port failure; retire host/service state
 on revoked revalidation; and keep diagnostics content-safe.
 
-Eight real Unix-socket daemon scenarios compose that adapter with Host V2. They
+Thirteen real Unix-socket daemon scenarios compose that adapter with Host V2. They
 verify mode-0700 parent enforcement and mode-0600 endpoint creation, Aegis
 authorization on Connect and every later frame, exact pre-authentication
 handshake values, incompatible-profile refusal with zero downstream work, exact
@@ -330,8 +330,8 @@ request-budget cleanup, oversized outer-length
 refusal before allocation or host admission, existing-path refusal, pinned
 replacement preservation, and content-free counters. I/O deadlines are present
 in the configured profile; the tests do not claim timing determinism. Credential
-and Unix-peer authentication, hostile same-UID parent defense, truthful durable
-incarnation generation, concurrency, operational drain/crash recovery,
+and Unix-peer authentication, hostile same-UID parent defense, incarnation
+uniqueness, concurrency, operational drain/crash recovery,
 cross-disconnect replay, and network transport remain
 unqualified. Physical storage is separate and narrowly qualified below.
 
@@ -355,8 +355,12 @@ owner and unlocked residue are distinct typed refusals. Exact clean teardown
 removes socket and lease; uncertain or replaced resources are preserved. The
 frozen 24-byte record and real-filesystem scenario cover canonical bytes, live
 exclusion, stale residue, replacement fencing, zero downstream work, and
-non-destructive teardown. This does not generate incarnation entropy, recover
-service state, or establish multi-process handoff.
+non-destructive teardown. A separate injectable generator validates and reads
+the Unix `/dev/urandom` character device, rejects zero and the immediately prior
+value within a fixed eight-read bound, and erases source failures to their I/O
+kind. Pure retry/exhaustion/failure cases plus one real socket prove the exact
+generated value reaches the record and ServerHello. This does not prove
+uniqueness, recover service state, or establish multi-process handoff.
 
 Explicit endpoint recovery is a separate constructor and evidence path. Its
 real-filesystem scenario refuses a live owner and equal, wrong, or malformed

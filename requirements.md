@@ -478,6 +478,17 @@
   inputs rather than promote contextual Git revisions into provenance. This
   refresh grants no remote origin, signature, attestation, binary, installer,
   support, distribution, or publication claim.
+- **R73 — Bounded server-incarnation generation:** the Unix daemon adapter must
+  expose an injectable entropy boundary and one OS-backed implementation for
+  producing its 128-bit server-incarnation value. Generation must reject the
+  all-zero value, recovery generation must also reject the immediately prior
+  incarnation, and both must stop after a fixed positive attempt bound. Entropy
+  I/O failures must retain only a content-free error kind. The OS source must
+  validate that `/dev/urandom` is a character device, while deterministic
+  evidence must cover retry, exhaustion, source failure, and exact projection
+  of one generated value into the lifetime record and ServerHello. This grants
+  no uniqueness proof, authority, credential quality, automatic restart,
+  residue repair, service supervision, or Aegis/Agora atomic recovery claim.
 
 ## Explicitly open
 

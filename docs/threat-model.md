@@ -229,10 +229,12 @@ authenticate Unix peer credentials, hide socket metadata or
 traffic from the host, encrypt content, or automatically recover a crashed
 endpoint. The
 authenticator can forge context if its credential binding is wrong. The
-handshake incarnation is caller-supplied, unauthenticated lifecycle evidence;
-the lease excludes a second live owner but cannot prove fresh generation or
-automatically repair residue. Explicit endpoint recovery requires exact
-prior-incarnation evidence and rotates to a distinct declared lifetime without
+handshake incarnation is unauthenticated lifecycle evidence. It may be supplied
+directly or generated from a validated `/dev/urandom` character device through
+a bounded nonzero/distinct filter; the operating-system entropy facility is
+trusted and uniqueness is not proved. The lease excludes a second live owner
+but cannot prove a restart boundary or automatically repair residue. Explicit
+endpoint recovery requires exact prior-incarnation evidence and rotates to a distinct declared lifetime without
 inventing Host state. The combined explicit path accepts only a caller-recovered
 durable-collaboration owner, applies the same residue checks, and binds a fresh
 collaboration session and replay epoch; it does not resume the old connection.

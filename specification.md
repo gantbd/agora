@@ -614,10 +614,15 @@ ClientHello selecting Wire V2. An incompatible hello refuses before
 authenticator, authority, Host, or Service work. The daemon replies with the
 fixed-width ServerHello containing the same closed profiles, its configured
 positive frame ceiling and post-connect request budget, capability-discovery
-profile 1, and a nonzero caller-supplied 128-bit server incarnation. Truncation,
+profile 1, and a configured nonzero 128-bit server incarnation. Truncation,
 deadline expiry, or write failure is a transport failure. The incarnation is
 content-safe evidence for one declared logical server lifetime; it grants no
-identity or authority and is not a reconnect or replay token.
+identity or authority and is not a reconnect or replay token. The adapter offers
+an explicit injectable generation boundary: its Unix implementation reads a
+validated `/dev/urandom` character device, retries all-zero values at most eight
+times, and can additionally exclude the immediately prior incarnation for an
+explicit recovery. Generation occurs before lifetime acquisition and does not
+select a Host, recover residue, or start the daemon automatically.
 
 Every subsequent transport record is a four-byte unsigned big-endian length followed by
 exactly that many bytes. Zero, an announced length above the configured ceiling,
@@ -710,8 +715,8 @@ cleanup is reported separately.
 This profile is deliberately sequential: one caller of `serve_next` accepts and
 serves one connection at a time. It does not authenticate an OS peer or
 credential, protect against a same-UID process controlling the private parent,
-encrypt content, generate the incarnation, automatically repair residue, preserve request
-receipts across disconnect, automatically recover a crashed endpoint, implement concurrent
+encrypt content, prove incarnation uniqueness, automatically repair residue,
+preserve request receipts across disconnect, automatically recover a crashed endpoint, implement concurrent
 admission, concurrent in-flight draining, signals, socket activation, installation, or
 atomically recover Aegis and Agora. Those are separate composition and
 operational qualifications.

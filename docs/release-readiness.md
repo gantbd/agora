@@ -22,7 +22,10 @@ not ready for a network service or crates.io release.
 - canonical bounded V1 wire codec with executable golden compatibility fixtures;
 - canonical fixed-width local ClientHello/ServerHello profile selecting Wire V2
   before authentication, with explicit server limits, capability-discovery
-  profile, and caller-supplied nonzero server-incarnation evidence;
+  profile, and configured nonzero server-incarnation evidence;
+- injectable bounded server-incarnation generation with a validated Unix OS
+  entropy source, zero/prior-value exclusion, fixed exhaustion, content-free
+  failure, and exact lifetime-record/handshake projection evidence;
 - endpoint-scoped exclusive daemon lifetime lease with a frozen
   incarnation-bound record, pinned parent/record/socket identities, typed live
   owner versus crash-residue refusal, and fail-closed replacement fencing;
@@ -202,9 +205,9 @@ not ready for a network service or crates.io release.
 - no qualified credential/Unix-peer authenticator, network transport, or
   connector conformance package; Aegis context provenance remains trusted
   wiring;
-- no qualified server-incarnation generator or automatic/crash-coupled restart;
-  clean durable Host/directory-store restart and explicit endpoint-residue
-  recovery are qualified, but there is no
+- no automatic/crash-coupled restart; bounded OS-backed server-incarnation
+  generation, clean durable Host/directory-store restart, and explicit
+  endpoint-residue recovery are qualified, but there is no
   concurrent admission, in-flight drain,
   signal/socket-activation automation, exhaustive recovery fault injection,
   reconnect resumption, or
