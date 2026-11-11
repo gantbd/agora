@@ -159,6 +159,10 @@ pub enum SearchRefusalV1 {
 /// request and must never infer participant authority from query values.
 pub trait SearchPortV1 {
     fn search(&mut self, query: SearchQueryV1) -> Result<SearchObservationV1, SearchRefusalV1>;
+
+    /// Idempotently retires an adapter continuation that its composition will
+    /// no longer expose. This is bounded cleanup, not cancellation evidence.
+    fn retire_cursor(&mut self, cursor: SearchCursorV1) -> bool;
 }
 
 #[cfg(test)]

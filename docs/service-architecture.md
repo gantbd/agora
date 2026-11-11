@@ -203,6 +203,16 @@ The participant-bound composition must still derive the authenticated observer,
 check current membership, and resolve every hit against retained authoritative
 history before publishing it.
 
+The additive `agora-service::search::SearchServiceV1` now supplies that first
+participant-bound composition. It derives the observer from an active Service
+V2 client, derives the current engine revision, checks membership before index
+work, and resolves each identity, sequence, and current byte-exact match before
+publishing. Its separate bounded exact receipts and client-owned one-shot cursor
+registry do not enter Service V2 checkpoints. Conversation mutation and client
+disconnect retire exposed adapter cursors. Protocol values exist, but canonical
+wire, authenticated Host, client uncertainty, SDK, and local transport routing
+are still open and the capability is not advertised.
+
 Physical restore deliberately remains Agora-semantic-free. The higher
 `DurableHostV2::recover_after_restore` boundary decodes the restored Host unit,
 retires all recovered sessions and disconnects their Service clients, then

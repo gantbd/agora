@@ -10,6 +10,7 @@ use agora_protocol::{
 };
 use std::collections::{BTreeMap, VecDeque};
 
+pub mod search;
 pub mod transient;
 pub mod typing;
 pub mod v2;

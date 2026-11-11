@@ -354,4 +354,8 @@ impl SearchPortV1 for SearchMemoryV1 {
             SearchCoverageV1::Incomplete => SearchObservationV1::Incomplete(page),
         })
     }
+
+    fn retire_cursor(&mut self, cursor: SearchCursorV1) -> bool {
+        self.cursors.remove(&cursor).is_some()
+    }
 }

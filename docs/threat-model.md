@@ -33,6 +33,13 @@ and stable hits remain linkable metadata. A participant-bound composition must
 check current membership before query and current retained visibility before
 publishing each hit; otherwise an index becomes a confused deputy or leaks
 withdrawn, redacted, evicted, or cross-room facts.
+The participant-bound search service performs those checks and additionally
+binds each opaque continuation to the exact client, room, term, match profile,
+authoritative revision, index generation, and limit. Exact request replay does
+not repeat index work; changed reuse conflicts. Conversation mutation and
+disconnect retire adapter continuations. The profile is still volatile and not
+remotely reachable: wire/Host/client/transport closure remains required before
+deployment, and indexed content remains a separate sensitive memory copy.
 
 Room change positions are observer/room-bound correlation state, not bearer
 authority. Every pull rechecks current membership, cross-client and cross-room

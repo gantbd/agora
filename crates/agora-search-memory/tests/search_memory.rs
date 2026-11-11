@@ -70,6 +70,26 @@ fn exact_identity_only_search_pages_and_consumes_bound_cursor() {
 }
 
 #[test]
+fn cursor_retirement_is_idempotent_cleanup() {
+    let mut index = SearchMemoryV1::new(SearchMemoryLimitsV1::default());
+    index
+        .replace_room(projection(7, SearchCoverageV1::Complete))
+        .unwrap();
+    let SearchObservationV1::Available(page) = index.search(query(7, 1)).unwrap() else {
+        panic!("expected page")
+    };
+    let cursor = page.next.unwrap();
+    assert!(index.retire_cursor(cursor));
+    assert!(!index.retire_cursor(cursor));
+    let mut continuation = query(7, 1);
+    continuation.cursor = Some(cursor);
+    assert_eq!(
+        index.search(continuation),
+        Err(SearchRefusalV1::InvalidCursor)
+    );
+}
+
+#[test]
 fn source_lag_incomplete_coverage_and_unavailability_are_distinct() {
     let mut index = SearchMemoryV1::new(SearchMemoryLimitsV1::default());
     assert_eq!(

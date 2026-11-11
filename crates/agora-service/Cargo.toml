@@ -10,7 +10,11 @@ publish = false
 [dependencies]
 agora-engine = { path = "../..", version = "=0.3.0" }
 agora-protocol = { path = "../agora-protocol", version = "=0.1.0" }
+agora-search-port = { path = "../agora-search-port", version = "=0.1.0" }
 agora-wire = { path = "../agora-wire", version = "=0.1.0" }
+
+[dev-dependencies]
+agora-search-memory = { path = "../agora-search-memory", version = "=0.1.0" }
 
 [lints.rust]
 unsafe_code = "forbid"

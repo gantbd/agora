@@ -55,6 +55,14 @@ if printf '%s\n' "$wire_tree" | rg 'agora-(engine|service|client)'; then
   exit 1
 fi
 
+service_tree=$(cargo tree -p agora-service --edges normal --depth 1 --locked --offline)
+if ! printf '%s\n' "$service_tree" | rg -q 'agora-search-port' \
+  || printf '%s\n' "$service_tree" | rg -q 'agora-search-memory'; then
+  printf '%s\n' "$service_tree" >&2
+  echo 'Agora service search composition escaped its port-only production edge' >&2
+  exit 1
+fi
+
 host_tree=$(cargo tree -p agora-host --edges normal --depth 1 --locked --offline)
 if printf '%s\n' "$host_tree" | rg 'agora-client|aegis|chronos|moira|daimon|hermes'; then
   echo 'Agora host imported a client, authority, or peer-engine implementation' >&2

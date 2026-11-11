@@ -4,6 +4,7 @@
 
 use std::fmt;
 
+pub mod search;
 pub mod transient;
 pub mod v2;
 

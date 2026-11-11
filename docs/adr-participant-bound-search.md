@@ -1,6 +1,7 @@
 # ADR: participant-bound derived search profile
 
-Status: accepted; implementation pending
+Status: implementation in progress; protocol values and participant-bound service
+owner implemented, wire/host/client/SDK/transport closure pending
 
 Date: 2026-11-11
 

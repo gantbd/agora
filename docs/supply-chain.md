@@ -19,7 +19,7 @@ metadata and requires byte equality. This canonical CycloneDX 1.5 document
 contains exactly the nineteen stable local-path components, their closed Cargo
 dependency edges, exact versions, declared `MIT OR Apache-2.0` expressions, and
 denied publication state. Its SHA-256 digest is
-`10db30f568f192e44528b7fe5d066a4399be18f2f3b3e3b075135e1ee122902d`.
+`1b6fb89fd083794d3b01ad1a84ff14b3340bc69d0b1817bb7f4a6a18d377dc35`.
 The validator rejects vocabulary drift, noncanonical order, missing or duplicate
 components and edges, unknown references, host paths, altered licenses, and
 publication-enabled records; focused mutants exercise those boundaries.

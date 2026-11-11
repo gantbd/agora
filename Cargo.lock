@@ -118,6 +118,8 @@ version = "0.1.0"
 dependencies = [
  "agora-engine",
  "agora-protocol",
+ "agora-search-memory",
+ "agora-search-port",
  "agora-wire",
 ]
 

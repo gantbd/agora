@@ -529,6 +529,8 @@
       "dependsOn": [
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-search-memory@0.1.0",
+        "pkg:cargo/agora-search-port@0.1.0",
         "pkg:cargo/agora-wire@0.1.0"
       ]
     },

@@ -75,11 +75,16 @@ name = "agora-protocol"
 version = "0.1.0"
 
 [[package]]
+name = "agora-search-port"
+version = "0.1.0"
+
+[[package]]
 name = "agora-service"
 version = "0.1.0"
 dependencies = [
  "agora-engine",
  "agora-protocol",
+ "agora-search-port",
  "agora-wire",
 ]
 
