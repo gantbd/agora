@@ -41,6 +41,18 @@ content, symbolic links, and a claim that upgrades local content closure into
 commit provenance. This ordinary gate validates the mechanism; actual candidate
 construction and isolated qualification remain separately recorded evidence.
 
+Revision `e5a02b4ce5bda9c92542b0e5ea59ea3a746b295b` then produced two
+byte-identical candidates containing 233 checksummed payload files. The
+checksum inventory digest was
+`3068c303ce5e4f7d930bbef949c781e9530bf198f0aaa278b39c6a7576b1175a`.
+Both selected sibling trees were recorded as unclean, so only their staged byte
+digests—not contextual revisions—carry the claim. One isolated candidate passed
+every stable workspace target, doctest, and warning-denied documentation build
+with the lock file, offline mode, and a fresh target directory. This proves
+self-contained local source content for the stable graph, not remote origin,
+clean-room dependency availability, an archive, binary reproducibility, or
+publication readiness.
+
 Every frozen V1 and V2 wire frame is also a deterministic mutation corpus. The
 offline suite checks every strict prefix, a trailing-byte framing violation, and
 every single-bit mutation. A refused candidate remains closed; any accepted

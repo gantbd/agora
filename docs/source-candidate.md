@@ -29,3 +29,17 @@ reproducible binary, installer, or publication authorization. The standalone
 fuzz workspace retains registry-sourced test tooling and is not part of the
 stable sixteen-component release graph. Candidate distribution and security
 support remain unauthorized until a channel and policy are explicitly selected.
+
+## Qualified local candidate
+
+Agora revision `e5a02b4ce5bda9c92542b0e5ea59ea3a746b295b` produced two
+byte-identical candidate directories on Darwin 25.6.0 arm64 / macOS 26.6.2.
+Each contained 233 payload files plus `SHA256SUMS`. The manifest digest was
+`d67a6dcc09198a8e237b4fb17e3ecd8dbf37d172dbe95d8e641c7561c132e146` and
+the checksum-inventory digest was
+`3068c303ce5e4f7d930bbef949c781e9530bf198f0aaa278b39c6a7576b1175a`.
+The manifest truthfully recorded both selected sibling trees as unclean, so
+their exact checksummed bytes—not their contextual revisions—are the qualified
+inputs. One candidate passed all stable workspace targets, doctests, and
+warning-denied documentation with a fresh target directory, the lock file, and
+offline mode.

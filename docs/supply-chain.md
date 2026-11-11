@@ -27,6 +27,13 @@ revision. A reduced reviewed Keystone workspace manifest supplies only inherited
 metadata for the two selected packages. Isolated locked/offline build evidence
 establishes content closure, not origin, advisory, or legal provenance.
 
+The qualified candidate for Agora revision
+`e5a02b4ce5bda9c92542b0e5ea59ea3a746b295b` was reproduced byte-for-byte,
+closed over 233 payload files, and passed the complete stable locked/offline
+workspace build from an isolated target. Both sibling selections were recorded
+unclean; the content hashes are evidence, while their contextual Git revisions
+are not promoted into provenance.
+
 This evidence does not establish remote availability of Aegis or Keystone, registry
 packaging, transitive source integrity outside the local checkouts, advisory
 status, license compatibility, binary contents, an SPDX/CycloneDX SBOM, origin

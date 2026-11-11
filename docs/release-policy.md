@@ -48,6 +48,13 @@ Actual candidate construction and isolated qualification are opt-in because
 they copy sibling inputs and rebuild the complete stable workspace. They do not
 authorize distributing the resulting directory.
 
+Revision `e5a02b4ce5bda9c92542b0e5ea59ea3a746b295b` has one qualified local
+candidate: two constructions were byte-identical, the 233-file payload closure
+was checksummed, both sibling selections were explicitly unclean, and one copy
+passed the stable locked/offline isolated build. This narrows the former
+self-contained-source blocker; it does not establish remote origin or authorize
+a distribution channel.
+
 ## Enabling a distribution channel later
 
 Publication or artifact distribution requires a deliberate change that:

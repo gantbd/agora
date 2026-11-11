@@ -31,6 +31,10 @@ not ready for a network service or crates.io release.
   explicit source-distribution policy;
 - conservative supply inventory closure over sixteen locked local components with
   missing, changed-version, and empty-inventory mutants;
+- a checksum-closed self-contained stable source directory for revision
+  `e5a02b4ce5bda9c92542b0e5ea59ea3a746b295b`, reproduced byte-identically
+  twice and qualified locked/offline from its isolated sixteen-component local
+  content closure while truthfully marking both sibling selections unclean;
 - membership-filtered, revision-bound in-process room/member/message pages with
   opaque cursors and explicit retained-history intervals;
 - separately typed volatile Protocol/Service/Client V2 source profile closing
@@ -131,8 +135,9 @@ not ready for a network service or crates.io release.
 
 ## Open release blockers
 
-- no self-contained dependency/release provenance or remote CI; the source
-  profile still requires the documented sibling Keystone checkout;
+- no remote origin provenance or remote CI; the qualified local source candidate
+  is content-addressed, but its selected Aegis and Keystone inputs were unclean
+  and are not proven to correspond to remotely available commits;
 - SDK facades are not approved or configured for registry publication;
 - no qualified credential/Unix-peer authenticator, network transport, or
   connector conformance package; Aegis context provenance remains trusted
