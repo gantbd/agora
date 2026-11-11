@@ -75,6 +75,9 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `31` | SupersedeTopic | room, expected revision, source topic ID, successor topic ID |
 | `32` | ClearTopicSupersession | room, expected revision, source topic ID |
 | `33` | TopicSupersessionStatus | room, source topic ID |
+| `34` | AddTopicAlias | room, expected revision, topic ID, bounded alias |
+| `35` | RemoveTopicAlias | room, expected revision, topic ID, bounded alias |
+| `36` | TopicAliasStatus | room, topic ID |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -96,6 +99,8 @@ TopicMessageAccepted `27`, TopicChanges `28`, ReadPosition `29`, and
 ReadPositionAdvanced `2a`, TopicRenamed `2b`, TopicResolved `2c`,
 TopicReopened `2d`, TopicStatus `2e`, TopicSuperseded `2f`,
 TopicSupersessionCleared `30`, and TopicSupersessionStatus `31`.
+TopicAliasAdded is `32`, TopicAliasRemoved is `33`, and TopicAliasStatus is
+`34`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -211,6 +216,12 @@ successor. Room-event tag `14` carries actor, source, prior optional successor,
 and new optional successor in every change profile. The relation is navigation
 metadata only: it neither rewrites retained topic relations nor reroutes posts.
 
+TopicAliasAdded and TopicAliasRemoved carry revision, stable topic ID, and the
+bounded alias. The separate status outcome carries revision, room, topic ID,
+and at most 16 aliases in strict byte order. Room-event tag `15` carries actor,
+stable topic ID, alias, and add/remove state in every change profile. Aliases
+are display metadata only and never become wire selectors or redirects.
+
 A read scope is Room `01`, Thread `02` plus a 16-byte root message ID, or Topic
 `03` plus a 16-byte topic ID. A read-position query carries room and scope. An
 advance additionally carries the exact observed engine revision and a 16-byte
@@ -247,6 +258,8 @@ is derived from the client binding and is never present on the wire.
 | `16` | TopicResolved | — |
 | `17` | InvalidTopicSupersession | — |
 | `18` | TopicMustBeResolved | — |
+| `19` | TopicAliasLimit | — |
+| `1a` | UnknownTopicAlias | — |
 
 ## Closure and evidence
 
@@ -283,6 +296,9 @@ and `2f`, outcomes `2c` and `2d`, event `13`, and resolved-topic refusal `16`.
 Capability tag `14` advertises `TopicSupersessionV1`; frozen supersede request,
 receipt, and topic-aware change fixtures pin commands `31` through `33`,
 outcomes `2f` through `31`, event `14`, and refusals `17` and `18`.
+Capability tag `15` advertises `TopicAliasesV1`; frozen add request, added
+receipt, and topic-aware change fixtures pin commands `34` through `36`,
+outcomes `32` through `34`, event `15`, and refusals `19` and `1a`.
 Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push

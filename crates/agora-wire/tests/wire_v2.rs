@@ -7,9 +7,9 @@ use agora_protocol::v2::{
     ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
     RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
     ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
-    ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1,
-    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1,
-    TopicSupersessionStatusV1, TopicV1,
+    ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1, TopicIdV1, TopicMessagePageV1,
+    TopicMessageV1, TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1,
+    TopicStatusV1, TopicSupersessionStatusV1, TopicV1,
 };
 use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
@@ -164,6 +164,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::TopicRenameV1,
         CapabilityV2::TopicResolutionV1,
         CapabilityV2::TopicSupersessionV1,
+        CapabilityV2::TopicAliasesV1,
     ])))
 }
 
@@ -288,6 +289,49 @@ fn topic_superseded_change_reply() -> WireReplyV2 {
                 },
             }],
             next: PageCursorV2(12),
+            has_more: false,
+        },
+    )))
+}
+
+fn topic_alias_add_request() -> WireRequestV2 {
+    WireRequestV2::Execute {
+        client: ClientIdV2(7),
+        request: RequestV2 {
+            request_id: RequestIdV2(91),
+            command: CommandV2::AddTopicAlias {
+                room_id: "room".to_owned(),
+                expected_revision: 12,
+                topic_id: TopicIdV1::new([0x44; 16]),
+                alias: "incidents".to_owned(),
+            },
+        },
+    }
+}
+
+fn topic_alias_added_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicAliasAdded {
+        revision: 13,
+        topic_id: TopicIdV1::new([0x44; 16]),
+        alias: "incidents".to_owned(),
+    }))
+}
+
+fn topic_alias_changed_reply() -> WireReplyV2 {
+    WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicChanges(
+        TopicRoomChangePageV1 {
+            revision: 13,
+            changes: vec![TopicRoomChangeV1 {
+                event_sequence: 12,
+                revision: 13,
+                event: TopicRoomEventV1::TopicAliasChanged {
+                    actor_id: "agent".to_owned(),
+                    topic_id: TopicIdV1::new([0x44; 16]),
+                    alias: "incidents".to_owned(),
+                    added: true,
+                },
+            }],
+            next: PageCursorV2(13),
             has_more: false,
         },
     )))
@@ -654,6 +698,18 @@ fn v2_golden_fixtures_are_canonical_and_redacted() {
             )),
         ),
         (
+            encode_request_v2(&topic_alias_add_request(), limits()).unwrap(),
+            fixture(include_str!("fixtures/topic-alias-add-request-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&topic_alias_added_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/topic-alias-added-reply-v2.hex")),
+        ),
+        (
+            encode_reply_v2(&topic_alias_changed_reply(), limits()).unwrap(),
+            fixture(include_str!("fixtures/topic-alias-change-reply-v2.hex")),
+        ),
+        (
             encode_reply_v2(&change_retention_gap_reply(), limits()).unwrap(),
             fixture(include_str!("fixtures/change-retention-gap-reply-v2.hex")),
         ),
@@ -956,6 +1012,22 @@ fn every_v2_command_round_trips() {
             message_id: MessageIdV1::new([0x45; 16]),
             reason: "policy".to_owned(),
             causation: [0x46; 16],
+        },
+        CommandV2::AddTopicAlias {
+            room_id: "room".to_owned(),
+            expected_revision: 10,
+            topic_id: TopicIdV1::new([0x47; 16]),
+            alias: "incidents".to_owned(),
+        },
+        CommandV2::RemoveTopicAlias {
+            room_id: "room".to_owned(),
+            expected_revision: 11,
+            topic_id: TopicIdV1::new([0x47; 16]),
+            alias: "incidents".to_owned(),
+        },
+        CommandV2::TopicAliasStatus {
+            room_id: "room".to_owned(),
+            topic_id: TopicIdV1::new([0x47; 16]),
         },
     ];
     for (index, command) in commands.into_iter().enumerate() {
@@ -1303,6 +1375,22 @@ fn every_v2_outcome_and_refusal_round_trips() {
             topic_id: TopicIdV1::new([0xb0; 16]),
             successor_topic_id: Some(TopicIdV1::new([0xb1; 16])),
         }),
+        OutcomeV2::TopicAliasAdded {
+            revision: 18,
+            topic_id: TopicIdV1::new([0xb0; 16]),
+            alias: "incidents".to_owned(),
+        },
+        OutcomeV2::TopicAliasRemoved {
+            revision: 19,
+            topic_id: TopicIdV1::new([0xb0; 16]),
+            alias: "incidents".to_owned(),
+        },
+        OutcomeV2::TopicAliasStatus(TopicAliasStatusV1 {
+            revision: 19,
+            room_id: "room".to_owned(),
+            topic_id: TopicIdV1::new([0xb0; 16]),
+            aliases: vec!["general".to_owned(), "incidents".to_owned()],
+        }),
     ];
     for outcome in outcomes {
         let reply = WireReplyV2::Executed(ReplyV2::Accepted(outcome));
@@ -1335,6 +1423,8 @@ fn every_v2_outcome_and_refusal_round_trips() {
         RefusalV2::TopicResolved,
         RefusalV2::InvalidTopicSupersession,
         RefusalV2::TopicMustBeResolved,
+        RefusalV2::TopicAliasLimit,
+        RefusalV2::UnknownTopicAlias,
     ];
     for refusal in refusals {
         for reply in [
@@ -1818,6 +1908,22 @@ fn v2_topic_commands_pages_and_mutation_outcomes_are_canonical() {
             room_id: "room".to_owned(),
             topic_id,
         },
+        CommandV2::AddTopicAlias {
+            room_id: "room".to_owned(),
+            expected_revision: 14,
+            topic_id,
+            alias: "incidents".to_owned(),
+        },
+        CommandV2::RemoveTopicAlias {
+            room_id: "room".to_owned(),
+            expected_revision: 15,
+            topic_id,
+            alias: "incidents".to_owned(),
+        },
+        CommandV2::TopicAliasStatus {
+            room_id: "room".to_owned(),
+            topic_id,
+        },
         CommandV2::SpeakInTopic {
             room_id: "room".to_owned(),
             expected_revision: 9,
@@ -1899,6 +2005,22 @@ fn v2_topic_commands_pages_and_mutation_outcomes_are_canonical() {
             topic_id,
             resolved: false,
         }),
+        OutcomeV2::TopicAliasAdded {
+            revision: 13,
+            topic_id,
+            alias: "incidents".to_owned(),
+        },
+        OutcomeV2::TopicAliasRemoved {
+            revision: 14,
+            topic_id,
+            alias: "general".to_owned(),
+        },
+        OutcomeV2::TopicAliasStatus(TopicAliasStatusV1 {
+            revision: 14,
+            room_id: "room".to_owned(),
+            topic_id,
+            aliases: vec!["general".to_owned(), "incidents".to_owned()],
+        }),
         OutcomeV2::TopicMessageAccepted {
             revision: 10,
             message_id,
@@ -1962,6 +2084,11 @@ fn v2_topic_commands_pages_and_mutation_outcomes_are_canonical() {
     let refusal = WireReplyV2::Executed(ReplyV2::Refused(RefusalV2::TopicResolved));
     let encoded = encode_reply_v2(&refusal, limits()).unwrap();
     assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), refusal);
+    for refusal in [RefusalV2::TopicAliasLimit, RefusalV2::UnknownTopicAlias] {
+        let reply = WireReplyV2::Executed(ReplyV2::Refused(refusal));
+        let encoded = encode_reply_v2(&reply, limits()).unwrap();
+        assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), reply);
+    }
 }
 
 #[test]
@@ -2201,4 +2328,65 @@ fn v2_topic_supersession_event_round_trips_in_every_change_profile() {
         encode_reply_v2(&invalid, limits()),
         Err(WireEncodeError::Invalid)
     );
+}
+
+#[test]
+fn v2_topic_alias_event_round_trips_in_every_change_profile() {
+    let topic_id = TopicIdV1::new([0x48; 16]);
+    let replies = [
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 13,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 12,
+                revision: 13,
+                event: RoomEventV2::TopicAliasChanged {
+                    actor_id: "agent".to_owned(),
+                    topic_id,
+                    alias: "incidents".to_owned(),
+                    added: true,
+                },
+            }],
+            next: PageCursorV2(13),
+            has_more: false,
+        }))),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(
+            IdentifiedRoomChangePageV1 {
+                revision: 13,
+                changes: vec![IdentifiedRoomChangeV1 {
+                    event_sequence: 12,
+                    revision: 13,
+                    event: IdentifiedRoomEventV1::TopicAliasChanged {
+                        actor_id: "agent".to_owned(),
+                        topic_id,
+                        alias: "incidents".to_owned(),
+                        added: true,
+                    },
+                }],
+                next: PageCursorV2(13),
+                has_more: false,
+            },
+        ))),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ThreadedChanges(
+            ThreadedRoomChangePageV1 {
+                revision: 13,
+                changes: vec![ThreadedRoomChangeV1 {
+                    event_sequence: 12,
+                    revision: 13,
+                    event: ThreadedRoomEventV1::TopicAliasChanged {
+                        actor_id: "agent".to_owned(),
+                        topic_id,
+                        alias: "incidents".to_owned(),
+                        added: true,
+                    },
+                }],
+                next: PageCursorV2(13),
+                has_more: false,
+            },
+        ))),
+        topic_alias_changed_reply(),
+    ];
+    for reply in replies {
+        let encoded = encode_reply_v2(&reply, limits()).unwrap();
+        assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), reply);
+    }
 }

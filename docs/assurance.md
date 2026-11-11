@@ -626,6 +626,17 @@ bounded implementation. Revision `4b19524fd21208487ca8f512257e7663e2354d71`
 passed the complete R53 qualification; no move, copy, deletion, erasure,
 aliasing, implicit routing, connector state, or workflow truth is claimed.
 
+Topic-alias scenarios prove owner/moderator and human/agent-neutral authority,
+explicit add/remove, a shared room-wide current-name/alias collision domain,
+the 16-alias ceiling, canonical status order, stable-ID-only selection, atomic
+absent-remove/collision/capacity refusal, exact replay/conflict behavior, and
+actor/alias/add-remove attribution in all four feeds. Three frozen frames,
+closed command/outcome/refusal/capability tags, Debug/SDK construction, and
+profile-18/20/20 nested checkpoints close the implemented bounded profile.
+Integrated R53 qualification remains pending; lookup authority, redirects,
+search synonyms, move/copy, deletion, erasure, connector state, workflow truth,
+and execution are not claimed.
+
 Private read-position core scenarios prove room/thread/topic scope validation,
 human/agent-neutral self-state, monotone and idempotent advancement, atomic
 stale/regression/target refusal, membership inaccessibility, retention survival,

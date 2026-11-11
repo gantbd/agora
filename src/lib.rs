@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 pub mod persistence;
 
+pub const MAX_TOPIC_ALIASES_PER_TOPIC_V1: usize = 16;
+
 /// Resource ceilings for one engine profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
@@ -288,6 +290,7 @@ pub struct TopicV1 {
     name: String,
     creator: ParticipantId,
     resolved: bool,
+    aliases: BTreeSet<String>,
 }
 
 impl TopicV1 {
@@ -302,6 +305,10 @@ impl TopicV1 {
     }
     pub fn is_resolved(&self) -> bool {
         self.resolved
+    }
+
+    pub fn aliases(&self) -> &BTreeSet<String> {
+        &self.aliases
     }
 }
 
@@ -756,6 +763,26 @@ pub struct TopicSupersessionStatusV1 {
     pub room_id: RoomId,
     pub topic_id: TopicId,
     pub successor_topic_id: Option<TopicId>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicAliasStatusV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub topic_id: TopicId,
+    pub aliases: Vec<String>,
+}
+
+impl fmt::Debug for TopicAliasStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicAliasStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("topic_id", &self.topic_id)
+            .field("alias_count", &self.aliases.len())
+            .finish()
+    }
 }
 
 impl fmt::Debug for TopicSupersessionStatusV1 {
@@ -1252,6 +1279,7 @@ impl CommandV2 {
             Self::RenameTopic { .. } => Some(RoomActionV1::ManageTopics),
             Self::SetTopicResolved { .. } => Some(RoomActionV1::ManageTopics),
             Self::SetTopicSuccessor { .. } => Some(RoomActionV1::ManageTopics),
+            Self::SetTopicAlias { .. } => Some(RoomActionV1::ManageTopics),
         }
     }
 }
@@ -1356,6 +1384,13 @@ pub enum CommandV2 {
         actor: ParticipantId,
         topic_id: TopicId,
         successor_topic_id: Option<TopicId>,
+    },
+    SetTopicAlias {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        alias: String,
+        added: bool,
     },
     SpeakInTopic {
         room_id: RoomId,
@@ -1480,6 +1515,13 @@ pub enum OutcomeV2 {
         previous_successor_topic_id: Option<TopicId>,
         successor_topic_id: Option<TopicId>,
     },
+    TopicAliasChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        alias: String,
+        added: bool,
+    },
     TopicMessageAccepted {
         room_id: RoomId,
         topic_id: TopicId,
@@ -1583,6 +1625,8 @@ pub enum Refusal {
     InvalidTopicLifecycleChange,
     InvalidTopicSupersession,
     TopicMustBeResolved,
+    TopicAliasLimit,
+    UnknownTopicAlias,
     MessageAlreadyTombstoned,
     RevisionConflict {
         expected: Revision,
@@ -1728,6 +1772,13 @@ pub enum DomainEventV2 {
         previous_successor_topic_id: Option<TopicId>,
         successor_topic_id: Option<TopicId>,
     },
+    TopicAliasChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        alias: String,
+        added: bool,
+    },
     InvitationRecorded {
         room_id: RoomId,
         participant: ParticipantId,
@@ -1825,6 +1876,7 @@ impl DomainEventV2 {
             | Self::TopicRenamed { room_id, .. }
             | Self::TopicLifecycleChanged { room_id, .. }
             | Self::TopicSupersessionChanged { room_id, .. }
+            | Self::TopicAliasChanged { room_id, .. }
             | Self::InvitationRecorded { room_id, .. }
             | Self::ParticipantJoined { room_id, .. }
             | Self::ParticipantLeft { room_id, .. }
@@ -2530,6 +2582,34 @@ impl Engine {
             room_id: room_id.clone(),
             topic_id,
             successor_topic_id: room.topic_successors.get(&topic_id).copied(),
+        })
+    }
+
+    pub fn topic_alias_status(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        topic_id: TopicId,
+    ) -> Result<TopicAliasStatusV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        let topic = room
+            .topics
+            .get(&topic_id)
+            .ok_or(ObservationRefusal::InvalidTarget)?;
+        Ok(TopicAliasStatusV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            topic_id,
+            aliases: topic.aliases.iter().cloned().collect(),
         })
     }
 
@@ -3307,6 +3387,13 @@ impl Engine {
                 topic_id,
                 successor_topic_id,
             } => self.set_topic_successor(room_id, actor, topic_id, successor_topic_id),
+            CommandV2::SetTopicAlias {
+                room_id,
+                actor,
+                topic_id,
+                alias,
+                added,
+            } => self.set_topic_alias(room_id, actor, topic_id, alias, added),
             CommandV2::SpeakInTopic {
                 room_id,
                 author,
@@ -3456,6 +3543,22 @@ impl Engine {
                 topic_id: *topic_id,
                 previous_successor_topic_id: *previous_successor_topic_id,
                 successor_topic_id: *successor_topic_id,
+            },
+            (
+                CommandV2::SetTopicAlias { .. },
+                OutcomeV2::TopicAliasChanged {
+                    room_id,
+                    actor,
+                    topic_id,
+                    alias,
+                    added,
+                },
+            ) => DomainEventV2::TopicAliasChanged {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                topic_id: *topic_id,
+                alias: alias.clone(),
+                added: *added,
             },
             (
                 CommandV2::Join { .. },
@@ -4056,7 +4159,11 @@ impl Engine {
         ) {
             return Err(Refusal::NotAuthorized(actor));
         }
-        if room.topics.values().any(|topic| topic.name == name) {
+        if room
+            .topics
+            .values()
+            .any(|topic| topic.name == name || topic.aliases.contains(&name))
+        {
             return Err(Refusal::DuplicateTopicName);
         }
         if room.topics.len() >= self.limits.max_topics_per_room {
@@ -4079,6 +4186,7 @@ impl Engine {
                 name: name.clone(),
                 creator: actor.clone(),
                 resolved: false,
+                aliases: BTreeSet::new(),
             },
         );
         room.next_topic_identity = next_topic_identity;
@@ -4110,7 +4218,12 @@ impl Engine {
             return Err(Refusal::NotAuthorized(actor));
         }
         let topic = room.topics.get(&topic_id).ok_or(Refusal::UnknownTopic)?;
-        if topic.name == name || room.topics.values().any(|topic| topic.name == name) {
+        if topic.name == name
+            || room
+                .topics
+                .values()
+                .any(|topic| topic.name == name || topic.aliases.contains(&name))
+        {
             return Err(Refusal::DuplicateTopicName);
         }
         let previous = topic.name.clone();
@@ -4227,6 +4340,63 @@ impl Engine {
             topic_id,
             previous_successor_topic_id,
             successor_topic_id,
+        })
+    }
+
+    fn set_topic_alias(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        topic_id: TopicId,
+        alias: String,
+        added: bool,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_nonempty_bounded(
+            &alias,
+            self.limits.max_topic_name_bytes,
+            Refusal::InvalidTopicName,
+        )?;
+        let room = self.room_ref(&room_id)?;
+        if !matches!(
+            room.members.get(&actor),
+            Some(Role::Owner | Role::Moderator)
+        ) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        let topic = room.topics.get(&topic_id).ok_or(Refusal::UnknownTopic)?;
+        if added {
+            if room
+                .topics
+                .values()
+                .any(|candidate| candidate.name == alias || candidate.aliases.contains(&alias))
+            {
+                return Err(Refusal::DuplicateTopicName);
+            }
+            if topic.aliases.len() >= MAX_TOPIC_ALIASES_PER_TOPIC_V1 {
+                return Err(Refusal::TopicAliasLimit);
+            }
+        } else if !topic.aliases.contains(&alias) {
+            return Err(Refusal::UnknownTopicAlias);
+        }
+        let aliases = &mut self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation")
+            .topics
+            .get_mut(&topic_id)
+            .expect("topic established by validation")
+            .aliases;
+        if added {
+            aliases.insert(alias.clone());
+        } else {
+            aliases.remove(&alias);
+        }
+        Ok(OutcomeV2::TopicAliasChanged {
+            room_id,
+            actor,
+            topic_id,
+            alias,
+            added,
         })
     }
 

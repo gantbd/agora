@@ -362,6 +362,13 @@ unknown-topic, and unauthorized attempts refuse atomically. Multiple sources
 may share a successor. Clients must not treat the relation as deletion,
 canonical-name resolution, implicit posting redirection, content movement, or
 workflow truth, and must retain both identities when presenting history.
+Aliases expose additional retained naming metadata and therefore share the
+topic-name confidentiality boundary. Fixed per-topic count and byte ceilings
+bound amplification; one room-wide current-name/alias collision domain prevents
+ambiguous presentation. Unauthorized, stale, invalid, duplicate, over-limit,
+and absent-remove attempts refuse atomically. Hosts must never accept an alias
+as a topic selector, posting redirect, authority grant, search result guarantee,
+connector truth, or workflow state.
 
 Private read positions are sensitive behavioral metadata even though they prove
 neither delivery nor attention. The engine exposes only the actor-keyed marker

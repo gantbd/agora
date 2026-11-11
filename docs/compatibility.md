@@ -17,12 +17,12 @@ existing field grammar requires a new frame version. Unknown tags, fields, or
 trailing bytes remain refusals.
 
 The immutable `tests/fixtures/checkpoint-v17.hex` artifact pins a representative
-V17 state containing both participant kinds, stable message and topic identity,
+V18 state containing both participant kinds, stable message and topic identity,
 topic-scoped messages, thread lifecycle, reactions, message revisions, neutral addressing, replay-safe
 publication, ban and policy-change evidence, one private read position,
 acknowledgment, the exact pending outbox suffix, and the independently retained
-change-journal suffix and discard edge, plus stable topic rename state and its
-attributable prior/new-name event.
+change-journal suffix and discard edge, plus stable topic rename, resolution,
+supersession, and bounded canonical alias state with their attributable events.
 
 The operational protocol is separately versioned as `V1` values. `agora-wire`
 defines its canonical binary representation and refuses unknown versions, tags,
@@ -31,7 +31,7 @@ fixtures freeze representative bytes. The codec defines complete message frames,
 not stream boundaries; transport framing remains separate.
 
 Protocol, Service, Client, and Wire V2 form an additive profile with a separate
-version byte, closed grammar, and thirty-one canonical fixtures. Their separately
+version byte, closed grammar, and thirty-four canonical fixtures. Their separately
 typed values and V2 bytes do not alter V1 tags or bytes. Authenticated Host V2
 uses the same canonical frames without reinterpreting V1.
 
@@ -191,6 +191,18 @@ Engine/service/host persistence profiles advance to 17/19/19. The engine record
 retains the depth-one successor graph and its event chain; service and host
 records retain the exact request/reply consequence. Profiles 16/18/18 fail
 closed rather than discard the relation or reconstruct it from current names.
+
+Bounded topic aliases are additive: add, remove, and status command tags `34`
+through `36`, added/removed/status outcome tags `32` through `34`, capability
+tag `15`, room-event tag `15`, and refusal tags `19` and `1a` were previously
+unassigned. The separate status observation preserves established topic-page
+bytes; every change profile carries actor, stable topic ID, alias, and add/remove
+state. Frozen add, receipt, and topic-aware change frames pin the grammar.
+
+Engine/service/host persistence profiles advance to 18/20/20. The engine record
+retains canonical bounded alias sets and their event chain; service and host
+records retain exact request/reply consequences. Profiles 17/19/19 fail closed
+rather than discard aliases or infer them from rename history.
 
 Transient collaboration Wire V1 is a new, separately invoked grammar. Its
 profile byte `01`, presence command/outcome tags `01` through `03`, typing

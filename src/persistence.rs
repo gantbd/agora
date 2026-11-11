@@ -222,6 +222,20 @@ impl Writer {
                 }
                 Ok(())
             }
+            DomainEventV2::TopicAliasChanged {
+                room_id,
+                actor,
+                topic_id,
+                alias,
+                added,
+            } => {
+                self.byte(20)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&topic_id.into_bytes())?;
+                self.text(alias)?;
+                self.byte(u8::from(*added))
+            }
             DomainEventV2::InvitationRecorded {
                 room_id,
                 participant,
@@ -681,6 +695,17 @@ impl<'a> Reader<'a> {
                     _ => return Err(CheckpointError::Invalid),
                 },
             },
+            20 => DomainEventV2::TopicAliasChanged {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                topic_id: TopicId::from_bytes(self.fixed()?),
+                alias: self.text(l.max_topic_name_bytes)?,
+                added: match self.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::Invalid),
+                },
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -789,7 +814,7 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         w.raw(b"AGORACP\0")?;
-        w.byte(17)?;
+        w.byte(18)?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -858,6 +883,10 @@ impl Engine {
                 w.text(&topic.name)?;
                 w.text(topic.creator.as_str())?;
                 w.byte(u8::from(topic.resolved))?;
+                w.count(topic.aliases.len())?;
+                for alias in &topic.aliases {
+                    w.text(alias)?;
+                }
             }
             w.count(room.topic_successors.len())?;
             for (topic_id, successor_topic_id) in &room.topic_successors {
@@ -921,7 +950,7 @@ impl Engine {
             return Err(CheckpointError::Limit);
         }
         let mut r = Reader { bytes, pos: 0 };
-        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 17 {
+        if r.raw(8)? != b"AGORACP\0" || r.byte()? != 18 {
             return Err(CheckpointError::Profile);
         }
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
@@ -1054,6 +1083,20 @@ impl Engine {
                         0 => false,
                         1 => true,
                         _ => return Err(CheckpointError::Invalid),
+                    },
+                    aliases: {
+                        let count = r.count(MAX_TOPIC_ALIASES_PER_TOPIC_V1)?;
+                        let mut aliases = BTreeSet::new();
+                        for _ in 0..count {
+                            let alias = r.text(l.max_topic_name_bytes)?;
+                            if alias.is_empty()
+                                || aliases.last().is_some_and(|previous| previous >= &alias)
+                            {
+                                return Err(CheckpointError::NonCanonical);
+                            }
+                            aliases.insert(alias);
+                        }
+                        aliases
                     },
                 };
                 insert(&mut topics, topic_id, topic)?;
@@ -1825,10 +1868,17 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                     )
                 || !e.participants.contains_key(&topic.creator)
                 || !names.insert(topic.name.clone())
+                || topic.aliases.len() > MAX_TOPIC_ALIASES_PER_TOPIC_V1
             {
                 return Err(CheckpointError::Invalid);
             }
             bounded(&topic.name, l.max_topic_name_bytes)?;
+            for alias in &topic.aliases {
+                bounded(alias, l.max_topic_name_bytes)?;
+                if !names.insert(alias.clone()) {
+                    return Err(CheckpointError::Invalid);
+                }
+            }
         }
         for (topic_id, successor_topic_id) in &room.topic_successors {
             if topic_id == successor_topic_id
@@ -1916,6 +1966,14 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             .and_then(|n| n.checked_add(room.bans.len() as u64))
             .and_then(|n| n.checked_add(room.topics.len() as u64))
             .and_then(|n| n.checked_add(room.topic_successors.len() as u64))
+            .and_then(|n| {
+                n.checked_add(
+                    room.topics
+                        .values()
+                        .map(|topic| topic.aliases.len() as u64)
+                        .sum(),
+                )
+            })
             .ok_or(CheckpointError::Invalid)?;
     }
     for ((participant, room_id, scope), position) in &e.read_positions {
@@ -2275,6 +2333,20 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
                     candidate == *topic_id || !r.topics.contains_key(&candidate)
                 })
             {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::TopicAliasChanged {
+            room_id,
+            actor,
+            topic_id,
+            alias,
+            added: _,
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            bounded(alias, e.limits.max_topic_name_bytes)?;
+            if !r.topics.contains_key(topic_id) {
                 return Err(CheckpointError::Invalid);
             }
         }

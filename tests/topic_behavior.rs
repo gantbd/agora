@@ -497,6 +497,148 @@ fn topic_supersession_survives_canonical_recovery() {
 }
 
 #[test]
+fn topic_aliases_are_bounded_canonical_authorized_and_recoverable() {
+    let mut engine = setup(Limits::default());
+    let topic = create_topic(&mut engine, "owner", "operations");
+    let other = create_topic(&mut engine, "owner", "alerts");
+    assert!(matches!(
+        engine.apply(CommandV2::SetTopicAlias {
+            room_id: "room".into(),
+            actor: "member".into(),
+            topic_id: topic,
+            alias: "ops".to_owned(),
+            added: true,
+        }),
+        Err(Refusal::NotAuthorized(_))
+    ));
+    engine
+        .apply(CommandV2::SetRole {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            participant: "agent".into(),
+            role: Role::Moderator,
+        })
+        .unwrap();
+    engine
+        .apply(CommandV2::SetTopicAlias {
+            room_id: "room".into(),
+            actor: "agent".into(),
+            topic_id: topic,
+            alias: "ops".to_owned(),
+            added: true,
+        })
+        .unwrap();
+    engine
+        .apply(CommandV2::SetTopicAlias {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: topic,
+            alias: "incident-command".to_owned(),
+            added: true,
+        })
+        .unwrap();
+    assert_eq!(
+        engine
+            .topic_alias_status(&"member".into(), &"room".into(), topic)
+            .unwrap()
+            .aliases,
+        vec!["incident-command".to_owned(), "ops".to_owned()]
+    );
+    for command in [
+        CommandV2::CreateTopic {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            name: "ops".to_owned(),
+        },
+        CommandV2::RenameTopic {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: other,
+            name: "ops".to_owned(),
+        },
+        CommandV2::SetTopicAlias {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: other,
+            alias: "ops".to_owned(),
+            added: true,
+        },
+    ] {
+        assert_eq!(engine.apply(command), Err(Refusal::DuplicateTopicName));
+    }
+    engine
+        .apply(CommandV2::SetTopicAlias {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: topic,
+            alias: "ops".to_owned(),
+            added: false,
+        })
+        .unwrap();
+    assert_eq!(
+        engine.apply(CommandV2::SetTopicAlias {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: topic,
+            alias: "ops".to_owned(),
+            added: false,
+        }),
+        Err(Refusal::UnknownTopicAlias)
+    );
+    for index in 0..15 {
+        engine
+            .apply(CommandV2::SetTopicAlias {
+                room_id: "room".into(),
+                actor: "owner".into(),
+                topic_id: topic,
+                alias: format!("alias-{index:02}"),
+                added: true,
+            })
+            .unwrap();
+    }
+    assert_eq!(
+        engine.apply(CommandV2::SetTopicAlias {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: topic,
+            alias: "overflow".to_owned(),
+            added: true,
+        }),
+        Err(Refusal::TopicAliasLimit)
+    );
+    assert_eq!(
+        engine.apply(CommandV2::SetTopicAlias {
+            room_id: "room".into(),
+            actor: "owner".into(),
+            topic_id: topic,
+            alias: String::new(),
+            added: true,
+        }),
+        Err(Refusal::InvalidTopicName)
+    );
+
+    let checkpoint = engine.prepare_checkpoint(1_000_000).unwrap();
+    let recovered = Engine::recover_checkpoint(
+        checkpoint.bytes(),
+        RecoveryLimits {
+            max_snapshot_bytes: 1_000_000,
+            maximum_engine_limits: Limits::default(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        recovered
+            .topic_alias_status(&"member".into(), &"room".into(), topic)
+            .unwrap()
+            .aliases,
+        (0..15)
+            .map(|index| format!("alias-{index:02}"))
+            .chain(["incident-command".to_owned()])
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn topic_messages_preserve_relation_through_replies_edits_reactions_and_tombstones() {
     let mut engine = setup(Limits::default());
     let topic = create_topic(&mut engine, "owner", "general");

@@ -278,6 +278,22 @@ pub enum CommandV2 {
         room_id: String,
         topic_id: TopicIdV1,
     },
+    AddTopicAlias {
+        room_id: String,
+        expected_revision: u64,
+        topic_id: TopicIdV1,
+        alias: String,
+    },
+    RemoveTopicAlias {
+        room_id: String,
+        expected_revision: u64,
+        topic_id: TopicIdV1,
+        alias: String,
+    },
+    TopicAliasStatus {
+        room_id: String,
+        topic_id: TopicIdV1,
+    },
     SpeakInTopic {
         room_id: String,
         expected_revision: u64,
@@ -847,6 +863,29 @@ impl fmt::Debug for CommandV2 {
                 .field("room_id_bytes", &room_id.len())
                 .field("topic_id", topic_id)
                 .finish(),
+            Self::AddTopicAlias {
+                room_id,
+                expected_revision,
+                topic_id,
+                alias,
+            }
+            | Self::RemoveTopicAlias {
+                room_id,
+                expected_revision,
+                topic_id,
+                alias,
+            } => formatter
+                .debug_struct("TopicAliasMutation")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("topic_id", topic_id)
+                .field("alias_bytes", &alias.len())
+                .finish(),
+            Self::TopicAliasStatus { room_id, topic_id } => formatter
+                .debug_struct("TopicAliasStatus")
+                .field("room_id_bytes", &room_id.len())
+                .field("topic_id", topic_id)
+                .finish(),
             Self::SpeakInTopic {
                 room_id,
                 expected_revision,
@@ -908,6 +947,7 @@ pub enum CapabilityV2 {
     TopicRenameV1,
     TopicResolutionV1,
     TopicSupersessionV1,
+    TopicAliasesV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -1081,6 +1121,26 @@ pub struct TopicSupersessionStatusV1 {
     pub room_id: String,
     pub topic_id: TopicIdV1,
     pub successor_topic_id: Option<TopicIdV1>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicAliasStatusV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub topic_id: TopicIdV1,
+    pub aliases: Vec<String>,
+}
+
+impl fmt::Debug for TopicAliasStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicAliasStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("topic_id", &self.topic_id)
+            .field("alias_count", &self.aliases.len())
+            .finish()
+    }
 }
 
 impl fmt::Debug for TopicSupersessionStatusV1 {
@@ -1404,6 +1464,12 @@ pub enum RoomEventV2 {
         previous_successor_topic_id: Option<TopicIdV1>,
         successor_topic_id: Option<TopicIdV1>,
     },
+    TopicAliasChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        alias: String,
+        added: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1522,6 +1588,18 @@ impl fmt::Debug for RoomEventV2 {
                 .field("topic_id", topic_id)
                 .field("previous_successor_topic_id", previous_successor_topic_id)
                 .field("successor_topic_id", successor_topic_id)
+                .finish(),
+            Self::TopicAliasChanged {
+                actor_id,
+                topic_id,
+                alias,
+                added,
+            } => formatter
+                .debug_struct("TopicAliasChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("alias_bytes", &alias.len())
+                .field("added", added)
                 .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
@@ -1676,6 +1754,12 @@ pub enum IdentifiedRoomEventV1 {
         previous_successor_topic_id: Option<TopicIdV1>,
         successor_topic_id: Option<TopicIdV1>,
     },
+    TopicAliasChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        alias: String,
+        added: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -1794,6 +1878,18 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .field("topic_id", topic_id)
                 .field("previous_successor_topic_id", previous_successor_topic_id)
                 .field("successor_topic_id", successor_topic_id)
+                .finish(),
+            Self::TopicAliasChanged {
+                actor_id,
+                topic_id,
+                alias,
+                added,
+            } => formatter
+                .debug_struct("TopicAliasChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("alias_bytes", &alias.len())
+                .field("added", added)
                 .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
@@ -1948,6 +2044,12 @@ pub enum ThreadedRoomEventV1 {
         previous_successor_topic_id: Option<TopicIdV1>,
         successor_topic_id: Option<TopicIdV1>,
     },
+    TopicAliasChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        alias: String,
+        added: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -2066,6 +2168,18 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .field("topic_id", topic_id)
                 .field("previous_successor_topic_id", previous_successor_topic_id)
                 .field("successor_topic_id", successor_topic_id)
+                .finish(),
+            Self::TopicAliasChanged {
+                actor_id,
+                topic_id,
+                alias,
+                added,
+            } => formatter
+                .debug_struct("TopicAliasChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("alias_bytes", &alias.len())
+                .field("added", added)
                 .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
@@ -2220,6 +2334,12 @@ pub enum TopicRoomEventV1 {
         previous_successor_topic_id: Option<TopicIdV1>,
         successor_topic_id: Option<TopicIdV1>,
     },
+    TopicAliasChanged {
+        actor_id: String,
+        topic_id: TopicIdV1,
+        alias: String,
+        added: bool,
+    },
     InvitationRecorded {
         participant_id: String,
     },
@@ -2344,6 +2464,18 @@ impl fmt::Debug for TopicRoomEventV1 {
                 .field("topic_id", topic_id)
                 .field("previous_successor_topic_id", previous_successor_topic_id)
                 .field("successor_topic_id", successor_topic_id)
+                .finish(),
+            Self::TopicAliasChanged {
+                actor_id,
+                topic_id,
+                alias,
+                added,
+            } => formatter
+                .debug_struct("TopicAliasChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("topic_id", topic_id)
+                .field("alias_bytes", &alias.len())
+                .field("added", added)
                 .finish(),
             Self::InvitationRecorded { participant_id }
             | Self::ParticipantJoined { participant_id }
@@ -2608,7 +2740,7 @@ page_debug!(
     "message_count"
 );
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum OutcomeV2 {
     Capabilities(Vec<CapabilityV2>),
     Rooms(RoomPageV2),
@@ -2737,12 +2869,29 @@ pub enum OutcomeV2 {
         topic_id: TopicIdV1,
     },
     TopicSupersessionStatus(TopicSupersessionStatusV1),
+    TopicAliasAdded {
+        revision: u64,
+        topic_id: TopicIdV1,
+        alias: String,
+    },
+    TopicAliasRemoved {
+        revision: u64,
+        topic_id: TopicIdV1,
+        alias: String,
+    },
+    TopicAliasStatus(TopicAliasStatusV1),
     TopicMessageAccepted {
         revision: u64,
         message_id: MessageIdV1,
         topic_id: TopicIdV1,
         sequence: u64,
     },
+}
+
+impl fmt::Debug for OutcomeV2 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OutcomeV2(<redacted>)")
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2768,6 +2917,8 @@ pub enum RefusalV2 {
     TopicResolved,
     InvalidTopicSupersession,
     TopicMustBeResolved,
+    TopicAliasLimit,
+    UnknownTopicAlias,
     InvalidReadScope,
     InvalidReadTarget,
     ReadPositionRegression,

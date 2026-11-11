@@ -136,6 +136,11 @@ not ready for a network service or crates.io release.
   explicit set/replace/clear, separate participant-bound status, unchanged
   historical relations and posting targets, four-feed attribution, and
   profile-17/19/19 recovery and exact-revision integrated qualification;
+- separately negotiated bounded topic aliases with owner/moderator kind-neutral
+  authority, a 16-alias ceiling and one room-wide current-name/alias collision
+  domain, stable-ID-only selection, explicit add/remove, canonical separate
+  status, four-feed attribution, exact replay/recovery, and profile-18/20/20
+  checkpoints; exact-revision integrated qualification remains pending;
 - independent delivery and pull retention: acknowledgment drains only the
   backpressured outbox, journal eviction carries its own exact gap, and both
   suffixes recover canonically with live service cursors;

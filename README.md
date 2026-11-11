@@ -9,7 +9,7 @@ behavior, or wall-clock access.
 The v0.3 core provides bounded deterministic transitions, typed atomic refusal,
 room-local message ordering and retention, optimistic revisions, an ordered
 bounded outbox, replay-safe response publication, private read-position state,
-an independently retained recent-change journal, and canonical profile-17
+an independently retained recent-change journal, and canonical profile-18
 checkpoints.
 Messages may explicitly address a canonical bounded list of current room members.
 Participant kind never changes admission, role, speaking, or addressing behavior.
@@ -101,6 +101,12 @@ and moderators attach a resolved topic to one distinct same-room successor.
 The depth-one relation is explicit, reversible navigation metadata: it never
 moves history, rewrites topic identity, or silently redirects a post. A linked
 source cannot reopen until the relation is cleared.
+The separately advertised `TopicAliasesV1` capability lets current owners and
+moderators explicitly add or remove at most 16 bounded display aliases per
+topic. Current names and aliases share one room-wide collision domain, while
+commands, posting, authority, relations, and supersession continue to use only
+the stable topic ID. A separate participant-bound status returns aliases in
+canonical order; every transition is attributable in all four change feeds.
 The `PrivateReadPositionsV1` capability adds participant-private monotone room,
 thread, and topic markers. The service derives the participant from its client
 binding; an advance changes neither room revision nor room events, but its state

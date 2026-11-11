@@ -13,9 +13,9 @@ use agora_protocol::v2::{
     ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
     RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1,
     ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
-    ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1,
-    TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1,
-    TopicSupersessionStatusV1, TopicV1,
+    ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1, TopicIdV1, TopicMessagePageV1,
+    TopicMessageV1, TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1,
+    TopicStatusV1, TopicSupersessionStatusV1, TopicV1,
 };
 use std::fmt;
 
@@ -532,6 +532,33 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
         }
         CommandV2::TopicSupersessionStatus { room_id, topic_id } => {
             sink.u8(51)?;
+            sink.text(room_id)?;
+            encode_topic_id(sink, *topic_id)
+        }
+        CommandV2::AddTopicAlias {
+            room_id,
+            expected_revision,
+            topic_id,
+            alias,
+        }
+        | CommandV2::RemoveTopicAlias {
+            room_id,
+            expected_revision,
+            topic_id,
+            alias,
+        } => {
+            sink.u8(if matches!(command, CommandV2::AddTopicAlias { .. }) {
+                52
+            } else {
+                53
+            })?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            encode_topic_id(sink, *topic_id)?;
+            sink.text(alias)
+        }
+        CommandV2::TopicAliasStatus { room_id, topic_id } => {
+            sink.u8(54)?;
             sink.text(room_id)?;
             encode_topic_id(sink, *topic_id)
         }
@@ -1084,6 +1111,25 @@ fn decode_command(
             room_id: read_text(decoder)?,
             topic_id: decode_topic_id(decoder)?,
         }),
+        tag @ (52 | 53) => Ok(if tag == 52 {
+            CommandV2::AddTopicAlias {
+                room_id: read_text(decoder)?,
+                expected_revision: read_u64(decoder)?,
+                topic_id: decode_topic_id(decoder)?,
+                alias: read_text(decoder)?,
+            }
+        } else {
+            CommandV2::RemoveTopicAlias {
+                room_id: read_text(decoder)?,
+                expected_revision: read_u64(decoder)?,
+                topic_id: decode_topic_id(decoder)?,
+                alias: read_text(decoder)?,
+            }
+        }),
+        54 => Ok(CommandV2::TopicAliasStatus {
+            room_id: read_text(decoder)?,
+            topic_id: decode_topic_id(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1200,6 +1246,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::TopicRenameV1 => 18,
                     CapabilityV2::TopicResolutionV1 => 19,
                     CapabilityV2::TopicSupersessionV1 => 20,
+                    CapabilityV2::TopicAliasesV1 => 21,
                 })?;
             }
             Ok(())
@@ -1523,6 +1570,36 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                 }
             }
         }
+        OutcomeV2::TopicAliasAdded {
+            revision,
+            topic_id,
+            alias,
+        }
+        | OutcomeV2::TopicAliasRemoved {
+            revision,
+            topic_id,
+            alias,
+        } => {
+            sink.u8(if matches!(outcome, OutcomeV2::TopicAliasAdded { .. }) {
+                50
+            } else {
+                51
+            })?;
+            sink.u64(*revision)?;
+            encode_topic_id(sink, *topic_id)?;
+            sink.text(alias)
+        }
+        OutcomeV2::TopicAliasStatus(status) => {
+            sink.u8(52)?;
+            sink.u64(status.revision)?;
+            sink.text(&status.room_id)?;
+            encode_topic_id(sink, status.topic_id)?;
+            sink.list(status.aliases.len())?;
+            for alias in &status.aliases {
+                sink.text(alias)?;
+            }
+            Ok(())
+        }
         OutcomeV2::TopicMessageAccepted {
             revision,
             message_id,
@@ -1652,6 +1729,7 @@ fn decode_outcome(
                     18 => CapabilityV2::TopicRenameV1,
                     19 => CapabilityV2::TopicResolutionV1,
                     20 => CapabilityV2::TopicSupersessionV1,
+                    21 => CapabilityV2::TopicAliasesV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -1906,6 +1984,38 @@ fn decode_outcome(
                 },
             },
         )),
+        tag @ (50 | 51) => Ok(if tag == 50 {
+            OutcomeV2::TopicAliasAdded {
+                revision: read_u64(decoder)?,
+                topic_id: decode_topic_id(decoder)?,
+                alias: read_text(decoder)?,
+            }
+        } else {
+            OutcomeV2::TopicAliasRemoved {
+                revision: read_u64(decoder)?,
+                topic_id: decode_topic_id(decoder)?,
+                alias: read_text(decoder)?,
+            }
+        }),
+        52 => {
+            let revision = read_u64(decoder)?;
+            let room_id = read_text(decoder)?;
+            let topic_id = decode_topic_id(decoder)?;
+            let length = read_list(decoder, limits)?;
+            if length > 16 {
+                return Err(WireDecodeError::Limit);
+            }
+            let mut aliases = try_vec(length)?;
+            for _ in 0..length {
+                aliases.push(read_text(decoder)?);
+            }
+            Ok(OutcomeV2::TopicAliasStatus(TopicAliasStatusV1 {
+                revision,
+                room_id,
+                topic_id,
+                aliases,
+            }))
+        }
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -2651,6 +2761,12 @@ fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<()
                 *previous_successor_topic_id,
                 *successor_topic_id,
             )?,
+            RoomEventV2::TopicAliasChanged {
+                actor_id,
+                topic_id,
+                alias,
+                added,
+            } => encode_topic_alias_event(sink, actor_id, *topic_id, alias, *added)?,
         }
     }
     sink.u64(page.next.0)?;
@@ -2774,6 +2890,15 @@ fn decode_change_page(
                     topic_id,
                     previous_successor_topic_id,
                     successor_topic_id,
+                }
+            }
+            21 => {
+                let (actor_id, topic_id, alias, added) = decode_topic_alias_event(decoder)?;
+                RoomEventV2::TopicAliasChanged {
+                    actor_id,
+                    topic_id,
+                    alias,
+                    added,
                 }
             }
             _ => return Err(WireDecodeError::UnknownTag),
@@ -2960,6 +3085,12 @@ fn encode_identified_change_page(
                 *previous_successor_topic_id,
                 *successor_topic_id,
             )?,
+            IdentifiedRoomEventV1::TopicAliasChanged {
+                actor_id,
+                topic_id,
+                alias,
+                added,
+            } => encode_topic_alias_event(sink, actor_id, *topic_id, alias, *added)?,
         }
     }
     sink.u64(page.next.0)?;
@@ -3092,6 +3223,15 @@ fn decode_identified_change_page(
                     topic_id,
                     previous_successor_topic_id,
                     successor_topic_id,
+                }
+            }
+            21 => {
+                let (actor_id, topic_id, alias, added) = decode_topic_alias_event(decoder)?;
+                IdentifiedRoomEventV1::TopicAliasChanged {
+                    actor_id,
+                    topic_id,
+                    alias,
+                    added,
                 }
             }
             _ => return Err(WireDecodeError::UnknownTag),
@@ -3278,6 +3418,12 @@ fn encode_threaded_change_page(
                 *previous_successor_topic_id,
                 *successor_topic_id,
             )?,
+            ThreadedRoomEventV1::TopicAliasChanged {
+                actor_id,
+                topic_id,
+                alias,
+                added,
+            } => encode_topic_alias_event(sink, actor_id, *topic_id, alias, *added)?,
         }
     }
     sink.u64(page.next.0)?;
@@ -3408,6 +3554,15 @@ fn decode_threaded_change_page(
                     topic_id,
                     previous_successor_topic_id,
                     successor_topic_id,
+                }
+            }
+            21 => {
+                let (actor_id, topic_id, alias, added) = decode_topic_alias_event(decoder)?;
+                ThreadedRoomEventV1::TopicAliasChanged {
+                    actor_id,
+                    topic_id,
+                    alias,
+                    added,
                 }
             }
             _ => return Err(WireDecodeError::UnknownTag),
@@ -3594,6 +3749,12 @@ fn encode_topic_change_page(
                 *previous_successor_topic_id,
                 *successor_topic_id,
             )?,
+            TopicRoomEventV1::TopicAliasChanged {
+                actor_id,
+                topic_id,
+                alias,
+                added,
+            } => encode_topic_alias_event(sink, actor_id, *topic_id, alias, *added)?,
         }
     }
     sink.u64(page.next.0)?;
@@ -3766,6 +3927,15 @@ fn decode_topic_change_page(
                     topic_id,
                     previous_successor_topic_id,
                     successor_topic_id,
+                }
+            }
+            21 => {
+                let (actor_id, topic_id, alias, added) = decode_topic_alias_event(decoder)?;
+                TopicRoomEventV1::TopicAliasChanged {
+                    actor_id,
+                    topic_id,
+                    alias,
+                    added,
                 }
             }
             _ => return Err(WireDecodeError::UnknownTag),
@@ -3996,6 +4166,34 @@ fn decode_topic_supersession_event(
     ))
 }
 
+fn encode_topic_alias_event(
+    sink: &mut dyn Sink,
+    actor_id: &str,
+    topic_id: TopicIdV1,
+    alias: &str,
+    added: bool,
+) -> Result<(), WireEncodeError> {
+    sink.u8(21)?;
+    sink.text(actor_id)?;
+    encode_topic_id(sink, topic_id)?;
+    sink.text(alias)?;
+    sink.u8(u8::from(added))
+}
+
+fn decode_topic_alias_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<(String, TopicIdV1, String, bool), WireDecodeError> {
+    let actor_id = read_text(decoder)?;
+    let topic_id = decode_topic_id(decoder)?;
+    let alias = read_text(decoder)?;
+    let added = match read_u8(decoder)? {
+        0 => false,
+        1 => true,
+        _ => return Err(WireDecodeError::UnknownTag),
+    };
+    Ok((actor_id, topic_id, alias, added))
+}
+
 #[derive(Clone, Copy)]
 enum ModerationEvent {
     Kicked,
@@ -4186,6 +4384,8 @@ fn encode_refusal(sink: &mut dyn Sink, refusal: RefusalV2) -> Result<(), WireEnc
         RefusalV2::TopicResolved => 22,
         RefusalV2::InvalidTopicSupersession => 23,
         RefusalV2::TopicMustBeResolved => 24,
+        RefusalV2::TopicAliasLimit => 25,
+        RefusalV2::UnknownTopicAlias => 26,
     };
     sink.u8(tag)?;
     if let RefusalV2::Stale { actual_revision } = refusal {
@@ -4222,6 +4422,8 @@ fn decode_refusal(decoder: &mut keystone_codec::Decoder<'_>) -> Result<RefusalV2
         22 => Ok(RefusalV2::TopicResolved),
         23 => Ok(RefusalV2::InvalidTopicSupersession),
         24 => Ok(RefusalV2::TopicMustBeResolved),
+        25 => Ok(RefusalV2::TopicAliasLimit),
+        26 => Ok(RefusalV2::UnknownTopicAlias),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }

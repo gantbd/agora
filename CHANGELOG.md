@@ -287,6 +287,10 @@ follow Semantic Versioning once a public release contract is selected.
 - Added separately negotiated bounded topic supersession with owner/moderator
   authority, a depth-one same-room successor graph, explicit set/replace/clear,
   all-feed attribution, exact recovery, and no history rewrite or post routing.
+- Added separately negotiated bounded topic display aliases with
+  owner/moderator kind-neutral authority, one room-wide current-name/alias
+  collision domain, explicit add/remove, canonical status, all-feed
+  attribution, exact replay/recovery, and no string-based routing or authority.
 
 ### Fixed
 
@@ -300,8 +304,8 @@ follow Semantic Versioning once a public release contract is selected.
 ### Changed
 
 - Made every workspace package explicitly non-publishable.
-- Advanced the engine, service, and host checkpoint records to profiles 17, 19,
-  and 19 respectively; earlier profile bytes remain fail-closed.
+- Advanced the engine, service, and host checkpoint records to profiles 18, 20,
+  and 20 respectively; earlier profile bytes remain fail-closed.
 
 ### Security
 

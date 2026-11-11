@@ -187,6 +187,21 @@ fn every_v2_fixture_has_deterministic_bounded_single_bit_and_framing_mutation() 
             FrameKind::Request,
         ),
         (
+            "topic-alias-add-request",
+            include_str!("fixtures/topic-alias-add-request-v2.hex"),
+            FrameKind::Request,
+        ),
+        (
+            "topic-alias-added-reply",
+            include_str!("fixtures/topic-alias-added-reply-v2.hex"),
+            FrameKind::Reply,
+        ),
+        (
+            "topic-alias-change-reply",
+            include_str!("fixtures/topic-alias-change-reply-v2.hex"),
+            FrameKind::Reply,
+        ),
+        (
             "topic-renamed-change-reply",
             include_str!("fixtures/topic-renamed-change-reply-v2.hex"),
             FrameKind::Reply,

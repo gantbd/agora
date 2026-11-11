@@ -313,6 +313,22 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
             room_id: "room".to_owned(),
             topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
         },
+        protocol::v2::CommandV2::AddTopicAlias {
+            room_id: "room".to_owned(),
+            expected_revision: 26,
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+            alias: "incidents".to_owned(),
+        },
+        protocol::v2::CommandV2::RemoveTopicAlias {
+            room_id: "room".to_owned(),
+            expected_revision: 27,
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+            alias: "incidents".to_owned(),
+        },
+        protocol::v2::CommandV2::TopicAliasStatus {
+            room_id: "room".to_owned(),
+            topic_id: protocol::v2::TopicIdV1::new([0x55; 16]),
+        },
         protocol::v2::CommandV2::SpeakInTopic {
             room_id: "room".to_owned(),
             expected_revision: 21,

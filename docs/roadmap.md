@@ -4,9 +4,10 @@
    coverage-guided fuzzing, filesystem interruption, and commit-pinned local
    release qualification with broader command models plus repeated remote and
    supported-host campaigns.
-2. Extend the implemented stable-topic, rename, reversible-resolution, and
-   bounded depth-one supersession substrate only through separately decided
-   move/copy, deletion/alias, and conversation-collection laws.
+2. Extend the implemented stable-topic, rename, reversible-resolution,
+   bounded depth-one supersession, and bounded display-alias substrate only
+   through separately decided move/copy, deletion, and conversation-collection
+   laws.
 3. Extend the qualified local exact-record offline backup/restore mechanism with
    real device/power-loss campaigns, authenticated/encrypted transport,
    retention and rollback policy, then qualify upgrade/rollback and an

@@ -4,7 +4,7 @@ use agora_engine::{
 use agora_protocol::v2::{
     AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, IdentifiedRoomEventV1,
     MessageIdV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
-    RoomEventV2, ThreadLifecycleStateV1, ThreadedRoomEventV1, TopicIdV1,
+    RoomEventV2, ThreadLifecycleStateV1, ThreadedRoomEventV1, TopicIdV1, TopicRoomEventV1,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -710,6 +710,321 @@ fn v2_topic_supersession_is_actor_bound_replayable_observable_and_feed_visible()
             ),
         ),
         ReplyV2::Accepted(OutcomeV2::TopicSupersessionCleared { revision: 9, .. })
+    ));
+}
+
+#[test]
+fn v2_topic_aliases_are_actor_bound_replayable_collision_safe_and_visible_in_every_feed() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(
+                1,
+                CommandV2::SetRole {
+                    room_id: "room".to_owned(),
+                    participant_id: "bot".to_owned(),
+                    role: RoleV2::Moderator,
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoleChanged { revision: 5 })
+    ));
+    let ReplyV2::Accepted(OutcomeV2::TopicCreated {
+        topic_id,
+        revision: 6,
+    }) = service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::CreateTopic {
+                room_id: "room".to_owned(),
+                expected_revision: 5,
+                name: "operations".to_owned(),
+            },
+        ),
+    )
+    else {
+        panic!("topic expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::TopicCreated {
+        topic_id: other_topic_id,
+        revision: 7,
+    }) = service.execute(
+        alice,
+        request(
+            3,
+            CommandV2::CreateTopic {
+                room_id: "room".to_owned(),
+                expected_revision: 6,
+                name: "current".to_owned(),
+            },
+        ),
+    )
+    else {
+        panic!("other topic expected");
+    };
+
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: room_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            4,
+            CommandV2::OpenChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 7,
+            },
+        ),
+    )
+    else {
+        panic!("room cursor expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: identified_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            5,
+            CommandV2::OpenIdentifiedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 7,
+            },
+        ),
+    )
+    else {
+        panic!("identified cursor expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: threaded_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            6,
+            CommandV2::OpenThreadedChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 7,
+            },
+        ),
+    )
+    else {
+        panic!("threaded cursor expected");
+    };
+    let ReplyV2::Accepted(OutcomeV2::ChangesOpened {
+        cursor: topic_cursor,
+        ..
+    }) = service.execute(
+        alice,
+        request(
+            7,
+            CommandV2::OpenTopicChanges {
+                room_id: "room".to_owned(),
+                observed_revision: 7,
+            },
+        ),
+    )
+    else {
+        panic!("topic cursor expected");
+    };
+
+    let add = request(
+        1,
+        CommandV2::AddTopicAlias {
+            room_id: "room".to_owned(),
+            expected_revision: 7,
+            topic_id,
+            alias: "incidents".to_owned(),
+        },
+    );
+    let accepted = ReplyV2::Accepted(OutcomeV2::TopicAliasAdded {
+        revision: 8,
+        topic_id,
+        alias: "incidents".to_owned(),
+    });
+    assert_eq!(service.execute(bot, add.clone()), accepted);
+    assert_eq!(service.execute(bot, add), accepted);
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                1,
+                CommandV2::AddTopicAlias {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                    topic_id,
+                    alias: "conflict".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::RequestConflict)
+    );
+    assert!(matches!(
+        service.execute(
+            bot,
+            request(
+                2,
+                CommandV2::TopicAliasStatus {
+                    room_id: "room".to_owned(),
+                    topic_id,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::TopicAliasStatus(status))
+            if status.revision == 8 && status.aliases == vec!["incidents"]
+    ));
+
+    for (request_id, command) in [
+        (
+            8,
+            CommandV2::CreateTopic {
+                room_id: "room".to_owned(),
+                expected_revision: 8,
+                name: "incidents".to_owned(),
+            },
+        ),
+        (
+            9,
+            CommandV2::RenameTopic {
+                room_id: "room".to_owned(),
+                expected_revision: 8,
+                topic_id: other_topic_id,
+                name: "incidents".to_owned(),
+            },
+        ),
+        (
+            10,
+            CommandV2::AddTopicAlias {
+                room_id: "room".to_owned(),
+                expected_revision: 8,
+                topic_id,
+                alias: "current".to_owned(),
+            },
+        ),
+    ] {
+        assert_eq!(
+            service.execute(alice, request(request_id, command)),
+            ReplyV2::Refused(RefusalV2::InvalidInput)
+        );
+    }
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                11,
+                CommandV2::RemoveTopicAlias {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                    topic_id,
+                    alias: "missing".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::UnknownTopicAlias)
+    );
+
+    let ReplyV2::Accepted(OutcomeV2::Changes(page)) = service.execute(
+        alice,
+        request(
+            12,
+            CommandV2::Changes {
+                room_id: "room".to_owned(),
+                cursor: room_cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("room alias event expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        RoomEventV2::TopicAliasChanged { actor_id, topic_id: id, alias, added }
+            if actor_id == "bot" && *id == topic_id && alias == "incidents" && *added
+    ));
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedChanges(page)) = service.execute(
+        alice,
+        request(
+            13,
+            CommandV2::IdentifiedChanges {
+                room_id: "room".to_owned(),
+                cursor: identified_cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("identified alias event expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        IdentifiedRoomEventV1::TopicAliasChanged { actor_id, topic_id: id, alias, added }
+            if actor_id == "bot" && *id == topic_id && alias == "incidents" && *added
+    ));
+    let ReplyV2::Accepted(OutcomeV2::ThreadedChanges(page)) = service.execute(
+        alice,
+        request(
+            14,
+            CommandV2::ThreadedChanges {
+                room_id: "room".to_owned(),
+                cursor: threaded_cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("threaded alias event expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        ThreadedRoomEventV1::TopicAliasChanged { actor_id, topic_id: id, alias, added }
+            if actor_id == "bot" && *id == topic_id && alias == "incidents" && *added
+    ));
+    let ReplyV2::Accepted(OutcomeV2::TopicChanges(page)) = service.execute(
+        alice,
+        request(
+            15,
+            CommandV2::TopicChanges {
+                room_id: "room".to_owned(),
+                cursor: topic_cursor,
+                limit: 1,
+            },
+        ),
+    ) else {
+        panic!("topic alias event expected");
+    };
+    assert!(matches!(
+        &page.changes[0].event,
+        TopicRoomEventV1::TopicAliasChanged { actor_id, topic_id: id, alias, added }
+            if actor_id == "bot" && *id == topic_id && alias == "incidents" && *added
     ));
 }
 
@@ -3012,11 +3327,8 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 20);
-    assert_eq!(
-        capabilities.last(),
-        Some(&CapabilityV2::TopicSupersessionV1)
-    );
+    assert_eq!(capabilities.len(), 21);
+    assert_eq!(capabilities.last(), Some(&CapabilityV2::TopicAliasesV1));
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

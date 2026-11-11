@@ -261,6 +261,15 @@ message or post is moved, copied, or silently retargeted; clearing the relation
 does not reopen the source. Exact receipts, all-feed attribution, and the graph
 survive service and host recovery.
 
+`TopicAliasesV1` is bounded display metadata over that same stable topic owner.
+The service derives the actor and exposes explicit add, remove, and status
+operations. The engine admits at most 16 aliases per topic under the existing
+name ceiling and one room-wide collision domain spanning current names and
+aliases. Status is participant-bound and canonically ordered; every mutation is
+attributed in all feed profiles and retained by exact receipts and nested
+recovery. Aliases never become selectors, redirects, authority, or workflow
+state.
+
 ## Private read positions
 
 `PrivateReadPositionsV1` is private current-state projection inside the same

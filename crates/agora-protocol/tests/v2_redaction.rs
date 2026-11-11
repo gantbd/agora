@@ -7,7 +7,7 @@ use agora_protocol::v2::{
     ReadPositionV1, ReadScopeV1, ReplyV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
     RoomPageV2, RoomSummaryV2, ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1,
     ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1,
-    TopicIdV1, TopicStatusV1, TopicSupersessionStatusV1,
+    TopicAliasStatusV1, TopicIdV1, TopicStatusV1, TopicSupersessionStatusV1,
 };
 
 #[test]
@@ -180,8 +180,35 @@ fn v2_debug_output_is_content_safe() {
             room_id: "secret-room".to_owned(),
             topic_id: TopicIdV1::new([0x72; 16]),
         },
+        CommandV2::AddTopicAlias {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 66,
+            topic_id: TopicIdV1::new([0x72; 16]),
+            alias: "secret-topic-alias".to_owned(),
+        },
+        CommandV2::RemoveTopicAlias {
+            room_id: "secret-room".to_owned(),
+            expected_revision: 67,
+            topic_id: TopicIdV1::new([0x72; 16]),
+            alias: "secret-topic-alias".to_owned(),
+        },
+        CommandV2::TopicAliasStatus {
+            room_id: "secret-room".to_owned(),
+            topic_id: TopicIdV1::new([0x72; 16]),
+        },
     ];
     let replies = [
+        ReplyV2::Accepted(OutcomeV2::TopicAliasStatus(TopicAliasStatusV1 {
+            revision: 67,
+            room_id: "secret-room".to_owned(),
+            topic_id: TopicIdV1::new([0x72; 16]),
+            aliases: vec!["secret-topic-alias".to_owned()],
+        })),
+        ReplyV2::Accepted(OutcomeV2::TopicAliasAdded {
+            revision: 67,
+            topic_id: TopicIdV1::new([0x72; 16]),
+            alias: "secret-topic-alias".to_owned(),
+        }),
         ReplyV2::Accepted(OutcomeV2::TopicSupersessionStatus(
             TopicSupersessionStatusV1 {
                 revision: 64,
@@ -514,6 +541,21 @@ fn v2_debug_output_is_content_safe() {
             next: PageCursorV2(62),
             has_more: false,
         })),
+        ReplyV2::Accepted(OutcomeV2::Changes(RoomChangePageV2 {
+            revision: 67,
+            changes: vec![RoomChangeV2 {
+                event_sequence: 66,
+                revision: 67,
+                event: RoomEventV2::TopicAliasChanged {
+                    actor_id: "secret-actor".to_owned(),
+                    topic_id: TopicIdV1::new([0x72; 16]),
+                    alias: "secret-topic-alias".to_owned(),
+                    added: true,
+                },
+            }],
+            next: PageCursorV2(68),
+            has_more: false,
+        })),
     ];
     let rendered = format!("{commands:?} {replies:?} {:?}", PageCursorV2(42));
     for secret in [
@@ -532,6 +574,7 @@ fn v2_debug_output_is_content_safe() {
         "secret-revision-body",
         "secret-prior-topic",
         "secret-topic-name",
+        "secret-topic-alias",
         "42",
         "43",
         "44",
@@ -545,6 +588,6 @@ fn v2_debug_output_is_content_safe() {
         "52",
         "53",
     ] {
-        assert!(!rendered.contains(secret));
+        assert!(!rendered.contains(secret), "Debug output leaked {secret}");
     }
 }
