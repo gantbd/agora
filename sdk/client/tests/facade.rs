@@ -297,3 +297,21 @@ fn facade_alone_constructs_v2_client_and_canonical_wire_values() {
     let encoded = wire::v2::encode_reply_v2(&gap, limits).unwrap();
     assert_eq!(wire::v2::decode_reply_v2(&encoded, limits).unwrap(), gap);
 }
+
+#[test]
+fn facade_names_the_unadvertised_transient_presence_contract() {
+    let request = protocol::transient::TransientRequestV1 {
+        request_id: protocol::transient::TransientRequestIdV1(3),
+        command: protocol::transient::TransientCommandV1::PublishPresence {
+            room_id: "room".to_owned(),
+            state: protocol::transient::PresenceStateV1::Available,
+            lifetime: 30,
+        },
+    };
+    let limits = wire::WireLimits::reference();
+    let encoded = wire::transient::encode_transient_request_v1(&request, limits).unwrap();
+    assert_eq!(
+        wire::transient::decode_transient_request_v1(&encoded, limits).unwrap(),
+        request
+    );
+}

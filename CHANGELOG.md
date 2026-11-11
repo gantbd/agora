@@ -23,6 +23,10 @@ follow Semantic Versioning once a public release contract is selected.
 - Added validated V2 client-state export and restoration for the client-owned
   request namespace and exact unresolved request, while leaving durable storage,
   endpoint/session correspondence, and reconnect policy caller-owned.
+- Added an unadvertised, separately typed transient presence Protocol/Wire V1
+  grammar with volatile request identities, opaque page cursors, remaining-only
+  lifetime projection, canonical shape/order checks, frozen frames, and bounded
+  deterministic mutation closure. Durable Protocol V2 remains byte-unchanged.
 - Added explicit fail-closed local endpoint residue recovery requiring the exact
   prior incarnation, a distinct next incarnation, and a fresh Host composition,
   with locked in-place record rotation and no implicit volatile-state adoption.

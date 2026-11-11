@@ -7,8 +7,10 @@ bounded transient owner rather than storing them in the durable conversation
 engine, room revision, outbox, recent-change journal, or canonical engine,
 service, and Host checkpoints.
 
-This document fixes the architecture for the first transient profile. It does
-not advertise a capability or claim an implementation.
+This document fixes the architecture for the first transient profile. The dark
+owner, authenticated Host substrate, and separate presence-only Protocol/Wire
+grammar now exist, but no capability is advertised and the public composition
+is not yet complete.
 
 ## Owned facts
 
@@ -102,8 +104,10 @@ The first advertised profile must close the feature vertically:
   redaction, model, mutation, and restart evidence; and
 - updated compatibility, threat, effect, supply, and release ledgers.
 
-Protocol V1 remains unchanged. Until every item above is present, Agora must not
-advertise transient presence or typing capability.
+The separately typed presence grammar and canonical codec are closed in
+[`transient-wire-v1.md`](transient-wire-v1.md), without changing durable
+Protocol V2. Protocol V1 remains unchanged. Until every item above is present,
+Agora must not advertise transient presence or typing capability.
 
 ## Explicit nonclaims
 

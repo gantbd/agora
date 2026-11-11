@@ -152,6 +152,13 @@ the service and host records nest that state with live cursors and exact
 receipts. Profiles 13/15/15 fail closed rather than infer missing change history
 from the delivery outbox or silently couple acknowledgment back to observation.
 
+Transient presence Wire V1 is a new, separately invoked grammar. Its profile
+byte `01`, command tags `01` through `03`, reply tags `81` and `82`, outcome
+tags `01` through `03`, and refusal tags `01` through `0a` do not reinterpret
+or extend durable Wire V1/V2 frames. The two frozen transient frames join the
+compatibility inventory; every older fixture, capability list, and checkpoint
+remains byte-identical. No transient capability is advertised yet.
+
 ## Conservative baseline gate
 
 `docs/compatibility-baseline.txt` records the exact sorted Cargo package

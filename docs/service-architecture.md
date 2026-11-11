@@ -53,8 +53,9 @@ transient operation, retires the source on disconnect, revocation, substitution,
 or clock regression, and reconciles membership after each ordinary conversation
 frame before returning its reply. Reconstructing the wrapper around a recovered
 Host deliberately starts empty. The wrapper has no checkpoint implementation,
-Protocol/Wire grammar, or SDK surface, so no presence capability is advertised
-yet. See
+public Host handler, replay registry, or client state machine. A separate
+presence-only Protocol/Wire grammar is canonical but not yet composed here, so
+no presence capability is advertised. See
 [`transient-collaboration.md`](transient-collaboration.md).
 
 ## Connection and identity

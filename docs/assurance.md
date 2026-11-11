@@ -23,7 +23,7 @@ The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
 closes over the twelve-package stable workspace, the standalone fuzz package,
-and thirty-two canonical fixtures.
+and thirty-four canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -97,16 +97,20 @@ Five Host-composition scenarios bind that owner to authenticated sessions and
 qualified Host time. They cover participant-neutral publication and observation,
 close/revocation/time-regression retirement before refusal, leave reconciliation
 before its accepted reply and no rejoin resurrection, bounded expiry, and
-wrapper reconstruction to `Unknown`. This remains dark substrate evidence: the
-public Protocol/Wire/SDK profile, typing, public replay rules, mutation corpus,
-and end-to-end local-daemon evidence remain open under R62.
+wrapper reconstruction to `Unknown`. The presence-only Protocol/Wire grammar
+now has exhaustive value round trips, canonical shape and ordering checks, two
+frozen frames, content-safe Debug, and deterministic
+truncation/trailing/single-bit mutation closure. Authenticated public Host/client
+composition, typing, public replay/cursor rules, SDK behavior, and end-to-end
+local-daemon evidence remain open under R62.
 
 The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
 nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus
-is regenerated from and checked against all twenty-seven wire fixtures plus the
-current engine, service, and host checkpoint fixtures. `wire_canonical` drives
-all four public V1/V2 request/reply decoders and both fixed-width handshake
-decoders; `checkpoint_canonical` drives all three semantic recovery layers;
+is regenerated from and checked against all twenty-seven durable V1/V2 wire
+fixtures plus the current engine, service, and host checkpoint fixtures.
+`wire_canonical` drives all four public V1/V2 request/reply decoders and both
+fixed-width handshake decoders; `checkpoint_canonical` drives all three semantic
+recovery layers;
 `outer_frame_canonical` drives the daemon's production length-prefix codec over
 the twenty-five complete-frame protocol seeds (the unframed handshake fixtures
 are deliberately excluded). An accepted
