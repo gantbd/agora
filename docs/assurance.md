@@ -134,9 +134,12 @@ admission plus participant-bound retained history. Service and Host recovery
 advance to 23/23 for the history cursor and 24/24 for the isolated change
 cursor. Three wire and three service scenarios, two frozen attachment frames,
 capability discovery, and a real private Unix-socket admission raise
-compatibility closure to 73 fixtures. Release qualification remains open. This evidence does not
-establish blob availability, byte verification, download authority, scanning,
-deletion, or cross-engine atomicity.
+compatibility closure to 73 fixtures. Revision
+`3f3670b964220f63522ec8c9ae36ea395c5e5bd0` passed the full release profile,
+including 10,000 soak cycles and one million fixed-seed cases for each of three
+fuzz targets. This evidence does not establish blob availability, byte
+verification, download authority, scanning, deletion, or cross-engine
+atomicity.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;

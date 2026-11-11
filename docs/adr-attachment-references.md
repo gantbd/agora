@@ -1,7 +1,7 @@
 # ADR: bounded immutable attachment references
 
-Status: implementation complete through advertised private-local transport;
-release qualification open
+Status: accepted and release-qualified at
+`3f3670b964220f63522ec8c9ae36ea395c5e5bd0`
 
 Date: 2026-11-11
 
@@ -77,8 +77,9 @@ with Agora. The protocol, canonical wire, service replay, Host actor binding,
 client uncertainty, and both SDK facades now close for admission and
 participant-bound retained history. The isolated attachment-aware change
 profile, frozen wire fixtures, private-local transport route, and separately
-advertised capability now close the conversation profile. Release qualification
-remains separate.
+advertised capability now close the conversation profile. Revision
+`3f3670b964220f63522ec8c9ae36ea395c5e5bd0` passed the full release-candidate
+qualification profile.
 
 ## Consequences
 
