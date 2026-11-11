@@ -26,6 +26,9 @@ not ready for a network service or crates.io release.
   owner versus crash-residue refusal, and fail-closed replacement fencing;
 - explicit exact-incarnation endpoint-residue recovery with locked lifetime
   rotation, fresh Host composition, and next-incarnation handshake evidence;
+- an unadvertised bounded transient presence owner with current-membership
+  checks, opaque sources, monotone explicit time, snapshot cursors, bounded
+  expiry work, lifecycle retirement, and restart-to-`Unknown` evidence;
 - transport-neutral authenticated host composition with bounded volatile
   sessions, current-context revalidation, and revocation-safe cleanup;
 - unpublished trusted-host and remote-client SDK facades with executable
@@ -154,10 +157,11 @@ not ready for a network service or crates.io release.
 
 ## Open release blockers
 
-- R62 fixes the architecture for transient presence and typing, but no public
-  capability is implemented or advertised. A separate bounded transient owner,
-  qualified Host clock composition, full lifecycle retirement, closed wire/SDK
-  surface, privacy evidence, and restart-to-`Unknown` evidence remain required.
+- R62 fixes the architecture and supplies the first dark transient presence
+  owner, but no public capability is implemented or advertised. Qualified Host
+  clock/source composition, automatic lifecycle retirement, typing, the closed
+  Protocol/Wire/SDK surface, and end-to-end privacy and restart evidence remain
+  required.
 
 - no remote origin provenance or remote CI; the qualified local source candidate
   is content-addressed, but its selected Aegis and Keystone inputs were unclean

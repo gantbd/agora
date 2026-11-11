@@ -36,6 +36,17 @@ It supplies a trusted connection-derived Aegis context and explicit time to
 Host V2 but neither imports transport state into conversation semantics nor
 exposes the opaque host session on the wire.
 
+`agora-service::transient` is a separate volatile owner beside `ServiceV2`, not
+part of its durable checkpoint. Its initial dark profile binds expiring presence
+signals to current engine membership, opaque session sources, explicit monotone
+time, fixed capacities, and exact snapshot cursors. Observation is
+current-member-only and projects expired or absent state as `Unknown`; it does
+not advance engine revision or publish an event. Source and participant-room
+retirement are explicit composition obligations, and expiry reclamation is a
+separate bounded drive. Protocol, wire, Host, and SDK surfaces remain absent, so
+no presence capability is advertised yet. See
+[`transient-collaboration.md`](transient-collaboration.md).
+
 ## Connection and identity
 
 `Service::connect` binds a newly allocated client handle to one already

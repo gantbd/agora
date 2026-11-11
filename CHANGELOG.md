@@ -8,6 +8,10 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added an unadvertised bounded transient-collaboration owner for expiring
+  presence signals, with current-membership authority, opaque session sources,
+  monotone explicit time, snapshot-bound pages, lifecycle retirement, bounded
+  expiry work, human/agent symmetry, and restart-to-`Unknown` evidence.
 - Added explicit fail-closed local endpoint residue recovery requiring the exact
   prior incarnation, a distinct next incarnation, and a fresh Host composition,
   with locked in-place record rotation and no implicit volatile-state adoption.

@@ -1829,6 +1829,15 @@ impl Engine {
         self.rooms.get(id).map(Room::view)
     }
 
+    /// Returns the current room role without creating a durable observation.
+    ///
+    /// `None` deliberately does not distinguish an unknown room from a
+    /// non-member. Composition layers may use this to bind transient facts to
+    /// current membership without caching room internals.
+    pub fn member_role(&self, room_id: &RoomId, participant: &ParticipantId) -> Option<Role> {
+        self.rooms.get(room_id)?.members.get(participant).copied()
+    }
+
     pub fn topic(&self, room_id: &RoomId, topic_id: TopicId) -> Option<&TopicV1> {
         self.rooms.get(room_id)?.topics.get(&topic_id)
     }

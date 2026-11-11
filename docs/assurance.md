@@ -84,6 +84,15 @@ single-bit mutations per profile. Each candidate must refuse recovery or recover
 and re-encode byte-for-byte, extending the no-silent-normalization law through
 nested private state, receipts, cursors, and authenticated sessions.
 
+The unadvertised transient owner has focused pure-state evidence for human/agent
+symmetry, current-member-only observation, explicit expiry to `Unknown`, no
+conversation revision effect, capacity refusal without eviction, bounded expiry
+reclamation, monotone-clock refusal, exact as-of/generation cursor binding,
+source and membership-transition retirement, redacted opaque handles, and an
+empty restart projection. This is substrate evidence only: the public
+Protocol/Wire/Host/SDK profile, authenticated clock/source composition, typing,
+and end-to-end lifecycle evidence remain open under R62.
+
 The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
 nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus
 is regenerated from and checked against all twenty-seven wire fixtures plus the
