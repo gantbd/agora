@@ -48,8 +48,8 @@ and wire modules, including the process-local exact-request uncertainty fence;
 it does not imply that a V2 authenticated host, durable client journal, or
 transport is available.
 The protocol and wire reexports also make the unadvertised transient presence
-values, codec, and replay-epoch-bound client state machine nameable without
-adding an umbrella package. The embedded facade likewise constructs the
+and typing values, codec, and replay-epoch-bound client state machine nameable
+without adding an umbrella package. The embedded facade likewise constructs the
 authenticated transient Host wrapper. No transport binding or advertised
 capability is qualified yet.
 

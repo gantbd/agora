@@ -107,11 +107,11 @@ Five Host-composition scenarios bind that owner to authenticated sessions and
 qualified Host time. They cover participant-neutral publication and observation,
 close/revocation/time-regression retirement before refusal, leave reconciliation
 before its accepted reply and no rejoin resurrection, bounded expiry, and
-wrapper reconstruction to `Unknown`. The presence-only Protocol/Wire grammar
-now has exhaustive value round trips, canonical shape and ordering checks, two
+wrapper reconstruction to `Unknown`. The presence/typing Protocol/Wire grammar
+now has exhaustive value round trips, canonical shape and ordering checks, four
 frozen frames, content-safe Debug, and deterministic
 truncation/trailing/single-bit mutation closure. Authenticated public Host
-composition for typing, typing Protocol/Wire/client closure, transport
+composition for typing, typing client closure, transport
 replay-epoch binding, and end-to-end local-daemon evidence remain open under
 R62.
 

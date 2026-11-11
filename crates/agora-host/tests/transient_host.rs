@@ -7,7 +7,7 @@ use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, Verifie
 use agora_protocol::transient::{
     PresencePageCursorV1, PresenceStateV1 as ProtocolPresenceStateV1, TransientCommandV1,
     TransientOutcomeV1, TransientRefusalV1 as ProtocolTransientRefusalV1, TransientReplyV1,
-    TransientRequestIdV1, TransientRequestV1,
+    TransientRequestIdV1, TransientRequestV1, TypingTargetV1,
 };
 use agora_protocol::v2::{ClientIdV2, CommandV2, OutcomeV2, ReplyV2, RequestIdV2, RequestV2};
 use agora_service::transient::{
@@ -408,6 +408,26 @@ fn public_presence_frames_replay_exactly_and_fence_conflict_and_sequence() {
     assert_eq!(
         decode_transient_reply_v1(&future, wire_limits()).unwrap(),
         TransientReplyV1::Refused(ProtocolTransientRefusalV1::RequestOutOfSequence)
+    );
+    let dark_typing = transient(
+        1,
+        TransientCommandV1::PublishTyping {
+            room_id: "room".to_owned(),
+            target: TypingTargetV1::Room,
+            lifetime: 5,
+        },
+    );
+    let unavailable = host
+        .handle_transient(alice_session, &dark_typing, &alice_context, HostTimeV1(3))
+        .unwrap();
+    assert_eq!(
+        decode_transient_reply_v1(&unavailable, wire_limits()).unwrap(),
+        TransientReplyV1::Refused(ProtocolTransientRefusalV1::Unavailable)
+    );
+    assert_eq!(
+        host.handle_transient(alice_session, &dark_typing, &alice_context, HostTimeV1(3),)
+            .unwrap(),
+        unavailable
     );
 
     let observed = host

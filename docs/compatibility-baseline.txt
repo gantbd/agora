@@ -45,5 +45,7 @@ fixture|crates/agora-wire/tests/fixtures/thread-status-reply-v2.hex|40|1cc8624da
 fixture|crates/agora-wire/tests/fixtures/threaded-changes-reply-v2.hex|135|a3285bd414f7e3789c3fea38d2e1187e613ca3e97345f977de8786e34c86f315
 fixture|crates/agora-wire/tests/fixtures/transient-presence-page-v1.hex|52|6ad1608f551f65158f97eef1c31e20ee493c4a6ff9894b202944b61b55b005ca
 fixture|crates/agora-wire/tests/fixtures/transient-publish-request-v1.hex|27|96da341e20a0c50c000b036776b12f6a92704c8e062faa0ba5f8ee7f6d92ff46
+fixture|crates/agora-wire/tests/fixtures/transient-typing-page-v1.hex|52|79a0c435aa782480b655725cd2dd664258702a60f9b9a99324ea9b79cfc82e56
+fixture|crates/agora-wire/tests/fixtures/transient-typing-publish-request-v1.hex|43|aa98e75ca047a5da777fb024d1a889db6c3416b5631a8660127642112bdd2017
 fixture|crates/agora-wire/tests/fixtures/withdrawal-change-reply-v2.hex|79|c41479e1282e31d5aa6ba8dc836aa4b745648085d96bd47585eb4e8b2fd276de
 fixture|tests/fixtures/checkpoint-v14.hex|2420|82784143f8905f4a73ea21b33a5fd51e6dd78d49844ee8e4d43a151f813510a3

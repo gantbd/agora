@@ -304,6 +304,11 @@ impl<V: PrincipalVerifier> TransientHostV1<V> {
                 *limit,
                 TransientTimeV1(now.0),
             ),
+            TransientCommandV1::PublishTyping { .. }
+            | TransientCommandV1::ClearTyping { .. }
+            | TransientCommandV1::TypingPage { .. } => {
+                return TransientReplyV1::Refused(ProtocolTransientRefusalV1::Unavailable);
+            }
         };
         match outcome {
             Ok(outcome) => TransientReplyV1::Accepted(outcome),

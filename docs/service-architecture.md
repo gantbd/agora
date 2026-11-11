@@ -60,9 +60,10 @@ frame before returning its reply. Reconstructing the wrapper around a recovered
 Host deliberately starts empty. The wrapper has no checkpoint implementation,
 but its separate public handler authenticates each request and owns one exact
 volatile replay receipt plus one opaque live page cursor per Host session. The
-presence-only Protocol/Wire grammar and replay-epoch-bound client state machine
-are composed without entering durable Service V2 receipts. The typing owner is
-not yet composed through this Host. No transport routes the profile and no
+presence/typing Protocol/Wire grammar and presence-only replay-epoch-bound client
+state machine are composed without entering durable Service V2 receipts. Typing
+values currently receive an exact replayable `Unavailable` refusal at the Host
+boundary; the typing owner is not yet composed through this Host. No transport routes the profile and no
 presence or typing capability is advertised. See
 [`transient-collaboration.md`](transient-collaboration.md).
 

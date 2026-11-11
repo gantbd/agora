@@ -7,9 +7,10 @@ use super::{
 use agora_protocol::transient::{
     PresenceEntryV1, PresencePageCursorV1, PresencePageV1, PresenceSourceClassV1, PresenceStateV1,
     PresenceViewStateV1, TransientCommandV1, TransientOutcomeV1, TransientRefusalV1,
-    TransientReplyV1, TransientRequestIdV1, TransientRequestV1,
+    TransientReplyV1, TransientRequestIdV1, TransientRequestV1, TypingEntryV1, TypingPageCursorV1,
+    TypingPageV1, TypingTargetV1, TypingViewStateV1,
 };
-use agora_protocol::v2::ParticipantKindV2;
+use agora_protocol::v2::{MessageIdV1, ParticipantKindV2, TopicIdV1};
 
 const VERSION_V1: u8 = 1;
 const ACCEPTED_REPLY: u8 = 0x81;
@@ -110,6 +111,33 @@ fn encode_command(
             encode_cursor(sink, *cursor)?;
             sink.u64(u64::from(*limit))
         }
+        TransientCommandV1::PublishTyping {
+            room_id,
+            target,
+            lifetime,
+        } => {
+            sink.u8(4)?;
+            sink.text(room_id)?;
+            encode_typing_target(sink, *target)?;
+            sink.u64(*lifetime)
+        }
+        TransientCommandV1::ClearTyping { room_id, target } => {
+            sink.u8(5)?;
+            sink.text(room_id)?;
+            encode_typing_target(sink, *target)
+        }
+        TransientCommandV1::TypingPage {
+            room_id,
+            target,
+            cursor,
+            limit,
+        } => {
+            sink.u8(6)?;
+            sink.text(room_id)?;
+            encode_typing_target(sink, *target)?;
+            encode_typing_cursor(sink, *cursor)?;
+            sink.u64(u64::from(*limit))
+        }
     }
 }
 
@@ -129,6 +157,21 @@ fn decode_command(
         3 => Ok(TransientCommandV1::PresencePage {
             room_id: read_text(decoder)?,
             cursor: decode_cursor(decoder)?,
+            limit: u32::try_from(read_u64(decoder)?).map_err(|_| WireDecodeError::Limit)?,
+        }),
+        4 => Ok(TransientCommandV1::PublishTyping {
+            room_id: read_text(decoder)?,
+            target: decode_typing_target(decoder)?,
+            lifetime: read_u64(decoder)?,
+        }),
+        5 => Ok(TransientCommandV1::ClearTyping {
+            room_id: read_text(decoder)?,
+            target: decode_typing_target(decoder)?,
+        }),
+        6 => Ok(TransientCommandV1::TypingPage {
+            room_id: read_text(decoder)?,
+            target: decode_typing_target(decoder)?,
+            cursor: decode_typing_cursor(decoder)?,
             limit: u32::try_from(read_u64(decoder)?).map_err(|_| WireDecodeError::Limit)?,
         }),
         _ => Err(WireDecodeError::UnknownTag),
@@ -160,6 +203,26 @@ fn encode_outcome(
             }
             encode_cursor(sink, page.next)
         }
+        TransientOutcomeV1::TypingPublished { accepted_lifetime } => {
+            if *accepted_lifetime == 0 {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(4)?;
+            sink.u64(*accepted_lifetime)
+        }
+        TransientOutcomeV1::TypingCleared { was_present } => {
+            sink.u8(5)?;
+            sink.u8(u8::from(*was_present))
+        }
+        TransientOutcomeV1::TypingPage(page) => {
+            validate_typing_page(page).map_err(|()| WireEncodeError::Invalid)?;
+            sink.u8(6)?;
+            sink.list(page.entries.len())?;
+            for entry in &page.entries {
+                encode_typing_entry(sink, entry)?;
+            }
+            encode_typing_cursor(sink, page.next)
+        }
     }
 }
 
@@ -190,6 +253,29 @@ fn decode_outcome(
             };
             validate_page(&page).map_err(|()| WireDecodeError::Malformed)?;
             Ok(TransientOutcomeV1::PresencePage(page))
+        }
+        4 => {
+            let accepted_lifetime = read_u64(decoder)?;
+            if accepted_lifetime == 0 {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(TransientOutcomeV1::TypingPublished { accepted_lifetime })
+        }
+        5 => Ok(TransientOutcomeV1::TypingCleared {
+            was_present: decode_bool(read_u8(decoder)?)?,
+        }),
+        6 => {
+            let length = read_list(decoder, limits)?;
+            let mut entries = try_vec(length)?;
+            for _ in 0..length {
+                entries.push(decode_typing_entry(decoder)?);
+            }
+            let page = TypingPageV1 {
+                entries,
+                next: decode_typing_cursor(decoder)?,
+            };
+            validate_typing_page(&page).map_err(|()| WireDecodeError::Malformed)?;
+            Ok(TransientOutcomeV1::TypingPage(page))
         }
         _ => Err(WireDecodeError::UnknownTag),
     }
@@ -295,6 +381,102 @@ fn validate_entry(entry: &PresenceEntryV1) -> Result<(), ()> {
     Ok(())
 }
 
+fn encode_typing_entry(sink: &mut dyn Sink, entry: &TypingEntryV1) -> Result<(), WireEncodeError> {
+    validate_typing_entry(entry).map_err(|()| WireEncodeError::Invalid)?;
+    sink.text(&entry.participant_id)?;
+    sink.u8(match entry.participant_kind {
+        ParticipantKindV2::Human => 1,
+        ParticipantKindV2::Agent => 2,
+    })?;
+    sink.u8(match entry.state {
+        TypingViewStateV1::Inactive => 0,
+        TypingViewStateV1::Active => 1,
+    })?;
+    match entry.source {
+        None => sink.u8(0)?,
+        Some(PresenceSourceClassV1::ParticipantSession) => sink.u8(1)?,
+    }
+    match entry.remaining_lifetime {
+        None => sink.u8(0),
+        Some(lifetime) => {
+            sink.u8(1)?;
+            sink.u64(lifetime)
+        }
+    }
+}
+
+fn decode_typing_entry(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<TypingEntryV1, WireDecodeError> {
+    let participant_id = read_text(decoder)?;
+    let participant_kind = match read_u8(decoder)? {
+        1 => ParticipantKindV2::Human,
+        2 => ParticipantKindV2::Agent,
+        _ => return Err(WireDecodeError::UnknownTag),
+    };
+    let state = match read_u8(decoder)? {
+        0 => TypingViewStateV1::Inactive,
+        1 => TypingViewStateV1::Active,
+        _ => return Err(WireDecodeError::UnknownTag),
+    };
+    let source = match read_u8(decoder)? {
+        0 => None,
+        1 => Some(PresenceSourceClassV1::ParticipantSession),
+        _ => return Err(WireDecodeError::UnknownTag),
+    };
+    let remaining_lifetime = match read_u8(decoder)? {
+        0 => None,
+        1 => Some(read_u64(decoder)?),
+        _ => return Err(WireDecodeError::Malformed),
+    };
+    let entry = TypingEntryV1 {
+        participant_id,
+        participant_kind,
+        state,
+        source,
+        remaining_lifetime,
+    };
+    validate_typing_entry(&entry).map_err(|()| WireDecodeError::Malformed)?;
+    Ok(entry)
+}
+
+fn validate_typing_page(page: &TypingPageV1) -> Result<(), ()> {
+    for entry in &page.entries {
+        validate_typing_entry(entry)?;
+    }
+    if page
+        .entries
+        .windows(2)
+        .any(|pair| pair[0].participant_id >= pair[1].participant_id)
+    {
+        return Err(());
+    }
+    Ok(())
+}
+
+fn validate_typing_entry(entry: &TypingEntryV1) -> Result<(), ()> {
+    if entry.participant_id.is_empty() {
+        return Err(());
+    }
+    match entry.state {
+        TypingViewStateV1::Inactive => {
+            if entry.source.is_some() || entry.remaining_lifetime.is_some() {
+                return Err(());
+            }
+        }
+        TypingViewStateV1::Active => {
+            if entry.source != Some(PresenceSourceClassV1::ParticipantSession)
+                || entry
+                    .remaining_lifetime
+                    .is_none_or(|lifetime| lifetime == 0)
+            {
+                return Err(());
+            }
+        }
+    }
+    Ok(())
+}
+
 fn encode_cursor(
     sink: &mut dyn Sink,
     cursor: Option<PresencePageCursorV1>,
@@ -316,6 +498,91 @@ fn decode_cursor(
         1 => Ok(Some(PresencePageCursorV1(read_u64(decoder)?))),
         _ => Err(WireDecodeError::Malformed),
     }
+}
+
+fn encode_typing_cursor(
+    sink: &mut dyn Sink,
+    cursor: Option<TypingPageCursorV1>,
+) -> Result<(), WireEncodeError> {
+    match cursor {
+        None => sink.u8(0),
+        Some(cursor) => {
+            sink.u8(1)?;
+            sink.u64(cursor.0)
+        }
+    }
+}
+
+fn decode_typing_cursor(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<Option<TypingPageCursorV1>, WireDecodeError> {
+    match read_u8(decoder)? {
+        0 => Ok(None),
+        1 => Ok(Some(TypingPageCursorV1(read_u64(decoder)?))),
+        _ => Err(WireDecodeError::Malformed),
+    }
+}
+
+fn encode_typing_target(
+    sink: &mut dyn Sink,
+    target: TypingTargetV1,
+) -> Result<(), WireEncodeError> {
+    match target {
+        TypingTargetV1::Room => sink.u8(1),
+        TypingTargetV1::Thread(root) => {
+            sink.u8(2)?;
+            encode_message_id(sink, root)
+        }
+        TypingTargetV1::Topic(topic) => {
+            sink.u8(3)?;
+            encode_topic_id(sink, topic)
+        }
+    }
+}
+
+fn decode_typing_target(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<TypingTargetV1, WireDecodeError> {
+    match read_u8(decoder)? {
+        1 => Ok(TypingTargetV1::Room),
+        2 => Ok(TypingTargetV1::Thread(decode_message_id(decoder)?)),
+        3 => Ok(TypingTargetV1::Topic(decode_topic_id(decoder)?)),
+        _ => Err(WireDecodeError::UnknownTag),
+    }
+}
+
+fn encode_message_id(sink: &mut dyn Sink, message_id: MessageIdV1) -> Result<(), WireEncodeError> {
+    for byte in message_id.into_bytes() {
+        sink.u8(byte)?;
+    }
+    Ok(())
+}
+
+fn decode_message_id(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<MessageIdV1, WireDecodeError> {
+    let mut bytes = [0; 16];
+    for byte in &mut bytes {
+        *byte = read_u8(decoder)?;
+    }
+    Ok(MessageIdV1::new(bytes))
+}
+
+fn encode_topic_id(sink: &mut dyn Sink, topic_id: TopicIdV1) -> Result<(), WireEncodeError> {
+    for byte in topic_id.into_bytes() {
+        sink.u8(byte)?;
+    }
+    Ok(())
+}
+
+fn decode_topic_id(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<TopicIdV1, WireDecodeError> {
+    let mut bytes = [0; 16];
+    for byte in &mut bytes {
+        *byte = read_u8(decoder)?;
+    }
+    Ok(TopicIdV1::new(bytes))
 }
 
 fn encode_presence_state(state: PresenceStateV1) -> u8 {
@@ -347,6 +614,7 @@ fn encode_refusal(sink: &mut dyn Sink, refusal: TransientRefusalV1) -> Result<()
         TransientRefusalV1::Unavailable => 8,
         TransientRefusalV1::RequestConflict => 9,
         TransientRefusalV1::RequestOutOfSequence => 10,
+        TransientRefusalV1::InvalidTarget => 11,
     })
 }
 
@@ -364,6 +632,7 @@ fn decode_refusal(
         8 => Ok(TransientRefusalV1::Unavailable),
         9 => Ok(TransientRefusalV1::RequestConflict),
         10 => Ok(TransientRefusalV1::RequestOutOfSequence),
+        11 => Ok(TransientRefusalV1::InvalidTarget),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }

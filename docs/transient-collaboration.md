@@ -9,7 +9,7 @@ service, and Host checkpoints.
 
 This document fixes the architecture for the first transient profile. The dark
 presence and typing owners, authenticated public Host/replay composition for
-presence, separate presence-only Protocol/Wire grammar, and presence client
+presence, separate presence/typing Protocol/Wire grammar, and presence client
 state machine now exist, but no capability is advertised and the public
 composition is not yet complete.
 
@@ -110,10 +110,11 @@ The first advertised profile must close the feature vertically:
   redaction, model, mutation, and restart evidence; and
 - updated compatibility, threat, effect, supply, and release ledgers.
 
-The separately typed presence grammar and canonical codec are closed in
+The separately typed presence/typing grammar and canonical codec are closed in
 [`transient-wire-v1.md`](transient-wire-v1.md), without changing durable
-Protocol V2. The service-owned typing profile is implemented but has no public
-protocol, wire, client, or Host route. Protocol V1 remains unchanged. Until
+Protocol V2. The service-owned typing profile is implemented but has no client
+or Host route; the Host returns replayable `Unavailable` for its reserved wire
+commands. Protocol V1 remains unchanged. Until
 every item above is present, Agora must not advertise transient presence or
 typing capability.
 

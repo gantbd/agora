@@ -1,9 +1,10 @@
 use agora_protocol::transient::{
     PresenceEntryV1, PresencePageCursorV1, PresencePageV1, PresenceSourceClassV1, PresenceStateV1,
     PresenceViewStateV1, TransientCommandV1, TransientOutcomeV1, TransientRefusalV1,
-    TransientReplyV1, TransientRequestIdV1, TransientRequestV1,
+    TransientReplyV1, TransientRequestIdV1, TransientRequestV1, TypingEntryV1, TypingPageCursorV1,
+    TypingPageV1, TypingTargetV1, TypingViewStateV1,
 };
-use agora_protocol::v2::ParticipantKindV2;
+use agora_protocol::v2::{MessageIdV1, ParticipantKindV2, TopicIdV1};
 use agora_wire::transient::{
     decode_transient_reply_v1, decode_transient_request_v1, encode_transient_reply_v1,
     encode_transient_request_v1,
@@ -48,6 +49,28 @@ fn page() -> PresencePageV1 {
     }
 }
 
+fn typing_page() -> TypingPageV1 {
+    TypingPageV1 {
+        entries: vec![
+            TypingEntryV1 {
+                participant_id: "alice".to_owned(),
+                participant_kind: ParticipantKindV2::Human,
+                state: TypingViewStateV1::Active,
+                source: Some(PresenceSourceClassV1::ParticipantSession),
+                remaining_lifetime: Some(5),
+            },
+            TypingEntryV1 {
+                participant_id: "bot".to_owned(),
+                participant_kind: ParticipantKindV2::Agent,
+                state: TypingViewStateV1::Inactive,
+                source: None,
+                remaining_lifetime: None,
+            },
+        ],
+        next: Some(TypingPageCursorV1(10)),
+    }
+}
+
 fn fixture(input: &str) -> Vec<u8> {
     let compact: String = input
         .chars()
@@ -76,6 +99,21 @@ fn every_request_and_reply_value_round_trips() {
             cursor: Some(PresencePageCursorV1(9)),
             limit: 2,
         }),
+        request(TransientCommandV1::PublishTyping {
+            room_id: "room".to_owned(),
+            target: TypingTargetV1::Room,
+            lifetime: 30,
+        }),
+        request(TransientCommandV1::ClearTyping {
+            room_id: "room".to_owned(),
+            target: TypingTargetV1::Thread(MessageIdV1::new([0x11; 16])),
+        }),
+        request(TransientCommandV1::TypingPage {
+            room_id: "room".to_owned(),
+            target: TypingTargetV1::Topic(TopicIdV1::new([0x22; 16])),
+            cursor: Some(TypingPageCursorV1(10)),
+            limit: 2,
+        }),
     ];
     for request in requests {
         let encoded = encode_transient_request_v1(&request, limits()).unwrap();
@@ -91,6 +129,11 @@ fn every_request_and_reply_value_round_trips() {
         }),
         TransientReplyV1::Accepted(TransientOutcomeV1::PresenceCleared { was_present: true }),
         TransientReplyV1::Accepted(TransientOutcomeV1::PresencePage(page())),
+        TransientReplyV1::Accepted(TransientOutcomeV1::TypingPublished {
+            accepted_lifetime: 30,
+        }),
+        TransientReplyV1::Accepted(TransientOutcomeV1::TypingCleared { was_present: true }),
+        TransientReplyV1::Accepted(TransientOutcomeV1::TypingPage(typing_page())),
     ];
     for refusal in [
         TransientRefusalV1::NotMember,
@@ -103,6 +146,7 @@ fn every_request_and_reply_value_round_trips() {
         TransientRefusalV1::Unavailable,
         TransientRefusalV1::RequestConflict,
         TransientRefusalV1::RequestOutOfSequence,
+        TransientRefusalV1::InvalidTarget,
     ] {
         replies.push(TransientReplyV1::Refused(refusal));
     }
@@ -130,6 +174,26 @@ fn frozen_presence_frames_are_canonical() {
     assert_eq!(
         encode_transient_reply_v1(&page, limits()).unwrap(),
         fixture(include_str!("fixtures/transient-presence-page-v1.hex"))
+    );
+}
+
+#[test]
+fn frozen_typing_frames_are_canonical() {
+    let publish = request(TransientCommandV1::PublishTyping {
+        room_id: "room".to_owned(),
+        target: TypingTargetV1::Thread(MessageIdV1::new([0x11; 16])),
+        lifetime: 30,
+    });
+    assert_eq!(
+        encode_transient_request_v1(&publish, limits()).unwrap(),
+        fixture(include_str!(
+            "fixtures/transient-typing-publish-request-v1.hex"
+        ))
+    );
+    let page = TransientReplyV1::Accepted(TransientOutcomeV1::TypingPage(typing_page()));
+    assert_eq!(
+        encode_transient_reply_v1(&page, limits()).unwrap(),
+        fixture(include_str!("fixtures/transient-typing-page-v1.hex"))
     );
 }
 
@@ -162,6 +226,15 @@ fn malformed_noncanonical_and_over_limit_frames_fail_closed() {
         ),
         Err(WireEncodeError::Invalid)
     );
+    let mut invalid = typing_page();
+    invalid.entries[0].state = TypingViewStateV1::Inactive;
+    assert_eq!(
+        encode_transient_reply_v1(
+            &TransientReplyV1::Accepted(TransientOutcomeV1::TypingPage(invalid)),
+            limits(),
+        ),
+        Err(WireEncodeError::Invalid)
+    );
     let mut invalid = page();
     invalid.entries[0].remaining_lifetime = None;
     assert_eq!(
@@ -189,15 +262,25 @@ fn malformed_noncanonical_and_over_limit_frames_fail_closed() {
 
 #[test]
 fn diagnostics_hide_participant_room_and_cursor_values() {
-    let request = request(TransientCommandV1::PresencePage {
+    let presence_request = request(TransientCommandV1::PresencePage {
         room_id: "secret-room".to_owned(),
         cursor: Some(PresencePageCursorV1(0xdead_beef)),
         limit: 2,
     });
-    let debug = format!("{request:?} {:?}", page());
+    let debug = format!("{presence_request:?} {:?}", page());
     assert!(!debug.contains("secret-room"));
     assert!(!debug.contains("alice"));
     assert!(!debug.contains("3735928559"));
+    let typing = request(TransientCommandV1::TypingPage {
+        room_id: "typing-secret".to_owned(),
+        target: TypingTargetV1::Thread(MessageIdV1::new([0xab; 16])),
+        cursor: Some(TypingPageCursorV1(0xcafe)),
+        limit: 2,
+    });
+    let debug = format!("{typing:?} {:?}", typing_page());
+    assert!(!debug.contains("typing-secret"));
+    assert!(!debug.contains("alice"));
+    assert!(!debug.contains("51966"));
 }
 
 #[test]
@@ -211,6 +294,16 @@ fn frozen_frames_have_bounded_deterministic_mutation_closure() {
         (
             "presence-page",
             include_str!("fixtures/transient-presence-page-v1.hex"),
+            false,
+        ),
+        (
+            "typing-publish-request",
+            include_str!("fixtures/transient-typing-publish-request-v1.hex"),
+            true,
+        ),
+        (
+            "typing-page",
+            include_str!("fixtures/transient-typing-page-v1.hex"),
             false,
         ),
     ] {
