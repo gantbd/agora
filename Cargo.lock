@@ -3,6 +3,29 @@
 version = 4
 
 [[package]]
+name = "aegis-client"
+version = "0.1.0"
+dependencies = [
+ "aegis-protocol",
+]
+
+[[package]]
+name = "aegis-protocol"
+version = "0.1.0"
+
+[[package]]
+name = "agora-aegis-verifier"
+version = "0.1.0"
+dependencies = [
+ "aegis-client",
+ "aegis-protocol",
+ "agora-engine",
+ "agora-host",
+ "agora-service",
+ "agora-wire",
+]
+
+[[package]]
 name = "agora-client"
 version = "0.1.0"
 dependencies = [

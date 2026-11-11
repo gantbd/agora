@@ -236,11 +236,17 @@
   monotone, durable private projection state; they publish no room event, do not
   alter domain revision, survive unrelated membership and retention changes,
   and prove no delivery, attention, presence, execution, or completion.
+- **R47 — Aegis verifier adapter:** a separate adapter may admit and revalidate
+  an Agora host session only after the exact Aegis session and opaque grant
+  authorize `Submit` on one configured `Agora` resource at the supplied host
+  time. The adapter binds the claimed participant and opaque verified subject
+  before calling authority, erases all Aegis and port failures to unavailable,
+  and imports neither authority semantics nor grant material into Agora core.
 
 ## Explicitly open
 
 Additional physical durable storage adapters, durable event sinks,
-credential/Aegis verifier adapters, network transports, end-to-end encryption,
+credential authenticators, network transports, end-to-end encryption,
 federation, delivery acknowledgment, and durable audit are not part of the
 current v0.3 claim.
 Credential/Aegis adapters, transport, backup/restore qualification, and durable

@@ -21,12 +21,12 @@ not ready for a network service or crates.io release.
 - unpublished trusted-host and remote-client SDK facades with executable
   facade-only construction and closed dependency evidence;
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
-  ten packages;
-- conservative package and canonical-fixture inventory closure over ten
+  eleven packages;
+- conservative package and canonical-fixture inventory closure over eleven
   packages and twenty-eight fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
-- conservative supply inventory closure over twelve locked local components with
+- conservative supply inventory closure over fifteen locked local components with
   missing, changed-version, and empty-inventory mutants;
 - membership-filtered, revision-bound in-process room/member/message pages with
   opaque cursors and explicit retained-history intervals;
@@ -61,6 +61,9 @@ not ready for a network service or crates.io release.
   kinds and all room/thread/topic scope variants against a monotone reference;
 - authenticated transport-neutral Host V2 with distinct session/client binding,
   per-frame revalidation, substitution fencing, and cleanup;
+- separate Aegis public-service verifier adapter with exact session/grant/time/
+  resource mapping, fixed Agora Submit admission, failure erasure, revocation
+  cleanup, and closed dependency direction;
 - independently versioned, scope-bound Service V2 checkpoints preserving engine,
   outbox, clients, retired tombstones, exact request replies, and live cursor
   consequences across semantic recovery;
@@ -101,10 +104,10 @@ not ready for a network service or crates.io release.
 - no self-contained dependency/release provenance or remote CI; the source
   profile still requires the documented sibling Keystone checkout;
 - SDK facades are not approved or configured for registry publication;
-- no qualified credential/Aegis verifier, network transport, or connector
-  conformance package;
-- no qualified V2 credential/Aegis adapter, capability negotiation, or network
-  transport; the recovered verifier remains an injected trusted port;
+- no qualified credential authenticator, network transport, or connector
+  conformance package; Aegis context provenance remains trusted wiring;
+- no capability negotiation or network transport; recovered Aegis and Agora
+  state do not share one atomic commit boundary;
 - no qualified store beyond the single-owner local Unix directory profile; no
   hardware power-loss, network-filesystem, backup/restore, encryption, or
   multi-host availability qualification;

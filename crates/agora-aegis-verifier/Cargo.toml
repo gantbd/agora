@@ -1,0 +1,24 @@
+[package]
+name = "agora-aegis-verifier"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "Aegis authorization adapter for the Agora host verifier port"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+aegis-client = { path = "../../../aegis/crates/aegis-client", version = "=0.1.0" }
+aegis-protocol = { path = "../../../aegis/crates/aegis-protocol", version = "=0.1.0" }
+agora-host = { path = "../agora-host", version = "=0.1.0" }
+
+[dev-dependencies]
+agora-engine = { path = "../..", version = "=0.3.0" }
+agora-service = { path = "../agora-service", version = "=0.1.0" }
+agora-wire = { path = "../agora-wire", version = "=0.1.0" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

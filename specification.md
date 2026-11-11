@@ -474,6 +474,26 @@ rollback resistance against the trusted same-UID environment, backup/restore,
 or disaster recovery. The parent directory and same-UID processes remain in the
 trusted computing base.
 
+## Aegis host-verifier adapter profile V1
+
+`agora-aegis-verifier` implements the existing `PrincipalVerifier` port through
+the public Aegis client/protocol contract. One adapter instance is configured
+with one opaque 128-bit Agora service resource. Its context binds an exact Aegis
+service session, session-local grant handle, claimed Agora participant ID, and
+opaque host subject. Authentication first requires the wire claim to equal the
+bound participant; revalidation additionally requires the retained host subject
+to match. Only then does the adapter request `Authorize { engine: Agora,
+action: Submit }` at the explicit host time.
+
+Only an unexpired `Authorized` outcome for the expected namespace and action is
+accepted. Aegis refusal, port failure, expired/malformed accepted evidence,
+participant mismatch, or subject mismatch collapses to one unavailable verifier
+error. The host therefore preserves its non-enumerating external refusal and
+revocation cleanup laws. `Submit` authorizes use of the configured Agora service
+session; it grants no room membership, role, moderation, observation, delivery,
+or execution authority. Context construction remains a trusted credential-to-
+principal/subject binding supplied by the composition root.
+
 ## Wire profile V2
 
 `agora-wire::v2` maps only Protocol V2 passive values to a distinct version-2

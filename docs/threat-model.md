@@ -137,6 +137,14 @@ is reported. The stored subject is attribution evidence, not a credential;
 credential renewal, revocation source integrity, and verifier availability remain
 external obligations.
 
+The Aegis adapter narrows authority admission to an exact public Aegis session,
+session-local grant, configured Agora resource, `Submit` action, explicit time,
+participant binding, and opaque host subject. Participant or subject mismatch is
+rejected before authority I/O; every Aegis refusal, malformed success, expiry,
+and port failure remains the same unavailable class. The context constructor is
+trusted: a false credential-to-principal/participant/subject binding defeats the
+profile. The adapter does not atomically commit Aegis and Agora recovery state.
+
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.
 The qualified local Moira receiver therefore exposes only a passive pending

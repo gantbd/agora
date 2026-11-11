@@ -27,6 +27,7 @@ members = [
     "crates/agora-storage-directory",
     "crates/agora-host",
     "crates/agora-client",
+    "crates/agora-aegis-verifier",
     "sdk/embedded",
     "sdk/client",
 ]

@@ -1,7 +1,8 @@
 # Authenticated host architecture
 
 Status: qualified transport-neutral host profiles V1 and V2 plus canonical,
-store-neutral authenticated V2 recovery and one local Unix store composition.
+store-neutral authenticated V2 recovery, one local Unix store composition, and
+one separate Aegis public-service verifier adapter.
 
 `agora-host` is a composition boundary over exact `agora-wire` frames and one
 serialized `agora-service`. It performs no socket I/O and understands no
@@ -33,10 +34,13 @@ the same `ConnectRefused(Unavailable)` frame regardless of participant existence
 later unknown, revoked, mismatched, or substituted sessions all return the same
 `HostRefusal::Unavailable` class.
 
-A credential adapter may implement the port directly. An Aegis adapter may
-validate a grant and map current `DecisionEvidenceV1` to a verified subject. The
-adapter remains responsible for mapping Agora operations to Aegis resource/action
-vocabulary; Agora neither imports Aegis types nor defines grants.
+The qualified `agora-aegis-verifier` adapter maps host admission/revalidation to
+`Submit` on one configured Aegis `Agora` resource through an exact public service
+session and opaque grant handle. It binds the claimed participant and retained
+opaque subject, validates every frame at explicit host time, and erases all
+authority failures. This is service-session admission only; Agora roles still
+authorize room operations. Credential authentication, context provenance, grant
+issuance, and transport remain composition responsibilities.
 
 ## Session and client binding
 

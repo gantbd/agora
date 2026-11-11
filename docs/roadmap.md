@@ -1,12 +1,13 @@
 # Roadmap
 
-1. Add a separately qualified credential or Aegis verifier adapter and one local
-   transport composition without importing either into Agora semantics.
+1. Compose the qualified Aegis verifier adapter with one separately qualified
+   local transport without importing either into Agora semantics.
 2. Separate shared durable-outbox delivery retention from per-client pull-feed
    policy where deployments need fewer resnapshots; keep delivery authority out
    of Agora.
-3. Add model, fuzz, and mutation gates around recovery, canonical wire changes,
-   filesystem crash points, and command refusal.
+3. Extend the implemented deterministic models, canonical wire/recovery mutation,
+   filesystem interruption, and soak gates with reproducible coverage-guided
+   fuzzing and broader command models.
 4. Extend the implemented stable-topic substrate only through separately
    decided rename, move, merge, resolution, and conversation-collection laws.
 5. Qualify backup/restore, upgrade/rollback, and an additional physical store only

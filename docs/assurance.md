@@ -20,13 +20,13 @@ The active `make check` gate contains:
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Keystone source-layout assumption. The compatibility gate
-closes over the exact ten-package workspace and twenty-eight canonical fixtures.
+closes over the exact eleven-package workspace and twenty-eight canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
 publication, weakening the toolchain pin, or removing the security policy is
 refused.
-The supply gate closes over twelve local locked components and exact local-path
+The supply gate closes over fifteen local locked components and exact local-path
 dependency declarations. It is not an advisory scan, legal conclusion, binary
 SBOM, remote source proof, or artifact provenance claim.
 
@@ -132,8 +132,13 @@ retire only a substituting or revoked caller, preflight capacity and V1/version
 mismatch before verifier invocation, and exercise both protocol disconnect and
 unconditional transport-close cleanup. The embedded-facade scenario constructs
 the complete V2 engine/service/host stack without direct package dependencies.
-The verifier remains a trusted test double; no credential, Aegis, or network
-adapter is qualified. Physical storage is separate and narrowly qualified below.
+The verifier remains a trusted test double in the host scenarios. The separate
+Aegis adapter scenarios map the exact public session, grant, time, namespace,
+resource, and action; reject participant mismatch before authority I/O; erase
+refusal, expiry, malformed success, and port failure; retire host/service state
+on revoked revalidation; and keep diagnostics content-safe. Credential
+authentication and network transport remain unqualified. Physical storage is
+separate and narrowly qualified below.
 
 Service V2 persistence scenarios recover byte-identical engine state and pending
 outbox, active clients, retained exact replies, and live room-page continuation.

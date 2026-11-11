@@ -1,4 +1,7 @@
 # Exact Cargo.lock component inventory for the local source profile.
+component|aegis-client|0.1.0
+component|aegis-protocol|0.1.0
+component|agora-aegis-verifier|0.1.0
 component|agora-client|0.1.0
 component|agora-durable|0.1.0
 component|agora-engine|0.3.0

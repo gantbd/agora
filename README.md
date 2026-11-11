@@ -87,6 +87,10 @@ receipt, restores known refusals, and fences indeterminate outcomes.
 an exclusive private local Unix directory with a synchronized atomic checkpoint
 replace. Its claim does not extend to hardware power-loss behavior, network
 filesystems, backup/restore, encryption, or multi-host availability.
+`agora-aegis-verifier` is a separate leaf adapter from the Host verifier port to
+the public Aegis service contract. It requests `Submit` on one configured Agora
+resource through an exact Aegis session and opaque grant, while Agora retains all
+room authority. It authenticates no credentials and selects no transport.
 
 The V2 client separately fences an outcome-unknown transmission: only the exact
 same command may reuse the retained request identity until a reply resolves it
@@ -109,6 +113,8 @@ The repository also contains an initial transport-neutral operational profile:
   mechanism and no semantic state;
 - `agora-host` binds exact wire frames and server-owned clients to a current
   externally verified principal/transport context;
+- `agora-aegis-verifier` maps that verifier port to bounded public Aegis
+  session/grant authorization without entering conversation semantics;
 - `agora-client` owns a monotone request namespace over an abstract service port.
 
 These crates add no authentication, network transport, durable execution, or

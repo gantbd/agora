@@ -8,6 +8,8 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added a separate Aegis verifier adapter that maps exact public session/grant
+  authorization to Agora host admission and revalidation with failure erasure.
 - Accepted the private monotone read-position architecture: self-scoped room,
   thread, and topic markers are durable private projection state, never public
   events or evidence of delivery, attention, or execution.

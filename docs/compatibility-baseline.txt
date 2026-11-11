@@ -1,6 +1,7 @@
 # Exact conservative Agora package and canonical-fixture inventory.
 # Format is deliberately line-oriented for the offline shell gate.
 package|Cargo.toml|agora-engine|0.3.0
+package|crates/agora-aegis-verifier/Cargo.toml|agora-aegis-verifier|0.1.0
 package|crates/agora-client/Cargo.toml|agora-client|0.1.0
 package|crates/agora-durable/Cargo.toml|agora-durable|0.1.0
 package|crates/agora-host/Cargo.toml|agora-host|0.1.0
