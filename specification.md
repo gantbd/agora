@@ -470,7 +470,11 @@ mode-0700 directory and mode-0600 owner lock. Open refuses symlinks, permissive
 resources, an unavailable lock, malformed head bytes, and a surviving
 `.pending` file. The live owner pins device/inode identity for its directory and
 lock and the full metadata stamp for its current head; disappearance, mutation,
-or replacement fences later access.
+or replacement fences later access. Any error encountered during this active
+revalidation—including unsafe mode/type, missing resource, identity/stamp
+change, metadata I/O, or pending residue—sets one sticky owner fence before the
+first specific error is returned. Later operations return `Fenced` without
+touching the filesystem or incrementing that fence again.
 
 The `AGDIRCP` version-1 record contains the store revision, UTF-8 key, bounded
 checkpoint bytes, declared lengths, and CRC32C binding the header and payload.

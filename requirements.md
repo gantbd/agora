@@ -441,6 +441,14 @@
   length, identity stamp, or detailed refusal. Facts reset on owner reopen and
   are neither durable audit nor proof that filesystem resources remain intact
   after the last operation.
+- **R69 — Sticky active store-resource fence:** every failure while revalidating
+  the live private-directory owner, lock, current head, or pending-residue state
+  must atomically move the owner to Fenced and count one resource fence before
+  returning the specific first error. Every later load or compare-and-exchange
+  must return Fenced before further filesystem access and must not increment the
+  fence again. This covers active resource validation only; constructor/open
+  errors and pre-publication I/O failures outside validation retain their
+  separately documented behavior.
 
 ## Explicitly open
 

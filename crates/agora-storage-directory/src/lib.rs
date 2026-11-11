@@ -280,6 +280,13 @@ impl DirectoryCheckpointStoreV1 {
         if self.fenced.get() {
             return Err(DirectoryErrorV1::Fenced);
         }
+        match self.validate_resources() {
+            Ok(()) => Ok(()),
+            Err(error) => self.fence(error),
+        }
+    }
+
+    fn validate_resources(&self) -> Result<(), DirectoryErrorV1> {
         let root = fs::symlink_metadata(&self.path).map_err(|_| DirectoryErrorV1::LostResource)?;
         validate_private_directory(&root)?;
         if !self.root_stamp.same_object(Stamp::of(&root))
@@ -287,7 +294,7 @@ impl DirectoryCheckpointStoreV1 {
                 .root_stamp
                 .same_object(Stamp::of(&self.directory.metadata().map_err(io)?))
         {
-            return self.fence(DirectoryErrorV1::LostResource);
+            return Err(DirectoryErrorV1::LostResource);
         }
         let lock = fs::symlink_metadata(self.path.join(LOCK))
             .map_err(|_| DirectoryErrorV1::LostResource)?;
@@ -295,7 +302,7 @@ impl DirectoryCheckpointStoreV1 {
         if Stamp::of(&lock) != self.lock_stamp
             || Stamp::of(&self.lock.metadata().map_err(io)?) != self.lock_stamp
         {
-            return self.fence(DirectoryErrorV1::LostResource);
+            return Err(DirectoryErrorV1::LostResource);
         }
         let head_path = self.path.join(HEAD);
         match self.head_stamp {
@@ -304,16 +311,16 @@ impl DirectoryCheckpointStoreV1 {
                     fs::symlink_metadata(head_path).map_err(|_| DirectoryErrorV1::LostResource)?;
                 validate_private_file(&actual)?;
                 if Stamp::of(&actual) != expected {
-                    return self.fence(DirectoryErrorV1::LostResource);
+                    return Err(DirectoryErrorV1::LostResource);
                 }
             }
             None if path_exists_no_follow(&head_path)? => {
-                return self.fence(DirectoryErrorV1::LostResource);
+                return Err(DirectoryErrorV1::LostResource);
             }
             None => {}
         }
         if path_exists_no_follow(&self.path.join(PENDING))? {
-            return self.fence(DirectoryErrorV1::CrashResidue);
+            return Err(DirectoryErrorV1::CrashResidue);
         }
         Ok(())
     }
@@ -924,6 +931,52 @@ mod tests {
             DirectoryCheckpointStoreV1::open_existing(&path, DirectoryLimitsV1::default())
                 .unwrap_err(),
             DirectoryErrorV1::UnsafeResource
+        );
+    }
+
+    #[test]
+    fn every_active_resource_validation_failure_is_sticky_and_counted_once() {
+        fn scenario(mutate: impl FnOnce(&Path), expected: DirectoryErrorV1) {
+            let temp = TempDirectory::new();
+            let path = temp.store();
+            let mut store =
+                DirectoryCheckpointStoreV1::create_new(&path, DirectoryLimitsV1::default())
+                    .unwrap();
+            committed(store.compare_exchange("key", None, b"value").unwrap(), 0);
+            mutate(&path);
+
+            assert_eq!(store.load("key").unwrap_err(), expected);
+            let observation = store.observation();
+            assert_eq!(observation.state, DirectoryOwnerStateV1::Fenced);
+            assert_eq!(observation.resource_fences, 1);
+            assert_eq!(store.load("key").unwrap_err(), DirectoryErrorV1::Fenced);
+            assert_eq!(store.observation().resource_fences, 1);
+        }
+
+        scenario(
+            |path| {
+                fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+            },
+            DirectoryErrorV1::UnsafeResource,
+        );
+        scenario(
+            |path| {
+                fs::remove_file(path.join(LOCK)).unwrap();
+            },
+            DirectoryErrorV1::LostResource,
+        );
+        scenario(
+            |path| {
+                fs::write(path.join(PENDING), b"residue").unwrap();
+                fs::set_permissions(path.join(PENDING), fs::Permissions::from_mode(0o600)).unwrap();
+            },
+            DirectoryErrorV1::CrashResidue,
+        );
+        scenario(
+            |path| {
+                fs::remove_file(path.join(HEAD)).unwrap();
+            },
+            DirectoryErrorV1::LostResource,
         );
     }
 

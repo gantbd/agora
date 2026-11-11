@@ -251,6 +251,10 @@ refusals. It exposes only owner state, last acknowledged revision, bounded
 outcome-class counts, and saturation. Reading it does not touch the filesystem
 or lock, so it cannot validate that trusted same-UID resources remain intact;
 operators must not treat it as a live integrity probe or durable audit trail.
+Every actual store operation does revalidate the pinned directory, lock, head,
+and residue state. Any validation error makes the owner fence sticky before the
+specific error escapes; later calls refuse before another filesystem access, so
+restoring attacker-replaced paths cannot silently reactivate that owner.
 
 Addressing a participant is neither authority nor execution evidence. An adapter
 that turns addressing directly into model or tool execution violates this model.

@@ -420,6 +420,13 @@ Debug output excludes the directory path, key, checkpoint content, and record
 size. These facts reset on reopen and do not establish durable metrics or
 current resource integrity beyond the last operation.
 
+A four-case active-resource schedule mutates the live directory mode, removes
+the pinned lock, creates pending residue, or removes the current head. Each
+first operation returns its exact unsafe/lost/residue error, changes the passive
+state to Fenced, and records exactly one resource fence. A second operation
+returns Fenced without another filesystem-validation count. Existing head
+replacement evidence covers stamp substitution under the same law.
+
 Client V2 scenarios distinguish definitely-not-sent from outcome-unknown,
 retain and resend the exact request identity only for an equal command, fence a
 different command without transport access, keep uncertainty through a later
