@@ -484,6 +484,14 @@ output/destination, corruption, and unsafe backup mode before widening state.
 The evidence establishes local exact-record backup/restore, not encrypted or
 remote transport, origin authentication, rollback resistance, scheduling,
 retention, or disaster-recovery objectives.
+Two further deterministic schedules inject interruption after each of four
+export and six restore persistence boundaries. Export leaves either a corrupt
+new private file or an independently verifiable exact record while returning
+only `Interrupted`. Restore leaves an empty reopenable destination, one of three
+explicit `.pending` residue states, or an exact post-rename revision-1 checkpoint
+that can advance by CAS to revision 2. This closes process-visible residue
+classification without claiming automatic remediation or device-level crash
+durability.
 
 Room change-feed scenarios bind a position to an exact completed snapshot,
 filter the independent recent-change journal by room, replay the same exclusive

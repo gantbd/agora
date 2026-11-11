@@ -503,6 +503,17 @@
   automatic scheduling, and disaster-recovery objectives remain external. A
   failed export or restore after output creation may leave explicit fail-closed
   residue and must not be reported as rollback or success.
+- **R75 — Backup and restore interruption classification:** deterministic
+  evidence must interrupt export after creation, write, file synchronization,
+  and parent synchronization, and interrupt restore after destination creation,
+  pending creation, write, synchronization, head rename, and directory
+  synchronization. Every injected operation must return an interruption rather
+  than success. Resulting state must classify as an invalid or independently
+  verifiable backup, an empty new store, explicit pending crash residue, or an
+  exact post-rename restored checkpoint that continues at the preserved next
+  revision. This is process-level boundary injection; it grants no automatic
+  cleanup, retry, controller-cache, hardware power-loss, or disaster-recovery
+  claim.
 
 ## Explicitly open
 

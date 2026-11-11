@@ -178,7 +178,7 @@ five publication boundaries are interruption-injected: pre-rename states reopen
 only as crash residue, while post-rename states recover the complete candidate;
 the interrupted live owner is always fenced. This is process-state evidence,
 not a simulated power-loss device.
-parent directory and same-UID processes remain trusted; CRC32C is corruption
+The parent directory and same-UID processes remain trusted; CRC32C is corruption
 detection, not authentication. Hardware power-loss behavior, controller caches,
 network filesystems, rollback by a trusted process, encryption, remote backup
 transport, retention policy, and disaster-recovery objectives remain unqualified.
@@ -187,7 +187,11 @@ checksummed record to a new synchronized private file, and restores only into a
 new private store while retaining revision continuity. CRC32C detects accidental
 or observed corruption but authenticates no backup origin; the raw backup
 contains the full sensitive Host/Service checkpoint. A failed restore after
-destination creation may leave fail-closed residue requiring inspection.
+destination creation may leave fail-closed residue requiring inspection. Four
+export and six restore interruption points prove that no injected operation
+reports false success and classify the visible residue. A complete but
+unsynchronized process-visible record is not promoted to a durable artifact,
+and the campaign is not hardware power-loss simulation.
 
 Host persistence binds the verified subject, claimed participant, opaque host
 session, service client and monotone verification time in the same record as all

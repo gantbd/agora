@@ -103,7 +103,9 @@ receipt, restores known refusals, and fences indeterminate outcomes.
 `agora-storage-directory` supplies one separately qualified physical profile:
 an exclusive private local Unix directory with a synchronized atomic checkpoint
 replace, a passive content-free owner observation, and exact offline canonical
-backup/restore into a new private directory. Its claim does not extend to
+backup/restore into a new private directory. All ten backup/restore persistence
+boundaries have deterministic interruption and residue-classification evidence.
+Its claim does not extend to automatic cleanup,
 hardware power-loss behavior, network filesystems, encrypted or remote backup,
 rollback resistance, disaster-recovery objectives, or multi-host availability.
 `agora-aegis-verifier` is a separate leaf adapter from the Host verifier port to

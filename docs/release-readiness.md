@@ -170,7 +170,8 @@ not ready for a network service or crates.io release.
   outcome observation;
 - offline exact-record directory backup/verification/restore with exclusive
   source locking, private synchronized output, fail-closed mutation checks,
-  preserved revision continuity, and explicit sensitive-content boundaries;
+  preserved revision continuity, all ten export/restore interruption boundaries,
+  exact residue classification, and explicit sensitive-content boundaries;
 - snapshot-aligned bounded room pull changes with stable event identity,
   exclusive continuation, explicit retention/leave-rejoin gaps, durable service
   cursors, closed Wire V2 values, and a frozen representative frame;

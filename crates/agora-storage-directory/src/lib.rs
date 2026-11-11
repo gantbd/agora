@@ -38,6 +38,21 @@ enum TestCrashPoint {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BackupInterruptionV1 {
+    None,
+    ExportCreated,
+    ExportWritten,
+    ExportFileSynced,
+    ExportDirectorySynced,
+    RestoreDirectoryCreated,
+    RestorePendingCreated,
+    RestorePendingWritten,
+    RestorePendingSynced,
+    RestoreHeadRenamed,
+    RestoreDirectorySynced,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DirectoryLimitsV1 {
     pub max_key_bytes: usize,
     pub max_value_bytes: usize,
@@ -401,12 +416,26 @@ pub fn export_directory_backup_v1(
     backup_path: impl AsRef<Path>,
     limits: DirectoryLimitsV1,
 ) -> Result<DirectoryBackupSummaryV1, DirectoryErrorV1> {
+    export_directory_backup_inner(
+        store_path.as_ref(),
+        backup_path.as_ref(),
+        limits,
+        BackupInterruptionV1::None,
+    )
+}
+
+fn export_directory_backup_inner(
+    store_path: &Path,
+    backup_path: &Path,
+    limits: DirectoryLimitsV1,
+    interruption: BackupInterruptionV1,
+) -> Result<DirectoryBackupSummaryV1, DirectoryErrorV1> {
     let store = DirectoryCheckpointStoreV1::open_existing(store_path, limits)?;
     store.check_resources()?;
     let key = store.key.as_deref().ok_or(DirectoryErrorV1::Empty)?;
     let checkpoint = store.checkpoint.as_ref().ok_or(DirectoryErrorV1::Empty)?;
     let record = encode_record(key, checkpoint.revision, &checkpoint.bytes, limits)?;
-    write_new_private_file(backup_path.as_ref(), &record)?;
+    write_new_private_file(backup_path, &record, interruption)?;
     Ok(DirectoryBackupSummaryV1 {
         revision: checkpoint.revision,
     })
@@ -435,16 +464,36 @@ pub fn restore_directory_backup_v1(
     store_path: impl AsRef<Path>,
     limits: DirectoryLimitsV1,
 ) -> Result<DirectoryCheckpointStoreV1, DirectoryErrorV1> {
+    restore_directory_backup_inner(
+        backup_path.as_ref(),
+        store_path.as_ref(),
+        limits,
+        BackupInterruptionV1::None,
+    )
+}
+
+fn restore_directory_backup_inner(
+    backup_path: &Path,
+    store_path: &Path,
+    limits: DirectoryLimitsV1,
+    interruption: BackupInterruptionV1,
+) -> Result<DirectoryCheckpointStoreV1, DirectoryErrorV1> {
     validate_limits(limits)?;
-    let (key, checkpoint, _) = read_record(backup_path.as_ref(), limits)?;
+    let (key, checkpoint, _) = read_record(backup_path, limits)?;
     let record = encode_record(&key, checkpoint.revision, &checkpoint.bytes, limits)?;
     let mut store = DirectoryCheckpointStoreV1::create_new(store_path, limits)?;
+    interrupt_backup_at(interruption, BackupInterruptionV1::RestoreDirectoryCreated)?;
     let pending_path = store.path.join(PENDING);
     let mut pending = store.open_pending(&pending_path).map_err(io)?;
+    interrupt_backup_at(interruption, BackupInterruptionV1::RestorePendingCreated)?;
     pending.write_all(&record).map_err(io)?;
+    interrupt_backup_at(interruption, BackupInterruptionV1::RestorePendingWritten)?;
     pending.sync_all().map_err(io)?;
+    interrupt_backup_at(interruption, BackupInterruptionV1::RestorePendingSynced)?;
     fs::rename(&pending_path, store.path.join(HEAD)).map_err(io)?;
+    interrupt_backup_at(interruption, BackupInterruptionV1::RestoreHeadRenamed)?;
     store.directory.sync_all().map_err(io)?;
+    interrupt_backup_at(interruption, BackupInterruptionV1::RestoreDirectorySynced)?;
     let metadata = fs::symlink_metadata(store.path.join(HEAD)).map_err(io)?;
     validate_private_file(&metadata)?;
     store.head_stamp = Some(Stamp::of(&metadata));
@@ -643,7 +692,22 @@ fn open_private_directory(path: &Path) -> Result<File, DirectoryErrorV1> {
     Ok(file)
 }
 
-fn write_new_private_file(path: &Path, bytes: &[u8]) -> Result<(), DirectoryErrorV1> {
+fn interrupt_backup_at(
+    selected: BackupInterruptionV1,
+    current: BackupInterruptionV1,
+) -> Result<(), DirectoryErrorV1> {
+    if selected == current {
+        Err(DirectoryErrorV1::Io(std::io::ErrorKind::Interrupted))
+    } else {
+        Ok(())
+    }
+}
+
+fn write_new_private_file(
+    path: &Path,
+    bytes: &[u8],
+    interruption: BackupInterruptionV1,
+) -> Result<(), DirectoryErrorV1> {
     let parent = path.parent().ok_or(DirectoryErrorV1::UnsafeResource)?;
     let directory = open_private_directory(parent)?;
     let mut file = OpenOptions::new()
@@ -658,14 +722,18 @@ fn write_new_private_file(path: &Path, bytes: &[u8]) -> Result<(), DirectoryErro
                 io(error)
             }
         })?;
+    interrupt_backup_at(interruption, BackupInterruptionV1::ExportCreated)?;
     file.write_all(bytes).map_err(io)?;
+    interrupt_backup_at(interruption, BackupInterruptionV1::ExportWritten)?;
     file.sync_all().map_err(io)?;
+    interrupt_backup_at(interruption, BackupInterruptionV1::ExportFileSynced)?;
     let path_metadata = fs::symlink_metadata(path).map_err(io)?;
     validate_private_file(&path_metadata)?;
     if !Stamp::of(&path_metadata).same_object(Stamp::of(&file.metadata().map_err(io)?)) {
         return Err(DirectoryErrorV1::LostResource);
     }
-    directory.sync_all().map_err(io)
+    directory.sync_all().map_err(io)?;
+    interrupt_backup_at(interruption, BackupInterruptionV1::ExportDirectorySynced)
 }
 
 fn crc32c(bytes: &[u8]) -> u32 {
@@ -1326,6 +1394,151 @@ mod tests {
                 .unwrap_err(),
             DirectoryErrorV1::AlreadyExists
         );
+    }
+
+    #[test]
+    fn every_backup_interruption_is_inspectable_without_a_false_success() {
+        for point in [
+            BackupInterruptionV1::ExportCreated,
+            BackupInterruptionV1::ExportWritten,
+            BackupInterruptionV1::ExportFileSynced,
+            BackupInterruptionV1::ExportDirectorySynced,
+        ] {
+            let temp = TempDirectory::new();
+            let source_path = temp.store();
+            let backup_path = temp.0.join("backup.bin");
+            let mut source =
+                DirectoryCheckpointStoreV1::create_new(&source_path, DirectoryLimitsV1::default())
+                    .unwrap();
+            committed(source.compare_exchange("host", None, b"value").unwrap(), 0);
+            let expected_record = fs::read(source_path.join(HEAD)).unwrap();
+            drop(source);
+
+            assert_eq!(
+                export_directory_backup_inner(
+                    &source_path,
+                    &backup_path,
+                    DirectoryLimitsV1::default(),
+                    point,
+                )
+                .unwrap_err(),
+                DirectoryErrorV1::Io(std::io::ErrorKind::Interrupted),
+                "interruption must never report export success at {point:?}"
+            );
+            assert_eq!(
+                fs::symlink_metadata(&backup_path)
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+            if point == BackupInterruptionV1::ExportCreated {
+                assert_eq!(
+                    verify_directory_backup_v1(&backup_path, DirectoryLimitsV1::default())
+                        .unwrap_err(),
+                    DirectoryErrorV1::Corrupt
+                );
+            } else {
+                assert_eq!(fs::read(&backup_path).unwrap(), expected_record);
+                assert_eq!(
+                    verify_directory_backup_v1(&backup_path, DirectoryLimitsV1::default())
+                        .unwrap()
+                        .revision,
+                    Revision(0)
+                );
+            }
+            drop(
+                DirectoryCheckpointStoreV1::open_existing(
+                    &source_path,
+                    DirectoryLimitsV1::default(),
+                )
+                .unwrap(),
+            );
+        }
+    }
+
+    #[test]
+    fn every_restore_interruption_is_empty_residue_or_exact_recovery() {
+        for point in [
+            BackupInterruptionV1::RestoreDirectoryCreated,
+            BackupInterruptionV1::RestorePendingCreated,
+            BackupInterruptionV1::RestorePendingWritten,
+            BackupInterruptionV1::RestorePendingSynced,
+            BackupInterruptionV1::RestoreHeadRenamed,
+            BackupInterruptionV1::RestoreDirectorySynced,
+        ] {
+            let temp = TempDirectory::new();
+            let source_path = temp.store();
+            let backup_path = temp.0.join("backup.bin");
+            let restored_path = temp.0.join("restored");
+            let mut source =
+                DirectoryCheckpointStoreV1::create_new(&source_path, DirectoryLimitsV1::default())
+                    .unwrap();
+            committed(source.compare_exchange("host", None, b"one").unwrap(), 0);
+            committed(
+                source
+                    .compare_exchange("host", Some(Revision(0)), b"two")
+                    .unwrap(),
+                1,
+            );
+            drop(source);
+            export_directory_backup_v1(&source_path, &backup_path, DirectoryLimitsV1::default())
+                .unwrap();
+
+            assert_eq!(
+                restore_directory_backup_inner(
+                    &backup_path,
+                    &restored_path,
+                    DirectoryLimitsV1::default(),
+                    point,
+                )
+                .unwrap_err(),
+                DirectoryErrorV1::Io(std::io::ErrorKind::Interrupted),
+                "interruption must never report restore success at {point:?}"
+            );
+
+            match point {
+                BackupInterruptionV1::RestoreDirectoryCreated => {
+                    let restored = DirectoryCheckpointStoreV1::open_existing(
+                        &restored_path,
+                        DirectoryLimitsV1::default(),
+                    )
+                    .unwrap();
+                    assert_eq!(restored.load("host").unwrap(), None);
+                }
+                BackupInterruptionV1::RestorePendingCreated
+                | BackupInterruptionV1::RestorePendingWritten
+                | BackupInterruptionV1::RestorePendingSynced => {
+                    assert_eq!(
+                        DirectoryCheckpointStoreV1::open_existing(
+                            &restored_path,
+                            DirectoryLimitsV1::default(),
+                        )
+                        .unwrap_err(),
+                        DirectoryErrorV1::CrashResidue
+                    );
+                }
+                BackupInterruptionV1::RestoreHeadRenamed
+                | BackupInterruptionV1::RestoreDirectorySynced => {
+                    let mut restored = DirectoryCheckpointStoreV1::open_existing(
+                        &restored_path,
+                        DirectoryLimitsV1::default(),
+                    )
+                    .unwrap();
+                    let checkpoint = restored.load("host").unwrap().unwrap();
+                    assert_eq!(checkpoint.revision, Revision(1));
+                    assert_eq!(checkpoint.bytes, b"two");
+                    committed(
+                        restored
+                            .compare_exchange("host", Some(Revision(1)), b"three")
+                            .unwrap(),
+                        2,
+                    );
+                }
+                _ => unreachable!(),
+            }
+        }
     }
 
     #[test]

@@ -177,8 +177,11 @@ fences without exposing keys, paths, bytes, or record size. The mechanism is
 local Unix only. Its offline backup profile copies the exact canonical record
 under the source lock and restores only into a new private directory while
 preserving revision continuity. Backup content is sensitive, and the profile
-does not claim hardware power-loss, network-filesystem, encryption, remote
-transport, rollback resistance, disaster-recovery objectives, or multi-host behavior.
+classifies interruption at every export and restore persistence boundary as an
+invalid/verifiable artifact, empty destination, pending residue, or exact
+post-rename recovery. It does not automate cleanup or claim hardware power-loss,
+network-filesystem, encryption, remote transport, rollback resistance,
+disaster-recovery objectives, or multi-host behavior.
 
 `ClientV2` mirrors that uncertainty boundary without assuming a transport. A
 port reports either definitely-not-sent or outcome-unknown. Unknown retains the

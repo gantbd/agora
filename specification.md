@@ -532,6 +532,15 @@ restored revision. Failure after destination creation may leave a partial
 directory or pending/head state for operator inspection; no rollback or retry
 is inferred. Export failure after file creation may likewise leave an invalid or
 complete output that must be inspected rather than treated as success.
+Deterministic interruption injection covers all four export boundaries and all
+six restore boundaries. Every injected call reports `Interrupted`. An export
+stopped immediately after creation is invalid; later process-visible complete
+records verify independently, but only the synchronization boundaries describe
+completed operating-system synchronization. A restore stopped after directory
+creation reopens empty, each pre-rename pending state refuses as crash residue,
+and either post-rename state reopens the exact checkpoint and advances from its
+preserved revision. These classifications do not imply automatic cleanup or
+simulate device power loss.
 
 “Durable” here means the specified operating-system synchronization mechanism
 completed on the qualified local profile. It does not prove storage-controller
