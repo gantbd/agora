@@ -14,6 +14,11 @@ follow Semantic Versioning once a public release contract is selected.
   connection, frozen wire fixtures, SDK/fuzz reachability, and real-socket
   reconnect/restart privacy evidence. The conversation-only profile and durable
   capability list remain unchanged.
+- Added `DurableTransientHostV1`, combining receipt-gated Host checkpoints with
+  deliberately non-durable presence and typing. Store refusal restores Host
+  state without leaking a signal, uncertain durability fences and retires the
+  source, and physical local-daemon restart retains rooms while reconstructing
+  transient state empty.
 
 - Added a bounded transient-typing owner for room, retained-root,
   and stable-topic targets, with current membership/target authority, opaque

@@ -10,7 +10,9 @@ compile_error!("agora-local-daemon currently qualifies only Unix hosts");
 mod lifetime;
 
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
-use agora_durable::{DurableHostPublicationV2, DurableHostSuppressionV2, DurableHostV2};
+use agora_durable::{
+    DurableHostPublicationV2, DurableHostSuppressionV2, DurableHostV2, DurableTransientHostV1,
+};
 use agora_host::transient::TransientHostV1;
 use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
 use agora_host::{HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier};
@@ -140,8 +142,9 @@ mod sealed {
     pub trait Sealed {}
 }
 
-/// Sealed transport-facing projection implemented only by Agora's volatile and
-/// durable authenticated Host V2 owners. It is not a general runtime port.
+/// Sealed transport-facing projection implemented only by Agora's volatile,
+/// transient, durable, and combined durable/transient authenticated Host V2
+/// owners. It is not a general runtime port.
 #[doc(hidden)]
 pub trait DaemonHostV1: sealed::Sealed {
     fn open_daemon(
@@ -301,6 +304,53 @@ where
 
     fn close_daemon(&mut self, session: HostSessionIdV2) -> Result<bool, DaemonHostErrorV1> {
         Ok(self.close(session))
+    }
+}
+
+impl<P, S> sealed::Sealed for DurableTransientHostV1<AegisVerifierV1<P>, S>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    S: CheckpointStore,
+{
+}
+
+impl<P, S> DaemonHostV1 for DurableTransientHostV1<AegisVerifierV1<P>, S>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    S: CheckpointStore,
+{
+    fn open_daemon(
+        &mut self,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<OpenReplyV2, DaemonHostErrorV1> {
+        durable_value(self.open(frame, context, now))?.map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn handle_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        durable_value(self.handle(session, frame, context, now))?.map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn handle_transient_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        durable_value(self.handle_transient(session, frame, context, now))?
+            .map_err(DaemonHostErrorV1::Host)
+    }
+
+    fn close_daemon(&mut self, session: HostSessionIdV2) -> Result<bool, DaemonHostErrorV1> {
+        durable_value(self.close(session))
     }
 }
 
@@ -877,6 +927,48 @@ where
     }
 
     pub const fn host(&self) -> &DurableHostV2<AegisVerifierV1<P>, S> {
+        &self.host
+    }
+}
+
+impl<P, S, A, C> DaemonV1<DurableTransientHostV1<AegisVerifierV1<P>, S>, A, C>
+where
+    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    S: CheckpointStore,
+    A: AuthenticatorV1,
+    C: HostClockV1,
+{
+    pub fn bind_new_durable_collaboration(
+        socket_path: impl AsRef<Path>,
+        host: DurableTransientHostV1<AegisVerifierV1<P>, S>,
+        authenticator: A,
+        clock: C,
+        server_incarnation: ServerIncarnationV1,
+        limits: DaemonLimitsV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        validate_daemon_configuration(server_incarnation, limits)?;
+        let socket_path = socket_path.as_ref().to_path_buf();
+        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
+        let lifetime = LifetimeLeaseV1::acquire_new(parent, &socket_path, server_incarnation)?;
+        Self::bind_owned(
+            socket_path,
+            lifetime,
+            host,
+            authenticator,
+            clock,
+            server_incarnation,
+            limits,
+            DaemonTransportProfileV1::Collaboration,
+        )
+    }
+
+    pub fn observation(&self) -> Option<DaemonObservationV1> {
+        self.host
+            .host()
+            .map(|host| observation(self.health, host.host()))
+    }
+
+    pub const fn host(&self) -> &DurableTransientHostV1<AegisVerifierV1<P>, S> {
         &self.host
     }
 }

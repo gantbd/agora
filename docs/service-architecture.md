@@ -71,6 +71,14 @@ durable capability list and conversation-only transport profile remain
 unchanged. See
 [`transient-collaboration.md`](transient-collaboration.md).
 
+`agora-durable::DurableTransientHostV1` supplies the combined deployment owner.
+It receipt-gates the complete underlying Host checkpoint, including session
+verification time, while deliberately excluding both transient owners and their
+runtime cursor/replay state. Known store refusal restores the Host and retains
+privacy-conservative transient retirement; uncertain durability fences the
+owner and retires the affected source. Recovery wraps the durable Host in fresh
+empty transient owners.
+
 ## Connection and identity
 
 `Service::connect` binds a newly allocated client handle to one already

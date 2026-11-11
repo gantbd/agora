@@ -120,9 +120,18 @@ presence and typing publication, source retirement on EOF, `Unknown`/inactive
 projection after reconnect, a distinct replay epoch for each connection, and
 empty transient ownership plus a distinct epoch after daemon reconstruction
 under a new server incarnation. The transport-supplied epoch bytes are directly
-accepted by the command-neutral client facade. This closes R62 for the private
-volatile local profile, not for a durable+transient composition or network
-transport.
+accepted by the command-neutral client facade. This closes the volatile R62
+profile; R64 separately composes the same transient boundary with durable
+conversation ownership. Network transport remains outside the evidence.
+
+The combined durable-collaboration owner has focused suppression evidence. A
+known store refusal after an authenticated transient offer restores the Host,
+resets the volatile request namespace, and exposes no signal; an indeterminate
+post-commit outcome fences the owner and also retires the signal. A twelfth
+real-socket scenario composes the physical directory store, commits a room and
+publishes both signal families, then reconstructs under a distinct server
+incarnation: the room remains while presence is `Unknown`, typing is inactive,
+and the replay epoch differs.
 
 Six transient-client scenarios prove exact equal-command retry after an
 outcome-unknown failure, definitely-not-sent progression, same-epoch state

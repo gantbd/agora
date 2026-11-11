@@ -387,6 +387,18 @@
   SDK, compatibility, privacy, model, mutation, and restart evidence must close
   before capability advertisement. The selected architecture is detailed in
   [`docs/transient-collaboration.md`](docs/transient-collaboration.md).
+- **R64 — Durable conversation with volatile collaboration:** one selected Host
+  composition must combine receipt-gated durable conversation/session state
+  with transient presence and typing without admitting transient signals,
+  cursors, replay receipts, or clock state to the durable checkpoint. Every
+  authenticated transient offer that changes Host verification/session state
+  must remain commit-before-reply. Known durable refusal must restore the Host
+  and conservatively retire affected volatile state; indeterminate, weak, or
+  invalid durability must fence semantic access and retire the source. Recovery
+  must retain conversation state under a fresh authenticated connection while
+  presence begins `Unknown`, typing begins inactive, and the replay epoch changes.
+  The private local collaboration transport must compose this owner without
+  weakening its framing, authority, lifetime, or readiness fences.
 
 ## Explicitly open
 

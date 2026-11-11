@@ -123,9 +123,10 @@ port. It supplies neither peer-credential extraction nor endpoint lifecycle
 automation, fresh incarnation generation, compatibility-range negotiation,
 concurrent admission, in-flight graceful drain, signal handling, or durable Host
 V2 reconnect recovery. The daemon can instead be constructed over the existing
-receipt-gated Durable Host and checkpoint-store port; the separately selected
-volatile collaboration owner is not combined with that durable wrapper.
-Qualification proves clean
+receipt-gated Durable Host and checkpoint-store port. The combined durable
+collaboration owner stores only the Host checkpoint and reconstructs presence
+and typing empty; suppression retires volatile sources before fencing or
+returning control. Qualification proves clean
 owner teardown/reopen and retained state through a fresh authenticated
 connection, not old-session resumption or lost-reply replay. Exact stale endpoint
 cleanup remains an explicit prior-incarnation-checked operation, not automatic

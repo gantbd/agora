@@ -125,10 +125,13 @@ the exact authenticated Host session without granting authority or exposing the
 Host session handle. Close retires both transient owners; reconnect receives a
 new epoch, and a distinct-incarnation daemon restart starts with empty owners.
 
-This qualification is deliberately narrow: it does not combine the durable
-Host wrapper with transient ownership, add a network transport, select a
-credential authenticator, or add presence/typing to durable capability
-discovery.
+`DurableTransientHostV1` additionally composes the receipt-gated Host with the
+same volatile owners. Only the underlying Host checkpoint is stored. Known
+publication refusal restores that Host and conservatively retires the affected
+transient source; uncertain durability fences the owner and retires the source.
+Recovery reconstructs empty transient owners around the durable Host. This does
+not add a network transport, select a credential authenticator, persist
+presence/typing, or add them to durable capability discovery.
 
 ## Explicit nonclaims
 

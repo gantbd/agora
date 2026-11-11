@@ -5,12 +5,15 @@
 //! restores the pre-offer checkpoint. An indeterminate or weak acknowledgement
 //! fences the owner and suppresses the semantic reply.
 
+use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
 };
 use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
 use agora_host::{HostRefusal, HostTimeV1, PrincipalVerifier};
 use agora_protocol::v2::{ClientIdV2, RefusalV2, ReplyV2, RequestV2};
+use agora_service::transient::TransientLimitsV1;
+use agora_service::typing::TypingLimitsV1;
 use agora_service::v2::{
     ServiceV2,
     persistence::{ServiceCheckpointErrorV2, ServiceCheckpointScopeV1, ServiceRecoveryLimitsV2},
@@ -394,6 +397,282 @@ pub struct DurableHostV2<V, S> {
     config: DurableHostConfigV2,
     store_revision: Revision,
     state: DurableOwnerStateV2,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DurableTransientHostStartErrorV1 {
+    Missing,
+    Checkpoint(HostCheckpointErrorV2),
+    Transient(TransientHostBuildRefusalV1),
+    StoreFault,
+    StoreRefused(StoreRefusal),
+    OutcomeUnknown,
+    NotDurable,
+    InvalidReceipt,
+}
+
+/// Receipt-gated durable Host plus deliberately non-durable collaboration.
+///
+/// Only the underlying Host checkpoint enters the store. Presence, typing,
+/// transient cursors, replay receipts, and clock state always restart empty.
+pub struct DurableTransientHostV1<V, S> {
+    host: TransientHostV1<V>,
+    store: S,
+    config: DurableHostConfigV2,
+    store_revision: Revision,
+    state: DurableOwnerStateV2,
+}
+
+impl<V, S> fmt::Debug for DurableTransientHostV1<V, S> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DurableTransientHostV1")
+            .field("config", &self.config)
+            .field("store_revision", &self.store_revision)
+            .field("state", &self.state)
+            .field("transient", &self.host)
+            .finish()
+    }
+}
+
+impl<V: PrincipalVerifier, S: CheckpointStore> DurableTransientHostV1<V, S> {
+    pub fn initialize(
+        host: TransientHostV1<V>,
+        mut store: S,
+        config: DurableHostConfigV2,
+    ) -> Result<Self, DurableTransientHostStartErrorV1> {
+        let checkpoint = host
+            .prepare_host_checkpoint(config.scope, config.max_snapshot_bytes)
+            .map_err(DurableTransientHostStartErrorV1::Checkpoint)?;
+        let outcome = store
+            .compare_exchange(config.key(), None, checkpoint.bytes())
+            .map_err(|_| DurableTransientHostStartErrorV1::StoreFault)?;
+        let revision = match outcome {
+            CommitOutcome::Committed(receipt)
+                if receipt.revision == Revision(0)
+                    && receipt.strength == AcknowledgementStrength::Durable =>
+            {
+                receipt.revision
+            }
+            CommitOutcome::Committed(receipt)
+                if receipt.strength != AcknowledgementStrength::Durable =>
+            {
+                return Err(DurableTransientHostStartErrorV1::NotDurable);
+            }
+            CommitOutcome::Committed(_) => {
+                return Err(DurableTransientHostStartErrorV1::InvalidReceipt);
+            }
+            CommitOutcome::Refused(refusal) => {
+                return Err(DurableTransientHostStartErrorV1::StoreRefused(refusal));
+            }
+            CommitOutcome::Indeterminate => {
+                return Err(DurableTransientHostStartErrorV1::OutcomeUnknown);
+            }
+        };
+        Ok(Self {
+            host,
+            store,
+            config,
+            store_revision: revision,
+            state: DurableOwnerStateV2::Active,
+        })
+    }
+
+    pub fn recover(
+        store: S,
+        config: DurableHostConfigV2,
+        verifier: V,
+        presence_limits: TransientLimitsV1,
+        typing_limits: TypingLimitsV1,
+        max_cursor_age: u64,
+    ) -> Result<Self, DurableTransientHostStartErrorV1> {
+        let stored = store
+            .load(config.key())
+            .map_err(|_| DurableTransientHostStartErrorV1::StoreFault)?
+            .ok_or(DurableTransientHostStartErrorV1::Missing)?;
+        if stored.strength != AcknowledgementStrength::Durable {
+            return Err(DurableTransientHostStartErrorV1::NotDurable);
+        }
+        let host =
+            HostV2::recover_checkpoint(&stored.bytes, config.scope, config.recovery, verifier)
+                .map_err(DurableTransientHostStartErrorV1::Checkpoint)?;
+        let host =
+            TransientHostV1::new_with_typing(host, presence_limits, typing_limits, max_cursor_age)
+                .map_err(DurableTransientHostStartErrorV1::Transient)?;
+        Ok(Self {
+            host,
+            store,
+            config,
+            store_revision: stored.revision,
+            state: DurableOwnerStateV2::Active,
+        })
+    }
+
+    pub const fn state(&self) -> DurableOwnerStateV2 {
+        self.state
+    }
+
+    pub fn host(&self) -> Option<&TransientHostV1<V>> {
+        (self.state == DurableOwnerStateV2::Active).then_some(&self.host)
+    }
+
+    pub fn into_store(self) -> S {
+        self.store
+    }
+
+    pub fn open(
+        &mut self,
+        frame: &[u8],
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<Result<OpenReplyV2, HostRefusal>> {
+        self.publish(|host| host.open(frame, context, now))
+    }
+
+    pub fn handle(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<Result<Vec<u8>, HostRefusal>> {
+        let publication = self.publish(|host| host.handle(session, frame, context, now));
+        if matches!(publication, DurableHostPublicationV2::Suppressed(_)) {
+            self.host.retire_transient_session(session);
+        }
+        publication
+    }
+
+    pub fn handle_transient(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<Result<Vec<u8>, HostRefusal>> {
+        let publication = self.publish(|host| host.handle_transient(session, frame, context, now));
+        if matches!(publication, DurableHostPublicationV2::Suppressed(_)) {
+            self.host.retire_transient_session(session);
+        }
+        publication
+    }
+
+    pub fn close(&mut self, session: HostSessionIdV2) -> DurableHostPublicationV2<bool> {
+        let publication = self.publish(|host| host.close(session));
+        if matches!(publication, DurableHostPublicationV2::Suppressed(_)) {
+            self.host.retire_transient_session(session);
+        }
+        publication
+    }
+
+    fn publish<T>(
+        &mut self,
+        operation: impl FnOnce(&mut TransientHostV1<V>) -> T,
+    ) -> DurableHostPublicationV2<T> {
+        if self.state == DurableOwnerStateV2::Fenced {
+            return DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::Fenced);
+        }
+        let before = match self
+            .host
+            .prepare_host_checkpoint(self.config.scope, self.config.max_snapshot_bytes)
+        {
+            Ok(checkpoint) => checkpoint,
+            Err(error) => {
+                return DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::Checkpoint(
+                    error,
+                ));
+            }
+        };
+        let value = operation(&mut self.host);
+        let candidate = match self
+            .host
+            .prepare_host_checkpoint(self.config.scope, self.config.max_snapshot_bytes)
+        {
+            Ok(checkpoint) => checkpoint,
+            Err(error) => {
+                if self.restore(before.bytes()).is_err() {
+                    self.state = DurableOwnerStateV2::Fenced;
+                }
+                return DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::Checkpoint(
+                    error,
+                ));
+            }
+        };
+        if candidate.bytes() == before.bytes() {
+            return DurableHostPublicationV2::Published {
+                value,
+                evidence: DurableEvidenceV2::PreviouslyCommitted {
+                    revision: self.store_revision,
+                },
+            };
+        }
+        let expected = self.store_revision;
+        let outcome =
+            match self
+                .store
+                .compare_exchange(self.config.key(), Some(expected), candidate.bytes())
+            {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    self.state = DurableOwnerStateV2::Fenced;
+                    return DurableHostPublicationV2::Suppressed(
+                        DurableHostSuppressionV2::OutcomeUnknown,
+                    );
+                }
+            };
+        match outcome {
+            CommitOutcome::Committed(receipt) => {
+                let Some(next) = expected.0.checked_add(1).map(Revision) else {
+                    self.state = DurableOwnerStateV2::Fenced;
+                    return DurableHostPublicationV2::Suppressed(
+                        DurableHostSuppressionV2::InvalidReceipt,
+                    );
+                };
+                if receipt.revision != next {
+                    self.state = DurableOwnerStateV2::Fenced;
+                    return DurableHostPublicationV2::Suppressed(
+                        DurableHostSuppressionV2::InvalidReceipt,
+                    );
+                }
+                if receipt.strength != AcknowledgementStrength::Durable {
+                    self.state = DurableOwnerStateV2::Fenced;
+                    return DurableHostPublicationV2::Suppressed(
+                        DurableHostSuppressionV2::NotDurable,
+                    );
+                }
+                self.store_revision = receipt.revision;
+                DurableHostPublicationV2::Published {
+                    value,
+                    evidence: DurableEvidenceV2::Committed {
+                        revision: receipt.revision,
+                    },
+                }
+            }
+            CommitOutcome::Refused(refusal) => {
+                if self.restore(before.bytes()).is_err() {
+                    self.state = DurableOwnerStateV2::Fenced;
+                    return DurableHostPublicationV2::Suppressed(
+                        DurableHostSuppressionV2::InvalidReceipt,
+                    );
+                }
+                DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::StoreRefused(
+                    refusal,
+                ))
+            }
+            CommitOutcome::Indeterminate => {
+                self.state = DurableOwnerStateV2::Fenced;
+                DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::OutcomeUnknown)
+            }
+        }
+    }
+
+    fn restore(&mut self, bytes: &[u8]) -> Result<(), HostCheckpointErrorV2> {
+        self.host.restore_host_checkpoint_preserving_runtime(
+            bytes,
+            self.config.scope,
+            self.config.recovery,
+        )
+    }
 }
 
 impl<V, S> fmt::Debug for DurableHostV2<V, S> {

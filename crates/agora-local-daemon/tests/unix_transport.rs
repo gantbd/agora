@@ -6,7 +6,7 @@ use aegis_protocol::{
     ReplyV1, SessionHandleV1,
 };
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
-use agora_durable::{DurableHostConfigV2, DurableHostV2};
+use agora_durable::{DurableHostConfigV2, DurableHostV2, DurableTransientHostV1};
 use agora_engine::{CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind};
 use agora_host::transient::TransientHostV1;
 use agora_host::v2::HostV2;
@@ -795,6 +795,214 @@ fn durable_daemon_reopens_conversation_state_through_the_same_transport_profile(
     };
     assert_eq!(page.rooms.len(), 1);
     assert_eq!(page.rooms[0].room_id, "durable-room");
+    drop(stream);
+    let (result, daemon) = server.join().unwrap();
+    result.unwrap();
+    drop(daemon);
+    fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn durable_collaboration_recovers_conversation_but_restarts_transients_empty() {
+    let path = socket_path();
+    let store_path = path.parent().unwrap().join("collaboration-checkpoint");
+    let store =
+        DirectoryCheckpointStoreV1::create_new(&store_path, DirectoryLimitsV1::default()).unwrap();
+    let transient = TransientHostV1::new_with_typing(
+        host(Port::default()),
+        TransientLimitsV1::default(),
+        TypingLimitsV1::default(),
+        10,
+    )
+    .unwrap();
+    let durable = DurableTransientHostV1::initialize(transient, store, durable_config()).unwrap();
+    let daemon = DaemonV1::bind_new_durable_collaboration(
+        &path,
+        durable,
+        Authentication,
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let result = daemon.serve_next();
+        (result, daemon)
+    });
+    let mut stream = UnixStream::connect(&path).unwrap();
+    collaboration_handshake(&mut stream);
+    let (client, first_epoch) = collaboration_connect(&mut stream);
+    let create = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(0),
+                command: ProtocolCommand::CreateRoom {
+                    room_id: "durable-collaboration".to_owned(),
+                    name: "Durable Collaboration".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: 2,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_routed(&mut stream, LocalRouteV1::Conversation, &create);
+    assert!(matches!(
+        decode_reply_v2(
+            &read_routed(&mut stream, LocalRouteV1::Conversation),
+            wire_limits(),
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 3 }))
+    ));
+    for (request_id, command, expected) in [
+        (
+            0,
+            TransientCommandV1::PublishPresence {
+                room_id: "durable-collaboration".to_owned(),
+                state: PresenceStateV1::Available,
+                lifetime: 20,
+            },
+            TransientOutcomeV1::PresencePublished {
+                accepted_lifetime: 20,
+            },
+        ),
+        (
+            1,
+            TransientCommandV1::PublishTyping {
+                room_id: "durable-collaboration".to_owned(),
+                target: TypingTargetV1::Room,
+                lifetime: 20,
+            },
+            TransientOutcomeV1::TypingPublished {
+                accepted_lifetime: 20,
+            },
+        ),
+    ] {
+        write_routed(
+            &mut stream,
+            LocalRouteV1::Transient,
+            &transient_frame(request_id, command),
+        );
+        assert_eq!(
+            decode_transient_reply_v1(
+                &read_routed(&mut stream, LocalRouteV1::Transient),
+                wire_limits(),
+            )
+            .unwrap(),
+            TransientReplyV1::Accepted(expected)
+        );
+    }
+    drop(stream);
+    let (result, daemon) = server.join().unwrap();
+    result.unwrap();
+    assert!(daemon.observation().is_some());
+    drop(daemon);
+    assert!(!path.exists());
+
+    let reopened =
+        DirectoryCheckpointStoreV1::open_existing(&store_path, DirectoryLimitsV1::default())
+            .unwrap();
+    let durable = DurableTransientHostV1::recover(
+        reopened,
+        durable_config(),
+        AegisVerifierV1::new(Port::default(), [0x55; 16]),
+        TransientLimitsV1::default(),
+        TypingLimitsV1::default(),
+        10,
+    )
+    .unwrap();
+    let daemon = DaemonV1::bind_new_durable_collaboration(
+        &path,
+        durable,
+        Authentication,
+        Clock(100),
+        next_incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let result = daemon.serve_next();
+        (result, daemon)
+    });
+    let mut stream = UnixStream::connect(&path).unwrap();
+    assert_eq!(
+        collaboration_handshake(&mut stream).server_incarnation(),
+        next_incarnation()
+    );
+    let (client, restarted_epoch) = collaboration_connect(&mut stream);
+    assert_ne!(restarted_epoch, first_epoch);
+
+    let rooms = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(0),
+                command: ProtocolCommand::Rooms {
+                    cursor: None,
+                    limit: 4,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_routed(&mut stream, LocalRouteV1::Conversation, &rooms);
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Rooms(page))) = decode_reply_v2(
+        &read_routed(&mut stream, LocalRouteV1::Conversation),
+        wire_limits(),
+    )
+    .unwrap() else {
+        panic!("recovered room page expected");
+    };
+    assert_eq!(page.rooms.len(), 1);
+    assert_eq!(page.rooms[0].room_id, "durable-collaboration");
+
+    for (request_id, command) in [
+        (
+            0,
+            TransientCommandV1::PresencePage {
+                room_id: "durable-collaboration".to_owned(),
+                cursor: None,
+                limit: 8,
+            },
+        ),
+        (
+            1,
+            TransientCommandV1::TypingPage {
+                room_id: "durable-collaboration".to_owned(),
+                target: TypingTargetV1::Room,
+                cursor: None,
+                limit: 8,
+            },
+        ),
+    ] {
+        write_routed(
+            &mut stream,
+            LocalRouteV1::Transient,
+            &transient_frame(request_id, command),
+        );
+        let reply = decode_transient_reply_v1(
+            &read_routed(&mut stream, LocalRouteV1::Transient),
+            wire_limits(),
+        )
+        .unwrap();
+        match reply {
+            TransientReplyV1::Accepted(TransientOutcomeV1::PresencePage(page)) => {
+                assert_eq!(page.entries.len(), 1);
+                assert_eq!(page.entries[0].state, PresenceViewStateV1::Unknown);
+            }
+            TransientReplyV1::Accepted(TransientOutcomeV1::TypingPage(page)) => {
+                assert_eq!(page.entries.len(), 1);
+                assert_eq!(page.entries[0].state, TypingViewStateV1::Inactive);
+            }
+            other => panic!("empty recovered transient page expected: {other:?}"),
+        }
+    }
     drop(stream);
     let (result, daemon) = server.join().unwrap();
     result.unwrap();

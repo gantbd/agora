@@ -1,11 +1,12 @@
 # Private local daemon profile
 
 Status: qualified bounded Unix transport composition V1 with separately selected
-volatile conversation, volatile collaboration, or receipt-gated durable
-authenticated Host ownership.
+volatile conversation, volatile collaboration, receipt-gated durable
+conversation, or receipt-gated durable conversation plus volatile collaboration.
 
 `agora-local-daemon` owns only the outer connection and framing lifetime around
-an Aegis-authorized volatile, transient-wrapped, or durable Host owner. Its normal dependency
+an Aegis-authorized volatile, transient-wrapped, durable, or combined
+durable-conversation/volatile-collaboration Host owner. Its normal dependency
 closure reaches only the verifier adapter, Host/Durable owners, Wire, and the
 generic Keystone checkpoint-store port; the physical directory store used by
 qualification remains test-only. It does not enter Agora's engine, protocol,
@@ -16,8 +17,9 @@ service, storage implementation, Aegis policy, or SDK semantics.
 The application supplies:
 
 - either a `HostV2<AegisVerifierV1<P>>`, a
-  `TransientHostV1<AegisVerifierV1<P>>`, or Agora's
-  `DurableHostV2<AegisVerifierV1<P>, S>` with its engine, Service V2 limits,
+  `TransientHostV1<AegisVerifierV1<P>>`, Agora's
+  `DurableHostV2<AegisVerifierV1<P>, S>`, or
+  `DurableTransientHostV1<AegisVerifierV1<P>, S>` with its engine, Service V2 limits,
   Wire V2 limits, Aegis service port, fixed Agora resource, and—only for the
   durable selection—an independently qualified checkpoint store;
 - an `AuthenticatorV1` that derives one trusted `AegisContextV1` from the
@@ -134,12 +136,12 @@ state under a distinct server incarnation. It does not preserve the old transpor
 session or make a disconnected pending request replayable: terminal connection
 cleanup still closes the service client and reclaims its receipt namespace. The
 qualified idle drain fence does not add concurrent in-flight drain or signal
-integration. The volatile collaboration wrapper is not combined with the
-durable owner in this profile.
+integration. The combined owner checkpoints only durable Host state and always
+reconstructs transient state empty.
 
 ## Qualification evidence
 
-The eleven real-socket scenarios verify private-parent/socket modes and type,
+The twelve real-socket scenarios verify private-parent/socket modes and type,
 canonical incarnation-bound lifetime bytes, live-owner exclusion, distinct
 stale-residue refusal, replacement fencing before authentication, and
 conservative teardown,
@@ -164,6 +166,9 @@ The collaboration scenario multiplexes a conversation mutation with presence
 and typing publication, proves EOF retirement through `Unknown`/inactive
 observation on a second connection, observes distinct per-connection epochs,
 and reconstructs empty transient owners under a distinct restart incarnation.
+The combined durable-collaboration scenario repeats that boundary through the
+physical directory store: the room survives reconstruction while presence and
+typing do not.
 
 The recovery scenario separately proves live-owner exclusion; equal, wrong, and
 malformed prior-incarnation refusal without mutation; exact locked rotation to a

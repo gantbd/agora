@@ -2,8 +2,11 @@
 //!
 //! This wrapper deliberately has no checkpoint profile. It binds the separate
 //! presence and typing owners to Host sessions, qualified Host time, and the
-//! unadvertised transient wire profile.
+//! additive transient wire profile.
 
+use crate::v2::persistence::{
+    HostCheckpointErrorV2, HostCheckpointScopeV1, HostCheckpointV2, HostRecoveryLimitsV2,
+};
 use crate::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
 use crate::{HostRefusal, HostTimeV1, PrincipalVerifier};
 use agora_protocol::transient::{
@@ -168,6 +171,43 @@ impl<V: PrincipalVerifier> TransientHostV1<V> {
 
     pub fn into_host(self) -> HostV2<V> {
         self.host
+    }
+
+    /// Encodes only the durable conversation/Host state. Transient signals,
+    /// cursors, replay receipts, and clock state are deliberately excluded.
+    #[doc(hidden)]
+    pub fn prepare_host_checkpoint(
+        &self,
+        scope: HostCheckpointScopeV1,
+        max_snapshot_bytes: usize,
+    ) -> Result<HostCheckpointV2, HostCheckpointErrorV2> {
+        self.host.prepare_checkpoint(scope, max_snapshot_bytes)
+    }
+
+    /// Restores the durable Host while retaining only privacy-safe transient
+    /// state. Callers use this for a known failed durable publication; signals
+    /// already retired during the attempted operation are never resurrected.
+    #[doc(hidden)]
+    pub fn restore_host_checkpoint_preserving_runtime(
+        &mut self,
+        bytes: &[u8],
+        scope: HostCheckpointScopeV1,
+        recovery: HostRecoveryLimitsV2,
+    ) -> Result<(), HostCheckpointErrorV2> {
+        self.host
+            .restore_checkpoint_preserving_runtime(bytes, scope, recovery)?;
+        self.presence
+            .reconcile_membership(self.host.service().engine());
+        self.typing.reconcile(self.host.service().engine());
+        Ok(())
+    }
+
+    /// Retires volatile state without mutating the underlying durable Host.
+    /// This is the fail-safe cleanup path after a suppressed publication.
+    #[doc(hidden)]
+    pub fn retire_transient_session(&mut self, session: HostSessionIdV2) {
+        self.retire_source(session);
+        self.sessions.remove(&session);
     }
 
     pub fn open(

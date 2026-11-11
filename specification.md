@@ -614,7 +614,12 @@ binding transient client uncertainty to the exact authenticated Host session.
 Later conversation and transient frames share that session, context, clock, and
 request budget. Client control frames refuse, connection close retires both
 transient owners, and replay-epoch exhaustion fences readiness. This profile is
-not combined with the receipt-gated durable Host selection.
+also selectable with `DurableTransientHostV1`. That owner persists only the
+underlying Host checkpoint; authenticated transient offers commit any changed
+Host verification/session state before reply, while signal state remains
+volatile. Known store refusal restores Host state and retires affected signals;
+uncertain durability fences access. Recovery retains conversation state but
+reconstructs presence and typing empty.
 
 EOF is a clean transport close. EOF, write failure (including the initial
 connected reply), malformed framing, request-budget exhaustion, and Host refusal

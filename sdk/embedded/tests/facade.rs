@@ -50,7 +50,7 @@ fn facade_alone_constructs_the_embedded_v2_stack() {
 }
 
 #[test]
-fn facade_constructs_the_unadvertised_transient_host_profile() {
+fn facade_constructs_the_additive_transient_host_profile() {
     let engine = engine::Engine::new();
     let service = service::v2::ServiceV2::new(engine, service::v2::ServiceLimitsV2::default());
     let host = host::v2::HostV2::new(service, Verifier, host::HostLimits::default());

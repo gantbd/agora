@@ -1,8 +1,8 @@
 //! Closed values for Agora's separate volatile collaboration profile.
 //!
 //! These values do not enter the durable Protocol V2 command or receipt
-//! grammar. The profile remains unadvertised until Host, client, typing, and
-//! end-to-end lifecycle evidence close vertically.
+//! grammar. Host, client, typing, and end-to-end lifecycle evidence qualify it
+//! as an additive collaboration profile without making it durable state.
 
 use crate::v2::{MessageIdV1, ParticipantKindV2, TopicIdV1};
 use std::fmt;

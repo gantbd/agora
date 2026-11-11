@@ -121,7 +121,10 @@ or the caller explicitly abandons and accounts for the unresolved request.
 For authenticated deployments, the host and service also have one combined
 checkpoint and pre-reply gate. Session subject/participant/client/time bindings
 recover with the exact service receipt and must pass current verifier
-revalidation before reuse.
+revalidation before reuse. A separate combined owner can place that durable
+conversation Host behind the collaboration profile while deliberately
+reconstructing presence, typing, transient cursors, and transient replay state
+empty after restart.
 
 The repository also contains an initial layered operational profile:
 

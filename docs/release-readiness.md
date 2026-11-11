@@ -181,9 +181,10 @@ not ready for a network service or crates.io release.
 - R62 is qualified for an additive private local volatile profile: handshake
   profile 2 multiplexes conversation and transient frames, supplies an exact
   connection/server replay epoch, retires sources on close, and restarts empty.
-  A combined durable-conversation plus transient owner, network transport, and
-  production credential authenticator remain open and are not inferred from
-  this profile.
+  R64 additionally qualifies a combined durable-conversation plus volatile
+  collaboration owner with suppression cleanup and clean physical restart.
+  Network transport and a production credential authenticator remain open and
+  are not inferred from these profiles.
 
 - no remote origin provenance or remote CI; the qualified local source candidate
   is content-addressed, but its selected Aegis and Keystone inputs were unclean

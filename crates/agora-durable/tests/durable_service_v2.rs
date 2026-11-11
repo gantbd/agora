@@ -1,24 +1,32 @@
 use agora_durable::{
     DurableConfigV2, DurableEvidenceV2, DurableHostConfigV2, DurableHostPublicationV2,
     DurableHostSuppressionV2, DurableHostV2, DurableOwnerStateV2, DurablePublicationV2,
-    DurableServiceV2, DurableStartErrorV2, DurableSuppressionV2,
+    DurableServiceV2, DurableStartErrorV2, DurableSuppressionV2, DurableTransientHostV1,
 };
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, LogicalTime, Participant,
     ParticipantId, ParticipantKind, ReadScopeV1 as EngineReadScopeV1, RoomId,
 };
+use agora_host::transient::TransientHostV1;
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
+use agora_protocol::transient::{
+    PresenceStateV1, PresenceViewStateV1, TransientCommandV1, TransientOutcomeV1, TransientReplyV1,
+    TransientRequestIdV1, TransientRequestV1,
+};
 use agora_protocol::v2::{
     AdmissionPolicyV2, CommandV2, MessageIdV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2,
     RequestIdV2, RequestV2,
 };
+use agora_service::transient::TransientLimitsV1;
+use agora_service::typing::TypingLimitsV1;
 use agora_service::v2::{
     ServiceLimitsV2, ServiceV2,
     persistence::{ServiceCheckpointScopeV1, ServiceRecoveryLimitsV2},
 };
 use agora_wire::WireLimits;
+use agora_wire::transient::{decode_transient_reply_v1, encode_transient_request_v1};
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
 use keystone_storage::{
     AcknowledgementStrength, Checkpoint, CheckpointStore, CommitOutcome, CommitReceipt, Revision,
@@ -595,6 +603,125 @@ fn host_store_refusal_rolls_back_both_session_and_service_namespace() {
         panic!("connect reply expected");
     };
     assert_eq!(client.0, 0, "rolled back client namespace must not skip");
+}
+
+#[test]
+fn durable_transient_refusal_restores_host_and_never_leaks_a_signal() {
+    let store = TestStore::default();
+    let transient = TransientHostV1::new_with_typing(
+        HostV2::new(service(), Verifier, host_limits()),
+        TransientLimitsV1::default(),
+        TypingLimitsV1::default(),
+        10,
+    )
+    .unwrap();
+    let mut durable =
+        DurableTransientHostV1::initialize(transient, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame(), &context, HostTimeV1(1))
+    else {
+        panic!("durable transient connect expected");
+    };
+    let session = opened.session().unwrap();
+    let WireReplyV2::Connected(client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connected frame expected");
+    };
+    assert!(matches!(
+        durable.handle(session, &create_frame(client), &context, HostTimeV1(2)),
+        DurableHostPublicationV2::Published {
+            value: Ok(_),
+            evidence: DurableEvidenceV2::Committed { .. },
+        }
+    ));
+
+    let request = |request_id, command| {
+        encode_transient_request_v1(
+            &TransientRequestV1 {
+                request_id: TransientRequestIdV1(request_id),
+                command,
+            },
+            host_limits().wire,
+        )
+        .unwrap()
+    };
+    store.next(NextCommit::Refuse);
+    let publish = request(
+        0,
+        TransientCommandV1::PublishPresence {
+            room_id: "room".to_owned(),
+            state: PresenceStateV1::Available,
+            lifetime: 20,
+        },
+    );
+    assert!(matches!(
+        durable.handle_transient(session, &publish, &context, HostTimeV1(3)),
+        DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::StoreRefused(
+            StoreRefusal::ValueLimit
+        ))
+    ));
+    assert_eq!(durable.state(), DurableOwnerStateV2::Active);
+
+    let page = request(
+        0,
+        TransientCommandV1::PresencePage {
+            room_id: "room".to_owned(),
+            cursor: None,
+            limit: 8,
+        },
+    );
+    let DurableHostPublicationV2::Published {
+        value: Ok(reply),
+        evidence: DurableEvidenceV2::Committed { .. },
+    } = durable.handle_transient(session, &page, &context, HostTimeV1(4))
+    else {
+        panic!("post-refusal observation expected");
+    };
+    let TransientReplyV1::Accepted(TransientOutcomeV1::PresencePage(page)) =
+        decode_transient_reply_v1(&reply, host_limits().wire).unwrap()
+    else {
+        panic!("presence page expected");
+    };
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].state, PresenceViewStateV1::Unknown);
+
+    let publish = request(
+        1,
+        TransientCommandV1::PublishPresence {
+            room_id: "room".to_owned(),
+            state: PresenceStateV1::Available,
+            lifetime: 20,
+        },
+    );
+    assert!(matches!(
+        durable.handle_transient(session, &publish, &context, HostTimeV1(5)),
+        DurableHostPublicationV2::Published {
+            value: Ok(_),
+            evidence: DurableEvidenceV2::Committed { .. },
+        }
+    ));
+    store.next(NextCommit::IndeterminateAfter);
+    let page = request(
+        2,
+        TransientCommandV1::PresencePage {
+            room_id: "room".to_owned(),
+            cursor: None,
+            limit: 8,
+        },
+    );
+    assert_eq!(
+        durable.handle_transient(session, &page, &context, HostTimeV1(6)),
+        DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::OutcomeUnknown)
+    );
+    assert_eq!(durable.state(), DurableOwnerStateV2::Fenced);
+    assert!(durable.host().is_none());
+    let diagnostic = format!("{durable:?}");
+    assert!(diagnostic.contains("presence_signal_count: 0"));
+    assert!(!diagnostic.contains("alice"));
+    assert!(store.commit_calls() >= 7);
 }
 
 #[test]
