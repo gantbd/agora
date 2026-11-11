@@ -34,6 +34,10 @@ not ready for a network service or crates.io release.
 - deterministic CycloneDX 1.5 stable-source SBOM closure over the same sixteen
   components and their dependency graph, with exact license/publication facts,
   offline byte-for-byte regeneration, and adversarial schema/claim mutants;
+- canonical bounded USTAR source-archive construction and verification,
+  including SHA-256 closure, platform listing/extraction, exact rearchive, and
+  checksum/framing/traversal/link mutants; exact revision qualification remains
+  an opt-in release artifact step;
 - a checksum-closed self-contained stable source directory for revision
   `67f634e30dda061b4d5a8fb2c8fac88c3feccd80`, including the canonical source
   SBOM, reproduced byte-identically twice across 239 payload files and qualified

@@ -324,6 +324,18 @@
   publication-enabled records. This source inventory makes no binary-content,
   advisory, legal-compatibility, origin-provenance, signature, or attestation
   claim.
+- **R58 — Canonical qualified source archive:** a verified R56 directory may be
+  encoded only as one bounded canonical USTAR stream rooted at `agora-source/`,
+  with strict path and entry vocabularies, lexical order, fixed ownership and
+  timestamps, normalized executable modes, zero padding, exactly two terminal
+  blocks, and a separate exact SHA-256 record. Construction must refuse existing
+  output, symbolic or special input, unsafe paths, and archive ceilings.
+  Verification must reject checksum, framing, metadata, order, duplication,
+  traversal, and type drift before platform extraction. Qualification must
+  verify the extracted R56 closure, reproduce the archive byte-for-byte, and run
+  the complete stable locked/offline isolated source qualification. This grants
+  no compression, remote-origin, signing, attestation, binary, installation,
+  support, or publication claim.
 
 ## Explicitly open
 

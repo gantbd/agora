@@ -8,6 +8,9 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added a canonical bounded USTAR source-archive profile over verified source
+  candidates, with fixed metadata and ordering, an exact SHA-256 sidecar,
+  platform extraction, byte-identical rearchive, and adversarial contract tests.
 - Added a deterministic CycloneDX 1.5 source SBOM for the exact sixteen-package
   stable graph, with offline canonical regeneration, closed dependency and
   claim validation, host-path exclusion, and focused adversarial mutants.

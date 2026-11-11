@@ -21,6 +21,7 @@ required_files=(
   docs/release-qualification.md
   docs/release-readiness.md
   docs/source-candidate.md
+  docs/source-archive.md
   docs/supply-chain.md
   docs/threat-model.md
   docs/traceability.md

@@ -16,6 +16,10 @@ authorized.
   relative layout. It records sibling revisions as context, reports selected
   subtree cleanliness separately, and closes every staged byte with SHA-256.
   Qualification is locked and offline from an isolated target directory.
+- A verified candidate may be encoded as the canonical bounded USTAR profile
+  with an adjacent SHA-256 record. Archive qualification verifies before
+  extraction, checks extracted candidate closure, requires an exact rearchive,
+  and repeats the locked/offline isolated source qualification.
 - No remote, tag, commit availability, signed source bundle, binary artifact,
   installer, or support lifetime is qualified.
 - Presentation applications, connectors, agent harnesses, and sibling engines
@@ -48,12 +52,12 @@ Actual candidate construction and isolated qualification are opt-in because
 they copy sibling inputs and rebuild the complete stable workspace. They do not
 authorize distributing the resulting directory.
 
-Revision `e5a02b4ce5bda9c92542b0e5ea59ea3a746b295b` has one qualified local
-candidate: two constructions were byte-identical, the 233-file payload closure
+Revision `67f634e30dda061b4d5a8fb2c8fac88c3feccd80` has one qualified local
+candidate: two constructions were byte-identical, the 239-file payload closure
 was checksummed, both sibling selections were explicitly unclean, and one copy
 passed the stable locked/offline isolated build. This narrows the former
 self-contained-source blocker; it does not establish remote origin or authorize
-a distribution channel.
+a distribution channel. No exact-revision source archive is yet recorded here.
 
 ## Enabling a distribution channel later
 

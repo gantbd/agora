@@ -45,6 +45,14 @@ content, symbolic links, and a claim that upgrades local content closure into
 commit provenance. This ordinary gate validates the mechanism; actual candidate
 construction and isolated qualification remain separately recorded evidence.
 
+The source-archive contract composes only after candidate verification. Its
+dependency-free USTAR codec fixes paths, order, ownership, time, modes, padding,
+and terminal framing under explicit entry and byte ceilings, while the adjacent
+SHA-256 record closes payload changes. An independent fixture proves equal
+construction, system `tar` listing/extraction, and refusal of checksum, framing,
+valid-header traversal, and symbolic-input mutants. Actual exact-revision
+archive qualification remains separate evidence.
+
 Revision `67f634e30dda061b4d5a8fb2c8fac88c3feccd80` then produced two
 byte-identical candidates containing 239 checksummed payload files, including
 the canonical source SBOM. The manifest digest was
