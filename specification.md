@@ -567,6 +567,15 @@ clears readiness and fences before authentication. Teardown removes socket and
 record only while every pinned resource still matches, so ambiguous or replaced
 objects are preserved.
 
+Ordinary construction never consumes residue. Explicit endpoint recovery
+requires the exact previous incarnation, a distinct nonzero next incarnation,
+and a new Host composition. While holding the stale record's exclusive lock, it
+validates the canonical record and mode-0600 socket, removes only that socket,
+rotates and synchronizes the record, and binds through the normal path. A live
+owner, foreign or malformed record, missing or unsafe socket, or incarnation
+reuse refuses without adopting state. An I/O error after mutation is not a
+successful recovery and may require operator inspection.
+
 Before authentication, the peer sends the exact fixed-width handshake-profile-1
 ClientHello selecting Wire V2. An incompatible hello refuses before
 authenticator, authority, Host, or Service work. The daemon replies with the
@@ -620,7 +629,7 @@ composition.
 This profile is deliberately sequential: one caller of `serve_next` accepts and
 serves one connection at a time. It does not authenticate an OS peer or
 credential, protect against a same-UID process controlling the private parent,
-encrypt content, generate the incarnation, repair crash residue, preserve request
+encrypt content, generate the incarnation, automatically repair residue, preserve request
 receipts across disconnect, recover a crashed endpoint, implement concurrent
 admission, in-flight draining, signals, socket activation, installation, or
 atomically recover Aegis and Agora. Those are separate composition and

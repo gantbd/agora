@@ -107,6 +107,7 @@ pub enum DaemonErrorV1 {
     Handshake,
     LifetimeBusy,
     CrashResidue,
+    ResidueMismatch,
     Fenced,
     Host(HostRefusal),
     ConnectionRefused,
@@ -228,18 +229,65 @@ where
         server_incarnation: ServerIncarnationV1,
         limits: DaemonLimitsV1,
     ) -> Result<Self, DaemonErrorV1> {
-        if limits.max_frame_bytes == 0
-            || limits.max_frame_bytes > u32::MAX as usize
-            || limits.max_frames_after_connect == 0
-            || limits.max_frames_after_connect > u32::MAX as usize
-            || limits.io_timeout.is_zero()
-            || server_incarnation.is_zero()
-        {
-            return Err(DaemonErrorV1::InvalidLimits);
-        }
+        validate_daemon_configuration(server_incarnation, limits)?;
         let socket_path = socket_path.as_ref().to_path_buf();
         let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
         let lifetime = LifetimeLeaseV1::acquire_new(parent, &socket_path, server_incarnation)?;
+        Self::bind_owned(
+            socket_path,
+            lifetime,
+            host,
+            authenticator,
+            clock,
+            server_incarnation,
+            limits,
+        )
+    }
+
+    /// Replaces exact unlocked crash residue with a distinct declared lifetime.
+    ///
+    /// This does not recover or adopt the prior volatile Host. The caller must
+    /// supply a fresh Host and prove the expected prior incarnation exactly.
+    #[allow(clippy::too_many_arguments)]
+    pub fn recover_stale(
+        socket_path: impl AsRef<Path>,
+        host: HostV2<AegisVerifierV1<P>>,
+        authenticator: A,
+        clock: C,
+        previous_incarnation: ServerIncarnationV1,
+        next_incarnation: ServerIncarnationV1,
+        limits: DaemonLimitsV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        validate_daemon_configuration(next_incarnation, limits)?;
+        let socket_path = socket_path.as_ref().to_path_buf();
+        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
+        let lifetime = LifetimeLeaseV1::recover_stale(
+            parent,
+            &socket_path,
+            previous_incarnation,
+            next_incarnation,
+        )?;
+        Self::bind_owned(
+            socket_path,
+            lifetime,
+            host,
+            authenticator,
+            clock,
+            next_incarnation,
+            limits,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn bind_owned(
+        socket_path: PathBuf,
+        lifetime: LifetimeLeaseV1,
+        host: HostV2<AegisVerifierV1<P>>,
+        authenticator: A,
+        clock: C,
+        server_incarnation: ServerIncarnationV1,
+        limits: DaemonLimitsV1,
+    ) -> Result<Self, DaemonErrorV1> {
         match fs::symlink_metadata(&socket_path) {
             Ok(_) => {
                 return Err(DaemonErrorV1::Io(io::Error::new(
@@ -262,7 +310,10 @@ where
                 return Err(DaemonErrorV1::Io(error));
             }
         };
-        if !metadata.file_type().is_socket() || metadata.permissions().mode() & 0o777 != 0o600 {
+        if !metadata.file_type().is_socket()
+            || metadata.permissions().mode() & 0o777 != 0o600
+            || metadata.nlink() != 1
+        {
             let _ = fs::remove_file(&socket_path);
             return Err(DaemonErrorV1::Io(io::Error::other(
                 "unsafe socket resource",
@@ -370,6 +421,7 @@ where
         let socket_owned = fs::symlink_metadata(&self.socket_path).is_ok_and(|metadata| {
             metadata.file_type().is_socket()
                 && metadata.permissions().mode() & 0o777 == 0o600
+                && metadata.nlink() == 1
                 && metadata.dev() == self.socket_device
                 && metadata.ino() == self.socket_inode
         });
@@ -447,11 +499,28 @@ where
     }
 }
 
+fn validate_daemon_configuration(
+    server_incarnation: ServerIncarnationV1,
+    limits: DaemonLimitsV1,
+) -> Result<(), DaemonErrorV1> {
+    if limits.max_frame_bytes == 0
+        || limits.max_frame_bytes > u32::MAX as usize
+        || limits.max_frames_after_connect == 0
+        || limits.max_frames_after_connect > u32::MAX as usize
+        || limits.io_timeout.is_zero()
+        || server_incarnation.is_zero()
+    {
+        return Err(DaemonErrorV1::InvalidLimits);
+    }
+    Ok(())
+}
+
 impl<P, A, C> Drop for DaemonV1<P, A, C> {
     fn drop(&mut self) {
         self.health.ready = false;
         let endpoint_owned = fs::symlink_metadata(&self.socket_path).is_ok_and(|metadata| {
             metadata.file_type().is_socket()
+                && metadata.nlink() == 1
                 && metadata.dev() == self.socket_device
                 && metadata.ino() == self.socket_inode
         });

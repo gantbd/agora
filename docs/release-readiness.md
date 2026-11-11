@@ -24,6 +24,8 @@ not ready for a network service or crates.io release.
 - endpoint-scoped exclusive daemon lifetime lease with a frozen
   incarnation-bound record, pinned parent/record/socket identities, typed live
   owner versus crash-residue refusal, and fail-closed replacement fencing;
+- explicit exact-incarnation endpoint-residue recovery with locked lifetime
+  rotation, fresh Host composition, and next-incarnation handshake evidence;
 - transport-neutral authenticated host composition with bounded volatile
   sessions, current-context revalidation, and revocation-safe cleanup;
 - unpublished trusted-host and remote-client SDK facades with executable
@@ -159,8 +161,8 @@ not ready for a network service or crates.io release.
 - no qualified credential/Unix-peer authenticator, network transport, or
   connector conformance package; Aegis context provenance remains trusted
   wiring;
-- no qualified server-incarnation generator or crash-residue recovery; no
-  concurrent admission, in-flight drain,
+- no qualified server-incarnation generator, automatic restart, or durable Host
+  recovery; no concurrent admission, in-flight drain,
   signal/socket-activation/crash-residue qualification, reconnect resumption, or
   cross-disconnect replay; recovered Aegis and Agora state do not share one
   atomic commit boundary;

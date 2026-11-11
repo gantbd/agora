@@ -166,7 +166,9 @@ traffic from the host, encrypt content, or recover a crashed endpoint. The
 authenticator can forge context if its credential binding is wrong. The
 handshake incarnation is caller-supplied, unauthenticated lifecycle evidence;
 the lease excludes a second live owner but cannot prove fresh generation or
-repair residue, so it does not establish a restart boundary. There is no cross-disconnect
+automatically repair residue. Explicit recovery requires exact prior-incarnation
+evidence and rotates to a distinct declared lifetime without adopting the
+volatile Host; it does not recover conversation state. There is no cross-disconnect
 receipt retention or reconnect resumption: a lost mutation reply remains
 outcome-unknown and must not be blindly retried on a new connection. Sequential
 service and finite request budgets are explicit availability limits, not

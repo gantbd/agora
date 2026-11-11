@@ -23,7 +23,7 @@ use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, PermissionsExt};
-use std::os::unix::net::UnixStream;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -157,6 +157,10 @@ fn daemon_limits() -> DaemonLimitsV1 {
 
 fn incarnation() -> ServerIncarnationV1 {
     ServerIncarnationV1::new([0xa5; 16])
+}
+
+fn next_incarnation() -> ServerIncarnationV1 {
+    ServerIncarnationV1::new([0xb6; 16])
 }
 
 fn socket_path() -> PathBuf {
@@ -576,6 +580,133 @@ fn lifetime_record_excludes_live_and_stale_owners_and_fences_replacement() {
     fs::remove_file(&path).unwrap();
     fs::remove_file(&lock_path).unwrap();
     fs::remove_file(&displaced_lock).unwrap();
+    remove_parent(&path);
+}
+
+#[test]
+fn explicit_residue_recovery_rotates_incarnation_without_adopting_runtime_state() {
+    let path = socket_path();
+    let lock_path = lifetime_path(&path);
+    let daemon = DaemonV1::bind_new(
+        &path,
+        host(Port::default()),
+        Authentication,
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    assert!(matches!(
+        DaemonV1::recover_stale(
+            &path,
+            host(Port::default()),
+            Authentication,
+            Clock(1),
+            incarnation(),
+            next_incarnation(),
+            daemon_limits(),
+        ),
+        Err(DaemonErrorV1::LifetimeBusy)
+    ));
+    drop(daemon);
+
+    let stale_listener = UnixListener::bind(&path).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    drop(stale_listener);
+    fs::write(
+        &lock_path,
+        fixture(include_str!("fixtures/lifetime-record-v1.hex")),
+    )
+    .unwrap();
+    fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    assert!(matches!(
+        DaemonV1::recover_stale(
+            &path,
+            host(Port::default()),
+            Authentication,
+            Clock(1),
+            incarnation(),
+            incarnation(),
+            daemon_limits(),
+        ),
+        Err(DaemonErrorV1::ResidueMismatch)
+    ));
+
+    assert!(matches!(
+        DaemonV1::recover_stale(
+            &path,
+            host(Port::default()),
+            Authentication,
+            Clock(1),
+            ServerIncarnationV1::new([0xc7; 16]),
+            next_incarnation(),
+            daemon_limits(),
+        ),
+        Err(DaemonErrorV1::ResidueMismatch)
+    ));
+    assert!(path.exists());
+    assert_eq!(
+        fs::read(&lock_path).unwrap(),
+        fixture(include_str!("fixtures/lifetime-record-v1.hex"))
+    );
+
+    let mut malformed = fixture(include_str!("fixtures/lifetime-record-v1.hex"));
+    malformed[0] ^= 1;
+    fs::write(&lock_path, &malformed).unwrap();
+    assert!(matches!(
+        DaemonV1::recover_stale(
+            &path,
+            host(Port::default()),
+            Authentication,
+            Clock(1),
+            incarnation(),
+            next_incarnation(),
+            daemon_limits(),
+        ),
+        Err(DaemonErrorV1::ResidueMismatch)
+    ));
+    fs::write(
+        &lock_path,
+        fixture(include_str!("fixtures/lifetime-record-v1.hex")),
+    )
+    .unwrap();
+
+    let daemon = DaemonV1::recover_stale(
+        &path,
+        host(Port::default()),
+        Authentication,
+        Clock(1),
+        incarnation(),
+        next_incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let mut expected = b"AGORALF1".to_vec();
+    expected.extend_from_slice(&[0xb6; 16]);
+    assert_eq!(fs::read(&lock_path).unwrap(), expected);
+    assert_eq!(daemon.observation().host.open_offers, 0);
+    assert_eq!(daemon.observation().service.connect_offers, 0);
+
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let result = daemon.serve_next();
+        (result, daemon)
+    });
+    let mut stream = UnixStream::connect(&path).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    assert_eq!(
+        handshake(&mut stream).server_incarnation(),
+        next_incarnation()
+    );
+    drop(stream);
+    let (result, daemon) = server.join().unwrap();
+    assert!(matches!(result, Err(DaemonErrorV1::Io(_))));
+    drop(daemon);
+    assert!(!path.exists());
+    assert!(!lock_path.exists());
     remove_parent(&path);
 }
 

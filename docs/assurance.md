@@ -264,8 +264,17 @@ owner and unlocked residue are distinct typed refusals. Exact clean teardown
 removes socket and lease; uncertain or replaced resources are preserved. The
 frozen 24-byte record and real-filesystem scenario cover canonical bytes, live
 exclusion, stale residue, replacement fencing, zero downstream work, and
-non-destructive teardown. This does not generate incarnation entropy, repair
-crash residue, recover service state, or establish multi-process handoff.
+non-destructive teardown. This does not generate incarnation entropy, recover
+service state, or establish multi-process handoff.
+
+Explicit endpoint recovery is a separate constructor and evidence path. Its
+real-filesystem scenario refuses a live owner and equal, wrong, or malformed
+prior incarnation without mutation; then locks exact residue, removes only the
+validated stale socket, rotates to a distinct record, binds a fresh zero-use
+Host, advertises the next incarnation, and cleans up normally. The evidence does
+not cover every I/O interruption point, automatic restart, or durable Host
+restoration; a failed mutating recovery remains operator-visible rather than a
+claimed success.
 
 The daemon's composed operational snapshot preserves transport, host, and
 service counters as three named measurement boundaries. The successful socket

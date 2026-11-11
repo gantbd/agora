@@ -29,6 +29,13 @@ pins the parent and record identities. A live lock and an unlocked prior record
 refuse distinctly. Drop removes the socket and record only when every pinned
 resource still matches; replacement or ambiguity is preserved.
 
+Crash residue is never repaired by ordinary construction. The separate
+`recover_stale` path requires the exact recorded prior incarnation, a distinct
+nonzero next incarnation, and a newly supplied Host composition. It acquires the
+old record lock, validates the exact record and stale socket, removes only that
+socket, rotates the locked record, and then uses the ordinary bind path. Live,
+foreign, malformed, missing, or unsafe residue refuses without adoption.
+
 ## Connection state machine
 
 1. Revalidate the parent, lifetime record, and socket, then accept one connection.
@@ -95,7 +102,7 @@ feature negotiation. Its caller-supplied incarnation is not authenticated; the
 lifetime record binds that value to one exclusive live endpoint but does not
 prove fresh generation or a restart boundary. The profile makes no claim for
 TCP or other network transports, confidentiality, peer-credential extraction,
-crash-residue recovery, concurrent clients, overload queues,
+automatic crash restart, durable Host recovery, concurrent clients, overload queues,
 concurrent in-flight drain, signal handling, socket activation, installation,
 cross-restart request identity, reconnect resumption, or atomic Aegis/Agora
 recovery.
@@ -105,7 +112,7 @@ drain fence does not add concurrent in-flight drain or signal integration.
 
 ## Qualification evidence
 
-The eight real-socket scenarios verify private-parent/socket modes and type,
+The nine real-socket scenarios verify private-parent/socket modes and type,
 canonical incarnation-bound lifetime bytes, live-owner exclusion, distinct
 stale-residue refusal, replacement fencing before authentication, and
 conservative teardown,
@@ -122,6 +129,12 @@ passivity, content-safe diagnostics, and sticky counter saturation without
 wraparound. A separate real-endpoint scenario verifies the idle drain
 transition, zero downstream work after its fence, endpoint retention, and
 pinned teardown.
+
+The recovery scenario separately proves live-owner exclusion; equal, wrong, and
+malformed prior-incarnation refusal without mutation; exact locked rotation to a
+new record; a fresh Host with zero prior offers; next-incarnation handshake; and
+clean teardown. It does not exercise every filesystem interruption point, claim
+that a failed recovery is safe to retry, or restore the prior volatile Host.
 
 The outer length prefix is also a pure bounded codec used by the socket path.
 Ordinary tests close empty, incomplete, over-limit, exact-prefix, remainder, and

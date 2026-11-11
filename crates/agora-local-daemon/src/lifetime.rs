@@ -1,7 +1,7 @@
 use crate::{DaemonErrorV1, ServerIncarnationV1};
 use std::fs::{self, File, OpenOptions};
 use std::io;
-use std::os::unix::fs::{FileExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{FileExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 const MAGIC_V1: [u8; 8] = *b"AGORALF1";
@@ -79,9 +79,7 @@ impl LifetimeLeaseV1 {
             let _ = fs::remove_file(&lock_path);
             return Err(DaemonErrorV1::UnsafeEndpoint);
         }
-        let mut record = [0_u8; RECORD_BYTES_V1];
-        record[..8].copy_from_slice(&MAGIC_V1);
-        record[8..].copy_from_slice(&server_incarnation.as_bytes());
+        let record = record(server_incarnation);
         if let Err(error) = lock
             .write_all_at(&record, 0)
             .and_then(|()| lock.set_len(record.len() as u64))
@@ -106,6 +104,89 @@ impl LifetimeLeaseV1 {
             lock_path,
             lock_identity,
             record,
+            remove_on_drop: true,
+        })
+    }
+
+    pub(crate) fn recover_stale(
+        parent_path: &Path,
+        socket_path: &Path,
+        previous_incarnation: ServerIncarnationV1,
+        next_incarnation: ServerIncarnationV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        if previous_incarnation.is_zero()
+            || next_incarnation.is_zero()
+            || previous_incarnation == next_incarnation
+        {
+            return Err(DaemonErrorV1::ResidueMismatch);
+        }
+        let parent_metadata = fs::symlink_metadata(parent_path).map_err(DaemonErrorV1::Io)?;
+        if !parent_metadata.is_dir() || parent_metadata.permissions().mode() & 0o777 != 0o700 {
+            return Err(DaemonErrorV1::UnsafeEndpoint);
+        }
+        let parent = File::open(parent_path).map_err(DaemonErrorV1::Io)?;
+        let parent_identity =
+            ResourceIdentityV1::of(&parent.metadata().map_err(DaemonErrorV1::Io)?);
+        if parent_identity != ResourceIdentityV1::of(&parent_metadata) {
+            return Err(DaemonErrorV1::UnsafeEndpoint);
+        }
+
+        let lock_path = lifetime_path(socket_path)?;
+        let lock_path_metadata =
+            fs::symlink_metadata(&lock_path).map_err(|_| DaemonErrorV1::ResidueMismatch)?;
+        if !private_regular_file(&lock_path_metadata) {
+            return Err(DaemonErrorV1::UnsafeEndpoint);
+        }
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .map_err(DaemonErrorV1::Io)?;
+        let lock_metadata = lock.metadata().map_err(DaemonErrorV1::Io)?;
+        if !private_regular_file(&lock_metadata)
+            || ResourceIdentityV1::of(&lock_path_metadata) != ResourceIdentityV1::of(&lock_metadata)
+        {
+            return Err(DaemonErrorV1::UnsafeEndpoint);
+        }
+        match lock.try_lock() {
+            Ok(()) => {}
+            Err(fs::TryLockError::WouldBlock) => return Err(DaemonErrorV1::LifetimeBusy),
+            Err(error) => return Err(DaemonErrorV1::Io(error.into())),
+        }
+        let expected = record(previous_incarnation);
+        let mut actual = [0_u8; RECORD_BYTES_V1];
+        if lock_metadata.len() != RECORD_BYTES_V1 as u64
+            || lock.read_exact_at(&mut actual, 0).is_err()
+            || actual != expected
+        {
+            return Err(DaemonErrorV1::ResidueMismatch);
+        }
+
+        let socket_metadata =
+            fs::symlink_metadata(socket_path).map_err(|_| DaemonErrorV1::ResidueMismatch)?;
+        if !socket_metadata.file_type().is_socket()
+            || socket_metadata.permissions().mode() & 0o777 != 0o600
+            || socket_metadata.nlink() != 1
+        {
+            return Err(DaemonErrorV1::UnsafeEndpoint);
+        }
+        fs::remove_file(socket_path).map_err(DaemonErrorV1::Io)?;
+
+        let next_record = record(next_incarnation);
+        lock.write_all_at(&next_record, 0)
+            .and_then(|()| lock.set_len(next_record.len() as u64))
+            .and_then(|()| lock.sync_all())
+            .and_then(|()| parent.sync_all())
+            .map_err(DaemonErrorV1::Io)?;
+        let lock_identity = ResourceIdentityV1::of(&lock.metadata().map_err(DaemonErrorV1::Io)?);
+        Ok(Self {
+            parent,
+            parent_path: parent_path.to_path_buf(),
+            parent_identity,
+            lock,
+            lock_path,
+            lock_identity,
+            record: next_record,
             remove_on_drop: true,
         })
     }
@@ -145,6 +226,13 @@ impl LifetimeLeaseV1 {
     pub(crate) fn preserve(&mut self) {
         self.remove_on_drop = false;
     }
+}
+
+fn record(incarnation: ServerIncarnationV1) -> [u8; RECORD_BYTES_V1] {
+    let mut record = [0_u8; RECORD_BYTES_V1];
+    record[..8].copy_from_slice(&MAGIC_V1);
+    record[8..].copy_from_slice(&incarnation.as_bytes());
+    record
 }
 
 impl Drop for LifetimeLeaseV1 {

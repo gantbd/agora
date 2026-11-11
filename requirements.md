@@ -360,6 +360,17 @@
   record bytes must be frozen and compatibility-inventoried. This grants no
   incarnation entropy, crash-residue repair, state recovery, process handoff,
   concurrency, or protection from the trusted same-UID parent controller.
+- **R61 — Explicit local endpoint residue recovery:** recovery must be a
+  separate caller-selected operation requiring the exact prior incarnation, a
+  distinct nonzero next incarnation, and a newly supplied Host composition. It
+  must acquire the stale lifetime lock before mutation, refuse a live owner,
+  malformed or foreign record, missing or unsafe socket, and equal incarnation
+  reuse, then remove only the validated stale socket and rotate the locked
+  record before binding the new endpoint. The resulting handshake must expose
+  the next incarnation and no prior volatile Host state may be adopted
+  implicitly. I/O failure may leave operator-requiring residue and must never be
+  reported as successful recovery. This grants no automatic restart, entropy
+  generation, durable Host restoration, migration, or multi-process handoff.
 
 ## Explicitly open
 

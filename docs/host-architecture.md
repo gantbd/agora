@@ -116,9 +116,10 @@ Serving is deliberately sequential. Content-free counters distinguish clean
 completion, authentication/host refusal, and transport failure. The profile
 trusts same-UID control of the private parent, the authenticator, clock, and Aegis
 port. It supplies neither peer-credential extraction nor endpoint lifecycle
-recovery, fresh incarnation generation, compatibility-range negotiation,
+automation, fresh incarnation generation, compatibility-range negotiation,
 concurrent admission, in-flight graceful drain, signal handling, or durable Host
-V2 composition. See
+V2 recovery/composition. Exact stale endpoint cleanup is an explicit
+prior-incarnation-checked operation, not automatic restart. See
 [`local-daemon.md`](local-daemon.md).
 
 ## Deliberate exclusions
