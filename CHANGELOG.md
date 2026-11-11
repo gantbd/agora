@@ -8,6 +8,10 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added a commit-pinned integrated release-candidate profile spanning the full
+  ordinary gate, all release-mode targets, a bounded 10,000-cycle recovery soak,
+  and one million fixed-seed cases on each pinned fuzz target; recorded the
+  first successful local Apple Silicon campaign against its exact source commit.
 - Added pinned, opt-in cargo-fuzz targets for every public wire decoder and the
   engine/service/host recovery stack, with immutable canonical seeds, exact
   re-encoding oracles, a stable contract gate, and bounded campaign runner.

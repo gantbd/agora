@@ -283,6 +283,14 @@
   exact refusal precedence and atomicity, immutable identity/sequence relations,
   tombstone revision scrubbing, reaction/thread cleanup on eviction, retention,
   event ordering, and human/agent symmetry without claiming unbounded proof.
+- **R53 — Commit-pinned integrated release qualification:** an opt-in release
+  decision must refuse tracked source drift, record the exact source revision,
+  run the complete ordinary gate, run every workspace target in release mode,
+  complete a bounded release-mode lifecycle/replay/recovery soak, and complete
+  both pinned coverage-guided fuzz targets. Numeric budgets must be explicit,
+  positive, bounded, and adversarially validated. A partial or interrupted run
+  is not a pass, and a pass makes no artifact, provenance, performance,
+  architecture-portability, or publication claim.
 
 ## Explicitly open
 

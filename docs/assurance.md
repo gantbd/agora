@@ -49,12 +49,14 @@ is regenerated from and checked against all twenty-five wire fixtures plus the
 current engine, service, and host checkpoint fixtures. `wire_canonical` drives
 all four public V1/V2 request/reply decoders; `checkpoint_canonical` drives all
 three semantic recovery layers. An accepted candidate must re-encode exactly.
-The qualified smoke ran 20,000 fixed-seed cases per target with 64-KiB input,
-10-second per-input, and 2-GiB memory ceilings on Apple Silicon. This is bounded
-coverage-guided counterexample search, not a coverage threshold, sustained
-campaign, parser proof, or claim about socket framing, physical storage, or
-migrations. The ordinary offline gate verifies pins and seeds but does not
-misreport the opt-in campaign as executed.
+The qualified smoke ran 20,000 fixed-seed cases per target. The integrated local
+release-candidate campaign for revision
+`9d634327e37a1ae791bc4f0a767ea91748d08ff8` then ran 1,000,000 fixed-seed cases
+per target with the same 64-KiB input, 10-second per-input, and 2-GiB memory
+ceilings on Darwin 25.6.0 arm64 / macOS 26.6.2. This is bounded coverage-guided
+counterexample search, not a coverage threshold, parser proof, or claim about
+socket framing, physical storage, or migrations. The ordinary offline gate
+verifies pins and seeds but does not misreport an opt-in campaign as executed.
 
 The addressing model exhausts every author, recipient subset, and human/agent
 kind assignment for a three-participant room. This establishes symmetry only for
@@ -110,6 +112,16 @@ re-encode exactly every seventeen cycles. The default campaign completed under
 the qualified toolchain. `AGORA_SOAK_CYCLES` may select a different positive
 cycle count for diagnostics. This is repeated serialized behavior, not a
 latency/throughput benchmark, crash-durability proof, or concurrency proof.
+
+`make qualify-release-candidate` refuses staged or unstaged tracked drift and
+records the exact HEAD before running the complete ordinary gate, all workspace
+targets in release mode, the soak in release mode, and both pinned fuzz targets.
+Revision `9d634327e37a1ae791bc4f0a767ea91748d08ff8` completed that profile with
+10,000 soak cycles and 1,000,000 fuzz cases per target on Darwin 25.6.0 arm64 /
+macOS 26.6.2. This qualifies one source revision on one host. It does not create
+or qualify a distributable archive, checksum, signature, attestation,
+reproducible binary, performance threshold, remote workflow, or other
+architecture.
 
 Wire scenarios freeze representative request/reply bytes, round-trip every
 closed protocol variant, refuse every truncation and trailing byte, and exercise

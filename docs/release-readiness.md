@@ -55,6 +55,10 @@ not ready for a network service or crates.io release.
 - separately pinned coverage-guided smoke targets for all public wire decoders
   and engine/service/host recovery, with immutable canonical seeds and exact
   re-encoding oracles;
+- commit-pinned integrated local qualification of revision
+  `9d634327e37a1ae791bc4f0a767ea91748d08ff8` on Darwin 25.6.0 arm64 / macOS
+  26.6.2 across the ordinary gate, all release-mode targets, 10,000 deterministic
+  soak cycles, and 1,000,000 fixed-seed cases on each fuzz target;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound
@@ -134,12 +138,14 @@ not ready for a network service or crates.io release.
 - no qualified store beyond the single-owner local Unix directory profile; no
   hardware power-loss, network-filesystem, backup/restore, encryption, or
   multi-host availability qualification;
-- no performance qualification, sustained or thresholded fuzz campaign,
-  advisory lookup, legal compatibility review, binary SBOM, or artifact
-  provenance;
+- no performance qualification, coverage threshold, repeated/remote fuzz
+  campaign, advisory lookup, legal compatibility review, binary SBOM, or
+  artifact provenance;
 - no production privacy, deletion, moderation, or abuse policy.
 
-Passing `make check` establishes only the source profile above.
+Passing `make check` establishes only the ordinary source profile above. The
+recorded integrated qualification establishes only its exact revision, host,
+and bounded numeric profile; it does not qualify a distributable artifact.
 The Moira composition evidence runs in that repository and does not establish a
 durable Agora service or broaden this repository's release claim.
 
