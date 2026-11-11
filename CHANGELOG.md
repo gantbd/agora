@@ -12,7 +12,9 @@ follow Semantic Versioning once a public release contract is selected.
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,
   the immediately prior value; erases source failures to a content-free kind;
   and has real-socket evidence that the generated value reaches the canonical
-  lifetime record and ServerHello unchanged.
+  lifetime record and ServerHello unchanged. Revision
+  `f2db93b9bd85244901694dcc906be07449ce8104` passed the integrated release
+  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
 
 - Refreshed the checksum-closed source-candidate and canonical source-archive
   evidence after the stable graph expanded to seventeen components: revision
