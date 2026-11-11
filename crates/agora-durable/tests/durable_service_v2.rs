@@ -2,7 +2,8 @@ use agora_durable::{
     DurableConfigV2, DurableEvidenceV2, DurableHostConfigV2, DurableHostPublicationV2,
     DurableHostStartErrorV2, DurableHostSuppressionV2, DurableHostV2, DurableOwnerStateV2,
     DurablePublicationV2, DurableServiceV2, DurableStartErrorV2, DurableSuppressionV2,
-    DurableTransientHostV1,
+    DurableTransientHostV1, OperatorRestoreAuthorityV1, OperatorRestoreAuthorizationV1,
+    OperatorRestoreRequestV1,
 };
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, LogicalTime, Participant,
@@ -45,6 +46,30 @@ struct Context {
 }
 
 struct Verifier;
+
+#[derive(Default)]
+struct RestoreAuthority {
+    deny: bool,
+    requests: Vec<(String, HostCheckpointScopeV1, Revision)>,
+}
+
+impl OperatorRestoreAuthorityV1 for RestoreAuthority {
+    type Context = ();
+    type Error = ();
+
+    fn authorize(
+        &mut self,
+        request: &OperatorRestoreRequestV1<'_>,
+        _context: &Self::Context,
+    ) -> Result<(), Self::Error> {
+        self.requests.push((
+            request.key().to_owned(),
+            request.scope(),
+            request.revision(),
+        ));
+        if self.deny { Err(()) } else { Ok(()) }
+    }
+}
 
 impl PrincipalVerifier for Verifier {
     type Context = Context;
@@ -632,8 +657,18 @@ fn operator_restore_commits_session_invalidation_before_activation() {
     ));
     drop(durable.into_store());
 
-    let restored =
-        DurableHostV2::recover_after_restore(store.clone(), host_config(), Verifier).unwrap();
+    let mut authority = RestoreAuthority::default();
+    let restored = DurableHostV2::recover_after_restore(
+        store.clone(),
+        host_config(),
+        Verifier,
+        OperatorRestoreAuthorizationV1::new(&mut authority, &()),
+    )
+    .unwrap();
+    assert_eq!(
+        authority.requests,
+        vec![("agora-host".to_owned(), HOST_SCOPE, Revision(2))]
+    );
     assert_eq!(restored.observation().store_revision, 3);
     assert_eq!(restored.host().unwrap().service().active_client_count(), 0);
     assert_eq!(restored.host().unwrap().service().engine().revision().0, 2);
@@ -713,8 +748,15 @@ fn operator_restore_never_activates_without_exact_durable_invalidation() {
         drop(durable.into_store());
         store.next(next);
 
+        let mut authority = RestoreAuthority::default();
         assert_eq!(
-            DurableHostV2::recover_after_restore(store, host_config(), Verifier).unwrap_err(),
+            DurableHostV2::recover_after_restore(
+                store,
+                host_config(),
+                Verifier,
+                OperatorRestoreAuthorizationV1::new(&mut authority, &()),
+            )
+            .unwrap_err(),
             expected,
             "restore boundary must fail closed for {next:?}"
         );
@@ -745,13 +787,55 @@ fn operator_restore_never_activates_without_exact_durable_invalidation() {
             },
         },
     );
+    let mut authority = RestoreAuthority::default();
     assert_eq!(
-        DurableHostV2::recover_after_restore(store.clone(), foreign, Verifier).unwrap_err(),
+        DurableHostV2::recover_after_restore(
+            store.clone(),
+            foreign,
+            Verifier,
+            OperatorRestoreAuthorizationV1::new(&mut authority, &()),
+        )
+        .unwrap_err(),
         DurableHostStartErrorV2::Checkpoint(
             agora_host::v2::persistence::HostCheckpointErrorV2::Scope
         )
     );
     assert_eq!(store.commit_calls(), 2, "checkpoint refusal is precommit");
+    assert!(
+        authority.requests.is_empty(),
+        "invalid checkpoint is pre-authority"
+    );
+}
+
+#[test]
+fn operator_restore_authority_denial_is_precommit_and_non_enumerating() {
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    drop(durable.into_store());
+    let before = store.0.borrow().checkpoint.clone();
+    let mut authority = RestoreAuthority {
+        deny: true,
+        ..RestoreAuthority::default()
+    };
+
+    assert_eq!(
+        DurableHostV2::recover_after_restore(
+            store.clone(),
+            host_config(),
+            Verifier,
+            OperatorRestoreAuthorizationV1::new(&mut authority, &()),
+        )
+        .unwrap_err(),
+        DurableHostStartErrorV2::Unauthorized
+    );
+    assert_eq!(authority.requests.len(), 1);
+    assert_eq!(
+        store.commit_calls(),
+        1,
+        "denial cannot reach store mutation"
+    );
+    assert_eq!(store.0.borrow().checkpoint, before);
 }
 
 #[test]
@@ -772,6 +856,7 @@ fn transient_operator_restore_validates_configuration_before_commit() {
             store.clone(),
             host_config(),
             Verifier,
+            OperatorRestoreAuthorizationV1::new(&mut RestoreAuthority::default(), &()),
             TransientLimitsV1::default(),
             TypingLimitsV1::default(),
             0,
@@ -786,10 +871,12 @@ fn transient_operator_restore_validates_configuration_before_commit() {
         "invalid transient configuration must not mutate restored storage"
     );
 
+    let mut authority = RestoreAuthority::default();
     let restored = DurableTransientHostV1::recover_after_restore(
         store.clone(),
         host_config(),
         Verifier,
+        OperatorRestoreAuthorizationV1::new(&mut authority, &()),
         TransientLimitsV1::default(),
         TypingLimitsV1::default(),
         10,

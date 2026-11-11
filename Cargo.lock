@@ -19,6 +19,7 @@ version = "0.1.0"
 dependencies = [
  "aegis-client",
  "aegis-protocol",
+ "agora-durable",
  "agora-engine",
  "agora-host",
  "agora-service",

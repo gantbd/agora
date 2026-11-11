@@ -131,9 +131,10 @@ not ready for a network service or crates.io release.
   kinds and all room/thread/topic scope variants against a monotone reference;
 - authenticated transport-neutral Host V2 with distinct session/client binding,
   per-frame revalidation, substitution fencing, and cleanup;
-- separate Aegis public-service verifier adapter with exact session/grant/time/
-  resource mapping, fixed Agora Submit admission, failure erasure, revocation
-  cleanup, and closed dependency direction;
+- separate Aegis public-service adapters with exact session/grant/time/resource
+  mapping, fixed Agora Submit admission, authorized operator restore through
+  Agora Administer, failure erasure, revision-correlated non-atomic restore
+  evidence, revocation cleanup, and closed dependency direction;
 - bounded sequential private Unix transport composition with required mode-0700
   parent, mode-0600 new-path endpoint, preallocation length bound, deadlines,
   fixed request budget, server-owned Host V2 session, per-frame Aegis
@@ -174,7 +175,8 @@ not ready for a network service or crates.io release.
   exact residue classification, and explicit sensitive-content boundaries;
 - explicit durable operator-restore Host recovery that commits invalidation of
   every recovered session and private Service client/cursor/receipt before
-  activation while preserving conversation state and monotone identities;
+  activation while preserving conversation state and monotone identities, and
+  requires exact key/scope/revision authority before that commit;
 - ordered local operator-restore startup composition through exact physical
   restore, durable semantic sanitization, bounded distinct-incarnation
   generation, locked endpoint rotation, and a fresh collaboration handshake;

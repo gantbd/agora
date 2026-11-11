@@ -111,10 +111,12 @@ preserving conversation state and monotone identity frontiers. Its claim does
 not extend to automatic cleanup,
 hardware power-loss behavior, network filesystems, encrypted or remote backup,
 rollback resistance, disaster-recovery objectives, or multi-host availability.
-`agora-aegis-verifier` is a separate leaf adapter from the Host verifier port to
-the public Aegis service contract. It requests `Submit` on one configured Agora
-resource through an exact Aegis session and opaque grant, while Agora retains all
-room authority. It authenticates no credentials and selects no transport.
+`agora-aegis-verifier` separately maps Host admission to `Submit` and exceptional
+operator-restore authority to `Administer` through the public Aegis service
+contract. Restore decisions are correlated with the exact loaded Agora revision
+before its independent sanitizing CAS; this is not atomic cross-engine recovery.
+Agora retains all room authority. The adapter authenticates no credentials and
+selects no transport.
 `agora-local-daemon` supplies one separately qualified transport composition: a
 new mode-0600 Unix socket inside a required mode-0700 parent, with bounded
 length-prefix framing, deadlines, per-frame Aegis reauthorization, a fixed connection request budget, and
@@ -147,8 +149,8 @@ The repository also contains an initial layered operational profile:
   mechanism and no semantic state;
 - `agora-host` binds exact wire frames and server-owned clients to a current
   externally verified principal/transport context;
-- `agora-aegis-verifier` maps that verifier port to bounded public Aegis
-  session/grant authorization without entering conversation semantics;
+- `agora-aegis-verifier` maps Host and operator-restore ports to bounded public
+  Aegis session/grant authorization without entering conversation semantics;
 - `agora-local-daemon` owns the bounded sequential private Unix socket lifetime
   around separately selected Aegis-authorized conversation, transient
   collaboration, or durable Host V2 ownership, plus bounded OS-backed lifetime

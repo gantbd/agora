@@ -74,13 +74,14 @@ if ! printf '%s\n' "$durable_tree" | rg -q 'agora-service' \
 fi
 
 aegis_verifier_tree=$(cargo tree -p agora-aegis-verifier --edges normal --depth 1 --locked --offline)
-if [[ $(printf '%s\n' "$aegis_verifier_tree" | wc -l | tr -d ' ') != 4 ]] \
+if [[ $(printf '%s\n' "$aegis_verifier_tree" | wc -l | tr -d ' ') != 5 ]] \
   || ! printf '%s\n' "$aegis_verifier_tree" | rg -q 'aegis-client' \
   || ! printf '%s\n' "$aegis_verifier_tree" | rg -q 'aegis-protocol' \
   || ! printf '%s\n' "$aegis_verifier_tree" | rg -q 'agora-host' \
-  || printf '%s\n' "$aegis_verifier_tree" | rg -q 'agora-(engine|service|wire|client|durable)'; then
+  || ! printf '%s\n' "$aegis_verifier_tree" | rg -q 'agora-durable' \
+  || printf '%s\n' "$aegis_verifier_tree" | rg -q 'agora-(engine|service|wire|client)'; then
   printf '%s\n' "$aegis_verifier_tree" >&2
-  echo 'Agora Aegis verifier escaped its host-client-protocol adapter closure' >&2
+  echo 'Agora Aegis adapter escaped its host-durable-client-protocol closure' >&2
   exit 1
 fi
 

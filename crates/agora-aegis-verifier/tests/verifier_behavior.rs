@@ -3,9 +3,13 @@ use aegis_protocol::{
     ActionV1, CommandV1, DecisionHandleV1, DecisionSummaryV1, EngineNamespaceV1, GrantHandleV1,
     OutcomeV1, RefusalV1, ReplyV1, SessionHandleV1,
 };
-use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
+use agora_aegis_verifier::{
+    AegisContextV1, AegisOperatorRestoreAuthorityV1, AegisOperatorRestoreContextV1, AegisVerifierV1,
+};
+use agora_durable::{OperatorRestoreAuthorityV1, OperatorRestoreRequestV1};
 use agora_engine::{CommandV2 as EngineCommand, Engine, Participant, ParticipantKind};
 use agora_host::v2::HostV2;
+use agora_host::v2::persistence::HostCheckpointScopeV1;
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, VerifiedSubjectV1};
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 use agora_wire::WireLimits;
@@ -44,6 +48,16 @@ fn authorized(expires_at: u64) -> ReplyV1 {
         expires_at,
         engine: EngineNamespaceV1::Agora,
         action: ActionV1::Submit,
+    }))
+}
+
+fn restore_authorized(expires_at: u64) -> ReplyV1 {
+    ReplyV1::Accepted(OutcomeV1::Authorized(DecisionSummaryV1 {
+        handle: DecisionHandleV1(10),
+        epoch: 3,
+        expires_at,
+        engine: EngineNamespaceV1::Agora,
+        action: ActionV1::Administer,
     }))
 }
 
@@ -192,4 +206,77 @@ fn diagnostics_redact_participant_resource_session_grant_and_port() {
     assert!(!context_debug.contains("GrantHandleV1"));
     assert!(!verifier_debug.contains("44"));
     assert!(!verifier_debug.contains("Port"));
+}
+
+#[test]
+fn operator_restore_maps_administer_and_rejects_target_mismatch_locally() {
+    const SCOPE: HostCheckpointScopeV1 = HostCheckpointScopeV1::new(*b"restore-scope-v1");
+    let port = Port::default();
+    port.0
+        .borrow_mut()
+        .replies
+        .push_back(Ok(restore_authorized(10)));
+    let mut authority =
+        AegisOperatorRestoreAuthorityV1::new(port.clone(), [0x66; 16], "host", SCOPE);
+    let restore_context = AegisOperatorRestoreContextV1::new(context("operator", 8), HostTimeV1(4));
+
+    authority
+        .authorize(
+            &OperatorRestoreRequestV1::new("host", SCOPE, 17),
+            &restore_context,
+        )
+        .unwrap();
+    let evidence = authority.evidence().expect("restore evidence expected");
+    assert_eq!(evidence.agora_revision, 17);
+    assert_eq!(evidence.decision.action, ActionV1::Administer);
+    assert_eq!(
+        port.0.borrow().commands.as_slice(),
+        &[(
+            (SessionHandleV1(7)),
+            CommandV1::Authorize {
+                grant: GrantHandleV1(11),
+                now: 4,
+                engine: EngineNamespaceV1::Agora,
+                resource: [0x66; 16],
+                action: ActionV1::Administer,
+            }
+        )]
+    );
+
+    assert!(
+        authority
+            .authorize(
+                &OperatorRestoreRequestV1::new("other", SCOPE, 17),
+                &restore_context,
+            )
+            .is_err()
+    );
+    assert!(
+        authority.evidence().is_none(),
+        "failure clears stale evidence"
+    );
+    assert_eq!(port.0.borrow().commands.len(), 1);
+}
+
+#[test]
+fn operator_restore_refusal_expiry_wrong_action_and_port_failure_are_erased() {
+    const SCOPE: HostCheckpointScopeV1 = HostCheckpointScopeV1::new(*b"restore-scope-v1");
+    for reply in [
+        Ok(ReplyV1::Refused(RefusalV1::Revoked)),
+        Ok(restore_authorized(4)),
+        Ok(authorized(10)),
+        Err(()),
+    ] {
+        let port = Port::default();
+        port.0.borrow_mut().replies.push_back(reply);
+        let mut authority = AegisOperatorRestoreAuthorityV1::new(port, [0x66; 16], "host", SCOPE);
+        assert!(
+            authority
+                .authorize(
+                    &OperatorRestoreRequestV1::new("host", SCOPE, 17),
+                    &AegisOperatorRestoreContextV1::new(context("operator", 8), HostTimeV1(4),),
+                )
+                .is_err()
+        );
+    }
 }

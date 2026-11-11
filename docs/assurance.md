@@ -320,6 +320,15 @@ resource, and action; reject participant mismatch before authority I/O; erase
 refusal, expiry, malformed success, and port failure; retire host/service state
 on revoked revalidation; and keep diagnostics content-safe.
 
+The exceptional operator-restore constructors additionally require an injected
+authority port after checkpoint and transient-limit validation but before the
+sanitizing CAS. Deterministic store evidence proves the request carries the
+exact key, scope, and loaded revision, and that refusal is one content-free
+class with zero mutation and no owner. The Aegis restore adapter maps that port
+to `Administer`, prebinds key/scope, rejects mismatch without authority I/O,
+erases refusal/expiry/wrong-action/port failure, and retains the accepted
+decision plus Agora revision as non-atomic correlation evidence.
+
 Thirteen real Unix-socket daemon scenarios compose that adapter with Host V2. They
 verify mode-0700 parent enforcement and mode-0600 endpoint creation, Aegis
 authorization on Connect and every later frame, exact pre-authentication

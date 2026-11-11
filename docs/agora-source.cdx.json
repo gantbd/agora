@@ -394,6 +394,7 @@
       "dependsOn": [
         "pkg:cargo/aegis-client@0.1.0",
         "pkg:cargo/aegis-protocol@0.1.0",
+        "pkg:cargo/agora-durable@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-host@0.1.0",
         "pkg:cargo/agora-service@0.1.0",

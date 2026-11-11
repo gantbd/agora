@@ -21,7 +21,7 @@ agora-host -----> agora-wire + agora-service + trusted verifier port
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-observation --> keystone-storage port
 agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem
-agora-aegis-verifier --> agora-host + Aegis public service port
+agora-aegis-verifier --> agora-host + agora-durable + Aegis public service port
 agora-local-daemon --> agora-aegis-verifier + agora-host + agora-wire + Unix socket
 ```
 

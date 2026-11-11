@@ -3,13 +3,14 @@ name = "agora-aegis-verifier"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
-description = "Aegis authorization adapter for the Agora host verifier port"
+description = "Aegis authorization adapters for Agora host and operator-restore ports"
 license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
 aegis-client = { path = "../../../aegis/crates/aegis-client", version = "=0.1.0" }
 aegis-protocol = { path = "../../../aegis/crates/aegis-protocol", version = "=0.1.0" }
+agora-durable = { path = "../agora-durable", version = "=0.1.0" }
 agora-host = { path = "../agora-host", version = "=0.1.0" }
 
 [dev-dependencies]

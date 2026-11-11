@@ -550,10 +550,23 @@ session, and preserves conversation/outbox state plus the next Host-session and
 Service-client frontiers. `DurableHostV2::recover_after_restore` prepares that
 sanitized checkpoint and commits it at exactly the restored store revision plus
 one with durable strength before returning Active. Any refusal, uncertainty,
-weak or malformed receipt, checkpoint error, or store error returns no owner.
-The transient composition additionally validates its empty-runtime limits
-before the CAS. Ordinary `recover` retains sessions and exact replay semantics;
-callers must select the recovery mode from truthful operator context.
+weak or malformed receipt, checkpoint error, store error, or authority failure
+returns no owner. The transient composition additionally validates its
+empty-runtime limits before the authority call and CAS. Ordinary `recover`
+retains sessions and exact replay semantics.
+
+The exceptional `recover_after_restore` constructors require an
+`OperatorRestoreAuthorityV1` implementation. After the durable record and its
+recovered Host (plus transient configuration where applicable) validate, Agora
+submits the exact store key, configured Host checkpoint scope, and loaded
+revision to that port. Only success permits preparation and exact-revision CAS;
+every authority refusal/error is erased to `Unauthorized` without a store
+mutation or active owner. The Aegis adapter additionally prebinds the expected
+key/scope and asks its public service for unexpired `Agora` + `Administer` on a
+configured restore resource. It retains the accepted decision summary together
+with the loaded Agora revision as cross-engine correlation evidence. The later
+durable Agora CAS is still independent, so the evidence is not an atomic
+Aegis/Agora recovery receipt.
 
 For the qualified local operator procedure, physical restore completes first,
 the durable transient Host commits that semantic sanitization, bounded entropy

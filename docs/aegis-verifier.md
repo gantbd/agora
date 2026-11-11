@@ -1,11 +1,11 @@
-# Aegis verifier adapter
+# Aegis authorization adapters
 
 Status: qualified transport-neutral adapter profile V1.
 
-`agora-aegis-verifier` is a leaf composition adapter between Agora's existing
-`PrincipalVerifier` port and Aegis's public client/protocol service contract. It
-does not add Aegis types to Agora engine, protocol, service, wire, host, or SDK
-semantics.
+`agora-aegis-verifier` composes Agora's `PrincipalVerifier` and exceptional
+operator-restore authority ports with Aegis's public client/protocol service
+contract. It does not add Aegis types to Agora engine, protocol, service, wire,
+host, or SDK semantics.
 
 One adapter instance selects one opaque 128-bit Agora service resource. Each
 trusted context binds:
@@ -33,8 +33,18 @@ membership, conversation visibility, speaking, moderation, delivery, task, or
 agent-execution authority; Agora still evaluates every room operation from the
 participant bound to the service client.
 
+The separate restore adapter prebinds one Agora durable store key, Host
+checkpoint scope, and opaque 128-bit Aegis resource. For each validated loaded
+checkpoint it requests `Administer` in the `Agora` namespace at explicit trusted
+time. A key/scope mismatch refuses before Aegis I/O; refusal, port failure,
+expiry, wrong namespace, and wrong action are one unavailable class. Success
+retains the Aegis decision summary and loaded Agora revision as copyable
+correlation evidence. The caller can inspect or consume that evidence after
+Agora has committed the sanitized exact-next-revision checkpoint.
+
 The composition root remains responsible for authenticating credentials,
 creating the Aegis service session, obtaining the grant, truthfully binding the
 Aegis principal to the opaque Agora subject and participant, selecting the
-resource, supplying time, and choosing a transport. Agora and Aegis checkpoint
+resource, supplying time, and choosing a transport. The decision/revision pair
+does not prove the later Agora CAS occurred, and Agora and Aegis checkpoint
 commits are not made atomic by this adapter.

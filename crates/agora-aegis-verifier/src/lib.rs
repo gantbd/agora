@@ -8,8 +8,11 @@
 
 use aegis_client::ServicePort;
 use aegis_protocol::{
-    ActionV1, CommandV1, EngineNamespaceV1, GrantHandleV1, OutcomeV1, ReplyV1, SessionHandleV1,
+    ActionV1, CommandV1, DecisionSummaryV1, EngineNamespaceV1, GrantHandleV1, OutcomeV1, ReplyV1,
+    SessionHandleV1,
 };
+use agora_durable::{OperatorRestoreAuthorityV1, OperatorRestoreRequestV1};
+use agora_host::v2::persistence::HostCheckpointScopeV1;
 use agora_host::{HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 
 #[derive(Clone, Eq, PartialEq)]
@@ -44,6 +47,30 @@ impl std::fmt::Debug for AegisContextV1 {
             .field("subject", &self.subject)
             .field("session", &"<redacted>")
             .field("grant", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Aegis credentials plus the trusted time used for one operator restore
+/// authorization decision.
+#[derive(Clone, Eq, PartialEq)]
+pub struct AegisOperatorRestoreContextV1 {
+    authority: AegisContextV1,
+    now: HostTimeV1,
+}
+
+impl AegisOperatorRestoreContextV1 {
+    pub const fn new(authority: AegisContextV1, now: HostTimeV1) -> Self {
+        Self { authority, now }
+    }
+}
+
+impl std::fmt::Debug for AegisOperatorRestoreContextV1 {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AegisOperatorRestoreContextV1")
+            .field("authority", &self.authority)
+            .field("now", &self.now)
             .finish()
     }
 }
@@ -146,5 +173,123 @@ impl<P: ServicePort> PrincipalVerifier for AegisVerifierV1<P> {
             return Err(AegisVerifierErrorV1::Unavailable);
         }
         self.authorize(context, now)
+    }
+}
+
+/// Aegis-backed authority for sanitizing one exact durable Host target after
+/// an external operator restore.
+///
+/// Aegis decides `Administer` on the configured resource. The adapter also
+/// rejects a mismatched Agora key or checkpoint scope before contacting Aegis;
+/// Agora's durable boundary binds the accepted decision to the loaded revision
+/// with its subsequent exact compare-and-exchange.
+pub struct AegisOperatorRestoreAuthorityV1<P> {
+    port: P,
+    resource: [u8; 16],
+    key: String,
+    scope: HostCheckpointScopeV1,
+    evidence: Option<AegisOperatorRestoreEvidenceV1>,
+}
+
+/// Copyable cross-engine evidence that one Aegis decision authorized
+/// sanitation of one loaded Agora revision.
+///
+/// This is correlation evidence, not evidence of an atomic Aegis/Agora
+/// transaction. The durable Agora CAS remains the activation boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AegisOperatorRestoreEvidenceV1 {
+    pub decision: DecisionSummaryV1,
+    pub agora_revision: u64,
+}
+
+impl<P> AegisOperatorRestoreAuthorityV1<P> {
+    pub fn new(
+        port: P,
+        resource: [u8; 16],
+        key: impl Into<String>,
+        scope: HostCheckpointScopeV1,
+    ) -> Self {
+        Self {
+            port,
+            resource,
+            key: key.into(),
+            scope,
+            evidence: None,
+        }
+    }
+
+    pub const fn port(&self) -> &P {
+        &self.port
+    }
+
+    pub fn port_mut(&mut self) -> &mut P {
+        &mut self.port
+    }
+
+    pub fn into_port(self) -> P {
+        self.port
+    }
+
+    pub const fn evidence(&self) -> Option<AegisOperatorRestoreEvidenceV1> {
+        self.evidence
+    }
+
+    pub fn take_evidence(&mut self) -> Option<AegisOperatorRestoreEvidenceV1> {
+        self.evidence.take()
+    }
+}
+
+impl<P> std::fmt::Debug for AegisOperatorRestoreAuthorityV1<P> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AegisOperatorRestoreAuthorityV1")
+            .field("port", &"<redacted>")
+            .field("resource", &"<redacted>")
+            .field("key_bytes", &self.key.len())
+            .field("scope", &self.scope)
+            .finish()
+    }
+}
+
+impl<P: ServicePort> OperatorRestoreAuthorityV1 for AegisOperatorRestoreAuthorityV1<P> {
+    type Context = AegisOperatorRestoreContextV1;
+    type Error = AegisVerifierErrorV1;
+
+    fn authorize(
+        &mut self,
+        request: &OperatorRestoreRequestV1<'_>,
+        context: &Self::Context,
+    ) -> Result<(), Self::Error> {
+        self.evidence = None;
+        if request.key() != self.key || request.scope() != self.scope {
+            return Err(AegisVerifierErrorV1::Unavailable);
+        }
+        let reply = self
+            .port
+            .execute(
+                context.authority.session,
+                CommandV1::Authorize {
+                    grant: context.authority.grant,
+                    now: context.now.0,
+                    engine: EngineNamespaceV1::Agora,
+                    resource: self.resource,
+                    action: ActionV1::Administer,
+                },
+            )
+            .map_err(|_| AegisVerifierErrorV1::Unavailable)?;
+        match reply {
+            ReplyV1::Accepted(OutcomeV1::Authorized(decision))
+                if decision.engine == EngineNamespaceV1::Agora
+                    && decision.action == ActionV1::Administer
+                    && decision.expires_at > context.now.0 =>
+            {
+                self.evidence = Some(AegisOperatorRestoreEvidenceV1 {
+                    decision,
+                    agora_revision: request.revision().0,
+                });
+                Ok(())
+            }
+            _ => Err(AegisVerifierErrorV1::Unavailable),
+        }
     }
 }

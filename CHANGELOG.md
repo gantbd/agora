@@ -42,6 +42,9 @@ follow Semantic Versioning once a public release contract is selected.
   classified four injected persistence boundaries with successful exact retry.
   Revision `f2ba3a9e35ce48173e83a44a4ed1a5e1132d006e` passed the integrated release
   profile with 10,000 soak cycles and 1,000,000 cases per fuzz target.
+- Added mandatory exact key/scope/revision authority before operator-restore
+  sanitization, plus an Aegis `Administer` adapter that retains decision/revision
+  correlation evidence without claiming atomic cross-engine recovery.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,

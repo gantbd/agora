@@ -2,12 +2,15 @@
 
 use aegis_client::ServicePort;
 use aegis_protocol::{
-    ActionV1, CommandV1, DecisionHandleV1, DecisionSummaryV1, EngineNamespaceV1, OutcomeV1,
-    ReplyV1, SessionHandleV1,
+    CommandV1, DecisionHandleV1, DecisionSummaryV1, EngineNamespaceV1, OutcomeV1, ReplyV1,
+    SessionHandleV1,
 };
-use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
+use agora_aegis_verifier::{
+    AegisContextV1, AegisOperatorRestoreAuthorityV1, AegisOperatorRestoreContextV1, AegisVerifierV1,
+};
 use agora_durable::{
     DurableHostConfigV2, DurableHostPublicationV2, DurableHostV2, DurableTransientHostV1,
+    OperatorRestoreAuthorizationV1,
 };
 use agora_engine::{CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind};
 use agora_host::transient::TransientHostV1;
@@ -70,6 +73,10 @@ impl ServicePort for Port {
         session: SessionHandleV1,
         command: CommandV1,
     ) -> Result<ReplyV1, Self::Error> {
+        let action = match &command {
+            CommandV1::Authorize { action, .. } => *action,
+            _ => return Err(()),
+        };
         self.calls.lock().unwrap().push((session, command));
         Ok(ReplyV1::Accepted(OutcomeV1::Authorized(
             DecisionSummaryV1 {
@@ -77,7 +84,7 @@ impl ServicePort for Port {
                 epoch: 0,
                 expires_at: 10_000,
                 engine: EngineNamespaceV1::Agora,
-                action: ActionV1::Submit,
+                action,
             },
         )))
     }
@@ -211,6 +218,27 @@ fn durable_config() -> DurableHostConfigV2 {
                 maximum_engine_limits: Limits::default(),
             },
         },
+    )
+}
+
+fn restore_authority() -> AegisOperatorRestoreAuthorityV1<Port> {
+    AegisOperatorRestoreAuthorityV1::new(
+        Port::default(),
+        [0x77; 16],
+        "agora-daemon-host",
+        DURABLE_HOST_SCOPE,
+    )
+}
+
+fn restore_authorization_context() -> AegisOperatorRestoreContextV1 {
+    AegisOperatorRestoreContextV1::new(
+        AegisContextV1::new(
+            "operator",
+            VerifiedSubjectV1::from_verifier([8; 16]),
+            SessionHandleV1(8),
+            aegis_protocol::GrantHandleV1(9),
+        ),
+        HostTimeV1(4),
     )
 }
 
@@ -1245,15 +1273,25 @@ fn operator_restore_sanitizes_before_generated_incarnation_endpoint_rotation() {
 
     let restored_port = Port::default();
     let restored_calls = restored_port.calls.clone();
+    let mut restore_authority = restore_authority();
     let mut restored = DurableTransientHostV1::recover_after_restore(
         restored_store,
         durable_config(),
         AegisVerifierV1::new(restored_port, [0x55; 16]),
+        OperatorRestoreAuthorizationV1::new(
+            &mut restore_authority,
+            &restore_authorization_context(),
+        ),
         TransientLimitsV1::default(),
         TypingLimitsV1::default(),
         10,
     )
     .unwrap();
+    assert_eq!(
+        restore_authority.evidence().unwrap().agora_revision,
+        2,
+        "Aegis evidence binds the restored revision sanitized by Agora"
+    );
     assert_eq!(restored.observation().store_revision, 3);
     assert_eq!(
         restored
@@ -1350,10 +1388,15 @@ fn operator_restore_process_cuts_classify_and_resume_exactly() {
             DirectoryLimitsV1::default(),
         )
         .unwrap();
+        let mut restore_authority = restore_authority();
         let restored = DurableTransientHostV1::recover_after_restore(
             store,
             durable_config(),
             AegisVerifierV1::new(Port::default(), [0x55; 16]),
+            OperatorRestoreAuthorizationV1::new(
+                &mut restore_authority,
+                &restore_authorization_context(),
+            ),
             TransientLimitsV1::default(),
             TypingLimitsV1::default(),
             10,
@@ -1463,15 +1506,22 @@ fn operator_restore_process_cuts_classify_and_resume_exactly() {
         let owner = if phase == "endpoint" {
             recovered
         } else {
-            DurableTransientHostV1::recover_after_restore(
-                recovered.into_store(),
-                durable_config(),
-                AegisVerifierV1::new(Port::default(), [0x55; 16]),
-                TransientLimitsV1::default(),
-                TypingLimitsV1::default(),
-                10,
-            )
-            .unwrap()
+            {
+                let mut restore_authority = restore_authority();
+                DurableTransientHostV1::recover_after_restore(
+                    recovered.into_store(),
+                    durable_config(),
+                    AegisVerifierV1::new(Port::default(), [0x55; 16]),
+                    OperatorRestoreAuthorizationV1::new(
+                        &mut restore_authority,
+                        &restore_authorization_context(),
+                    ),
+                    TransientLimitsV1::default(),
+                    TypingLimitsV1::default(),
+                    10,
+                )
+                .unwrap()
+            }
         };
         assert_eq!(
             owner.host().unwrap().host().service().active_client_count(),

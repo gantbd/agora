@@ -225,13 +225,23 @@ is reported. The stored subject is attribution evidence, not a credential;
 credential renewal, revocation source integrity, and verifier availability remain
 external obligations.
 
-The Aegis adapter narrows authority admission to an exact public Aegis session,
+The host Aegis adapter narrows authority admission to an exact public Aegis session,
 session-local grant, configured Agora resource, `Submit` action, explicit time,
 participant binding, and opaque host subject. Participant or subject mismatch is
 rejected before authority I/O; every Aegis refusal, malformed success, expiry,
 and port failure remains the same unavailable class. The context constructor is
 trusted: a false credential-to-principal/participant/subject binding defeats the
-profile. The adapter does not atomically commit Aegis and Agora recovery state.
+profile.
+
+Operator-restore recovery is a separate privileged path. The durable owner
+validates the recovered checkpoint, then requires authority over its exact store
+key, Host checkpoint scope, and loaded revision before any sanitizing CAS.
+Authority failure is erased and cannot mutate storage or return an owner. The
+Aegis restore adapter also prebinds key/scope and requires unexpired
+`Administer` on one configured Agora resource. Its retained Aegis decision and
+Agora revision support correlation and audit handoff only: the later Agora CAS
+can still fail independently, and the adapter neither atomically restores Aegis
+nor proves credential provenance, rollback freshness, or grant issuance.
 
 The private local daemon requires a mode-0700 parent, bounds the unauthenticated
 handshake and outer length before payload allocation, applies read/write deadlines and a fixed request budget, keeps host

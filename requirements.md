@@ -557,6 +557,17 @@
   next incarnation must succeed for every class, including exact record plus
   missing socket, and must not adopt prior volatile runtime state. This is
   process-visible filesystem evidence, not device power-loss durability.
+- **R80 — Authorized operator-restore boundary:** every durable Host
+  `recover_after_restore` operation must require an injected authority decision
+  over the exact store key, Host checkpoint scope, and loaded revision after
+  checkpoint/configuration validation and before the sanitizing CAS. Authority
+  refusal or failure must collapse to one `Unauthorized` class, perform no CAS,
+  and return no owner. The Aegis composition must require an unexpired
+  `Administer` decision in the `Agora` namespace for one configured restore
+  resource, reject mismatched Agora key/scope before Aegis I/O, and retain
+  correlation evidence binding the decision to the loaded Agora revision.
+  That evidence must not claim an atomic Aegis/Agora transaction, credential
+  authentication, grant issuance, rollback resistance, or coordinated restore.
 
 ## Explicitly open
 

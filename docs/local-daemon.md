@@ -55,12 +55,14 @@ and binds collaboration handshake profile 2. The daemon neither selects the
 store nor restores an old transport session.
 
 The qualified operator-restore procedure composes those existing boundaries in
-one explicit order: exact directory restore, durable Host session sanitization,
-bounded distinct-incarnation generation, then exact stale-endpoint rotation.
+one explicit order: exact directory restore, Aegis `Administer` authorization
+bound to the loaded Agora revision, durable Host session sanitization, bounded
+distinct-incarnation generation, then exact stale-endpoint rotation.
 The resulting handshake and replay epoch carry the generated incarnation, while
 a fresh connection advances the restored client frontier and reads retained
 conversation state. Store recovery and endpoint rotation remain separate
-failure domains; this procedure is not atomic or automatic.
+failure domains; the Aegis decision/revision pair is correlation evidence, and
+this procedure is not atomic or automatic.
 Real subprocess cuts classify each persistent boundary. Before sanitization the
 restored Host still contains its old session. After sanitization it has the next
 store revision and zero clients while endpoint residue remains old. Generated

@@ -1,5 +1,6 @@
 use agora_durable::{
     DurableEvidenceV2, DurableHostConfigV2, DurableHostPublicationV2, DurableHostV2,
+    OperatorRestoreAuthorityV1, OperatorRestoreAuthorizationV1, OperatorRestoreRequestV1,
 };
 use agora_engine::{CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind};
 use agora_host::v2::HostV2;
@@ -49,6 +50,21 @@ impl Drop for TempDirectory {
 struct Context;
 
 struct Verifier;
+
+struct RestoreAuthority;
+
+impl OperatorRestoreAuthorityV1 for RestoreAuthority {
+    type Context = ();
+    type Error = ();
+
+    fn authorize(
+        &mut self,
+        _request: &OperatorRestoreRequestV1<'_>,
+        _context: &Self::Context,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
 
 impl PrincipalVerifier for Verifier {
     type Context = Context;
@@ -276,8 +292,14 @@ fn physical_operator_restore_durably_invalidates_old_sessions() {
     let restored_store =
         restore_directory_backup_v1(&backup_path, &restored_path, DirectoryLimitsV1::default())
             .unwrap();
-    let mut restored =
-        DurableHostV2::recover_after_restore(restored_store, config(), Verifier).unwrap();
+    let mut authority = RestoreAuthority;
+    let mut restored = DurableHostV2::recover_after_restore(
+        restored_store,
+        config(),
+        Verifier,
+        OperatorRestoreAuthorizationV1::new(&mut authority, &()),
+    )
+    .unwrap();
     assert_eq!(restored.observation().store_revision, 3);
     assert_eq!(
         restored

@@ -11,8 +11,9 @@
    retention and rollback policy, then qualify upgrade/rollback and an
    additional physical store only when a deployment profile requires broader
    claims.
-4. Define operator recovery-mode authority and any cross-engine restore evidence
-   without implying atomic Aegis/Agora recovery.
+4. Extend the implemented exact key/scope/revision operator authority and Aegis
+   decision-correlation evidence only with a separately defined coordinated
+   recovery protocol; the current mechanism is explicitly non-atomic.
 
 Agent harness selection, prompting, retries, and execution remain out of scope.
 

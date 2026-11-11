@@ -447,6 +447,97 @@ pub enum DurableHostStartErrorV2 {
     OutcomeUnknown,
     NotDurable,
     InvalidReceipt,
+    Unauthorized,
+}
+
+/// The exact durable object an operator asks to sanitize after an external
+/// restore.
+///
+/// The store key may identify private deployment topology, so diagnostics
+/// expose only its byte length. Authorization is bound to the revision that
+/// the subsequent compare-and-exchange must replace.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct OperatorRestoreRequestV1<'a> {
+    key: &'a str,
+    scope: HostCheckpointScopeV1,
+    revision: Revision,
+}
+
+impl<'a> OperatorRestoreRequestV1<'a> {
+    pub const fn new(key: &'a str, scope: HostCheckpointScopeV1, revision: u64) -> Self {
+        Self {
+            key,
+            scope,
+            revision: Revision(revision),
+        }
+    }
+
+    pub const fn key(&self) -> &'a str {
+        self.key
+    }
+
+    pub const fn scope(&self) -> HostCheckpointScopeV1 {
+        self.scope
+    }
+
+    pub const fn revision(&self) -> Revision {
+        self.revision
+    }
+}
+
+impl fmt::Debug for OperatorRestoreRequestV1<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OperatorRestoreRequestV1")
+            .field("key_bytes", &self.key.len())
+            .field("scope", &self.scope)
+            .field("revision", &self.revision)
+            .finish()
+    }
+}
+
+/// Fail-closed authority port for the exceptional operator-restore path.
+///
+/// Ordinary crash recovery does not use this port. Implementations should
+/// authorize the exact key, checkpoint scope, and loaded store revision in
+/// `request`; any error is deliberately erased to `Unauthorized` at Agora's
+/// durable boundary.
+pub trait OperatorRestoreAuthorityV1 {
+    type Context;
+    type Error;
+
+    fn authorize(
+        &mut self,
+        request: &OperatorRestoreRequestV1<'_>,
+        context: &Self::Context,
+    ) -> Result<(), Self::Error>;
+}
+
+/// A borrowed authority implementation and its matching trusted context for
+/// one operator-restore attempt.
+pub struct OperatorRestoreAuthorizationV1<'a, A: OperatorRestoreAuthorityV1> {
+    authority: &'a mut A,
+    context: &'a A::Context,
+}
+
+impl<'a, A: OperatorRestoreAuthorityV1> OperatorRestoreAuthorizationV1<'a, A> {
+    pub const fn new(authority: &'a mut A, context: &'a A::Context) -> Self {
+        Self { authority, context }
+    }
+
+    fn authorize(&mut self, request: &OperatorRestoreRequestV1<'_>) -> Result<(), A::Error> {
+        self.authority.authorize(request, self.context)
+    }
+}
+
+impl<A: OperatorRestoreAuthorityV1> fmt::Debug for OperatorRestoreAuthorizationV1<'_, A> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OperatorRestoreAuthorizationV1")
+            .field("authority", &"<redacted>")
+            .field("context", &"<redacted>")
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -517,10 +608,15 @@ pub struct DurableHostV2<V, S> {
     counters: DurableHostCountersV2,
 }
 
-fn commit_host_restore_boundary<V: PrincipalVerifier, S: CheckpointStore>(
+fn commit_host_restore_boundary<
+    V: PrincipalVerifier,
+    S: CheckpointStore,
+    A: OperatorRestoreAuthorityV1,
+>(
     mut store: S,
     config: &DurableHostConfigV2,
     verifier: V,
+    authorization: &mut OperatorRestoreAuthorizationV1<'_, A>,
 ) -> Result<(HostV2<V>, S, Revision), DurableHostStartErrorV2> {
     let stored = store
         .load(config.key())
@@ -542,6 +638,13 @@ fn commit_host_restore_boundary<V: PrincipalVerifier, S: CheckpointStore>(
         verifier,
     )
     .map_err(DurableHostStartErrorV2::Checkpoint)?;
+    authorization
+        .authorize(&OperatorRestoreRequestV1 {
+            key: config.key(),
+            scope: config.scope,
+            revision: stored.revision,
+        })
+        .map_err(|_| DurableHostStartErrorV2::Unauthorized)?;
     let checkpoint = host
         .prepare_checkpoint(config.scope, config.max_snapshot_bytes)
         .map_err(DurableHostStartErrorV2::Checkpoint)?;
@@ -578,6 +681,7 @@ pub enum DurableTransientHostStartErrorV1 {
     OutcomeUnknown,
     NotDurable,
     InvalidReceipt,
+    Unauthorized,
 }
 
 /// Receipt-gated durable Host plus deliberately non-durable collaboration.
@@ -683,10 +787,11 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableTransientHostV1<V, S> {
     /// Recovers an operator-restored checkpoint, durably invalidates recovered
     /// sessions and their private Service state, then starts transient state
     /// empty.
-    pub fn recover_after_restore(
+    pub fn recover_after_restore<A: OperatorRestoreAuthorityV1>(
         mut store: S,
         config: DurableHostConfigV2,
         verifier: V,
+        mut authorization: OperatorRestoreAuthorizationV1<'_, A>,
         presence_limits: TransientLimitsV1,
         typing_limits: TypingLimitsV1,
         max_cursor_age: u64,
@@ -714,6 +819,13 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableTransientHostV1<V, S> {
         let host =
             TransientHostV1::new_with_typing(host, presence_limits, typing_limits, max_cursor_age)
                 .map_err(DurableTransientHostStartErrorV1::Transient)?;
+        authorization
+            .authorize(&OperatorRestoreRequestV1 {
+                key: config.key(),
+                scope: config.scope,
+                revision: stored.revision,
+            })
+            .map_err(|_| DurableTransientHostStartErrorV1::Unauthorized)?;
         let checkpoint = host
             .prepare_host_checkpoint(config.scope, config.max_snapshot_bytes)
             .map_err(DurableTransientHostStartErrorV1::Checkpoint)?;
@@ -1014,12 +1126,14 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
     /// Recovers an operator-restored checkpoint only after durably committing
     /// invalidation of every recovered Host session and its private Service
     /// client state.
-    pub fn recover_after_restore(
+    pub fn recover_after_restore<A: OperatorRestoreAuthorityV1>(
         store: S,
         config: DurableHostConfigV2,
         verifier: V,
+        mut authorization: OperatorRestoreAuthorizationV1<'_, A>,
     ) -> Result<Self, DurableHostStartErrorV2> {
-        let (host, store, store_revision) = commit_host_restore_boundary(store, &config, verifier)?;
+        let (host, store, store_revision) =
+            commit_host_restore_boundary(store, &config, verifier, &mut authorization)?;
         Ok(Self {
             host,
             store,
