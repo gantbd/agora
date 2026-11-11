@@ -2,7 +2,8 @@
 
 Status: implemented through participant-bound service, canonical wire,
 authenticated host, uncertainty-safe client, SDK facades, private local
-transport, and volatile-runtime recovery policy; release qualification pending
+transport, and volatile-runtime recovery policy; qualified for the bounded
+volatile profile
 
 Date: 2026-11-11
 
@@ -64,8 +65,9 @@ handshake profile 3 routes conversation and search frames and supplies a distinc
 replay epoch for every authenticated connection. Host recovery deliberately
 reconstructs search receipts and cursors empty, rejects old continuations, and
 permits a fresh request namespace; the adapter is returned only after retiring
-live continuations. Release evidence remains before the implemented profile is
-qualified.
+live continuations. Revision
+`1781d3a156a35caee9551c0924ba5554c540050a` passed the complete commit-pinned
+R53 qualification for this bounded volatile profile.
 None of these layers add search mutation commands, domain events, outbox entries,
 or search state to the engine checkpoint.
 

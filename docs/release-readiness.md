@@ -153,8 +153,13 @@ not ready for a network service or crates.io release.
   cursors, explicit available/incomplete/stale/unavailable states, content-safe
   diagnostics, closed dependency/SBOM/package inventories, and exact-revision
   integrated qualification at
-  `c4aa492e094a896390adb26b183dadca0039b45b`; participant-bound service/wire
-  composition and durable production indexing remain open;
+  `c4aa492e094a896390adb26b183dadca0039b45b`;
+- participant-bound derived search through the authoritative service and
+  authenticated Host, separate canonical Search Wire V1, uncertainty-safe
+  client and both SDK facades, private local profile-3 routing, EOF cleanup, and
+  explicit empty-runtime recovery, with exact-revision integrated qualification
+  at `1781d3a156a35caee9551c0924ba5554c540050a`; durable or production-scale
+  indexing and integrated durable-daemon/index recovery remain open;
 - independent delivery and pull retention: acknowledgment drains only the
   backpressured outbox, journal eviction carries its own exact gap, and both
   suffixes recover canonically with live service cursors;

@@ -114,7 +114,10 @@ a distinct replay epoch for each connection. Host checkpoint recovery proves a
 recovered authority starts with empty search receipts/cursors, rejects an old
 continuation, accepts a fresh request identity, and retires the adapter cursor
 before returning its port. Integrated durable-daemon/index recovery and
-production-scale indexing remain outside this volatile profile.
+production-scale indexing remain outside this volatile profile. Revision
+`1781d3a156a35caee9551c0924ba5554c540050a` passed the complete R53
+qualification with 10,000 soak cycles and 1,000,000 fixed-seed cases on each of
+the three fuzz targets.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;
