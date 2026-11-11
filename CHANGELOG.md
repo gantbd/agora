@@ -18,7 +18,9 @@ follow Semantic Versioning once a public release contract is selected.
 - Added deterministic interruption injection at all four export and six restore
   persistence boundaries, proving no false success and classifying each visible
   result as invalid/verifiable backup, empty destination, pending residue, or
-  exact post-rename recovery with preserved revision continuity.
+  exact post-rename recovery with preserved revision continuity. Revision
+  `cd4088ea5297655b84b4caf80f31e4284be14128` passed the integrated release
+  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
 
 - Added an injectable, eight-attempt server-incarnation entropy boundary and a
   validated `/dev/urandom` implementation. It rejects zero and, for recovery,
