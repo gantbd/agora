@@ -306,6 +306,15 @@
   or service work. The endpoint remains owned until ordinary teardown. Because
   the transition requires exclusive mutable ownership, this profile covers only
   an idle daemon and makes no concurrent or in-flight graceful-drain claim.
+- **R56 — Checksum-closed self-contained stable source:** an opt-in builder must
+  refuse tracked Agora drift and existing output, stage the exact Agora revision
+  plus only the Aegis and Keystone packages in the sixteen-component stable
+  graph, preserve the reviewed relative dependency layout, and checksum every
+  regular file. Sibling revisions are context, while selected-tree cleanliness
+  and exact bytes remain separate evidence. Verification must reject missing,
+  extra, changed, symbolic, special, or claim-mutated content before a locked
+  offline isolated build, doctest, and warning-denied documentation run. This
+  grants no origin provenance, binary reproducibility, support, or publication.
 
 ## Explicitly open
 

@@ -19,8 +19,16 @@ the fuzz contract pins the driver, nightly compiler, and `libfuzzer-sys`
 versions. Those tools produce test evidence only and are not linked into any
 Agora package or included in the stable local-only supply claim.
 
-This evidence does not establish remote availability of Keystone, registry
+The source-candidate profile copies exactly those sixteen stable components into
+one local directory. Agora bytes come from an exact clean tracked revision;
+selected Aegis and Keystone bytes are individually checksummed and their subtree
+cleanliness is stated rather than inferred from the contextual repository
+revision. A reduced reviewed Keystone workspace manifest supplies only inherited
+metadata for the two selected packages. Isolated locked/offline build evidence
+establishes content closure, not origin, advisory, or legal provenance.
+
+This evidence does not establish remote availability of Aegis or Keystone, registry
 packaging, transitive source integrity outside the local checkouts, advisory
-status, license compatibility, binary contents, an SPDX/CycloneDX SBOM,
+status, license compatibility, binary contents, an SPDX/CycloneDX SBOM, origin
 provenance, signatures, or reproducibility from a clean Cargo home. Those remain
 release blockers.

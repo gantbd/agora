@@ -8,10 +8,14 @@ authorized.
 - Every Agora workspace package has `publish = false`.
 - Agora may be cloned, built, and tested from source under the repository's MIT
   or Apache-2.0 licenses.
-- The current checkout requires a sibling `keystone` checkout at the relative
-paths used by `agora-wire` and `agora-storage-directory`. This is a
-source-layout dependency, not evidence
-  that a lone source archive, Git URL, or registry package builds.
+- The development checkout requires sibling `aegis` and `keystone` checkouts at
+  the reviewed relative paths. This is a source-layout dependency, not remote or
+  commit provenance.
+- The opt-in source-candidate builder stages the exact tracked Agora revision and
+  only the four sibling packages in the stable locked graph under the same
+  relative layout. It records sibling revisions as context, reports selected
+  subtree cleanliness separately, and closes every staged byte with SHA-256.
+  Qualification is locked and offline from an isolated target directory.
 - No remote, tag, commit availability, signed source bundle, binary artifact,
   installer, or support lifetime is qualified.
 - Presentation applications, connectors, agent harnesses, and sibling engines
@@ -21,7 +25,7 @@ source-layout dependency, not evidence
 
 `make check-release-contract` verifies that every current package denies
 publication, the exact Rust toolchain is pinned, required legal/security/claim
-documents are present, and the sibling Keystone assumption remains explicit.
+documents are present, and the sibling Aegis/Keystone assumptions remain explicit.
 An isolated copied source-contract fixture must pass, then mutants enabling root
 publication, replacing the pinned toolchain with `stable`, and removing the
 security policy must all fail.
@@ -37,6 +41,12 @@ artifact attestation.
 Full `make check` additionally runs dependency/effect boundaries, formatting,
 warnings-denied lint and documentation, and the complete locked offline test
 suite.
+
+`make check-source-candidate-contract` pins the construction schema, reduced
+Keystone workspace input, checksum closure, and fail-closed verifier behavior.
+Actual candidate construction and isolated qualification are opt-in because
+they copy sibling inputs and rebuild the complete stable workspace. They do not
+authorize distributing the resulting directory.
 
 ## Enabling a distribution channel later
 

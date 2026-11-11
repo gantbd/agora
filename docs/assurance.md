@@ -11,8 +11,9 @@ remain unchanged. Persistence scenarios compare canonical bytes after recovery.
 
 The active `make check` gate contains:
 
-1. fail-closed release-contract, conservative compatibility-baseline, and locked
-   local-component supply checks with adversarial inventory mutants;
+1. fail-closed release-contract, source-candidate contract, conservative
+   compatibility-baseline, and locked local-component supply checks with
+   adversarial inventory mutants;
 2. dependency, effect-boundary, and immutable fuzz-corpus contract checks;
 3. formatting and warning-denied lint;
 4. all unit, integration, and bounded-model tests offline;
@@ -20,7 +21,7 @@ The active `make check` gate contains:
 
 The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
-explicit sibling-Keystone source-layout assumption. The compatibility gate
+explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
 closes over the twelve-package stable workspace, the standalone fuzz package,
 and twenty-nine canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
@@ -31,6 +32,14 @@ refused.
 The supply gate closes over sixteen local locked components and exact local-path
 dependency declarations. It is not an advisory scan, legal conclusion, binary
 SBOM, remote source proof, or artifact provenance claim.
+
+The source-candidate contract pins a reduced two-package Keystone workspace,
+requires a clean tracked Agora revision, separates sibling contextual revisions
+from selected-subtree cleanliness, and closes every staged regular file through
+one SHA-256 inventory. Its adversarial fixture rejects changed or undeclared
+content, symbolic links, and a claim that upgrades local content closure into
+commit provenance. This ordinary gate validates the mechanism; actual candidate
+construction and isolated qualification remain separately recorded evidence.
 
 Every frozen V1 and V2 wire frame is also a deterministic mutation corpus. The
 offline suite checks every strict prefix, a trailing-byte framing violation, and

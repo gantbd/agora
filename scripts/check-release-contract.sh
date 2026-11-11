@@ -19,6 +19,7 @@ required_files=(
   docs/release-policy.md
   docs/release-qualification.md
   docs/release-readiness.md
+  docs/source-candidate.md
   docs/supply-chain.md
   docs/threat-model.md
   docs/traceability.md
@@ -67,10 +68,11 @@ if ! rg -q 'not ready for a network service' docs/release-readiness.md \
   exit 1
 fi
 
-if ! rg -q 'path = "\.\./\.\./\.\./keystone/' crates/agora-wire/Cargo.toml \
+if ! rg -q 'path = "\.\./\.\./\.\./aegis/' crates/agora-aegis-verifier/Cargo.toml \
+  || ! rg -q 'path = "\.\./\.\./\.\./keystone/' crates/agora-wire/Cargo.toml \
   || ! rg -q 'path = "\.\./\.\./\.\./keystone/' \
     crates/agora-storage-directory/Cargo.toml; then
-  echo 'Keystone source-layout assumption changed without release-contract review' >&2
+  echo 'Aegis or Keystone source-layout assumption changed without release-contract review' >&2
   exit 1
 fi
 

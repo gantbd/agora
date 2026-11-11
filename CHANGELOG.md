@@ -8,6 +8,10 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added a fail-closed self-contained stable source-candidate contract with exact
+  local Aegis/Keystone content closure, contextual cleanliness evidence,
+  complete SHA-256 inventory, adversarial verification, and isolated locked
+  offline qualification.
 - Added a third pinned coverage-guided target over the local daemon's production
   outer-frame prefix codec, with exact consumed-prefix re-encoding, stream-suffix
   preservation, canonical framed seeds, ordinary codec boundary tests, and an

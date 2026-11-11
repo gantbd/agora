@@ -11,6 +11,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$fixture_root/docs" "$fixture_root/crates/agora-wire" \
+  "$fixture_root/crates/agora-aegis-verifier" \
   "$fixture_root/crates/agora-client" "$fixture_root/crates/agora-host" \
   "$fixture_root/crates/agora-protocol" "$fixture_root/crates/agora-service" \
   "$fixture_root/crates/agora-storage-directory" \
@@ -21,10 +22,10 @@ for file in CHANGELOG.md Cargo.lock LICENSE-APACHE LICENSE-MIT README.md SECURIT
   cp "$file" "$fixture_root/$file"
 done
 for file in assurance.md compatibility.md release-policy.md release-qualification.md release-readiness.md \
-  supply-chain.md threat-model.md traceability.md; do
+  source-candidate.md supply-chain.md threat-model.md traceability.md; do
   cp "docs/$file" "$fixture_root/docs/$file"
 done
-for manifest in Cargo.toml crates/agora-wire/Cargo.toml crates/agora-client/Cargo.toml \
+for manifest in Cargo.toml crates/agora-wire/Cargo.toml crates/agora-aegis-verifier/Cargo.toml crates/agora-client/Cargo.toml \
   crates/agora-host/Cargo.toml crates/agora-protocol/Cargo.toml \
   crates/agora-service/Cargo.toml crates/agora-storage-directory/Cargo.toml \
   sdk/client/Cargo.toml sdk/embedded/Cargo.toml; do
