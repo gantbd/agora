@@ -10,6 +10,32 @@ struct TransientPort;
 struct SearchPort;
 
 #[test]
+fn facade_names_private_attention_protocol_and_wire_values() {
+    let request = wire::v2::WireRequestV2::Execute {
+        client: protocol::v2::ClientIdV2(1),
+        request: protocol::v2::RequestV2 {
+            request_id: protocol::v2::RequestIdV2(1),
+            command: protocol::v2::CommandV2::SetAttentionPreference {
+                room_id: "room".to_owned(),
+                observed_revision: 2,
+                scope: protocol::v2::AttentionScopeV1::Room,
+                preference: protocol::v2::AttentionPreferenceV1 {
+                    following: true,
+                    muted: false,
+                    notification_intent: protocol::v2::NotificationIntentV1::AddressedOnly,
+                },
+            },
+        },
+    };
+    let limits = wire::WireLimits::reference();
+    let encoded = wire::v2::encode_request_v2(&request, limits).unwrap();
+    assert_eq!(
+        wire::v2::decode_request_v2(&encoded, limits).unwrap(),
+        request
+    );
+}
+
+#[test]
 fn facade_names_conversation_profile_protocol_and_wire_values() {
     let request = wire::v2::WireRequestV2::Execute {
         client: protocol::v2::ClientIdV2(1),

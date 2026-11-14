@@ -111,6 +111,25 @@ fn facade_names_authoritative_conversation_profiles() {
 }
 
 #[test]
+fn facade_names_private_attention_engine_values() {
+    let preference = engine::AttentionPreferenceV1::new(
+        true,
+        false,
+        engine::NotificationIntentV1::AddressedOnly,
+    );
+    assert!(preference.following());
+    assert!(!preference.muted());
+    assert_eq!(
+        preference.notification_intent(),
+        engine::NotificationIntentV1::AddressedOnly
+    );
+    assert_eq!(
+        engine::AttentionScopeV1::Room,
+        engine::AttentionScopeV1::Room
+    );
+}
+
+#[test]
 fn facade_constructs_the_additive_transient_host_profile() {
     let engine = engine::Engine::new();
     let service = service::v2::ServiceV2::new(engine, service::v2::ServiceLimitsV2::default());
