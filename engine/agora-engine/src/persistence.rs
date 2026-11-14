@@ -35,6 +35,7 @@ pub struct CursorRecoveryLimitsV1 {
     pub max_snapshot_bytes: usize,
     pub max_participant_id_bytes: usize,
     pub max_room_id_bytes: usize,
+    pub max_topic_name_bytes: usize,
 }
 
 /// Canonical private-state representation of one opaque observation cursor.
@@ -2270,6 +2271,78 @@ impl TopicPageCursorV1 {
         };
         finish_cursor(&reader)?;
         if cursor.observer.as_str().is_empty() || cursor.room_id.as_str().is_empty() {
+            return Err(CheckpointError::Invalid);
+        }
+        Ok(cursor)
+    }
+}
+
+impl TopicCollectionCursorV1 {
+    pub fn prepare_checkpoint(
+        &self,
+        max_snapshot_bytes: usize,
+    ) -> Result<CursorCheckpointV1, CheckpointError> {
+        let mut writer = Writer {
+            bytes: Vec::new(),
+            max: max_snapshot_bytes,
+        };
+        writer.raw(CURSOR_MAGIC)?;
+        writer.byte(1)?;
+        writer.byte(10)?;
+        writer.number(self.revision.0)?;
+        writer.text(self.observer.as_str())?;
+        writer.text(self.room_id.as_str())?;
+        writer.byte(match self.filter.lifecycle {
+            TopicCollectionLifecycleV1::Any => 1,
+            TopicCollectionLifecycleV1::Active => 2,
+            TopicCollectionLifecycleV1::Resolved => 3,
+        })?;
+        writer.count(self.filter.tags.len())?;
+        for tag in &self.filter.tags {
+            writer.text(tag)?;
+        }
+        writer.raw(&self.after.into_bytes())?;
+        Ok(CursorCheckpointV1(writer.bytes))
+    }
+
+    pub fn recover_checkpoint(
+        bytes: &[u8],
+        bounds: CursorRecoveryLimitsV1,
+    ) -> Result<Self, CheckpointError> {
+        let mut reader = cursor_reader(bytes, bounds, 10)?;
+        let revision = Revision(reader.number()?);
+        let observer = ParticipantId::new(reader.text(bounds.max_participant_id_bytes)?);
+        let room_id = RoomId::new(reader.text(bounds.max_room_id_bytes)?);
+        let lifecycle = match reader.byte()? {
+            1 => TopicCollectionLifecycleV1::Any,
+            2 => TopicCollectionLifecycleV1::Active,
+            3 => TopicCollectionLifecycleV1::Resolved,
+            _ => return Err(CheckpointError::Invalid),
+        };
+        let count = reader.count(MAX_TOPIC_TAGS_PER_TOPIC_V1)?;
+        let mut tags = Vec::new();
+        tags.try_reserve_exact(count)
+            .map_err(|_| CheckpointError::Capacity)?;
+        for _ in 0..count {
+            tags.push(reader.text(bounds.max_topic_name_bytes)?);
+        }
+        let cursor = Self {
+            revision,
+            observer,
+            room_id,
+            filter: TopicCollectionFilterV1 { lifecycle, tags },
+            after: TopicId::from_bytes(reader.fixed()?),
+        };
+        finish_cursor(&reader)?;
+        if cursor.observer.as_str().is_empty()
+            || cursor.room_id.as_str().is_empty()
+            || cursor
+                .filter
+                .tags
+                .iter()
+                .any(|tag| tag.is_empty() || tag.len() > bounds.max_topic_name_bytes)
+            || !cursor.filter.tags.windows(2).all(|pair| pair[0] < pair[1])
+        {
             return Err(CheckpointError::Invalid);
         }
         Ok(cursor)

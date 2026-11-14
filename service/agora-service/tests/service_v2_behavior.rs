@@ -3881,8 +3881,8 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 29);
-    assert_eq!(capabilities.last(), Some(&CapabilityV2::BoundedPollsV1));
+    assert_eq!(capabilities.len(), 30);
+    assert_eq!(capabilities.last(), Some(&CapabilityV2::TopicCollectionsV1));
     assert!(capabilities.contains(&CapabilityV2::SharedPinsV1));
     assert!(capabilities.contains(&CapabilityV2::PrivateSavedReferencesV1));
     assert_eq!(service.execute(alice, request), first);

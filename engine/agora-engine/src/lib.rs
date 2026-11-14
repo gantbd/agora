@@ -1534,6 +1534,10 @@ pub struct TopicCollectionCursorV1 {
 }
 
 impl TopicCollectionCursorV1 {
+    pub fn is_bound_to_observer_room(&self, observer: &ParticipantId, room_id: &RoomId) -> bool {
+        &self.observer == observer && &self.room_id == room_id
+    }
+
     pub fn is_bound_to(
         &self,
         observer: &ParticipantId,

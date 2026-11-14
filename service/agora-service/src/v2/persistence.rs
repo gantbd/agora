@@ -21,6 +21,8 @@ const VERSION_V24: u8 = 24;
 const VERSION_V25: u8 = 25;
 const VERSION_V26: u8 = 26;
 const VERSION_V27: u8 = 27;
+const VERSION_V28: u8 = 28;
+const VERSION_V29: u8 = 29;
 
 fn command_uses_v26_vocabulary(command: &CommandV2) -> bool {
     matches!(
@@ -107,6 +109,24 @@ fn retained_uses_vellum(retained: &RetainedRequestV2) -> bool {
             OutcomeV2::VellumArtifactMessages(_) | OutcomeV2::VellumArtifactMessageAccepted { .. }
         )
     )
+}
+
+fn command_uses_topic_collections(command: &CommandV2) -> bool {
+    matches!(command, CommandV2::TopicCollection { .. })
+}
+
+fn reply_uses_topic_collections(reply: &ReplyV2) -> bool {
+    matches!(reply, ReplyV2::Accepted(OutcomeV2::TopicCollection(_)))
+        || matches!(
+            reply,
+            ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities))
+                if capabilities.contains(&CapabilityV2::TopicCollectionsV1)
+        )
+}
+
+fn retained_uses_topic_collections(retained: &RetainedRequestV2) -> bool {
+    command_uses_topic_collections(&retained.request.command)
+        || reply_uses_topic_collections(&retained.reply)
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -387,11 +407,17 @@ impl ServiceV2 {
                 .values()
                 .any(|record| matches!(record.page, CursorPage::VellumArtifactMessages { .. }))
             || self.retained.values().any(retained_uses_vellum);
+        let includes_topic_collections = self
+            .cursors
+            .values()
+            .any(|record| matches!(record.page, CursorPage::TopicCollection { .. }))
+            || self.retained.values().any(retained_uses_topic_collections);
         writer.raw(MAGIC)?;
-        writer.byte(if includes_vellum {
-            VERSION_V27
-        } else {
-            VERSION_V26
+        writer.byte(match (includes_topic_collections, includes_vellum) {
+            (false, false) => VERSION_V26,
+            (false, true) => VERSION_V27,
+            (true, false) => VERSION_V28,
+            (true, true) => VERSION_V29,
         })?;
         writer.raw(&scope.0)?;
         write_limits(&mut writer, self.limits)?;
@@ -539,6 +565,14 @@ impl ServiceV2 {
                         .map_err(|error| map_engine(error, true))?;
                     writer.blob(checkpoint.bytes())?;
                 }
+                CursorPage::TopicCollection { room_id, cursor } => {
+                    writer.byte(18)?;
+                    writer.text(room_id.as_str())?;
+                    let checkpoint = cursor
+                        .prepare_checkpoint(max_snapshot_bytes)
+                        .map_err(|error| map_engine(error, true))?;
+                    writer.blob(checkpoint.bytes())?;
+                }
                 CursorPage::TopicMessages {
                     room_id,
                     topic_id,
@@ -604,7 +638,7 @@ impl ServiceV2 {
         let version = reader.byte()?;
         if !matches!(
             version,
-            VERSION_V24 | VERSION_V25 | VERSION_V26 | VERSION_V27
+            VERSION_V24 | VERSION_V25 | VERSION_V26 | VERSION_V27 | VERSION_V28 | VERSION_V29
         ) {
             return Err(ServiceCheckpointErrorV2::Profile);
         }
@@ -695,6 +729,14 @@ impl ServiceV2 {
             {
                 return Err(ServiceCheckpointErrorV2::Profile);
             }
+            if matches!(
+                version,
+                VERSION_V24 | VERSION_V25 | VERSION_V26 | VERSION_V27
+            ) && (command_uses_topic_collections(&request.command)
+                || reply_uses_topic_collections(&reply))
+            {
+                return Err(ServiceCheckpointErrorV2::Profile);
+            }
             let key = (client, request_id);
             if retained
                 .last_key_value()
@@ -710,6 +752,7 @@ impl ServiceV2 {
             max_snapshot_bytes: bounds.max_snapshot_bytes,
             max_participant_id_bytes: limits.max_participant_id_bytes,
             max_room_id_bytes: limits.max_room_id_bytes,
+            max_topic_name_bytes: limits.max_room_name_bytes,
         };
         let mut cursors = BTreeMap::new();
         for _ in 0..cursor_count {
@@ -948,7 +991,7 @@ impl ServiceV2 {
                     }
                     CursorPage::AttachmentChanges { room_id, position }
                 }
-                17 if matches!(version, VERSION_V25 | VERSION_V27) => {
+                17 if matches!(version, VERSION_V25 | VERSION_V27 | VERSION_V29) => {
                     let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
                     let cursor = MessagePageCursor::recover_checkpoint(
                         reader.blob(bounds.max_snapshot_bytes)?,
@@ -959,6 +1002,20 @@ impl ServiceV2 {
                         return Err(ServiceCheckpointErrorV2::Invalid);
                     }
                     CursorPage::VellumArtifactMessages { room_id, cursor }
+                }
+                18 if matches!(version, VERSION_V28 | VERSION_V29) => {
+                    let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
+                    let cursor = TopicCollectionCursorV1::recover_checkpoint(
+                        reader.blob(bounds.max_snapshot_bytes)?,
+                        cursor_bounds,
+                    )
+                    .map_err(|error| map_engine(error, true))?;
+                    if room_id.as_str().is_empty()
+                        || !cursor.is_bound_to_observer_room(participant, &room_id)
+                    {
+                        return Err(ServiceCheckpointErrorV2::Invalid);
+                    }
+                    CursorPage::TopicCollection { room_id, cursor }
                 }
                 _ => return Err(ServiceCheckpointErrorV2::Invalid),
             };

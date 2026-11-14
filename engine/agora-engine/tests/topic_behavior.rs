@@ -1018,6 +1018,7 @@ fn topic_state_and_cursor_bindings_survive_canonical_recovery() {
         max_snapshot_bytes: 1024,
         max_participant_id_bytes: 128,
         max_room_id_bytes: 128,
+        max_topic_name_bytes: 256,
     };
     let topic_cursor =
         agora_engine::TopicPageCursorV1::recover_checkpoint(topic_bytes.bytes(), bounds).unwrap();

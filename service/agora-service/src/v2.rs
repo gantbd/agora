@@ -15,7 +15,9 @@ use agora_engine::{
     PollId as EnginePollId, PollObservationRefusalV1, PrivateSaveRefusalV1, ReadPositionRefusalV1,
     ReadScopeV1 as EngineReadScopeV1, Refusal as EngineRefusal, Revision, RevisionedCommandV2,
     Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
-    Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicId,
+    Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicCollectionCursorV1,
+    TopicCollectionFilterV1 as EngineTopicCollectionFilterV1,
+    TopicCollectionLifecycleV1 as EngineTopicCollectionLifecycleV1, TopicId,
     TopicMessagePageCursorV1, TopicPageCursorV1,
     VellumArtifactMessageTargetV1 as EngineVellumArtifactMessageTargetV1,
     VellumArtifactReferenceIdV1 as EngineVellumArtifactReferenceIdV1,
@@ -38,11 +40,12 @@ use agora_protocol::v2::{
     RoomPageV2, RoomSummaryV2, SavedReferenceV1, Sha256DigestV1, StableReferenceAvailabilityV1,
     ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
     ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
-    TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1, TopicRoomChangePageV1,
-    TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1, TopicSupersessionStatusV1,
-    TopicTagStatusV1, TopicV1, VellumArtifactMessagePageV1, VellumArtifactMessageTargetV1,
-    VellumArtifactMessageV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
-    VellumDocumentTargetV1,
+    TopicCollectionEntryV1, TopicCollectionFilterV1, TopicCollectionLifecycleV1,
+    TopicCollectionPageV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1,
+    TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1,
+    TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1, VellumArtifactMessagePageV1,
+    VellumArtifactMessageTargetV1, VellumArtifactMessageV1, VellumArtifactReferenceIdV1,
+    VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -170,6 +173,10 @@ enum CursorPage {
     Topics {
         room_id: RoomId,
         cursor: TopicPageCursorV1,
+    },
+    TopicCollection {
+        room_id: RoomId,
+        cursor: TopicCollectionCursorV1,
     },
     TopicMessages {
         room_id: RoomId,
@@ -355,6 +362,7 @@ impl ServiceV2 {
                 CapabilityV2::SharedPinsV1,
                 CapabilityV2::PrivateSavedReferencesV1,
                 CapabilityV2::BoundedPollsV1,
+                CapabilityV2::TopicCollectionsV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::ConversationProfile { room_id } => {
@@ -487,6 +495,12 @@ impl ServiceV2 {
                 cursor,
                 limit,
             } => self.topics(client, participant, room_id, *cursor, *limit),
+            CommandV2::TopicCollection {
+                room_id,
+                filter,
+                cursor,
+                limit,
+            } => self.topic_collection(client, participant, room_id, filter, *cursor, *limit),
             CommandV2::TopicMessages {
                 room_id,
                 topic_id,
@@ -1903,6 +1917,72 @@ impl ServiceV2 {
         }))
     }
 
+    fn topic_collection(
+        &mut self,
+        client: ClientIdV2,
+        observer: &ParticipantId,
+        room_id: &str,
+        filter: &TopicCollectionFilterV1,
+        cursor_id: Option<PageCursorV2>,
+        limit: u32,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let room = RoomId::new(room_id);
+        let engine_filter = EngineTopicCollectionFilterV1 {
+            lifecycle: match filter.lifecycle {
+                TopicCollectionLifecycleV1::Any => EngineTopicCollectionLifecycleV1::Any,
+                TopicCollectionLifecycleV1::Active => EngineTopicCollectionLifecycleV1::Active,
+                TopicCollectionLifecycleV1::Resolved => EngineTopicCollectionLifecycleV1::Resolved,
+            },
+            tags: filter.tags.clone(),
+        };
+        let cursor = match cursor_id {
+            Some(id) => match self.cursor_for(client, id)? {
+                CursorPage::TopicCollection {
+                    room_id: bound_room,
+                    cursor,
+                } if bound_room == room => Some(cursor),
+                _ => return Err(RefusalV2::InvalidCursor),
+            },
+            None => None,
+        };
+        let page = self
+            .engine
+            .topic_collection_page(
+                observer,
+                &room,
+                &engine_filter,
+                cursor.as_ref(),
+                limit as usize,
+            )
+            .map_err(map_observation_refusal)?;
+        let next_page = page.next.map(|cursor| CursorPage::TopicCollection {
+            room_id: room.clone(),
+            cursor,
+        });
+        let next = self.replace_cursor(client, cursor_id, next_page)?;
+        Ok(OutcomeV2::TopicCollection(TopicCollectionPageV1 {
+            revision: page.revision.0,
+            room_id: page.room_id.as_str().to_owned(),
+            filter: filter.clone(),
+            topics: page
+                .topics
+                .into_iter()
+                .map(|topic| TopicCollectionEntryV1 {
+                    topic_id: TopicIdV1::new(topic.topic_id.into_bytes()),
+                    name: topic.name,
+                    creator_id: topic.creator.as_str().to_owned(),
+                    resolved: topic.resolved,
+                    aliases: topic.aliases,
+                    tags: topic.tags,
+                    successor_topic_id: topic
+                        .successor_topic_id
+                        .map(|topic_id| TopicIdV1::new(topic_id.into_bytes())),
+                })
+                .collect(),
+            next,
+        }))
+    }
+
     fn topic_status(
         &self,
         observer: &ParticipantId,
@@ -3167,6 +3247,21 @@ impl ServiceV2 {
             | CommandV2::Topics { room_id, limit, .. }
             | CommandV2::TopicMessages { room_id, limit, .. } => {
                 valid_room(room_id) && valid_page(*limit)
+            }
+            CommandV2::TopicCollection {
+                room_id,
+                filter,
+                limit,
+                ..
+            } => {
+                valid_room(room_id)
+                    && valid_page(*limit)
+                    && filter.tags.len() <= 8
+                    && filter
+                        .tags
+                        .iter()
+                        .all(|tag| valid_text(tag, self.limits.max_room_name_bytes))
+                    && filter.tags.windows(2).all(|pair| pair[0] < pair[1])
             }
             CommandV2::OpenChanges { room_id, .. }
             | CommandV2::OpenIdentifiedChanges { room_id, .. }

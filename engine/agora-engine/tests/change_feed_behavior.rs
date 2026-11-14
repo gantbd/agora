@@ -65,6 +65,7 @@ fn feed_is_exclusive_replayable_room_filtered_and_bounded() {
         max_snapshot_bytes: 1_024,
         max_participant_id_bytes: 128,
         max_room_id_bytes: 128,
+        max_topic_name_bytes: 256,
     };
     let position_after_checkpoint = agora_engine::RoomChangePosition::recover_checkpoint(
         position_checkpoint.bytes(),
