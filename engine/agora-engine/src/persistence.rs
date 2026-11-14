@@ -458,6 +458,20 @@ impl Writer {
                 self.text(key)?;
                 self.byte(u8::from(*reacted))
             }
+            DomainEventV2::PinChanged {
+                room_id,
+                actor,
+                message_id,
+                original_sequence,
+                pinned,
+            } => {
+                self.byte(23)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&message_id.into_bytes())?;
+                self.number(*original_sequence)?;
+                self.byte(u8::from(*pinned))
+            }
             DomainEventV2::MessageEdited {
                 room_id,
                 actor,
@@ -680,6 +694,7 @@ impl<'a> Reader<'a> {
         l: Limits,
         has_vellum_artifacts: bool,
         has_conversation_profiles: bool,
+        has_shared_pins: bool,
     ) -> Result<DomainEventV2, CheckpointError> {
         Ok(match self.byte()? {
             0 => DomainEventV2::ParticipantRegistered {
@@ -889,6 +904,17 @@ impl<'a> Reader<'a> {
                     founding_members,
                 }
             }
+            23 if has_shared_pins => DomainEventV2::PinChanged {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                message_id: MessageId::from_bytes(self.fixed()?),
+                original_sequence: self.number()?,
+                pinned: match self.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::Invalid),
+                },
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -1038,12 +1064,14 @@ impl Engine {
         let include_conversation_profiles = engine_has_conversation_profiles(self);
         let include_attention_preferences = !self.attention_preferences.is_empty();
         let include_private_saves = !self.private_saves.is_empty();
+        let include_shared_pins = engine_has_shared_pins(self);
         w.raw(b"AGORACP\0")?;
         w.byte(
             20 + u8::from(include_vellum_artifacts)
                 + (u8::from(include_conversation_profiles) * 2)
                 + (u8::from(include_attention_preferences) * 4)
-                + (u8::from(include_private_saves) * 8),
+                + (u8::from(include_private_saves) * 8)
+                + (u8::from(include_shared_pins) * 16),
         )?;
         for n in limits_values(self.limits) {
             w.count(n)?
@@ -1112,6 +1140,14 @@ impl Engine {
                     for participant in participants {
                         w.text(participant.as_str())?;
                     }
+                }
+            }
+            if include_shared_pins {
+                w.count(room.pins.len())?;
+                for (message_id, (original_sequence, pinned_by)) in &room.pins {
+                    w.raw(&message_id.into_bytes())?;
+                    w.number(*original_sequence)?;
+                    w.text(pinned_by.as_str())?;
                 }
             }
             w.count(room.topics.len())?;
@@ -1225,7 +1261,7 @@ impl Engine {
             return Err(CheckpointError::Profile);
         }
         let profile = r.byte()?;
-        if !matches!(profile, 20..=35) {
+        if !matches!(profile, 20..=51) {
             return Err(CheckpointError::Profile);
         }
         let feature_bits = profile - 20;
@@ -1233,6 +1269,7 @@ impl Engine {
         let has_conversation_profiles = feature_bits & 2 != 0;
         let has_attention_preferences = feature_bits & 4 != 0;
         let has_private_saves = feature_bits & 8 != 0;
+        let has_shared_pins = feature_bits & 16 != 0;
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
         let mut e = Engine::with_limits(l);
         e.revision = Revision(r.number()?);
@@ -1369,6 +1406,16 @@ impl Engine {
                 }
                 reactions.insert(message_id, by_key);
             }
+            let mut pins = BTreeMap::new();
+            if has_shared_pins {
+                let count = r.count(MAX_ROOM_PINS_V1)?;
+                for _ in 0..count {
+                    let message_id = MessageId::from_bytes(r.fixed()?);
+                    let original_sequence = r.number()?;
+                    let pinned_by = r.participant(l)?;
+                    insert(&mut pins, message_id, (original_sequence, pinned_by))?;
+                }
+            }
             let mut topics = BTreeMap::new();
             let count = r.count(l.max_topics_per_room)?;
             for _ in 0..count {
@@ -1436,6 +1483,7 @@ impl Engine {
                     thread_roots,
                     archived_threads,
                     reactions,
+                    pins,
                     topics,
                     topic_successors,
                     topic_identity_incarnation,
@@ -1554,7 +1602,12 @@ impl Engine {
             e.pending_events.push_back(EventEnvelopeV2 {
                 sequence: EventSequence(r.number()?),
                 revision: Revision(r.number()?),
-                event: r.event(l, has_vellum_artifacts, has_conversation_profiles)?,
+                event: r.event(
+                    l,
+                    has_vellum_artifacts,
+                    has_conversation_profiles,
+                    has_shared_pins,
+                )?,
             })
         }
         let n = r.count(l.max_retained_changes)?;
@@ -1565,7 +1618,12 @@ impl Engine {
             e.retained_changes.push_back(EventEnvelopeV2 {
                 sequence: EventSequence(r.number()?),
                 revision: Revision(r.number()?),
-                event: r.event(l, has_vellum_artifacts, has_conversation_profiles)?,
+                event: r.event(
+                    l,
+                    has_vellum_artifacts,
+                    has_conversation_profiles,
+                    has_shared_pins,
+                )?,
             })
         }
         if r.pos != bytes.len() {
@@ -1582,6 +1640,9 @@ impl Engine {
             return Err(CheckpointError::NonCanonical);
         }
         if has_private_saves == e.private_saves.is_empty() {
+            return Err(CheckpointError::NonCanonical);
+        }
+        if has_shared_pins != engine_has_shared_pins(&e) {
             return Err(CheckpointError::NonCanonical);
         }
         Ok(e)
@@ -1612,6 +1673,15 @@ fn engine_has_conversation_profiles(engine: &Engine) -> bool {
         .rooms
         .values()
         .any(|room| room.profile != ConversationProfileV1::Ordinary)
+}
+
+fn engine_has_shared_pins(engine: &Engine) -> bool {
+    engine.rooms.values().any(|room| !room.pins.is_empty())
+        || engine
+            .pending_events
+            .iter()
+            .chain(&engine.retained_changes)
+            .any(|envelope| matches!(envelope.event, DomainEventV2::PinChanged { .. }))
 }
 
 const CURSOR_MAGIC: &[u8; 8] = b"AGORACUR";
@@ -2276,6 +2346,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             || room.topic_successors.len() > room.topics.len()
             || room.thread_roots.len() > room.messages.len()
             || room.archived_threads.len() > room.messages.len()
+            || room.pins.len() > MAX_ROOM_PINS_V1
         {
             return Err(CheckpointError::Invalid);
         }
@@ -2443,6 +2514,23 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                 }
             }
         }
+        for (message_id, (original_sequence, pinned_by)) in &room.pins {
+            if !e.participants.contains_key(pinned_by)
+                || *original_sequence >= room.next_message_sequence
+                || *message_id
+                    != MessageId::allocated(room.message_identity_incarnation, *original_sequence)
+            {
+                return Err(CheckpointError::Invalid);
+            }
+            if let Some(message) = room
+                .messages
+                .iter()
+                .find(|message| message.id == *message_id)
+                && message.sequence != *original_sequence
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
         let joined_after_creation = match room.profile {
             ConversationProfileV1::Ordinary => room.members.len().saturating_sub(1),
             ConversationProfileV1::Direct | ConversationProfileV1::GroupDirect => 0,
@@ -2454,6 +2542,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             .and_then(|n| n.checked_add(room.bans.len() as u64))
             .and_then(|n| n.checked_add(room.topics.len() as u64))
             .and_then(|n| n.checked_add(room.topic_successors.len() as u64))
+            .and_then(|n| n.checked_add(room.pins.len() as u64))
             .and_then(|n| {
                 n.checked_add(
                     room.topics
@@ -3119,6 +3208,22 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             let sequence = u64::from_be_bytes(sequence);
             if sequence >= r.next_message_sequence
                 || *message_id != MessageId::allocated(r.message_identity_incarnation, sequence)
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::PinChanged {
+            room_id,
+            actor,
+            message_id,
+            original_sequence,
+            ..
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            if *original_sequence >= r.next_message_sequence
+                || *message_id
+                    != MessageId::allocated(r.message_identity_incarnation, *original_sequence)
             {
                 return Err(CheckpointError::Invalid);
             }

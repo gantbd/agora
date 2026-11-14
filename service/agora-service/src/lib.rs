@@ -385,6 +385,7 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::TopicLimit
         | EngineRefusal::TopicAliasLimit
         | EngineRefusal::TopicTagLimit
+        | EngineRefusal::PinLimit
         | EngineRefusal::MessageRetentionDisabled
         | EngineRefusal::AddressedParticipantLimit
         | EngineRefusal::EventOutboxFull => RefusalV1::Capacity,
@@ -421,6 +422,7 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::InvalidReaction
         | EngineRefusal::ReactionLimit
         | EngineRefusal::InvalidReactionChange
+        | EngineRefusal::InvalidPinChange
         | EngineRefusal::MessageRevisionLimit
         | EngineRefusal::InvalidMessageEdit
         | EngineRefusal::InvalidTopicName

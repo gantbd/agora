@@ -1311,6 +1311,7 @@ impl ServiceV2 {
                 message_revision,
             }),
             EngineOutcome::ParticipantRegistered(_)
+            | EngineOutcome::PinChanged { .. }
             | EngineOutcome::VellumArtifactMessageAccepted { .. } => Err(RefusalV2::Unavailable),
         }
     }
@@ -2186,6 +2187,9 @@ impl ServiceV2 {
                     .map(|change| {
                         let event = match change.event {
                             agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
+                                return Err(RefusalV2::Unavailable);
+                            }
+                            agora_engine::DomainEventV2::PinChanged { .. } => {
                                 return Err(RefusalV2::Unavailable);
                             }
                             agora_engine::DomainEventV2::RoomCreated {
@@ -3426,6 +3430,9 @@ fn map_identified_room_event(
         agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
             return Err(RefusalV2::Unavailable);
         }
+        agora_engine::DomainEventV2::PinChanged { .. } => {
+            return Err(RefusalV2::Unavailable);
+        }
         agora_engine::DomainEventV2::RoomCreated {
             owner, admission, ..
         } => IdentifiedRoomEventV1::RoomCreated {
@@ -3657,6 +3664,9 @@ fn map_threaded_room_event(
 ) -> Result<ThreadedRoomEventV1, RefusalV2> {
     Ok(match event {
         agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
+            return Err(RefusalV2::Unavailable);
+        }
+        agora_engine::DomainEventV2::PinChanged { .. } => {
             return Err(RefusalV2::Unavailable);
         }
         agora_engine::DomainEventV2::RoomCreated {
@@ -4205,6 +4215,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvitationLimit
         | EngineRefusal::BanLimit
         | EngineRefusal::ReactionLimit
+        | EngineRefusal::PinLimit
         | EngineRefusal::MessageRevisionLimit
         | EngineRefusal::TopicLimit
         | EngineRefusal::MessageRetentionDisabled
@@ -4240,6 +4251,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidThreadLifecycleChange
         | EngineRefusal::InvalidReaction
         | EngineRefusal::InvalidReactionChange
+        | EngineRefusal::InvalidPinChange
         | EngineRefusal::InvalidMessageEdit
         | EngineRefusal::InvalidTopicName
         | EngineRefusal::InvalidTopicLifecycleChange

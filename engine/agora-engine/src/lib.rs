@@ -559,6 +559,7 @@ pub const MAX_MESSAGE_REVISIONS_V1: usize = 64;
 pub const MAX_READ_POSITIONS_V1: usize = 4_096;
 pub const MAX_ATTENTION_PREFERENCES_V1: usize = 4_096;
 pub const MAX_PRIVATE_SAVES_V1: usize = 4_096;
+pub const MAX_ROOM_PINS_V1: usize = 256;
 
 /// Closed selector for one participant's private read position.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -729,6 +730,45 @@ impl fmt::Debug for SavedReferenceV1 {
             .debug_struct("SavedReferenceV1")
             .field("message_id", &self.message_id)
             .field("original_sequence", &self.original_sequence)
+            .field("availability", &self.availability)
+            .finish()
+    }
+}
+
+/// Room-visible stable message relation. Payload remains in message retention.
+#[derive(Clone, Eq, PartialEq)]
+pub struct PinnedReferenceV1 {
+    message_id: MessageId,
+    original_sequence: u64,
+    pinned_by: ParticipantId,
+    availability: StableReferenceAvailabilityV1,
+}
+
+impl PinnedReferenceV1 {
+    pub fn message_id(&self) -> MessageId {
+        self.message_id
+    }
+
+    pub fn original_sequence(&self) -> u64 {
+        self.original_sequence
+    }
+
+    pub fn pinned_by(&self) -> &ParticipantId {
+        &self.pinned_by
+    }
+
+    pub fn availability(&self) -> StableReferenceAvailabilityV1 {
+        self.availability
+    }
+}
+
+impl fmt::Debug for PinnedReferenceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PinnedReferenceV1")
+            .field("message_id", &self.message_id)
+            .field("original_sequence", &self.original_sequence)
+            .field("pinned_by_id_bytes", &self.pinned_by.as_str().len())
             .field("availability", &self.availability)
             .finish()
     }
@@ -1730,6 +1770,7 @@ struct Room {
     thread_roots: BTreeSet<MessageId>,
     archived_threads: BTreeSet<MessageId>,
     reactions: BTreeMap<MessageId, BTreeMap<String, BTreeSet<ParticipantId>>>,
+    pins: BTreeMap<MessageId, (u64, ParticipantId)>,
     topics: BTreeMap<TopicId, TopicV1>,
     topic_successors: BTreeMap<TopicId, TopicId>,
     topic_identity_incarnation: u64,
@@ -1814,6 +1855,7 @@ pub enum RoomActionV1 {
     Speak,
     Reply,
     React,
+    Pin,
     EditOwn,
     ManageThread,
     WithdrawOwn,
@@ -1878,6 +1920,7 @@ impl CommandV2 {
                 }
             }),
             Self::SetReaction { .. } => Some(RoomActionV1::React),
+            Self::SetPin { .. } => Some(RoomActionV1::Pin),
             Self::EditMessage { .. } => Some(RoomActionV1::EditOwn),
             Self::SetThreadArchived { .. } => Some(RoomActionV1::ManageThread),
             Self::WithdrawMessage { .. } => Some(RoomActionV1::WithdrawOwn),
@@ -2067,6 +2110,12 @@ pub enum CommandV2 {
         key: String,
         reacted: bool,
     },
+    SetPin {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        pinned: bool,
+    },
     EditMessage {
         room_id: RoomId,
         actor: ParticipantId,
@@ -2225,6 +2274,13 @@ pub enum OutcomeV2 {
         key: String,
         reacted: bool,
     },
+    PinChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        original_sequence: u64,
+        pinned: bool,
+    },
     MessageEdited {
         room_id: RoomId,
         actor: ParticipantId,
@@ -2289,6 +2345,8 @@ pub enum Refusal {
     InvalidReaction,
     ReactionLimit,
     InvalidReactionChange,
+    PinLimit,
+    InvalidPinChange,
     MessageRevisionLimit,
     InvalidMessageEdit,
     InvalidTopicName,
@@ -2549,6 +2607,13 @@ pub enum DomainEventV2 {
         key: String,
         reacted: bool,
     },
+    PinChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        original_sequence: u64,
+        pinned: bool,
+    },
     MessageEdited {
         room_id: RoomId,
         actor: ParticipantId,
@@ -2584,6 +2649,7 @@ impl DomainEventV2 {
             | Self::MessageRedacted { room_id, .. }
             | Self::ThreadLifecycleChanged { room_id, .. }
             | Self::ReactionChanged { room_id, .. }
+            | Self::PinChanged { room_id, .. }
             | Self::MessageEdited { room_id, .. } => Some(room_id),
         }
     }
@@ -2977,6 +3043,36 @@ impl Engine {
             original_sequence,
             availability: stable_reference_availability(room, message_id),
         }))
+    }
+
+    /// Returns the bounded shared pin set to one current room member.
+    pub fn pinned_references(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<Vec<PinnedReferenceV1>, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        Ok(room
+            .pins
+            .iter()
+            .map(
+                |(message_id, (original_sequence, pinned_by))| PinnedReferenceV1 {
+                    message_id: *message_id,
+                    original_sequence: *original_sequence,
+                    pinned_by: pinned_by.clone(),
+                    availability: stable_reference_availability(room, *message_id),
+                },
+            )
+            .collect())
     }
 
     /// Changes one caller-owned saved relation without a revision or room event.
@@ -4459,6 +4555,12 @@ impl Engine {
                 key,
                 reacted,
             } => self.set_reaction(room_id, actor, message_id, key, reacted),
+            CommandV2::SetPin {
+                room_id,
+                actor,
+                message_id,
+                pinned,
+            } => self.set_pin(room_id, actor, message_id, pinned),
             CommandV2::EditMessage {
                 room_id,
                 actor,
@@ -4829,6 +4931,22 @@ impl Engine {
                 reacted: *reacted,
             },
             (
+                CommandV2::SetPin { .. },
+                OutcomeV2::PinChanged {
+                    room_id,
+                    actor,
+                    message_id,
+                    original_sequence,
+                    pinned,
+                },
+            ) => DomainEventV2::PinChanged {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                message_id: *message_id,
+                original_sequence: *original_sequence,
+                pinned: *pinned,
+            },
+            (
                 CommandV2::EditMessage { .. },
                 OutcomeV2::MessageEdited {
                     room_id,
@@ -4918,6 +5036,7 @@ impl Engine {
                 thread_roots: BTreeSet::new(),
                 archived_threads: BTreeSet::new(),
                 reactions: BTreeMap::new(),
+                pins: BTreeMap::new(),
                 topics: BTreeMap::new(),
                 topic_successors: BTreeMap::new(),
                 topic_identity_incarnation: self.next_event_sequence.0,
@@ -4993,6 +5112,7 @@ impl Engine {
                 thread_roots: BTreeSet::new(),
                 archived_threads: BTreeSet::new(),
                 reactions: BTreeMap::new(),
+                pins: BTreeMap::new(),
                 topics: BTreeMap::new(),
                 topic_successors: BTreeMap::new(),
                 topic_identity_incarnation: self.next_event_sequence.0,
@@ -5956,6 +6076,54 @@ impl Engine {
             message_id,
             key,
             reacted,
+        })
+    }
+
+    fn set_pin(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        message_id: MessageId,
+        pinned: bool,
+    ) -> Result<OutcomeV2, Refusal> {
+        let room = self.room_ref(&room_id)?;
+        if !room.members.contains_key(&actor) {
+            return Err(Refusal::NotMember(actor));
+        }
+        let current = room.pins.get(&message_id);
+        if current.is_some() == pinned {
+            return Err(Refusal::InvalidPinChange);
+        }
+        let original_sequence = if pinned {
+            if room.pins.len() == MAX_ROOM_PINS_V1 {
+                return Err(Refusal::PinLimit);
+            }
+            room.messages
+                .iter()
+                .find(|message| message.id == message_id)
+                .map(|message| message.sequence)
+                .ok_or(Refusal::UnknownMessage)?
+        } else {
+            current
+                .map(|(sequence, _)| *sequence)
+                .expect("change validation established pin")
+        };
+        let room = self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation");
+        if pinned {
+            room.pins
+                .insert(message_id, (original_sequence, actor.clone()));
+        } else {
+            room.pins.remove(&message_id);
+        }
+        Ok(OutcomeV2::PinChanged {
+            room_id,
+            actor,
+            message_id,
+            original_sequence,
+            pinned,
         })
     }
 
