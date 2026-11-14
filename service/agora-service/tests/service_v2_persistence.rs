@@ -3,9 +3,10 @@ use agora_engine::{
     ParticipantKind, ReadScopeV1 as EngineReadScopeV1, RoomId,
 };
 use agora_protocol::v2::{
-    ClientIdV2, CommandV2, ConversationProfileV1, IdentifiedRoomEventV1, MessageIdV1,
-    MessageRevisionAvailabilityV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2,
-    RequestV2, ThreadLifecycleStateV1, ThreadedRoomEventV1,
+    AttentionPreferenceV1, AttentionScopeV1, ClientIdV2, CommandV2, ConversationProfileV1,
+    IdentifiedRoomEventV1, MessageIdV1, MessageRevisionAvailabilityV1, NotificationIntentV1,
+    OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, ThreadLifecycleStateV1,
+    ThreadedRoomEventV1,
 };
 use agora_service::v2::{
     ServiceLimitsV2, ServiceV2,
@@ -1997,5 +1998,74 @@ fn private_read_position_and_exact_receipt_survive_recovery() {
                 observed_revision,
             }
         )))
+    );
+}
+
+#[test]
+fn private_attention_preference_and_exact_receipt_survive_recovery() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let observed_revision = engine.revision().0;
+    let pending = engine.pending_events().len();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let preference = AttentionPreferenceV1 {
+        following: true,
+        muted: true,
+        notification_intent: NotificationIntentV1::AddressedOnly,
+    };
+    let set = request(
+        1,
+        CommandV2::SetAttentionPreference {
+            room_id: "room".to_owned(),
+            observed_revision,
+            scope: AttentionScopeV1::Room,
+            preference,
+        },
+    );
+    let accepted = service.execute(alice, set.clone());
+    assert_eq!(
+        accepted,
+        ReplyV2::Accepted(OutcomeV2::AttentionPreferenceSet(preference))
+    );
+    assert_eq!(service.engine().revision().0, observed_revision);
+    assert_eq!(service.engine().pending_events().len(), pending);
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(
+        recovered
+            .prepare_checkpoint(SCOPE, MAX_CHECKPOINT)
+            .unwrap()
+            .bytes(),
+        checkpoint.bytes()
+    );
+    assert_eq!(recovered.execute(alice, set), accepted);
+    assert_eq!(
+        recovered.execute(
+            alice,
+            request(
+                2,
+                CommandV2::AttentionPreference {
+                    room_id: "room".to_owned(),
+                    scope: AttentionScopeV1::Room,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::AttentionPreference(preference))
     );
 }

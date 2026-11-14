@@ -39,10 +39,11 @@ use agora_protocol::transient::{
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
-    AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1,
-    CommandV2 as ProtocolCommand, ConversationProfileV1, OutcomeV2, RefusalV2, ReplyV2,
-    RequestIdV2, RequestV2, Sha256DigestV1, VellumArtifactMessageTargetV1,
-    VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
+    AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1, AttentionPreferenceV1,
+    AttentionScopeV1, CommandV2 as ProtocolCommand, ConversationProfileV1, NotificationIntentV1,
+    OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1,
+    VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
+    VellumDocumentTargetV1,
 };
 use agora_service::search::port::{
     SearchCursorV1, SearchGenerationV1, SearchHitV1, SearchObservationV1, SearchPageV1,
@@ -282,7 +283,7 @@ fn search_host(
 fn daemon_limits() -> DaemonLimitsV1 {
     DaemonLimitsV1 {
         max_frame_bytes: 8_192,
-        max_frames_after_connect: 8,
+        max_frames_after_connect: 10,
         io_timeout: Duration::from_secs(2),
     }
 }
@@ -706,7 +707,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     let mut stream = UnixStream::connect(&path).unwrap();
     let hello = handshake(&mut stream);
     assert_eq!(hello.max_frame_bytes(), 8_192);
-    assert_eq!(hello.max_frames_after_connect(), 8);
+    assert_eq!(hello.max_frames_after_connect(), 10);
     assert_eq!(hello.server_incarnation(), incarnation());
     assert!(hello.supports_capability_discovery());
     assert!(!format!("{hello:?}").contains("a5"));
@@ -859,6 +860,55 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
             if status.profile == ConversationProfileV1::Direct
                 && status.founding_participant_ids == ["alice", "bot"]
     ));
+    let preference = AttentionPreferenceV1 {
+        following: true,
+        muted: true,
+        notification_intent: NotificationIntentV1::AddressedOnly,
+    };
+    let set_attention = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(5),
+                command: ProtocolCommand::SetAttentionPreference {
+                    room_id: "room".to_owned(),
+                    observed_revision: 6,
+                    scope: AttentionScopeV1::Room,
+                    preference,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &set_attention);
+    assert_eq!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::AttentionPreferenceSet(
+            preference
+        )))
+    );
+    let attention = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(6),
+                command: ProtocolCommand::AttentionPreference {
+                    room_id: "room".to_owned(),
+                    scope: AttentionScopeV1::Room,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &attention);
+    assert_eq!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::AttentionPreference(
+            preference
+        )))
+    );
     drop(stream);
 
     let (result, daemon) = server.join().unwrap();
@@ -878,12 +928,12 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert_eq!(observation.transport, daemon.health());
     assert_eq!(observation.host.open_offers, 1);
     assert_eq!(observation.host.authenticated, 1);
-    assert_eq!(observation.host.frame_offers, 6);
-    assert_eq!(observation.host.executed, 6);
+    assert_eq!(observation.host.frame_offers, 8);
+    assert_eq!(observation.host.executed, 8);
     assert_eq!(observation.service.connect_offers, 1);
     assert_eq!(observation.service.connected, 1);
-    assert_eq!(observation.service.request_offers, 6);
-    assert_eq!(observation.service.accepted, 5);
+    assert_eq!(observation.service.request_offers, 8);
+    assert_eq!(observation.service.accepted, 7);
     assert_eq!(observation.service.replayed, 1);
     assert_eq!(observation.service.disconnected, 1);
     assert!(!observation.fidelity_lost);
@@ -891,7 +941,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert!(!diagnostic.contains("alice"));
     assert!(!diagnostic.contains("room"));
     assert!(!diagnostic.contains("Room"));
-    assert_eq!(calls.lock().unwrap().len(), 7);
+    assert_eq!(calls.lock().unwrap().len(), 9);
     drop(daemon);
     assert!(!path.exists());
     remove_parent(&path);
@@ -927,7 +977,7 @@ fn collaboration_profile_multiplexes_transient_frames_and_rotates_connection_epo
     let hello = collaboration_handshake(&mut first);
     assert_eq!(hello.server_incarnation(), incarnation());
     assert_eq!(hello.max_frame_bytes(), 8_192);
-    assert_eq!(hello.max_frames_after_connect(), 8);
+    assert_eq!(hello.max_frames_after_connect(), 10);
     assert!(hello.supports_capability_discovery());
     assert!(hello.supports_transient_collaboration());
     assert!(!format!("{hello:?}").contains("a5"));

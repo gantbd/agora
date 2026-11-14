@@ -33,8 +33,9 @@ fixture|service/agora-service/tests/fixtures/service-checkpoint-v24.hex|6812|765
 fixture|adapters/agora-storage-directory/tests/fixtures/directory-record-v1.hex|52|377cc1e927daa46ec954c5ad419ca762da86a18ee18b7e2d2169262aa0e70b16
 fixture|protocol/agora-wire/tests/fixtures/attachment-history-reply-v2.hex|262|c43b30c668bfeb34b036075100c2e420dad351d0e04796ded477d6defabde3ac
 fixture|protocol/agora-wire/tests/fixtures/attachment-speak-request-v2.hex|210|a15d3269011f56a41235fca83e737f76b6e02b21382486c0f7c338a968e9b4ab
+fixture|protocol/agora-wire/tests/fixtures/attention-preference-reply-v2.hex|7|be6542df1291f1f830edcfe9f1013ddeecfc4320a0f5555b4563bc81d8004f89
 fixture|protocol/agora-wire/tests/fixtures/bans-reply-v2.hex|56|1eceb89d5dd13236623b366cc25ac4d12535cdc87dec8101f2290615f819832a
-fixture|protocol/agora-wire/tests/fixtures/capabilities-reply-v2.hex|37|200acf9c8a0b0476a1450fe8dc2ca87e2b78cd88ccecfa1fc8f99e14a16d98b0
+fixture|protocol/agora-wire/tests/fixtures/capabilities-reply-v2.hex|38|c10193f4b906abf66ef6a66579af76feec5520e1f07f1aa6a983ffc9f76b6afa
 fixture|protocol/agora-wire/tests/fixtures/change-retention-gap-reply-v2.hex|21|415ddc0de4cede801f07bba20d704e8ba8c4483c2b68171b331481207ef2b079
 fixture|protocol/agora-wire/tests/fixtures/changes-reply-v2.hex|101|0e62f74e8368688c28ac2b5b167d4653605b59ed951834165a4cbf5e3509662d
 fixture|protocol/agora-wire/tests/fixtures/connect-request-v1.hex|11|4c13512cfcb29d053b6e56610b4693ac9ad5f6cd88650349bfb2df13c75c5fe4
@@ -62,6 +63,7 @@ fixture|protocol/agora-wire/tests/fixtures/redaction-change-reply-v2.hex|112|ee9
 fixture|protocol/agora-wire/tests/fixtures/rooms-reply-v2.hex|77|7628d1c11bfab1dbacee136357ee73acd0431cd90c3355b8aed478f9921b1710
 fixture|protocol/agora-wire/tests/fixtures/search-offer-v1.hex|45|26920244190f01d89da9612147d942dd2bf8517a507feb9ed10310dbfc157220
 fixture|protocol/agora-wire/tests/fixtures/search-page-reply-v1.hex|92|0d2006bc81174b81a7ee57a519ef10d9b1f24cd737b0bf5ab91de97072a5f38a
+fixture|protocol/agora-wire/tests/fixtures/set-attention-request-v2.hex|55|3b6c1e964a1b878568f4df76f1159321bf68d5be4dfcfc9b8b936ad83b8eeb67
 fixture|protocol/agora-wire/tests/fixtures/snapshot-reply-v1.hex|137|10efdc44b693253f645c64ace2e3f458bf7d1ece9eb6d82bb8faa553702de12c
 fixture|protocol/agora-wire/tests/fixtures/speak-request-v1.hex|77|9a623df28a992a3af0235bd7cfe4c31bb746397ca8d28f8b32378d7961a878ed
 fixture|protocol/agora-wire/tests/fixtures/thread-lifecycle-change-reply-v2.hex|94|164e7898dd01f704768a4e8d855e9edba03b396df21072c6e3f25fc15d2cbff1

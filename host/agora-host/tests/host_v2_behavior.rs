@@ -9,8 +9,9 @@ use agora_host::v2::persistence::{
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
-    AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1, ClientIdV2, CommandV2,
-    ConversationProfileV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1,
+    AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1, AttentionPreferenceV1,
+    AttentionScopeV1, ClientIdV2, CommandV2, ConversationProfileV1, NotificationIntentV1,
+    OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1,
     VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
     VellumDocumentTargetV1,
 };
@@ -258,6 +259,167 @@ fn v2_peer_creation_binds_the_authenticated_initiator() {
         agora_engine::DomainEventV2::PeerConversationCreated { initiator, .. }
             if initiator.as_str() == "alice"
     ));
+}
+
+#[test]
+fn v2_attention_preferences_bind_the_authenticated_participant() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(2),
+    );
+    let (alice_session, alice_client, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, bot_client, bot_context) = open(&mut host, "bot", 2);
+    let preference = AttentionPreferenceV1 {
+        following: true,
+        muted: true,
+        notification_intent: NotificationIntentV1::AddressedOnly,
+    };
+    let set = encode_request_v2(
+        &WireRequestV2::Execute {
+            client: alice_client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::SetAttentionPreference {
+                    room_id: "room".to_owned(),
+                    observed_revision: 4,
+                    scope: AttentionScopeV1::Room,
+                    preference,
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    assert_eq!(
+        decode_reply_v2(
+            &host
+                .handle(alice_session, &set, &alice_context, HostTimeV1(3))
+                .unwrap(),
+            limits(2).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::AttentionPreferenceSet(
+            preference
+        )))
+    );
+    let observe = encode_request_v2(
+        &WireRequestV2::Execute {
+            client: bot_client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::AttentionPreference {
+                    room_id: "room".to_owned(),
+                    scope: AttentionScopeV1::Room,
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    assert_eq!(
+        decode_reply_v2(
+            &host
+                .handle(bot_session, &observe, &bot_context, HostTimeV1(3))
+                .unwrap(),
+            limits(2).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::AttentionPreference(
+            AttentionPreferenceV1::default()
+        )))
+    );
+    assert_eq!(host.service().engine().revision(), Revision(4));
+    assert!(calls.get() >= 4);
+}
+
+#[test]
+fn v2_attention_receipt_and_private_state_recover_through_host_checkpoint() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(1),
+    );
+    let (session, client, context) = open(&mut host, "alice", 1);
+    let preference = AttentionPreferenceV1 {
+        following: true,
+        muted: false,
+        notification_intent: NotificationIntentV1::AllActivity,
+    };
+    let frame = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::SetAttentionPreference {
+                    room_id: "room".to_owned(),
+                    observed_revision: 3,
+                    scope: AttentionScopeV1::Room,
+                    preference,
+                },
+            },
+        },
+        limits(1).wire,
+    )
+    .unwrap();
+    let accepted = host
+        .handle(session, &frame, &context, HostTimeV1(2))
+        .unwrap();
+    let checkpoint = host
+        .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+        .unwrap();
+    assert_eq!(checkpoint.bytes()[8], 25);
+
+    let mut recovered = HostV2::recover_checkpoint(
+        checkpoint.bytes(),
+        CHECKPOINT_SCOPE,
+        recovery_limits(),
+        Verifier { calls },
+    )
+    .unwrap();
+    assert_eq!(
+        recovered
+            .handle(session, &frame, &context, HostTimeV1(3))
+            .unwrap(),
+        accepted
+    );
+    assert_eq!(
+        decode_reply_v2(&accepted, limits(1).wire).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::AttentionPreferenceSet(
+            preference
+        )))
+    );
+    assert_eq!(recovered.service().engine().revision(), Revision(3));
 }
 
 #[test]

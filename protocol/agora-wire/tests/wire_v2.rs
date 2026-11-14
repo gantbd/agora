@@ -169,6 +169,7 @@ fn capabilities_reply() -> WireReplyV2 {
         CapabilityV2::ImmutableAttachmentReferencesV1,
         CapabilityV2::VellumArtifactReferencesV1,
         CapabilityV2::ConversationProfilesV1,
+        CapabilityV2::PrivateAttentionPreferencesV1,
     ])))
 }
 

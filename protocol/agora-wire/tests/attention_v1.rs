@@ -12,6 +12,15 @@ fn limits() -> WireLimits {
     WireLimits::reference()
 }
 
+fn decode_hex(source: &str) -> Vec<u8> {
+    let compact = source.split_whitespace().collect::<String>();
+    compact
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+        .collect()
+}
+
 #[test]
 fn attention_commands_outcomes_capability_and_refusal_are_closed() {
     let preference = AttentionPreferenceV1 {
@@ -46,16 +55,31 @@ fn attention_commands_outcomes_capability_and_refusal_are_closed() {
             },
         };
         let encoded = encode_request_v2(&value, limits()).unwrap();
+        if index == 1 {
+            assert_eq!(
+                encoded,
+                decode_hex(include_str!("fixtures/set-attention-request-v2.hex"))
+            );
+        }
         assert_eq!(decode_request_v2(&encoded, limits()).unwrap(), value);
     }
 
-    for outcome in [
+    for (index, outcome) in [
         OutcomeV2::AttentionPreference(preference),
         OutcomeV2::AttentionPreferenceSet(preference),
         OutcomeV2::Capabilities(vec![CapabilityV2::PrivateAttentionPreferencesV1]),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let value = WireReplyV2::Executed(ReplyV2::Accepted(outcome));
         let encoded = encode_reply_v2(&value, limits()).unwrap();
+        if index == 0 {
+            assert_eq!(
+                encoded,
+                decode_hex(include_str!("fixtures/attention-preference-reply-v2.hex"))
+            );
+        }
         assert_eq!(decode_reply_v2(&encoded, limits()).unwrap(), value);
     }
     let refusal = WireReplyV2::Executed(ReplyV2::Refused(RefusalV2::InvalidAttentionScope));
