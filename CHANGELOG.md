@@ -12,6 +12,8 @@ follow Semantic Versioning once a public release contract is selected.
   category-aligned workspace layout, and a dedicated authority-free local Unix
   transport package. The daemon now remains an application composition root;
   wire/checkpoint identities and existing transport behavior are unchanged.
+  Revision `2fdb87e6e45df08e0e929e66d88a3425547282e9` passed the integrated release
+  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
 
 - Added offline canonical backup, verification, and restore for the private
   directory store. Export holds the source lock and synchronizes a new private
