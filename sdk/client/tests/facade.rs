@@ -10,6 +10,31 @@ struct TransientPort;
 struct SearchPort;
 
 #[test]
+fn facade_names_topic_collection_protocol_and_wire_values() {
+    let request = wire::v2::WireRequestV2::Execute {
+        client: protocol::v2::ClientIdV2(1),
+        request: protocol::v2::RequestV2 {
+            request_id: protocol::v2::RequestIdV2(1),
+            command: protocol::v2::CommandV2::TopicCollection {
+                room_id: "room".to_owned(),
+                filter: protocol::v2::TopicCollectionFilterV1 {
+                    lifecycle: protocol::v2::TopicCollectionLifecycleV1::Active,
+                    tags: vec!["blue".to_owned()],
+                },
+                cursor: None,
+                limit: 8,
+            },
+        },
+    };
+    let limits = wire::WireLimits::reference();
+    let bytes = wire::v2::encode_request_v2(&request, limits).unwrap();
+    assert_eq!(
+        wire::v2::decode_request_v2(&bytes, limits).unwrap(),
+        request
+    );
+}
+
+#[test]
 fn facade_names_bounded_poll_protocol_and_wire_values() {
     let request = wire::v2::WireRequestV2::Execute {
         client: protocol::v2::ClientIdV2(1),

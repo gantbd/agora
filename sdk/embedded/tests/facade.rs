@@ -163,6 +163,16 @@ fn facade_names_bounded_poll_engine_values() {
 }
 
 #[test]
+fn facade_names_topic_collection_engine_values() {
+    let filter = engine::TopicCollectionFilterV1 {
+        lifecycle: engine::TopicCollectionLifecycleV1::Active,
+        tags: vec!["blue".to_owned()],
+    };
+    assert_eq!(filter.tags.len(), 1);
+    let _: Option<engine::TopicCollectionPageV1> = None;
+}
+
+#[test]
 fn facade_constructs_the_additive_transient_host_profile() {
     let engine = engine::Engine::new();
     let service = service::v2::ServiceV2::new(engine, service::v2::ServiceLimitsV2::default());

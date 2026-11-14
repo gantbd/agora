@@ -21,8 +21,8 @@ use agora_protocol::transient::{
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttentionPreferenceV1, AttentionScopeV1, CommandV2, MessageIdV1,
     NotificationIntentV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
-    VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
-    VellumDocumentTargetV1,
+    TopicCollectionFilterV1, TopicCollectionLifecycleV1, VellumArtifactMessageTargetV1,
+    VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use agora_service::transient::TransientLimitsV1;
 use agora_service::typing::TypingLimitsV1;
@@ -445,6 +445,86 @@ fn committed_poll_and_private_ballot_recover_with_exact_receipts() {
             value: ReplyV2::Accepted(OutcomeV2::PollBallot(ballot)),
             ..
         } if ballot.selections == vec![0]
+    ));
+}
+
+#[test]
+fn committed_topic_collection_receipt_recovers_exact_metadata() {
+    let (mut durable, store, client) = initialized();
+    assert!(matches!(
+        durable.execute(client, create_request("room")),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 2 }),
+            ..
+        }
+    ));
+    let DurablePublicationV2::Published {
+        value: ReplyV2::Accepted(OutcomeV2::TopicCreated { topic_id, .. }),
+        ..
+    } = durable.execute(
+        client,
+        RequestV2 {
+            request_id: RequestIdV2(8),
+            command: CommandV2::CreateTopic {
+                room_id: "room".to_owned(),
+                expected_revision: 2,
+                name: "work".to_owned(),
+            },
+        },
+    )
+    else {
+        panic!("topic creation must commit")
+    };
+    assert!(matches!(
+        durable.execute(
+            client,
+            RequestV2 {
+                request_id: RequestIdV2(9),
+                command: CommandV2::AddTopicTag {
+                    room_id: "room".to_owned(),
+                    expected_revision: 3,
+                    topic_id,
+                    tag: "urgent".to_owned(),
+                },
+            },
+        ),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::TopicTagAdded { revision: 4, .. }),
+            ..
+        }
+    ));
+    let observe = RequestV2 {
+        request_id: RequestIdV2(10),
+        command: CommandV2::TopicCollection {
+            room_id: "room".to_owned(),
+            filter: TopicCollectionFilterV1 {
+                lifecycle: TopicCollectionLifecycleV1::Active,
+                tags: vec!["urgent".to_owned()],
+            },
+            cursor: None,
+            limit: 8,
+        },
+    };
+    assert!(matches!(
+        durable.execute(client, observe.clone()),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::TopicCollection(page)),
+            ..
+        } if page.topics.len() == 1
+            && page.topics[0].topic_id == topic_id
+            && page.topics[0].tags == vec!["urgent"]
+    ));
+    drop(durable.into_store());
+
+    let mut recovered = DurableServiceV2::recover(store, config()).unwrap();
+    assert!(matches!(
+        recovered.execute(client, observe),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::TopicCollection(page)),
+            evidence: DurableEvidenceV2::PreviouslyCommitted { .. },
+        } if page.topics.len() == 1
+            && page.topics[0].topic_id == topic_id
+            && page.topics[0].tags == vec!["urgent"]
     ));
 }
 

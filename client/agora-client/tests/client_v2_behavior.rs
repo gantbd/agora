@@ -5,8 +5,9 @@ use agora_protocol::v2::{
     AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1, AttachmentMessageTargetV1,
     AttachmentObjectKeyV1, AttachmentStoreIdV1, AttentionPreferenceV1, AttentionScopeV1,
     ClientIdV2, CommandV2, MessageIdV1, NotificationIntentV1, PollIdV1, RefusalV2, ReplyV2,
-    RequestIdV2, RequestV2, Sha256DigestV1, VellumArtifactMessageTargetV1,
-    VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
+    RequestIdV2, RequestV2, Sha256DigestV1, TopicCollectionFilterV1, TopicCollectionLifecycleV1,
+    VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
+    VellumDocumentTargetV1,
 };
 use std::collections::VecDeque;
 
@@ -106,6 +107,47 @@ fn poll_ballot_command(selections: Vec<u8>) -> CommandV2 {
         poll_id: PollIdV1::new([9; 16]),
         selections,
     }
+}
+
+fn topic_collection_command(tags: Vec<String>) -> CommandV2 {
+    CommandV2::TopicCollection {
+        room_id: "room".to_owned(),
+        filter: TopicCollectionFilterV1 {
+            lifecycle: TopicCollectionLifecycleV1::Active,
+            tags,
+        },
+        cursor: None,
+        limit: 8,
+    }
+}
+
+#[test]
+fn topic_collection_uncertainty_replays_only_the_exact_filter() {
+    let port = RecordingPortV2 {
+        replies: [
+            Err(PortFailureV2::OutcomeUnknown("lost")),
+            Ok(ReplyV2::Refused(RefusalV2::Unavailable)),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let mut client = ClientV2::new(ClientIdV2(7), port);
+    let exact = topic_collection_command(vec!["blue".to_owned(), "urgent".to_owned()]);
+    assert_eq!(
+        client.execute(exact.clone()),
+        Err(ClientErrorV2::OutcomeUnknown("lost"))
+    );
+    assert_eq!(
+        client.execute(topic_collection_command(vec!["blue".to_owned()])),
+        Err(ClientErrorV2::UnresolvedOutcome)
+    );
+    assert_eq!(
+        client.execute(exact),
+        Ok(ReplyV2::Refused(RefusalV2::Unavailable))
+    );
+    let (port, pending) = client.into_parts();
+    assert!(pending.is_none());
+    assert_eq!(port.requests[0], port.requests[1]);
 }
 
 #[test]

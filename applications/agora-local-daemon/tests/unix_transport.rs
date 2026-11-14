@@ -41,9 +41,9 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1, AttentionPreferenceV1,
     AttentionScopeV1, CommandV2 as ProtocolCommand, ConversationProfileV1, NotificationIntentV1,
-    OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1,
-    VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
-    VellumDocumentTargetV1,
+    OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1, TopicCollectionFilterV1,
+    TopicCollectionLifecycleV1, VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1,
+    VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use agora_service::search::port::{
     SearchCursorV1, SearchGenerationV1, SearchHitV1, SearchObservationV1, SearchPageV1,
@@ -687,7 +687,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     let port = Port::default();
     let calls = port.calls.clone();
     let mut private_limits = daemon_limits();
-    private_limits.max_frames_after_connect = 13;
+    private_limits.max_frames_after_connect = 16;
     let daemon = DaemonV1::bind_new(
         &path,
         host(port),
@@ -709,7 +709,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     let mut stream = UnixStream::connect(&path).unwrap();
     let hello = handshake(&mut stream);
     assert_eq!(hello.max_frame_bytes(), 8_192);
-    assert_eq!(hello.max_frames_after_connect(), 13);
+    assert_eq!(hello.max_frames_after_connect(), 16);
     assert_eq!(hello.server_incarnation(), incarnation());
     assert!(hello.supports_capability_discovery());
     assert!(!format!("{hello:?}").contains("a5"));
@@ -1013,6 +1013,81 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
             ..
         })) if totals == vec![1, 0]
     ));
+    let create_topic = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(11),
+                command: ProtocolCommand::CreateTopic {
+                    room_id: "room".to_owned(),
+                    expected_revision: 9,
+                    name: "work".to_owned(),
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &create_topic);
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicCreated {
+        revision: 10,
+        topic_id,
+    })) = decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap()
+    else {
+        panic!("topic creation expected");
+    };
+    let tag_topic = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(12),
+                command: ProtocolCommand::AddTopicTag {
+                    room_id: "room".to_owned(),
+                    expected_revision: 10,
+                    topic_id,
+                    tag: "urgent".to_owned(),
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &tag_topic);
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicTagAdded {
+            revision: 11,
+            ..
+        }))
+    ));
+    let collection = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(13),
+                command: ProtocolCommand::TopicCollection {
+                    room_id: "room".to_owned(),
+                    filter: TopicCollectionFilterV1 {
+                        lifecycle: TopicCollectionLifecycleV1::Active,
+                        tags: vec!["urgent".to_owned()],
+                    },
+                    cursor: None,
+                    limit: 8,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &collection);
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicCollection(page)))
+            if page.revision == 11
+                && page.topics.len() == 1
+                && page.topics[0].topic_id == topic_id
+                && page.topics[0].tags == vec!["urgent"]
+    ));
     drop(stream);
 
     let (result, daemon) = server.join().unwrap();
@@ -1032,12 +1107,12 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert_eq!(observation.transport, daemon.health());
     assert_eq!(observation.host.open_offers, 1);
     assert_eq!(observation.host.authenticated, 1);
-    assert_eq!(observation.host.frame_offers, 12);
-    assert_eq!(observation.host.executed, 12);
+    assert_eq!(observation.host.frame_offers, 15);
+    assert_eq!(observation.host.executed, 15);
     assert_eq!(observation.service.connect_offers, 1);
     assert_eq!(observation.service.connected, 1);
-    assert_eq!(observation.service.request_offers, 12);
-    assert_eq!(observation.service.accepted, 11);
+    assert_eq!(observation.service.request_offers, 15);
+    assert_eq!(observation.service.accepted, 14);
     assert_eq!(observation.service.replayed, 1);
     assert_eq!(observation.service.disconnected, 1);
     assert!(!observation.fidelity_lost);
@@ -1045,7 +1120,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert!(!diagnostic.contains("alice"));
     assert!(!diagnostic.contains("room"));
     assert!(!diagnostic.contains("Room"));
-    assert_eq!(calls.lock().unwrap().len(), 13);
+    assert_eq!(calls.lock().unwrap().len(), 16);
     drop(daemon);
     assert!(!path.exists());
     remove_parent(&path);

@@ -11,9 +11,9 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1, AttentionPreferenceV1,
     AttentionScopeV1, ClientIdV2, CommandV2, ConversationProfileV1, NotificationIntentV1,
-    OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1,
-    VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
-    VellumDocumentTargetV1,
+    OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1, TopicCollectionFilterV1,
+    TopicCollectionLifecycleV1, VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1,
+    VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
@@ -617,6 +617,84 @@ fn v2_polls_bind_authenticated_human_and_agent_without_disclosing_ballots() {
             if ballot.selections.is_empty()
     ));
     assert!(calls.get() >= 5);
+}
+
+#[test]
+fn v2_topic_collections_bind_the_authenticated_observer_and_exact_filter() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let EngineOutcome::TopicCreated { topic_id, .. } = engine
+        .apply(EngineCommand::CreateTopic {
+            room_id: "room".into(),
+            actor: "alice".into(),
+            name: "work".to_owned(),
+        })
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    engine
+        .apply(EngineCommand::SetTopicTag {
+            room_id: "room".into(),
+            actor: "alice".into(),
+            topic_id,
+            tag: "urgent".to_owned(),
+            added: true,
+        })
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(1),
+    );
+    let (session, client, context) = open(&mut host, "bot", 2);
+    let frame = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::TopicCollection {
+                    room_id: "room".to_owned(),
+                    filter: TopicCollectionFilterV1 {
+                        lifecycle: TopicCollectionLifecycleV1::Active,
+                        tags: vec!["urgent".to_owned()],
+                    },
+                    cursor: None,
+                    limit: 8,
+                },
+            },
+        },
+        limits(1).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host.handle(session, &frame, &context, HostTimeV1(3)).unwrap(),
+            limits(1).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicCollection(page)))
+            if page.topics.len() == 1
+                && page.topics[0].topic_id.into_bytes() == topic_id.into_bytes()
+                && page.filter.tags == vec!["urgent"]
+    ));
+    assert!(calls.get() >= 2);
 }
 
 #[test]
