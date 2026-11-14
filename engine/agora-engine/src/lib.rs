@@ -5,12 +5,50 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
+use std::sync::Arc;
 pub mod persistence;
 
 pub const MAX_TOPIC_ALIASES_PER_TOPIC_V1: usize = 16;
 pub const MAX_TOPIC_TAGS_PER_TOPIC_V1: usize = 8;
 pub const MAX_ATTACHMENTS_PER_MESSAGE_V1: usize = 8;
 pub const MAX_VELLUM_ARTIFACT_REFERENCES_PER_MESSAGE_V1: usize = 8;
+
+/// Opaque observation of the engine's current trusted admission-time floor.
+///
+/// The value is deliberately not serializable or constructible by clients.
+/// Cloning transfers an observation only; recovery creates a fresh namespace so
+/// every pre-recovery observation becomes foreign.
+#[derive(Clone)]
+pub struct AdmissionTimeV1 {
+    namespace: Arc<()>,
+    sequence: u64,
+    instant_ms: u64,
+}
+
+impl PartialEq for AdmissionTimeV1 {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.namespace, &other.namespace)
+            && self.sequence == other.sequence
+            && self.instant_ms == other.instant_ms
+    }
+}
+
+impl Eq for AdmissionTimeV1 {}
+
+impl fmt::Debug for AdmissionTimeV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AdmissionTimeV1(<opaque>)")
+    }
+}
+
+/// Refusal vocabulary for establishing or validating trusted admission time.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdmissionTimeRefusalV1 {
+    Regressed,
+    IdentityExhausted,
+    ForeignObservation,
+    StaleObservation,
+}
 
 /// Resource ceilings for one engine profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3057,6 +3095,9 @@ pub struct Engine {
     attention_preferences:
         BTreeMap<(ParticipantId, RoomId, AttentionScopeV1), AttentionPreferenceV1>,
     private_saves: BTreeMap<(ParticipantId, RoomId, MessageId), u64>,
+    admission_time_namespace: Arc<()>,
+    admission_time_floor_ms: Option<u64>,
+    admission_time_sequence: u64,
 }
 
 impl Default for Engine {
@@ -3086,7 +3127,53 @@ impl Engine {
             read_positions: BTreeMap::new(),
             attention_preferences: BTreeMap::new(),
             private_saves: BTreeMap::new(),
+            admission_time_namespace: Arc::new(()),
+            admission_time_floor_ms: None,
+            admission_time_sequence: 0,
         }
+    }
+
+    /// Advances the explicit trusted admission-time domain and issues its sole
+    /// current opaque observation. Equal instants are allowed and still stale
+    /// every earlier observation.
+    pub fn advance_admission_time(
+        &mut self,
+        instant_ms: u64,
+    ) -> Result<AdmissionTimeV1, AdmissionTimeRefusalV1> {
+        if self
+            .admission_time_floor_ms
+            .is_some_and(|current| instant_ms < current)
+        {
+            return Err(AdmissionTimeRefusalV1::Regressed);
+        }
+        let sequence = self
+            .admission_time_sequence
+            .checked_add(1)
+            .ok_or(AdmissionTimeRefusalV1::IdentityExhausted)?;
+        self.admission_time_floor_ms = Some(instant_ms);
+        self.admission_time_sequence = sequence;
+        Ok(AdmissionTimeV1 {
+            namespace: Arc::clone(&self.admission_time_namespace),
+            sequence,
+            instant_ms,
+        })
+    }
+
+    /// Validates that an admission-time observation is the sole current value
+    /// issued by this exact recovered engine instance.
+    pub fn validate_admission_time(
+        &self,
+        time: &AdmissionTimeV1,
+    ) -> Result<(), AdmissionTimeRefusalV1> {
+        if !Arc::ptr_eq(&time.namespace, &self.admission_time_namespace) {
+            return Err(AdmissionTimeRefusalV1::ForeignObservation);
+        }
+        if time.sequence != self.admission_time_sequence
+            || self.admission_time_floor_ms != Some(time.instant_ms)
+        {
+            return Err(AdmissionTimeRefusalV1::StaleObservation);
+        }
+        Ok(())
     }
 
     pub fn limits(&self) -> Limits {

@@ -1192,10 +1192,16 @@ impl Engine {
         let include_private_saves = !self.private_saves.is_empty();
         let include_shared_pins = engine_has_shared_pins(self);
         let include_polls = engine_has_polls(self);
+        let include_admission_time = self.admission_time_floor_ms.is_some();
         w.raw(b"AGORACP\0")?;
         w.byte(
-            if include_polls { 52 } else { 20 }
-                + u8::from(include_vellum_artifacts)
+            if include_admission_time {
+                if include_polls { 116 } else { 84 }
+            } else if include_polls {
+                52
+            } else {
+                20
+            } + u8::from(include_vellum_artifacts)
                 + (u8::from(include_conversation_profiles) * 2)
                 + (u8::from(include_attention_preferences) * 4)
                 + (u8::from(include_private_saves) * 8)
@@ -1209,6 +1215,13 @@ impl Engine {
         w.option(self.last_published_event)?;
         w.option(self.acknowledged_through)?;
         w.option(self.discarded_changes_through)?;
+        if include_admission_time {
+            w.number(
+                self.admission_time_floor_ms
+                    .ok_or(CheckpointError::Invalid)?,
+            )?;
+            w.number(self.admission_time_sequence)?;
+        }
         w.count(self.participants.len())?;
         for (id, p) in &self.participants {
             w.text(id.as_str())?;
@@ -1418,9 +1431,11 @@ impl Engine {
             return Err(CheckpointError::Profile);
         }
         let profile = r.byte()?;
-        let (feature_bits, has_polls) = match profile {
-            20..=51 => (profile - 20, false),
-            52..=83 => (profile - 52, true),
+        let (feature_bits, has_polls, has_admission_time) = match profile {
+            20..=51 => (profile - 20, false, false),
+            52..=83 => (profile - 52, true, false),
+            84..=115 => (profile - 84, false, true),
+            116..=147 => (profile - 116, true, true),
             _ => return Err(CheckpointError::Profile),
         };
         let has_vellum_artifacts = feature_bits & 1 != 0;
@@ -1435,6 +1450,13 @@ impl Engine {
         e.last_published_event = r.option()?;
         e.acknowledged_through = r.option()?;
         e.discarded_changes_through = r.option()?;
+        if has_admission_time {
+            e.admission_time_floor_ms = Some(r.number()?);
+            e.admission_time_sequence = r.number()?;
+            if e.admission_time_sequence == 0 {
+                return Err(CheckpointError::Invalid);
+            }
+        }
         let n = r.count(l.max_participants)?;
         for _ in 0..n {
             let id = r.participant(l)?;
@@ -1904,6 +1926,9 @@ impl Engine {
             return Err(CheckpointError::NonCanonical);
         }
         if has_polls != engine_has_polls(&e) {
+            return Err(CheckpointError::NonCanonical);
+        }
+        if has_admission_time != e.admission_time_floor_ms.is_some() {
             return Err(CheckpointError::NonCanonical);
         }
         Ok(e)
