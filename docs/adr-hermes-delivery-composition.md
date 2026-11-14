@@ -1,6 +1,6 @@
 # ADR: Hermes notification-delivery composition
 
-Status: accepted; Agora projection slice implemented; adapter execution open
+Status: accepted; minimized foundation qualified; endpoint profiles open
 
 Date: 2026-11-14
 
@@ -82,10 +82,21 @@ revalidation is receipt-gated before a projection can escape, including exact
 recovery after an indeterminate commit. Ordinary Wire V2 exposes no projection
 operation.
 
-The separate adapter consumes Agora's projection vocabulary directly. Its
-subscription journal, Hermes append/replay, endpoint attempt journal,
-revocation cuts, consumer acknowledgment ordering, and Aegis composition remain
-open.
+The separate adapter consumes Agora's projection vocabulary directly. Revisions
+`59483d0`, `e50ab79`, `f833716`, `f1d5e6a`, and `d4558cc` provide the canonical
+projection contract, strong receipt-gated subscription/delivery journals,
+exact Hermes append replay and reusable inbox/outbox conformance, current-
+visibility endpoint offer ordering, durable success before consumer
+acknowledgment, cursor reconciliation, revocation cuts, and distinct Aegis
+subscribe/deliver/inspect/revoke actions. Revision `cdb81a6` adds frozen
+compatibility, exact supply and package inventories, exhaustive checkpoint
+mutation closure, and deterministic recovery soak evidence; revision `6228986`
+pins the passing qualification to that source commit.
+
+Endpoint setup/proof, credential custody, URL/network policy, and provider-
+specific idempotency or receipt reconciliation remain open profiles. The
+generic foundation never retries an outcome-unknown endpoint offer without
+that evidence and does not claim a provider delivery guarantee.
 
 ## Nonclaims
 
