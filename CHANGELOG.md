@@ -14,6 +14,11 @@ follow Semantic Versioning once a public release contract is selected.
   wire/checkpoint identities and existing transport behavior are unchanged.
   Revision `2fdb87e6e45df08e0e929e66d88a3425547282e9` passed the integrated release
   profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
+- Reproduced two byte-identical 412-payload source candidates for revision
+  `cd5ab9386bde597e83d58a101feef01871cb78b9` and two byte-identical canonical
+  3,537,408-byte, 499-entry archives at SHA-256
+  `079b986e2c84a33923d4f80be1781987ea60326ea6f34cd96616df9984777e5b`.
+  Direct-candidate and extracted-archive qualification passed locked/offline.
 
 - Added offline canonical backup, verification, and restore for the private
   directory store. Export holds the source lock and synchronizes a new private

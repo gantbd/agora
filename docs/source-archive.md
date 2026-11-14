@@ -32,14 +32,19 @@ advisory status, legal compatibility, support, or a publication channel.
 
 ## Qualified local archive
 
-Agora revision `46098fb3cd1a6f9164365d8c49cf7edbc0957ef7` produced two
-byte-identical canonical archives from two independently built candidates on
-Darwin 25.6.0 arm64 / macOS 26.6.2. Each archive is 2,450,432 bytes with 362
-entries and SHA-256
-`4437ccfa263ff913b36679706a5585be5170cc1abd5f32869db8f4d20544c0c5`.
+Agora revision `cd5ab9386bde597e83d58a101feef01871cb78b9` produced two
+byte-identical canonical archives from independently built candidates on Darwin
+25.6.0 arm64 / macOS 26.6.2. Each archive is 3,537,408 bytes with 499 entries
+and SHA-256
+`079b986e2c84a33923d4f80be1781987ea60326ea6f34cd96616df9984777e5b`.
 One archive passed checksum and canonical validation, platform extraction,
-extracted R56 closure, exact rearchive, every stable workspace target, doctests,
-and warning-denied documentation with locked/offline dependencies and a fresh
-target directory. Both selected sibling trees remain truthfully recorded as
-unclean; the archive closes exact bytes and does not promote contextual Git
-revisions into origin provenance.
+extracted checksum closure, exact rearchive, every stable workspace target,
+doctests, and warning-denied documentation with locked/offline dependencies and
+a fresh target directory. Both selected sibling trees remain truthfully
+recorded as unclean; the archive closes exact bytes and does not promote
+contextual Git revisions into origin provenance.
+
+The earlier qualification at Agora revision
+`46098fb3cd1a6f9164365d8c49cf7edbc0957ef7` produced two byte-identical
+2,450,432-byte, 362-entry archives with SHA-256
+`4437ccfa263ff913b36679706a5585be5170cc1abd5f32869db8f4d20544c0c5`.

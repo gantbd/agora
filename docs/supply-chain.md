@@ -38,22 +38,21 @@ revision. A reduced reviewed Keystone workspace manifest supplies only inherited
 metadata for the two selected packages. Isolated locked/offline build evidence
 establishes content closure, not origin, advisory, or legal provenance.
 
-The earlier qualified candidate for Agora revision
-`46098fb3cd1a6f9164365d8c49cf7edbc0957ef7` was reproduced byte-for-byte,
-closed over the then-seventeen-component, 291-payload-file graph including its
-canonical source SBOM, archive tooling,
-and storage-observation port, and passed
-the complete stable locked/offline workspace build from an isolated target.
-Its manifest digest is
-`21aae72df2634c215fc1075161d51e4046a66c5f06e341ab73e623cc15ad521f` and
+The qualified candidate for Agora revision
+`cd5ab9386bde597e83d58a101feef01871cb78b9` was reproduced byte-for-byte
+from two independent constructions and closes the current twenty-component,
+412-payload-file graph. Its manifest digest is
+`4a7a65a671bc80ff15637c024615eb2c6202f448c5a5daf27b67ee4d30ceb61e` and
 its checksum-inventory digest is
-`3c5c1781b9592a92e700e8023b46f6096a547205328adbdfb9de1e087679c8f3`.
+`cd3026890cfbf78bf5b6c28a4e24e69a636a10d342eb75945dee64005369c0ee`.
 Both sibling selections were recorded unclean; the content hashes are evidence,
-while their contextual Git revisions are not promoted into provenance.
-Two canonical archives over those independent candidates were byte-identical at
-2,450,432 bytes and 362 entries at SHA-256
-`4437ccfa263ff913b36679706a5585be5170cc1abd5f32869db8f4d20544c0c5`;
-one passed complete extracted-source qualification.
+while their contextual Git revisions are not promoted into provenance. Two
+canonical archives over those independent candidates were byte-identical at
+3,537,408 bytes and 499 entries at SHA-256
+`079b986e2c84a33923d4f80be1781987ea60326ea6f34cd96616df9984777e5b`;
+one passed canonical validation, exact rearchive, and complete extracted-source
+qualification. The earlier seventeen-component artifact remains historical
+evidence only.
 
 This evidence does not establish remote availability of Aegis or Keystone, registry
 packaging, transitive source integrity outside the local checkouts, advisory
