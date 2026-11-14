@@ -705,10 +705,10 @@
 
 ## Explicitly open
 
-The R96 conversation-profile and R97 private-attention contracts are implemented
-and commit-pinned release-qualified through the private-local stack. R98 shared
-pins and private saves are implemented as a release candidate through that same
-stack; commit-pinned release qualification remains open. Additional
+The R96 conversation-profile, R97 private-attention, and R98 shared-pin/private-save
+contracts are implemented and commit-pinned release-qualified through the
+private-local stack. R99 bounded polls are the next planned capability.
+Additional
 physical durable storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,
 federation, delivery acknowledgment, and durable audit are not part of the

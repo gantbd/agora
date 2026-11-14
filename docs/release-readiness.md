@@ -136,14 +136,17 @@ not ready for a network service or crates.io release.
   release-mode target, 10,000 deterministic soak cycles, and 1,000,000
   fixed-seed cases on each of the three fuzz targets on Darwin 25.6.0 arm64 /
   macOS 26.6.2 with unchanged tracked bytes afterward;
-- implemented the R98 shared-pin/private-save candidate through engine,
+- release-qualified the R98 shared-pin/private-save profile through engine,
   protocol/wire, service, durable commit-before-publication, authenticated Host,
   client, both SDK facades, and private Unix transport; explicit
   available/tombstoned/evicted relations retain no payload, 256/4,096 capacity
   fences and an exhaustive human/agent schedule model pass, feature-bit engine
   recovery is canonical, and two frozen frames bring the compatibility
-  inventory to 81 with refreshed fuzz seeds; commit-pinned qualification is
-  still pending;
+  inventory to 81 with refreshed fuzz seeds; revision
+  `80bc30d4ec1dcbf81ac1bdeba016dacf96fcd611` passed the ordinary gate, every
+  release-mode target, 10,000 deterministic soak cycles, and 1,000,000
+  fixed-seed cases on each of the three fuzz targets on Darwin 25.6.0 arm64 /
+  macOS 26.6.2 with unchanged tracked bytes afterward;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound

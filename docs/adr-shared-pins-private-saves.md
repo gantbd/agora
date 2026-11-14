@@ -1,6 +1,6 @@
 # ADR: shared pins and private saves
 
-Status: implementation candidate; release qualification pending
+Status: accepted and release-qualified
 
 Date: 2026-11-14
 
@@ -72,6 +72,13 @@ retention and authorization remain adapter/owner concerns.
   real private-transport binding.
 - Bounded model and adversarial mutation evidence, compatibility/fuzz closure,
   ordinary gate, and commit-pinned release qualification.
+
+Revision `80bc30d4ec1dcbf81ac1bdeba016dacf96fcd611` passed the ordinary
+gate, every release-mode target, 10,000 deterministic soak cycles, and
+1,000,000 fixed-seed cases on each of the three fuzz targets on Darwin 25.6.0
+arm64 / macOS 26.6.2, with unchanged tracked bytes afterward. The campaign
+also found and closed a noncanonical peer-conversation cohort decoder path
+before the qualifying revision was committed.
 
 ## Nonclaims
 

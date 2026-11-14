@@ -198,7 +198,7 @@ cases on each of the three fuzz targets on Darwin 25.6.0 arm64 / macOS 26.6.2,
 with unchanged tracked bytes afterward. R97 is satisfied for the claimed
 private-local profile boundary.
 
-The R98 implementation candidate separates shared pins from private saves at
+The release-qualified R98 profile separates shared pins from private saves at
 every owner and observation boundary. Core cases cover authority, privacy,
 duplicate-state refusal, stale writes, membership loss, tombstone and eviction,
 post-eviction removal, exact event/revision effects, and saturation at 256 pins
@@ -207,9 +207,13 @@ schedule over set/clear pin and save operations for human and agent actors.
 Canonical feature-bit recovery, service receipts, durable
 commit-before-publication, authenticated Host binding, client uncertainty, both
 SDK facades, and the private Unix route are exercised. Two frozen frames, the
-81-fixture inventory, and refreshed wire/outer fuzz seeds close the candidate
-compatibility surface. Ordinary and commit-pinned release qualification remain
-pending.
+81-fixture inventory, and refreshed wire/outer fuzz seeds close the
+compatibility surface. Revision
+`80bc30d4ec1dcbf81ac1bdeba016dacf96fcd611` passed the ordinary gate, every
+release-mode target, 10,000 deterministic soak cycles, and 1,000,000 fixed-seed
+cases on each of the three fuzz targets on Darwin 25.6.0 arm64 / macOS 26.6.2,
+with unchanged tracked bytes afterward. R98 is satisfied for the claimed
+private-local profile boundary.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;

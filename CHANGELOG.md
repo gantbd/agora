@@ -17,7 +17,9 @@ follow Semantic Versioning once a public release contract is selected.
   protocol/wire, service, durable owner, authenticated Host, client, both SDK
   facades, private Unix transport, saturation and exhaustive schedule evidence,
   two frozen frames, 81 compatibility fixtures, and refreshed fuzz seeds.
-  Commit-pinned release qualification remains pending.
+  Revision `80bc30d4ec1dcbf81ac1bdeba016dacf96fcd611` passed the ordinary
+  gate, every release-mode target, 10,000 deterministic soak cycles, and
+  1,000,000 fixed-seed cases on each of the three fuzz targets.
 
 - Implemented the R97 private-attention contract: each current member owns a
   bounded room/thread/topic preference with independent follow, mute, and
