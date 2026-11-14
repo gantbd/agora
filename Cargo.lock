@@ -72,11 +72,19 @@ dependencies = [
  "agora-durable",
  "agora-engine",
  "agora-host",
+ "agora-local-transport",
  "agora-protocol",
  "agora-service",
  "agora-storage-directory",
  "agora-wire",
  "keystone-storage",
+]
+
+[[package]]
+name = "agora-local-transport"
+version = "0.1.0"
+dependencies = [
+ "agora-wire",
 ]
 
 [[package]]

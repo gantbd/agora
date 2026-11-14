@@ -25,7 +25,8 @@ agora-storage-directory --> storage-observation port + keystone-storage port + l
 agora-search-memory --> agora-search-port
 agora-search-port --> no normal dependencies
 agora-aegis-verifier --> agora-host + agora-durable + Aegis public service port
-agora-local-daemon --> agora-aegis-verifier + agora-host + agora-wire + Unix socket
+agora-local-transport --> agora-wire + Unix endpoint/stream resources
+agora-local-daemon --> agora-local-transport + agora-aegis-verifier + agora-host + agora-durable + agora-wire
 ```
 
 `agora-engine` and `agora-protocol` have no normal dependencies. The protocol
@@ -44,8 +45,9 @@ when revision changes, and retires per-client receipts/cursors on close,
 revocation, or client substitution. Search runtime state is deliberately absent
 from Service/Host checkpoints.
 
-The leaf local daemon owns outer framing and one accepted connection lifetime.
-It supplies a trusted connection-derived Aegis context and explicit time to
+The leaf local transport owns outer framing and one accepted connection
+lifetime without authority or domain knowledge. The daemon application supplies
+a trusted connection-derived Aegis context and explicit time to
 either the volatile Host V2 or receipt-gated Durable Host V2, but neither imports
 transport state into conversation semantics nor exposes the opaque host session
 on the wire. The durable selection reuses the generic checkpoint-store port and

@@ -4,16 +4,23 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if rg -n 'AgentActivation|activate_agents|max_agent_activations' \
-  engine protocol client service host ports adapters applications sdk; then
+  engine protocol client service host ports adapters transport applications sdk; then
   echo 'agent activation semantics crossed the Agora boundary' >&2
   exit 1
 fi
 
 if rg -n 'std::(fs|net|process)::|tokio|async_std|reqwest|rusqlite' \
-  engine protocol client service host ports adapters applications sdk -g '*.rs' \
+  engine protocol client service host ports adapters transport applications sdk -g '*.rs' \
   -g '!adapters/agora-storage-directory/**' \
+  -g '!transport/agora-local-transport/**' \
   -g '!applications/agora-local-daemon/**'; then
   echo 'effectful runtime dependency crossed an Agora semantic boundary' >&2
+  exit 1
+fi
+
+if sed '/^#\[cfg(test)\]/,$d' applications/agora-local-daemon/src/lib.rs \
+  | rg -n 'std::(fs|net|process)::|std::os::unix::fs::|UnixListener'; then
+  echo 'local transport mechanics crossed into the daemon composition root' >&2
   exit 1
 fi
 
@@ -94,11 +101,21 @@ if [[ $(printf '%s\n' "$aegis_verifier_tree" | wc -l | tr -d ' ') != 5 ]] \
   exit 1
 fi
 
+local_transport_tree=$(cargo tree -p agora-local-transport --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$local_transport_tree" | wc -l | tr -d ' ') != 2 ]] \
+  || ! printf '%s\n' "$local_transport_tree" | rg -q 'agora-wire' \
+  || printf '%s\n' "$local_transport_tree" | rg -q 'aegis|keystone|agora-(engine|service|host|client|durable)'; then
+  printf '%s\n' "$local_transport_tree" >&2
+  echo 'Agora local transport gained authority, domain, host, or durability knowledge' >&2
+  exit 1
+fi
+
 local_daemon_tree=$(cargo tree -p agora-local-daemon --edges normal --depth 1 --locked --offline)
-if [[ $(printf '%s\n' "$local_daemon_tree" | wc -l | tr -d ' ') != 6 ]] \
+if [[ $(printf '%s\n' "$local_daemon_tree" | wc -l | tr -d ' ') != 7 ]] \
   || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-aegis-verifier' \
   || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-durable' \
   || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-host' \
+  || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-local-transport' \
   || ! printf '%s\n' "$local_daemon_tree" | rg -q 'agora-wire' \
   || ! printf '%s\n' "$local_daemon_tree" | rg -q 'keystone-storage' \
   || printf '%s\n' "$local_daemon_tree" | rg -q 'agora-(engine|service|client|storage)'; then

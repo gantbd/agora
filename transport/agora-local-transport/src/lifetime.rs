@@ -1,4 +1,4 @@
-use crate::{DaemonErrorV1, ServerIncarnationV1};
+use crate::{LocalTransportErrorV1, ServerIncarnationV1};
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::os::unix::fs::{FileExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
@@ -38,16 +38,17 @@ impl LifetimeLeaseV1 {
         parent_path: &Path,
         socket_path: &Path,
         server_incarnation: ServerIncarnationV1,
-    ) -> Result<Self, DaemonErrorV1> {
-        let parent_metadata = fs::symlink_metadata(parent_path).map_err(DaemonErrorV1::Io)?;
+    ) -> Result<Self, LocalTransportErrorV1> {
+        let parent_metadata =
+            fs::symlink_metadata(parent_path).map_err(LocalTransportErrorV1::Io)?;
         if !parent_metadata.is_dir() || parent_metadata.permissions().mode() & 0o777 != 0o700 {
-            return Err(DaemonErrorV1::UnsafeEndpoint);
+            return Err(LocalTransportErrorV1::UnsafeEndpoint);
         }
-        let parent = File::open(parent_path).map_err(DaemonErrorV1::Io)?;
+        let parent = File::open(parent_path).map_err(LocalTransportErrorV1::Io)?;
         let parent_identity =
-            ResourceIdentityV1::of(&parent.metadata().map_err(DaemonErrorV1::Io)?);
+            ResourceIdentityV1::of(&parent.metadata().map_err(LocalTransportErrorV1::Io)?);
         if parent_identity != ResourceIdentityV1::of(&parent_metadata) {
-            return Err(DaemonErrorV1::UnsafeEndpoint);
+            return Err(LocalTransportErrorV1::UnsafeEndpoint);
         }
 
         let lock_path = lifetime_path(socket_path)?;
@@ -62,22 +63,22 @@ impl LifetimeLeaseV1 {
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
                 return Err(classify_existing_lifetime(&lock_path));
             }
-            Err(error) => return Err(DaemonErrorV1::Io(error)),
+            Err(error) => return Err(LocalTransportErrorV1::Io(error)),
         };
         if let Err(error) = lock.try_lock() {
             let _ = fs::remove_file(&lock_path);
-            return Err(DaemonErrorV1::Io(error.into()));
+            return Err(LocalTransportErrorV1::Io(error.into()));
         }
         let lock_metadata = match lock.metadata() {
             Ok(metadata) => metadata,
             Err(error) => {
                 let _ = fs::remove_file(&lock_path);
-                return Err(DaemonErrorV1::Io(error));
+                return Err(LocalTransportErrorV1::Io(error));
             }
         };
         if !private_regular_file(&lock_metadata) {
             let _ = fs::remove_file(&lock_path);
-            return Err(DaemonErrorV1::UnsafeEndpoint);
+            return Err(LocalTransportErrorV1::UnsafeEndpoint);
         }
         let record = record(server_incarnation);
         if let Err(error) = lock
@@ -87,13 +88,13 @@ impl LifetimeLeaseV1 {
             .and_then(|()| parent.sync_all())
         {
             let _ = fs::remove_file(&lock_path);
-            return Err(DaemonErrorV1::Io(error));
+            return Err(LocalTransportErrorV1::Io(error));
         }
         let lock_identity = match lock.metadata() {
             Ok(metadata) => ResourceIdentityV1::of(&metadata),
             Err(error) => {
                 let _ = fs::remove_file(&lock_path);
-                return Err(DaemonErrorV1::Io(error));
+                return Err(LocalTransportErrorV1::Io(error));
             }
         };
         Ok(Self {
@@ -113,7 +114,7 @@ impl LifetimeLeaseV1 {
         socket_path: &Path,
         previous_incarnation: ServerIncarnationV1,
         next_incarnation: ServerIncarnationV1,
-    ) -> Result<Self, DaemonErrorV1> {
+    ) -> Result<Self, LocalTransportErrorV1> {
         Self::recover_stale_inner(
             parent_path,
             socket_path,
@@ -129,45 +130,46 @@ impl LifetimeLeaseV1 {
         previous_incarnation: ServerIncarnationV1,
         next_incarnation: ServerIncarnationV1,
         mut interrupt: impl FnMut(u8) -> io::Result<()>,
-    ) -> Result<Self, DaemonErrorV1> {
+    ) -> Result<Self, LocalTransportErrorV1> {
         if previous_incarnation.is_zero()
             || next_incarnation.is_zero()
             || previous_incarnation == next_incarnation
         {
-            return Err(DaemonErrorV1::ResidueMismatch);
+            return Err(LocalTransportErrorV1::ResidueMismatch);
         }
-        let parent_metadata = fs::symlink_metadata(parent_path).map_err(DaemonErrorV1::Io)?;
+        let parent_metadata =
+            fs::symlink_metadata(parent_path).map_err(LocalTransportErrorV1::Io)?;
         if !parent_metadata.is_dir() || parent_metadata.permissions().mode() & 0o777 != 0o700 {
-            return Err(DaemonErrorV1::UnsafeEndpoint);
+            return Err(LocalTransportErrorV1::UnsafeEndpoint);
         }
-        let parent = File::open(parent_path).map_err(DaemonErrorV1::Io)?;
+        let parent = File::open(parent_path).map_err(LocalTransportErrorV1::Io)?;
         let parent_identity =
-            ResourceIdentityV1::of(&parent.metadata().map_err(DaemonErrorV1::Io)?);
+            ResourceIdentityV1::of(&parent.metadata().map_err(LocalTransportErrorV1::Io)?);
         if parent_identity != ResourceIdentityV1::of(&parent_metadata) {
-            return Err(DaemonErrorV1::UnsafeEndpoint);
+            return Err(LocalTransportErrorV1::UnsafeEndpoint);
         }
 
         let lock_path = lifetime_path(socket_path)?;
         let lock_path_metadata =
-            fs::symlink_metadata(&lock_path).map_err(|_| DaemonErrorV1::ResidueMismatch)?;
+            fs::symlink_metadata(&lock_path).map_err(|_| LocalTransportErrorV1::ResidueMismatch)?;
         if !private_regular_file(&lock_path_metadata) {
-            return Err(DaemonErrorV1::UnsafeEndpoint);
+            return Err(LocalTransportErrorV1::UnsafeEndpoint);
         }
         let lock = OpenOptions::new()
             .read(true)
             .write(true)
             .open(&lock_path)
-            .map_err(DaemonErrorV1::Io)?;
-        let lock_metadata = lock.metadata().map_err(DaemonErrorV1::Io)?;
+            .map_err(LocalTransportErrorV1::Io)?;
+        let lock_metadata = lock.metadata().map_err(LocalTransportErrorV1::Io)?;
         if !private_regular_file(&lock_metadata)
             || ResourceIdentityV1::of(&lock_path_metadata) != ResourceIdentityV1::of(&lock_metadata)
         {
-            return Err(DaemonErrorV1::UnsafeEndpoint);
+            return Err(LocalTransportErrorV1::UnsafeEndpoint);
         }
         match lock.try_lock() {
             Ok(()) => {}
-            Err(fs::TryLockError::WouldBlock) => return Err(DaemonErrorV1::LifetimeBusy),
-            Err(error) => return Err(DaemonErrorV1::Io(error.into())),
+            Err(fs::TryLockError::WouldBlock) => return Err(LocalTransportErrorV1::LifetimeBusy),
+            Err(error) => return Err(LocalTransportErrorV1::Io(error.into())),
         }
         let expected = record(previous_incarnation);
         let mut actual = [0_u8; RECORD_BYTES_V1];
@@ -175,7 +177,7 @@ impl LifetimeLeaseV1 {
             || lock.read_exact_at(&mut actual, 0).is_err()
             || actual != expected
         {
-            return Err(DaemonErrorV1::ResidueMismatch);
+            return Err(LocalTransportErrorV1::ResidueMismatch);
         }
 
         let socket_present = match fs::symlink_metadata(socket_path) {
@@ -184,28 +186,29 @@ impl LifetimeLeaseV1 {
                     || socket_metadata.permissions().mode() & 0o777 != 0o600
                     || socket_metadata.nlink() != 1
                 {
-                    return Err(DaemonErrorV1::UnsafeEndpoint);
+                    return Err(LocalTransportErrorV1::UnsafeEndpoint);
                 }
                 true
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => false,
-            Err(error) => return Err(DaemonErrorV1::Io(error)),
+            Err(error) => return Err(LocalTransportErrorV1::Io(error)),
         };
 
         let next_record = record(next_incarnation);
         lock.write_all_at(&next_record, 0)
             .and_then(|()| lock.set_len(next_record.len() as u64))
-            .map_err(DaemonErrorV1::Io)?;
-        interrupt(1).map_err(DaemonErrorV1::Io)?;
-        lock.sync_all().map_err(DaemonErrorV1::Io)?;
-        interrupt(2).map_err(DaemonErrorV1::Io)?;
+            .map_err(LocalTransportErrorV1::Io)?;
+        interrupt(1).map_err(LocalTransportErrorV1::Io)?;
+        lock.sync_all().map_err(LocalTransportErrorV1::Io)?;
+        interrupt(2).map_err(LocalTransportErrorV1::Io)?;
         if socket_present {
-            fs::remove_file(socket_path).map_err(DaemonErrorV1::Io)?;
+            fs::remove_file(socket_path).map_err(LocalTransportErrorV1::Io)?;
         }
-        interrupt(3).map_err(DaemonErrorV1::Io)?;
-        parent.sync_all().map_err(DaemonErrorV1::Io)?;
-        interrupt(4).map_err(DaemonErrorV1::Io)?;
-        let lock_identity = ResourceIdentityV1::of(&lock.metadata().map_err(DaemonErrorV1::Io)?);
+        interrupt(3).map_err(LocalTransportErrorV1::Io)?;
+        parent.sync_all().map_err(LocalTransportErrorV1::Io)?;
+        interrupt(4).map_err(LocalTransportErrorV1::Io)?;
+        let lock_identity =
+            ResourceIdentityV1::of(&lock.metadata().map_err(LocalTransportErrorV1::Io)?);
         Ok(Self {
             parent,
             parent_path: parent_path.to_path_buf(),
@@ -276,38 +279,40 @@ impl Drop for LifetimeLeaseV1 {
     }
 }
 
-fn lifetime_path(socket_path: &Path) -> Result<PathBuf, DaemonErrorV1> {
-    let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
+fn lifetime_path(socket_path: &Path) -> Result<PathBuf, LocalTransportErrorV1> {
+    let parent = socket_path
+        .parent()
+        .ok_or(LocalTransportErrorV1::UnsafeEndpoint)?;
     let mut name = socket_path
         .file_name()
-        .ok_or(DaemonErrorV1::UnsafeEndpoint)?
+        .ok_or(LocalTransportErrorV1::UnsafeEndpoint)?
         .to_os_string();
     name.push(".owner.lock");
     Ok(parent.join(name))
 }
 
-fn classify_existing_lifetime(path: &Path) -> DaemonErrorV1 {
+fn classify_existing_lifetime(path: &Path) -> LocalTransportErrorV1 {
     let Ok(path_metadata) = fs::symlink_metadata(path) else {
-        return DaemonErrorV1::UnsafeEndpoint;
+        return LocalTransportErrorV1::UnsafeEndpoint;
     };
     if !private_regular_file(&path_metadata) {
-        return DaemonErrorV1::UnsafeEndpoint;
+        return LocalTransportErrorV1::UnsafeEndpoint;
     }
     let Ok(lock) = OpenOptions::new().read(true).write(true).open(path) else {
-        return DaemonErrorV1::UnsafeEndpoint;
+        return LocalTransportErrorV1::UnsafeEndpoint;
     };
     let Ok(open_metadata) = lock.metadata() else {
-        return DaemonErrorV1::UnsafeEndpoint;
+        return LocalTransportErrorV1::UnsafeEndpoint;
     };
     if !private_regular_file(&open_metadata)
         || ResourceIdentityV1::of(&path_metadata) != ResourceIdentityV1::of(&open_metadata)
     {
-        return DaemonErrorV1::UnsafeEndpoint;
+        return LocalTransportErrorV1::UnsafeEndpoint;
     }
     match lock.try_lock() {
-        Ok(()) => DaemonErrorV1::CrashResidue,
-        Err(fs::TryLockError::WouldBlock) => DaemonErrorV1::LifetimeBusy,
-        Err(error) => DaemonErrorV1::Io(error.into()),
+        Ok(()) => LocalTransportErrorV1::CrashResidue,
+        Err(fs::TryLockError::WouldBlock) => LocalTransportErrorV1::LifetimeBusy,
+        Err(error) => LocalTransportErrorV1::Io(error.into()),
     }
 }
 
@@ -373,7 +378,7 @@ mod tests {
                 },
             );
             assert!(
-                matches!(result, Err(DaemonErrorV1::Io(error)) if error.kind() == io::ErrorKind::Interrupted),
+                matches!(result, Err(LocalTransportErrorV1::Io(error)) if error.kind() == io::ErrorKind::Interrupted),
                 "point {selected} must not report success"
             );
             assert_eq!(fs::read(&lock).unwrap(), record(published));

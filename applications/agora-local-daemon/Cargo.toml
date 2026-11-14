@@ -3,7 +3,7 @@ name = "agora-local-daemon"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
-description = "Bounded private Unix transport for an Aegis-authorized Agora host"
+description = "Application composition for an Aegis-authorized Agora local host"
 license = "MIT OR Apache-2.0"
 publish = false
 
@@ -11,6 +11,7 @@ publish = false
 agora-aegis-verifier = { path = "../../adapters/agora-aegis-verifier", version = "=0.1.0" }
 agora-durable = { path = "../../service/agora-durable", version = "=0.1.0" }
 agora-host = { path = "../../host/agora-host", version = "=0.1.0" }
+agora-local-transport = { path = "../../transport/agora-local-transport", version = "=0.1.0" }
 agora-wire = { path = "../../protocol/agora-wire", version = "=0.1.0" }
 keystone-storage = { path = "../../../keystone/crates/keystone-storage", version = "=0.0.1" }
 

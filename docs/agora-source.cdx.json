@@ -181,6 +181,28 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:cargo/agora-local-transport@0.1.0",
+      "name": "agora-local-transport",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-local-transport@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:cargo/agora-protocol@0.1.0",
       "name": "agora-protocol",
       "version": "0.1.0",
@@ -487,11 +509,18 @@
         "pkg:cargo/agora-durable@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-host@0.1.0",
+        "pkg:cargo/agora-local-transport@0.1.0",
         "pkg:cargo/agora-protocol@0.1.0",
         "pkg:cargo/agora-service@0.1.0",
         "pkg:cargo/agora-storage-directory@0.1.0",
         "pkg:cargo/agora-wire@0.1.0",
         "pkg:cargo/keystone-storage@0.0.1"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/agora-local-transport@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-wire@0.1.0"
       ]
     },
     {

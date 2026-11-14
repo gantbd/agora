@@ -964,3 +964,21 @@ Each category has one canonical directory prefix: `engine/`, `protocol/`,
 its declared category. The repository-root manifest is workspace-only and is
 not a package. Categorical placement changes neither the Cargo package identity
 nor any semantic or serialized profile.
+
+`agora-local-transport` owns the private Unix endpoint resource, pinned lifetime
+record, accepted byte stream, I/O deadlines, canonical outer length prefix, and
+server-incarnation entropy. Its sole normal dependency is `agora-wire`, from
+which it uses the opaque server-incarnation scalar. It has no principal,
+authority, conversation, Host, service, durability, client, or storage
+vocabulary. `agora-local-daemon` is the application composition root: it owns
+the trusted authenticator boundary, Aegis context, Host selection, route
+profile, explicit clock, recovery ordering, lifecycle, and layered observation.
+Transport failures map into the pre-existing closed daemon error classes; no
+wire or lifetime-record bytes change.
+
+Horizon-zero assurance is graph- and path-sensitive. Locked Cargo metadata,
+package classification, compatibility fixtures, supply inventory, CycloneDX
+source SBOM, fuzz dependency/seed closure, source-candidate/archive contracts,
+and release qualification must all name or derive the relocated graph exactly.
+The ordinary gate precedes the bounded commit-pinned release profile. Passing a
+semantic test suite without those inventory and artifact checks is insufficient.

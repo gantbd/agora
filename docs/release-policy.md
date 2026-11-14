@@ -35,7 +35,7 @@ publication, replacing the pinned toolchain with `stable`, and removing the
 security policy must all fail.
 
 `make check-baseline` closes over the exact package and canonical-fixture
-inventories. `make check-supply-chain` closes over the current nineteen locked local
+inventories. `make check-supply-chain` closes over the current twenty locked local
 components and refuses source/checksum registry records or dependency edges that
 do not use an exact version plus a local path. These gates detect reviewed source
 contract drift. They do not perform an advisory lookup, legal conclusion,

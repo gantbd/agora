@@ -8,6 +8,11 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added a normative aggregate model, exact machine-checked package taxonomy,
+  category-aligned workspace layout, and a dedicated authority-free local Unix
+  transport package. The daemon now remains an application composition root;
+  wire/checkpoint identities and existing transport behavior are unchanged.
+
 - Added offline canonical backup, verification, and restore for the private
   directory store. Export holds the source lock and synchronizes a new private
   exact-record file; restore validates before creating a new store, preserves

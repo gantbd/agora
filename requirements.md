@@ -656,6 +656,21 @@
   dependency closure, canonical wire/checkpoint bytes, capability vocabulary,
   authority, public SDK dependency closures, and all existing functional
   evidence. Empty speculative categories are not required.
+- **R94 — Local transport/application separation:** authority-free Unix endpoint
+  lifetime, socket ownership, stream deadlines, outer framing, and incarnation
+  entropy must live in a dedicated transport package. The daemon application
+  must retain authentication, Host and durability selection, routing, clocks,
+  recovery policy, lifecycle, and operational aggregation. The transport must
+  import no Aegis, engine, service, Host, client, durable, or storage package;
+  extraction must preserve public daemon behavior, error classes, canonical
+  frame bytes, lifetime records, recovery ordering, and process-cut evidence.
+- **R95 — Horizon-zero assurance closure:** every path-sensitive boundary,
+  classification, compatibility, supply, SBOM, fuzz, source-candidate,
+  source-archive, and release contract must close over the categorically moved
+  graph. The complete ordinary gate and bounded commit-pinned release profile
+  must pass from one clean revision. Qualification changes no package identity,
+  wire or checkpoint bytes, capability advertisement, authority law, transport
+  claim, or public SDK closure.
 
 ## Explicitly open
 

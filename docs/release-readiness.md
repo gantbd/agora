@@ -57,15 +57,15 @@ not ready for a network service or crates.io release.
 - unpublished trusted-host and remote-client SDK facades with executable
   facade-only construction and closed dependency evidence;
 - exact non-publication and Rust 1.95.0 source-contract enforcement across all
-  fifteen stable workspace packages;
-- conservative package and canonical-fixture inventory closure over fifteen
-  stable workspace packages, one standalone fuzz package, and sixty
+  sixteen stable workspace packages;
+- conservative package and canonical-fixture inventory closure over sixteen
+  stable workspace packages, one standalone fuzz package, and seventy-five
   fixtures;
 - repository license texts, private security reporting, a changelog, and an
   explicit source-distribution policy;
-- conservative supply inventory closure over nineteen locked local components with
+- conservative supply inventory closure over twenty locked local components with
   missing, changed-version, and empty-inventory mutants;
-- deterministic CycloneDX 1.5 stable-source SBOM closure over the same nineteen
+- deterministic CycloneDX 1.5 stable-source SBOM closure over the same twenty
   components and their dependency graph, with exact license/publication facts,
   offline byte-for-byte regeneration, and adversarial schema/claim mutants;
 - canonical bounded USTAR source-archive construction and verification,
@@ -264,7 +264,7 @@ not ready for a network service or crates.io release.
 - no remote origin provenance or remote CI; the qualified local source candidate
   is content-addressed, but its selected Aegis and Keystone inputs were unclean
   and are not proven to correspond to remotely available commits; that artifact
-  also predates the current nineteen-component search-expanded graph, which has
+  also predates the current twenty-component search-and-transport-expanded graph, which has
   not received a new source-candidate/archive qualification;
 - SDK facades are not approved or configured for registry publication;
 - no qualified credential/Unix-peer authenticator, network transport, or

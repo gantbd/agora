@@ -1,5 +1,10 @@
 # Roadmap
 
+The categorical hygiene baseline is implemented: a normative aggregate model,
+exact package classification, category-aligned workspace, and separate
+authority-free local transport/application composition. Final artifact
+requalification remains part of the current release-readiness work.
+
 1. Extend the implemented deterministic models, canonical wire/recovery mutation,
    coverage-guided fuzzing, filesystem interruption, and commit-pinned local
    release qualification with broader command models plus repeated remote and

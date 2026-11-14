@@ -5,10 +5,11 @@ volatile conversation, volatile collaboration, volatile derived search,
 receipt-gated durable conversation, or receipt-gated durable conversation plus
 volatile collaboration.
 
-`agora-local-daemon` owns only the outer connection and framing lifetime around
-an Aegis-authorized volatile, transient-wrapped, durable, or combined
+`agora-local-transport` owns the authority-free outer connection, framing,
+endpoint lifetime, deadlines, and incarnation entropy. `agora-local-daemon`
+composes that mechanism around an Aegis-authorized volatile, transient-wrapped, durable, or combined
 durable-conversation/volatile-collaboration Host owner. Its normal dependency
-closure reaches only the verifier adapter, Host/Durable owners, Wire, and the
+closure reaches only the transport, verifier adapter, Host/Durable owners, Wire, and the
 generic Keystone checkpoint-store port; the physical directory store used by
 qualification remains test-only. It does not enter Agora's engine, protocol,
 service, storage implementation, Aegis policy, or SDK semantics.
@@ -31,7 +32,7 @@ The application supplies:
   injectable bounded generation boundary and OS-backed `/dev/urandom` source;
 - positive frame, request, and I/O deadline limits.
 
-The daemon requires a real existing mode-0700 parent directory, creates a new
+The injected transport requires a real existing mode-0700 parent directory, creates a new
 Unix-domain socket within it, hardens the socket to mode 0600, validates its
 type, and pins its device/inode identity. A symlink or permissive parent and an
 existing regular file, symlink, socket, or other endpoint object refuse

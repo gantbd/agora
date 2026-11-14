@@ -13,6 +13,7 @@ members = [
     "adapters/agora-aegis-verifier",
     "adapters/agora-search-memory",
     "adapters/agora-storage-directory",
+    "transport/agora-local-transport",
     "applications/agora-local-daemon",
     "sdk/embedded",
     "sdk/client",

@@ -23,14 +23,15 @@ entries and requires every path to occupy its declared category directory.
 | Host | `agora-host` | Verified principal/context binding and external ports |
 | Port | `agora-search-port`, `agora-storage-observation` | Effect-free outbound contracts |
 | Adapter | `agora-aegis-verifier`, `agora-search-memory`, `agora-storage-directory` | Concrete or reference interpretations of ports |
-| Application | `agora-local-daemon` | Current private-local composition root and co-located Unix mechanisms |
+| Transport | `agora-local-transport` | Authority-free Unix endpoint, stream, framing, lifetime, and entropy mechanics |
+| Application | `agora-local-daemon` | Aegis/Host/durability composition, routing, clocks, recovery policy, lifecycle, and observation |
 | SDK | `agora-sdk-embedded`, `agora-sdk-client` | Zero-authority audience facades |
 
-The packages now occupy explicit engine, protocol, client, service, host, port,
-adapter, application, and SDK directories. The remaining categorical weakness
-is `agora-local-daemon`: it still combines application composition with
-transport and lifetime mechanisms. Horizon 0 will split that responsibility
-without changing the package contracts or semantic bytes.
+The packages occupy explicit engine, protocol, client, service, host, port,
+adapter, transport, application, and SDK directories. The local transport owns
+only authority-free Unix resource mechanics; the daemon application selects and
+coordinates semantic owners and policy-bearing adapters. Their dependency and
+effect closures are checked independently.
 
 ## Dependency laws
 
@@ -42,6 +43,8 @@ without changing the package contracts or semantic bytes.
   search/storage adapters.
 - Host does not import a peer engine implementation or a concrete verifier.
 - Adapters interpret named ports and gain no conversation authority.
+- Transports own connection/resource mechanics and import no authority, domain,
+  Host, service, durability, client, or storage implementation.
 - Applications select adapters, limits, clocks, recovery policy, and lifecycle.
 - SDK facades reexport an exact audience closure and add no behavior.
 

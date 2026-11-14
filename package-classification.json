@@ -49,6 +49,14 @@
       "audiences": ["application"],
       "publish": false
     },
+    "agora-local-transport": {
+      "path": "transport/agora-local-transport",
+      "category": "transport",
+      "maturity": "qualified",
+      "effect_class": "effectful-adapter",
+      "audiences": ["application"],
+      "publish": false
+    },
     "agora-protocol": {
       "path": "protocol/agora-protocol",
       "category": "protocol",

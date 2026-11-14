@@ -8,7 +8,7 @@ bash -n scripts/verify-source-candidate.sh
 bash -n scripts/qualify-source-candidate.sh
 for field in \
   'schema=agora-source-candidate-v1' \
-  'stable_component_count=19' \
+  'stable_component_count=20' \
   'provenance=exact-local-content-closure' \
   'claim=self-contained-stable-local-source' \
   'publication=denied'; do

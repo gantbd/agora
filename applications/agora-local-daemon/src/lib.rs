@@ -1,19 +1,16 @@
-//! Bounded private Unix transport for an Aegis-authorized Agora Host V2.
+//! Aegis-authorized Agora Host V2 application composition.
 //!
-//! The listener owns byte framing and connection lifetime only. A trusted
-//! authenticator supplies one Aegis context per connection; the host owns the
-//! opaque session and all conversation semantics.
+//! The authority-free local transport owns endpoint and byte mechanics. This
+//! application selects authentication, routing, Host ownership, durability,
+//! clocks, recovery policy, and lifecycle observations.
 
 #[cfg(not(unix))]
 compile_error!("agora-local-daemon currently qualifies only Unix hosts");
 
-mod incarnation;
-mod lifetime;
-
-pub use incarnation::{
+pub use agora_local_transport::{
     INCARNATION_GENERATION_ATTEMPTS_V1, IncarnationGenerationErrorV1, OsServerIncarnationEntropyV1,
-    ServerIncarnationEntropyV1, generate_distinct_server_incarnation_v1,
-    generate_server_incarnation_v1,
+    OuterFrameErrorV1, OuterFrameV1, ServerIncarnationEntropyV1, decode_outer_frame_prefix_v1,
+    encode_outer_frame_v1, generate_distinct_server_incarnation_v1, generate_server_incarnation_v1,
 };
 
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
@@ -25,6 +22,9 @@ use agora_host::search::{SearchHostV1, SearchPortV1};
 use agora_host::transient::TransientHostV1;
 use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
 use agora_host::{HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier};
+use agora_local_transport::{
+    LocalEndpointV1, LocalStreamV1, LocalTransportCleanupV1, LocalTransportErrorV1,
+};
 pub use agora_wire::local_handshake::{
     CLIENT_HELLO_BYTES_V1, COLLABORATION_CLIENT_HELLO_BYTES_V1,
     COLLABORATION_SERVER_HELLO_BYTES_V1, CollaborationServerHelloV1, HandshakeErrorV1,
@@ -42,14 +42,10 @@ pub use agora_wire::local_transient::{
     encode_local_session_hello_v1,
 };
 use keystone_storage::CheckpointStore;
-use lifetime::LifetimeLeaseV1;
-use std::fs;
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::{Path, PathBuf};
+use std::os::unix::net::UnixStream;
+use std::path::Path;
 use std::time::Duration;
-use std::{fmt, ops::Range};
 
 pub trait AuthenticatorV1 {
     type Error;
@@ -501,98 +497,8 @@ fn durable_value<T>(publication: DurableHostPublicationV2<T>) -> Result<T, Daemo
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OuterFrameErrorV1 {
-    Incomplete,
-    Empty,
-    Limit,
-}
-
-/// One decoded length-prefixed frame and the unconsumed stream suffix.
-///
-/// Debug output is content-free because a frame may contain conversation data.
-#[derive(Clone, Eq, PartialEq)]
-pub struct OuterFrameV1<'a> {
-    input: &'a [u8],
-    payload: Range<usize>,
-}
-
-impl OuterFrameV1<'_> {
-    pub fn payload(&self) -> &[u8] {
-        &self.input[self.payload.clone()]
-    }
-
-    pub fn remainder(&self) -> &[u8] {
-        &self.input[self.payload.end..]
-    }
-}
-
-impl fmt::Debug for OuterFrameV1<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("OuterFrameV1")
-            .field("payload_bytes", &self.payload.len())
-            .field("remainder_bytes", &self.remainder().len())
-            .finish()
-    }
-}
-
-/// Decodes exactly one canonical big-endian length-prefixed frame prefix.
-/// Any later bytes are returned as stream remainder rather than reinterpreted.
-pub fn decode_outer_frame_prefix_v1(
-    input: &[u8],
-    max_frame_bytes: usize,
-) -> Result<OuterFrameV1<'_>, OuterFrameErrorV1> {
-    let header: [u8; 4] = input
-        .get(..4)
-        .ok_or(OuterFrameErrorV1::Incomplete)?
-        .try_into()
-        .expect("four-byte slice");
-    let length = validate_outer_frame_length(u32::from_be_bytes(header) as usize, max_frame_bytes)?;
-    let end = 4_usize
-        .checked_add(length)
-        .ok_or(OuterFrameErrorV1::Limit)?;
-    if input.len() < end {
-        return Err(OuterFrameErrorV1::Incomplete);
-    }
-    Ok(OuterFrameV1 {
-        input,
-        payload: 4..end,
-    })
-}
-
-/// Encodes one canonical outer frame without interpreting its payload.
-pub fn encode_outer_frame_v1(
-    payload: &[u8],
-    max_frame_bytes: usize,
-) -> Result<Vec<u8>, OuterFrameErrorV1> {
-    validate_outer_frame_length(payload.len(), max_frame_bytes)?;
-    let length = u32::try_from(payload.len()).map_err(|_| OuterFrameErrorV1::Limit)?;
-    let mut frame = Vec::with_capacity(4 + payload.len());
-    frame.extend_from_slice(&length.to_be_bytes());
-    frame.extend_from_slice(payload);
-    Ok(frame)
-}
-
-fn validate_outer_frame_length(
-    length: usize,
-    max_frame_bytes: usize,
-) -> Result<usize, OuterFrameErrorV1> {
-    if length == 0 {
-        return Err(OuterFrameErrorV1::Empty);
-    }
-    if max_frame_bytes == 0 || length > max_frame_bytes || length > u32::MAX as usize {
-        return Err(OuterFrameErrorV1::Limit);
-    }
-    Ok(length)
-}
-
 pub struct DaemonV1<H, A, C> {
-    listener: UnixListener,
-    socket_path: PathBuf,
-    socket_device: u64,
-    socket_inode: u64,
-    lifetime: LifetimeLeaseV1,
+    endpoint: LocalEndpointV1,
     host: H,
     authenticator: A,
     clock: C,
@@ -625,12 +531,10 @@ where
         limits: DaemonLimitsV1,
     ) -> Result<Self, DaemonErrorV1> {
         validate_daemon_configuration(server_incarnation, limits)?;
-        let socket_path = socket_path.as_ref().to_path_buf();
-        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
-        let lifetime = LifetimeLeaseV1::acquire_new(parent, &socket_path, server_incarnation)?;
+        let endpoint = LocalEndpointV1::bind_new(socket_path, server_incarnation)
+            .map_err(map_transport_error)?;
         Self::bind_owned(
-            socket_path,
-            lifetime,
+            endpoint,
             host,
             authenticator,
             clock,
@@ -655,17 +559,11 @@ where
         limits: DaemonLimitsV1,
     ) -> Result<Self, DaemonErrorV1> {
         validate_daemon_configuration(next_incarnation, limits)?;
-        let socket_path = socket_path.as_ref().to_path_buf();
-        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
-        let lifetime = LifetimeLeaseV1::recover_stale(
-            parent,
-            &socket_path,
-            previous_incarnation,
-            next_incarnation,
-        )?;
+        let endpoint =
+            LocalEndpointV1::recover_stale(socket_path, previous_incarnation, next_incarnation)
+                .map_err(map_transport_error)?;
         Self::bind_owned(
-            socket_path,
-            lifetime,
+            endpoint,
             host,
             authenticator,
             clock,
@@ -677,8 +575,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     fn bind_owned(
-        socket_path: PathBuf,
-        lifetime: LifetimeLeaseV1,
+        endpoint: LocalEndpointV1,
         host: H,
         authenticator: A,
         clock: C,
@@ -686,43 +583,8 @@ where
         limits: DaemonLimitsV1,
         transport_profile: DaemonTransportProfileV1,
     ) -> Result<Self, DaemonErrorV1> {
-        match fs::symlink_metadata(&socket_path) {
-            Ok(_) => {
-                return Err(DaemonErrorV1::Io(io::Error::new(
-                    io::ErrorKind::AddrInUse,
-                    "socket path exists",
-                )));
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(DaemonErrorV1::Io(error)),
-        }
-        let listener = UnixListener::bind(&socket_path).map_err(DaemonErrorV1::Io)?;
-        if let Err(error) = fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600)) {
-            let _ = fs::remove_file(&socket_path);
-            return Err(DaemonErrorV1::Io(error));
-        }
-        let metadata = match fs::symlink_metadata(&socket_path) {
-            Ok(metadata) => metadata,
-            Err(error) => {
-                let _ = fs::remove_file(&socket_path);
-                return Err(DaemonErrorV1::Io(error));
-            }
-        };
-        if !metadata.file_type().is_socket()
-            || metadata.permissions().mode() & 0o777 != 0o600
-            || metadata.nlink() != 1
-        {
-            let _ = fs::remove_file(&socket_path);
-            return Err(DaemonErrorV1::Io(io::Error::other(
-                "unsafe socket resource",
-            )));
-        }
         Ok(Self {
-            listener,
-            socket_path,
-            socket_device: metadata.dev(),
-            socket_inode: metadata.ino(),
-            lifetime,
+            endpoint,
             host,
             authenticator,
             clock,
@@ -769,7 +631,7 @@ where
             }
         }
         self.check_ownership()?;
-        let (mut stream, _) = self.listener.accept().map_err(DaemonErrorV1::Io)?;
+        let mut stream = self.endpoint.accept().map_err(map_transport_error)?;
         increment(
             &mut self.health.active_connections,
             &mut self.health.saturated,
@@ -802,26 +664,16 @@ where
     }
 
     fn check_ownership(&mut self) -> Result<(), DaemonErrorV1> {
-        let socket_owned = fs::symlink_metadata(&self.socket_path).is_ok_and(|metadata| {
-            metadata.file_type().is_socket()
-                && metadata.permissions().mode() & 0o777 == 0o600
-                && metadata.nlink() == 1
-                && metadata.dev() == self.socket_device
-                && metadata.ino() == self.socket_inode
-        });
-        if socket_owned && self.lifetime.intact() {
-            return Ok(());
-        }
-        self.health.lifecycle = DaemonLifecycleV1::Fenced;
-        self.lifetime.preserve();
-        Err(DaemonErrorV1::Fenced)
+        self.endpoint.check_ownership().map_err(|error| {
+            self.health.lifecycle = DaemonLifecycleV1::Fenced;
+            map_transport_error(error)
+        })
     }
 
-    fn serve_stream(&mut self, stream: &mut UnixStream) -> Result<(), DaemonErrorV1> {
+    fn serve_stream(&mut self, stream: &mut LocalStreamV1) -> Result<(), DaemonErrorV1> {
         stream
-            .set_read_timeout(Some(self.limits.io_timeout))
-            .and_then(|()| stream.set_write_timeout(Some(self.limits.io_timeout)))
-            .map_err(DaemonErrorV1::Io)?;
+            .set_io_timeout(self.limits.io_timeout)
+            .map_err(map_transport_error)?;
         self.exchange_handshake(stream)?;
         increment(
             &mut self.health.handshake_accepted,
@@ -829,9 +681,11 @@ where
         );
         let context = self
             .authenticator
-            .authenticate(stream)
+            .authenticate(stream.as_unix_stream())
             .map_err(|_| DaemonErrorV1::Authentication)?;
-        let connect = read_frame(stream, self.limits.max_frame_bytes)?
+        let connect = stream
+            .read_frame(self.limits.max_frame_bytes)
+            .map_err(map_transport_error)?
             .ok_or_else(|| DaemonErrorV1::Io(io::Error::from(io::ErrorKind::UnexpectedEof)))?;
         let (connect_route, connect_payload) = self.decode_profile_frame(&connect, true)?;
         let opened = match self
@@ -858,7 +712,10 @@ where
                 self.write_profile_frame(stream, LocalRouteV1::Control, &hello)?;
             }
             for _ in 0..self.limits.max_frames_after_connect {
-                let Some(frame) = read_frame(stream, self.limits.max_frame_bytes)? else {
+                let Some(frame) = stream
+                    .read_frame(self.limits.max_frame_bytes)
+                    .map_err(map_transport_error)?
+                else {
                     return Ok(());
                 };
                 let (route, payload) = self.decode_profile_frame(&frame, false)?;
@@ -893,7 +750,7 @@ where
         }
     }
 
-    fn exchange_handshake(&mut self, stream: &mut UnixStream) -> Result<(), DaemonErrorV1> {
+    fn exchange_handshake(&mut self, stream: &mut LocalStreamV1) -> Result<(), DaemonErrorV1> {
         let server = match self.transport_profile {
             DaemonTransportProfileV1::Conversation => {
                 let mut client = [0; CLIENT_HELLO_BYTES_V1];
@@ -986,19 +843,21 @@ where
 
     fn write_profile_frame(
         &self,
-        stream: &mut UnixStream,
+        stream: &mut LocalStreamV1,
         route: LocalRouteV1,
         payload: &[u8],
     ) -> Result<(), DaemonErrorV1> {
         match self.transport_profile {
-            DaemonTransportProfileV1::Conversation => {
-                write_frame(stream, payload, self.limits.max_frame_bytes)
-            }
+            DaemonTransportProfileV1::Conversation => stream
+                .write_frame(payload, self.limits.max_frame_bytes)
+                .map_err(map_transport_error),
             DaemonTransportProfileV1::Collaboration | DaemonTransportProfileV1::Search => {
                 let encoded =
                     encode_local_routed_frame_v1(route, payload, self.limits.max_frame_bytes)
                         .map_err(|_| DaemonErrorV1::FrameLimit)?;
-                write_frame(stream, &encoded, self.limits.max_frame_bytes)
+                stream
+                    .write_frame(&encoded, self.limits.max_frame_bytes)
+                    .map_err(map_transport_error)
             }
         }
     }
@@ -1061,24 +920,10 @@ impl<H, A, C> DaemonV1<H, A, C> {
     }
 
     fn teardown(&mut self) -> DaemonCleanupV1 {
-        let endpoint_owned = fs::symlink_metadata(&self.socket_path).is_ok_and(|metadata| {
-            metadata.file_type().is_socket()
-                && metadata.nlink() == 1
-                && metadata.dev() == self.socket_device
-                && metadata.ino() == self.socket_inode
-        });
-        if !endpoint_owned || !self.lifetime.intact() {
-            self.lifetime.preserve();
-            return DaemonCleanupV1::ResiduePreserved;
-        }
-        if fs::remove_file(&self.socket_path).is_err() {
-            self.lifetime.preserve();
-            return DaemonCleanupV1::Incomplete;
-        }
-        if self.lifetime.release() {
-            DaemonCleanupV1::Clean
-        } else {
-            DaemonCleanupV1::Incomplete
+        match self.endpoint.teardown() {
+            LocalTransportCleanupV1::Clean => DaemonCleanupV1::Clean,
+            LocalTransportCleanupV1::ResiduePreserved => DaemonCleanupV1::ResiduePreserved,
+            LocalTransportCleanupV1::Incomplete => DaemonCleanupV1::Incomplete,
         }
     }
 }
@@ -1098,12 +943,10 @@ where
         limits: DaemonLimitsV1,
     ) -> Result<Self, DaemonErrorV1> {
         validate_daemon_configuration(server_incarnation, limits)?;
-        let socket_path = socket_path.as_ref().to_path_buf();
-        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
-        let lifetime = LifetimeLeaseV1::acquire_new(parent, &socket_path, server_incarnation)?;
+        let endpoint = LocalEndpointV1::bind_new(socket_path, server_incarnation)
+            .map_err(map_transport_error)?;
         Self::bind_owned(
-            socket_path,
-            lifetime,
+            endpoint,
             host,
             authenticator,
             clock,
@@ -1138,12 +981,10 @@ where
         limits: DaemonLimitsV1,
     ) -> Result<Self, DaemonErrorV1> {
         validate_daemon_configuration(server_incarnation, limits)?;
-        let socket_path = socket_path.as_ref().to_path_buf();
-        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
-        let lifetime = LifetimeLeaseV1::acquire_new(parent, &socket_path, server_incarnation)?;
+        let endpoint = LocalEndpointV1::bind_new(socket_path, server_incarnation)
+            .map_err(map_transport_error)?;
         Self::bind_owned(
-            socket_path,
-            lifetime,
+            endpoint,
             host,
             authenticator,
             clock,
@@ -1166,17 +1007,11 @@ where
         limits: DaemonLimitsV1,
     ) -> Result<Self, DaemonErrorV1> {
         validate_daemon_configuration(next_incarnation, limits)?;
-        let socket_path = socket_path.as_ref().to_path_buf();
-        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
-        let lifetime = LifetimeLeaseV1::recover_stale(
-            parent,
-            &socket_path,
-            previous_incarnation,
-            next_incarnation,
-        )?;
+        let endpoint =
+            LocalEndpointV1::recover_stale(socket_path, previous_incarnation, next_incarnation)
+                .map_err(map_transport_error)?;
         Self::bind_owned(
-            socket_path,
-            lifetime,
+            endpoint,
             host,
             authenticator,
             clock,
@@ -1240,12 +1075,10 @@ where
         limits: DaemonLimitsV1,
     ) -> Result<Self, DaemonErrorV1> {
         validate_daemon_configuration(server_incarnation, limits)?;
-        let socket_path = socket_path.as_ref().to_path_buf();
-        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
-        let lifetime = LifetimeLeaseV1::acquire_new(parent, &socket_path, server_incarnation)?;
+        let endpoint = LocalEndpointV1::bind_new(socket_path, server_incarnation)
+            .map_err(map_transport_error)?;
         Self::bind_owned(
-            socket_path,
-            lifetime,
+            endpoint,
             host,
             authenticator,
             clock,
@@ -1272,17 +1105,11 @@ where
         limits: DaemonLimitsV1,
     ) -> Result<Self, DaemonErrorV1> {
         validate_daemon_configuration(next_incarnation, limits)?;
-        let socket_path = socket_path.as_ref().to_path_buf();
-        let parent = socket_path.parent().ok_or(DaemonErrorV1::UnsafeEndpoint)?;
-        let lifetime = LifetimeLeaseV1::recover_stale(
-            parent,
-            &socket_path,
-            previous_incarnation,
-            next_incarnation,
-        )?;
+        let endpoint =
+            LocalEndpointV1::recover_stale(socket_path, previous_incarnation, next_incarnation)
+                .map_err(map_transport_error)?;
         Self::bind_owned(
-            socket_path,
-            lifetime,
+            endpoint,
             host,
             authenticator,
             clock,
@@ -1409,40 +1236,16 @@ const fn observation_fidelity_lost(
     transport.saturated || host.overflowed || service.overflowed
 }
 
-fn read_frame(
-    stream: &mut UnixStream,
-    max_frame_bytes: usize,
-) -> Result<Option<Vec<u8>>, DaemonErrorV1> {
-    let mut length = [0_u8; 4];
-    match stream.read(&mut length[..1]) {
-        Ok(0) => return Ok(None),
-        Ok(1) => {}
-        Ok(_) => unreachable!(),
-        Err(error) => return Err(DaemonErrorV1::Io(error)),
+fn map_transport_error(error: LocalTransportErrorV1) -> DaemonErrorV1 {
+    match error {
+        LocalTransportErrorV1::UnsafeEndpoint => DaemonErrorV1::UnsafeEndpoint,
+        LocalTransportErrorV1::Io(error) => DaemonErrorV1::Io(error),
+        LocalTransportErrorV1::LifetimeBusy => DaemonErrorV1::LifetimeBusy,
+        LocalTransportErrorV1::CrashResidue => DaemonErrorV1::CrashResidue,
+        LocalTransportErrorV1::ResidueMismatch => DaemonErrorV1::ResidueMismatch,
+        LocalTransportErrorV1::Fenced => DaemonErrorV1::Fenced,
+        LocalTransportErrorV1::FrameLimit => DaemonErrorV1::FrameLimit,
     }
-    stream
-        .read_exact(&mut length[1..])
-        .map_err(DaemonErrorV1::Io)?;
-    let length = validate_outer_frame_length(u32::from_be_bytes(length) as usize, max_frame_bytes)
-        .map_err(|_| DaemonErrorV1::FrameLimit)?;
-    let mut frame = vec![0; length];
-    stream.read_exact(&mut frame).map_err(DaemonErrorV1::Io)?;
-    Ok(Some(frame))
-}
-
-fn write_frame(
-    stream: &mut UnixStream,
-    frame: &[u8],
-    max_frame_bytes: usize,
-) -> Result<(), DaemonErrorV1> {
-    validate_outer_frame_length(frame.len(), max_frame_bytes)
-        .map_err(|_| DaemonErrorV1::FrameLimit)?;
-    let length = u32::try_from(frame.len()).map_err(|_| DaemonErrorV1::FrameLimit)?;
-    stream
-        .write_all(&length.to_be_bytes())
-        .and_then(|()| stream.write_all(frame))
-        .and_then(|()| stream.flush())
-        .map_err(DaemonErrorV1::Io)
 }
 
 fn increment(value: &mut u64, saturated: &mut bool) {

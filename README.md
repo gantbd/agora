@@ -165,11 +165,12 @@ contract. Restore decisions are correlated with the exact loaded Agora revision
 before its independent sanitizing CAS; this is not atomic cross-engine recovery.
 Agora retains all room authority. The adapter authenticates no credentials and
 selects no transport.
-`agora-local-daemon` supplies one separately qualified transport composition: a
-new mode-0600 Unix socket inside a required mode-0700 parent, with bounded
-length-prefix framing, deadlines, per-frame Aegis reauthorization, a fixed connection request budget, and
-unconditional session cleanup. Its connection authenticator and clock remain
-trusted application inputs.
+`agora-local-transport` supplies the authority-free mode-0600 Unix endpoint,
+pinned lifetime, bounded length-prefix framing, deadlines, and incarnation
+entropy inside a required mode-0700 parent. `agora-local-daemon` composes that
+mechanism with per-frame Aegis reauthorization, Host/durability selection,
+routing, a fixed request budget, and unconditional session cleanup. Its
+connection authenticator and clock remain trusted application inputs.
 
 The V2 client separately fences an outcome-unknown transmission: only the exact
 same command may reuse the retained request identity until a reply resolves it
@@ -202,12 +203,13 @@ The repository also contains an initial layered operational profile:
   externally verified principal/transport context;
 - `agora-aegis-verifier` maps Host and operator-restore ports to bounded public
   Aegis session/grant authorization without entering conversation semantics;
-- `agora-local-daemon` owns the bounded sequential private Unix socket lifetime
-  around separately selected Aegis-authorized conversation, transient
-  collaboration, or durable Host V2 ownership, plus bounded OS-backed lifetime
-  incarnation generation and an explicit ordered operator-restore composition,
-  including real inter-step and intra-rotation process cuts with exact retry,
-  and no conversation semantics;
+- `agora-local-transport` owns bounded sequential private Unix endpoint,
+  lifetime, stream, framing, and OS-backed incarnation mechanics with no
+  authority or conversation semantics;
+- `agora-local-daemon` composes that transport around separately selected
+  Aegis-authorized conversation, transient collaboration, or durable Host V2
+  ownership and owns the explicit ordered operator-restore procedure, including
+  real inter-step and intra-rotation process cuts with exact retry;
 - `agora-client` owns a monotone request namespace over an abstract service port.
 
 These crates add no credential authentication, network transport, durable
