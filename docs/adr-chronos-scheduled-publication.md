@@ -186,5 +186,14 @@ publication. The contract remains absent from Protocol and Wire V2. Tests cover
 nonzero opaque identity, content-safe diagnostics, current interval and posting
 restriction enforcement, authenticated actor binding, revocation, exact replay,
 changed-intent conflict, and recovery after an indeterminate committed store
-outcome. The separate adapter journal, Chronos admission/cancellation, late
-policy, original-allocation lookup, and Aegis composition remain open.
+outcome. Cross-engine admission/cancellation and Aegis composition remain open.
+
+The separate adapter now has a canonical bounded six-state journal, exact-next
+durable receipt gating, original-allocation conversion, cancellation-cut and
+persistence-fault evidence, an Agora transport-certainty wrapper, exact replay
+reconciliation, and adapter-owned late policy. It deliberately does not combine
+Chronos V3 admission with a later V5 eligibility mutation: a newly admitted task
+has default claimable eligibility, so those two calls have a race. Live Chronos
+composition requires a qualified atomic admission-plus-eligibility capability.
+The Chronos workspace currently contains an unrelated uncommitted categorical
+rewrite and was left untouched.
