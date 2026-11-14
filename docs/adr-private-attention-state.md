@@ -1,6 +1,6 @@
 # ADR: private attention state
 
-Status: adopted; implementation in progress
+Status: implemented; release qualification pending
 
 Date: 2026-11-14
 
@@ -21,8 +21,10 @@ claims.
 
 Agora owns one optional private attention preference per participant, room, and
 closed scope. The scopes are `Room`, `Thread(root_message_id)`, and
-`Topic(topic_id)`. Thread scope requires a retained root; topic scope requires a
-current topic. The value is the product of three independent preferences:
+`Topic(topic_id)`. Creating a thread scope requires a retained root and creating
+a topic scope requires a current topic; retained private state remains usable
+after message-history eviction. The value is the product of three independent
+preferences:
 
 - `following`: an explicit Boolean request to follow the scope;
 - `muted`: an explicit Boolean request to suppress ordinary attention;
@@ -80,6 +82,13 @@ participant, room, target, or preference value.
 - Closed protocol/wire tags, frozen frames, service replay/conflict, Host actor
   binding, client uncertainty, both SDK facades, and real private Unix routing.
 - Compatibility, fuzz-seed, ordinary-gate, and commit-pinned release evidence.
+
+The engine-through-SDK implementation, durable commit-before-reply path,
+authenticated Host binding and recovery, private Unix route, exhaustive bounded
+kind/schedule model, global-capacity case, engine profiles 24–27, two frozen
+frames, 79-fixture compatibility inventory, and refreshed wire/outer fuzz seeds
+are present. Commit-pinned release qualification remains the final acceptance
+gate.
 
 ## Nonclaims
 

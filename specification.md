@@ -833,6 +833,33 @@ receipts through nested recovery without publishing them. Durable execution
 commits both before reply, and exact lost-reply replay performs no second store
 write.
 
+## Private attention profile V1
+
+The engine owns a bounded map keyed by participant, room, and one closed
+`Room`, `Thread(root_message_id)`, or `Topic(topic_id)` scope. Each value is the
+independent product of `following: bool`, `muted: bool`, and notification intent
+`Default | AllActivity | AddressedOnly | None`. Agora does not normalize
+contradictory-looking combinations or assign downstream precedence. The
+all-default product removes the canonical map entry.
+
+Observation and mutation derive the actor from the service client and require
+registered current membership on every call. Creating a thread preference
+requires a retained root; creating a topic preference requires a current topic.
+Once created, the caller may observe, replace, or clear the entry after root
+history eviction. Ordinary leave/rejoin retains but gates the private state;
+immutable peer departure cannot be reversed by it. A set names the exact
+observed engine revision and refuses stale, invalid-scope, or capacity cases
+before mutation.
+
+Attention mutation neither advances the domain revision nor publishes a room
+event, change, search document, delivery acknowledgment, or transient signal.
+Protocol V2 advertises `PrivateAttentionPreferencesV1`; command tags 66/67,
+outcome tags 63/64, capability tag 26, and refusal tag 32 are additive. Engine
+checkpoint profiles 24 through 27 add the private map while profiles 20 through
+23 retain their exact bytes. Service profile 26/27 and Host profile 25 retain
+the nested state and exact request receipt. Follow, mute, and notification
+intent remain delivery-neutral inputs; Hermes composition is separately owned.
+
 ## Immutable attachment-reference core profile V1
 
 An additive engine command admits one message body, canonical addressing, one

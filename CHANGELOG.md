@@ -8,6 +8,15 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Implemented the R97 private-attention contract: each current member owns a
+  bounded room/thread/topic preference with independent follow, mute, and
+  delivery-neutral notification intent. All-default removes state; writes are
+  stale-guarded, private, revision/event neutral, kind-neutral, and recoverable.
+  The additive profile spans engine, protocol/wire, service, durable owner,
+  Host, client, both SDKs, private Unix transport, bounded model and saturation
+  evidence, canonical profiles 24–27, two frozen frames, 79 fixtures, and fuzz
+  seeds. Commit-pinned release qualification remains.
+
 - Implemented the R96 conversation-profile contract: ordinary rooms remain
   owner-led, while direct and group-direct rooms are ownerless immutable
   founding cohorts with membership-only discovery and irreversible departure.

@@ -180,6 +180,19 @@ fixed-seed cases for each of the three fuzz targets on Darwin 25.6.0 arm64 /
 macOS 26.6.2, with unchanged tracked bytes afterward. R96 is satisfied for the
 claimed private-local profile boundary.
 
+The private-attention implementation stores independent follow, mute, and
+closed notification intent only in the caller-owned room/thread/topic map.
+Behavior cases cover ownership, membership loss, stale and invalid scopes,
+idempotence, all-default removal, history eviction, global saturation and
+capacity release, revision/event neutrality, redacted diagnostics, and
+canonical engine profiles 24–27. The bounded model enumerates every three-step
+schedule over four representative values for both human and agent actors.
+Protocol/wire, service replay and recovery, durable commit-before-reply, Host
+binding and recovery, exact client uncertainty, both SDK facades, and the real
+private Unix route are closed. Two frozen frames, the advanced canonical
+capability frame, 79-fixture inventory, and refreshed wire/outer fuzz seeds
+provide pre-release evidence. Commit-pinned release qualification remains open.
+
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;
 human/agent symmetry; current membership and target authority; no conversation

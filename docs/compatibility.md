@@ -264,6 +264,19 @@ only with their historical payload vocabulary and migrate deterministically.
 Two frozen frames raise compatibility closure to 77 fixtures and seed both
 canonical wire fuzz profiles.
 
+Private attention is additive. `AttentionPreference` uses command tag 66
+(`42` hex), `SetAttentionPreference` uses 67 (`43`), observation/set outcomes
+use 63/64 (`3f`/`40`), capability tag 26 (`1a`), and invalid-scope refusal 32
+(`20`). Scope tags reuse no read-position bytes despite naming the same closed
+room/thread/topic shapes; preference scalars are two canonical Boolean bytes
+plus notification intent `00` through `03`. Engine profiles 24–27 are the
+attention-bearing counterparts of 20–23, so attention-free checkpoints retain
+their exact canonical bytes. Service 26/27 and Host 25 envelopes already carry
+the length-delimited engine record and need no reinterpretation. The canonical
+capability frame advances intentionally, while every other older wire fixture
+is unchanged. Two frozen attention frames raise compatibility closure to 79
+fixtures and seed both canonical wire fuzz profiles.
+
 Transient collaboration Wire V1 is a new, separately invoked grammar. Its
 profile byte `01`, presence command/outcome tags `01` through `03`, typing
 command/outcome tags `04` through `06`, reply tags `81` and `82`, and refusal

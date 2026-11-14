@@ -1,8 +1,8 @@
 use agora_engine::persistence::RecoveryLimits;
 use agora_engine::{
     AdmissionPolicy, AttentionPreferenceRefusalV1, AttentionPreferenceV1, AttentionScopeV1,
-    CommandV2, Engine, Limits, LogicalTime, NotificationIntentV1, OutcomeV2, Participant,
-    ParticipantId, ParticipantKind, RoomId,
+    CommandV2, Engine, Limits, LogicalTime, MAX_ATTENTION_PREFERENCES_V1, NotificationIntentV1,
+    OutcomeV2, Participant, ParticipantId, ParticipantKind, RoomId,
 };
 
 fn setup(max_messages: usize) -> Engine {
@@ -219,5 +219,89 @@ fn preference_checkpoint_is_canonical_and_survives_history_eviction() {
     assert_eq!(
         recovered.prepare_checkpoint(65_536).unwrap().bytes(),
         checkpoint.bytes()
+    );
+}
+
+#[test]
+fn global_capacity_refuses_atomically_and_default_removal_releases_it() {
+    let mut engine = Engine::with_limits(Limits {
+        max_messages_per_room: MAX_ATTENTION_PREFERENCES_V1 + 1,
+        max_pending_events: MAX_ATTENTION_PREFERENCES_V1 + 8,
+        max_retained_changes: MAX_ATTENTION_PREFERENCES_V1 + 8,
+        ..Limits::default()
+    });
+    engine
+        .apply(CommandV2::RegisterParticipant(Participant::new(
+            "owner",
+            "Owner",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(CommandV2::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "owner".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let mut roots = Vec::with_capacity(MAX_ATTENTION_PREFERENCES_V1);
+    for index in 0..MAX_ATTENTION_PREFERENCES_V1 {
+        let OutcomeV2::MessageAccepted { sequence, .. } = engine
+            .apply(CommandV2::Speak {
+                room_id: "room".into(),
+                author: "owner".into(),
+                at: LogicalTime(index as u64),
+                body: "root".to_owned(),
+            })
+            .unwrap()
+        else {
+            panic!("message expected");
+        };
+        roots.push(engine.message(&RoomId::new("room"), sequence).unwrap().id());
+    }
+    let revision = engine.revision();
+    let preference = AttentionPreferenceV1::new(true, false, NotificationIntentV1::Default);
+    for root in &roots {
+        engine
+            .set_attention_preference(
+                &ParticipantId::new("owner"),
+                &RoomId::new("room"),
+                AttentionScopeV1::Thread(*root),
+                revision,
+                preference,
+            )
+            .unwrap();
+    }
+    assert_eq!(
+        engine.set_attention_preference(
+            &ParticipantId::new("owner"),
+            &RoomId::new("room"),
+            AttentionScopeV1::Room,
+            revision,
+            preference,
+        ),
+        Err(AttentionPreferenceRefusalV1::Capacity)
+    );
+    engine
+        .set_attention_preference(
+            &ParticipantId::new("owner"),
+            &RoomId::new("room"),
+            AttentionScopeV1::Thread(roots[0]),
+            revision,
+            AttentionPreferenceV1::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        engine
+            .set_attention_preference(
+                &ParticipantId::new("owner"),
+                &RoomId::new("room"),
+                AttentionScopeV1::Room,
+                revision,
+                preference,
+            )
+            .unwrap(),
+        preference
     );
 }

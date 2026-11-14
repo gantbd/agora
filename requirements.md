@@ -682,11 +682,23 @@
   a local profile: it is a future projection of an ordinary invite-only room
   plus an explicitly qualified Agora federation binding. External identity and
   tenant trust remain directory/Aegis facts.
+- **R97 — Private attention state:** one registered current member may observe,
+  replace, or clear only its own bounded room/thread/topic attention preference.
+  The value independently records follow, mute, and closed notification intent;
+  Agora assigns no precedence and makes no delivery or attention claim. New
+  thread/topic entries require a valid retained root/current topic, while an
+  existing entry remains observable, replaceable, and clearable after message
+  retention eviction. All-default removes the entry. Mutation is guarded by the
+  observed engine revision, idempotent, private, kind-neutral, domain-revision
+  neutral, and room-event neutral. Canonical recovery must preserve exact state
+  and every legacy checkpoint byte.
 
 ## Explicitly open
 
 The R96 conversation-profile contract is implemented and commit-pinned
-release-qualified. Additional physical durable storage adapters, durable event sinks,
+release-qualified. R97 private attention is implemented through the private
+local stack; commit-pinned release qualification remains open. Additional
+physical durable storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,
 federation, delivery acknowledgment, and durable audit are not part of the
 current v0.3 claim.

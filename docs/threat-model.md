@@ -452,6 +452,17 @@ revision, and retained target relation where evidence remains. Hosts must not
 project markers to moderators, other participants, feeds, analytics, or agent
 harnesses without a separate consent and product-policy decision.
 
+Private attention preferences are likewise sensitive behavioral metadata and
+may reveal interests, suppression choices, or anticipated notification policy.
+They are actor-keyed and current-membership-gated; no room event, feed, search
+projection, moderator view, diagnostic, or other participant response may carry
+them. Scope identifiers are validated before a new entry is admitted, stale
+writes and global-capacity exhaustion refuse atomically, and all-default removal
+releases capacity. Recovery rejects default rows, noncanonical ordering, unknown
+participants/rooms, foreign thread identity, and unknown topics. A consumer
+must not reinterpret stored intent as a delivery subscription, device policy,
+urgency, read receipt, attention proof, workflow admission, or agent activation.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

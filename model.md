@@ -1,6 +1,6 @@
 # Agora domain model
 
-Status: normative model for the implemented R96 local conversation profile. The
+Status: normative model through the implemented R97 private-attention profile. The
 requirements and specification remain authoritative for individual command and
 wire details; this document states the aggregate ownership and laws that those
 details refine.
@@ -31,6 +31,9 @@ details refine.
   acknowledges delivery.
 - **Private read position:** participant-owned monotone room/thread/topic state.
   It is durable but is not a room event, delivery receipt, or attention fact.
+- **Private attention preference:** participant-owned room/thread/topic intent
+  comprising independent follow, mute, and notification fields. It is durable
+  but is not a room event, delivery subscription, or evidence of attention.
 - **Presence and typing:** expiring, source-scoped transient collaboration
   signals. Restart reconstructs them as unknown.
 - **Service request receipt:** bounded client/request evidence for exact replay
@@ -46,7 +49,7 @@ contains more than one class:
 | State class | Owner | Examples |
 | --- | --- | --- |
 | Shared conversation authority | Engine | rooms, membership, roles, messages, topics, moderation, outbox, change journal |
-| Private durable projection | Engine behind participant-bound service operations | read positions |
+| Private durable projection | Engine behind participant-bound service operations | read positions, attention preferences |
 | Serialized client coordination | Service | client namespace, exact request receipts, bounded cursors |
 | Authenticated continuity | Host | verified subject/participant/client/context binding and revalidation state |
 | Transient collaboration | Host/service transient profile | presence, typing, transient cursors and replay state |
@@ -108,8 +111,8 @@ applicable observer/room/topic/root/revision-bound.
 Observation can return explicit malformed, foreign, stale, expired, retention
 gap, membership-epoch gap, incomplete, unavailable, or fidelity-loss outcomes.
 No such outcome is silently promoted to an empty complete result. Outbox
-acknowledgment, change-feed continuation, read position, presence, typing,
-transport delivery, and agent execution are independent facts.
+acknowledgment, change-feed continuation, read position, attention preference,
+presence, typing, transport delivery, and agent execution are independent facts.
 
 ## Participant symmetry and authority
 

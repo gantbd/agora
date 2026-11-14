@@ -6,8 +6,9 @@ use agora_durable::{
     OperatorRestoreRequestV1,
 };
 use agora_engine::{
-    AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, LogicalTime, Participant,
-    ParticipantId, ParticipantKind, ReadScopeV1 as EngineReadScopeV1, RoomId,
+    AdmissionPolicy, AttentionScopeV1 as EngineAttentionScopeV1, CommandV2 as EngineCommand,
+    Engine, Limits, LogicalTime, Participant, ParticipantId, ParticipantKind,
+    ReadScopeV1 as EngineReadScopeV1, RoomId,
 };
 use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::HostV2;
@@ -18,9 +19,10 @@ use agora_protocol::transient::{
     TransientRequestIdV1, TransientRequestV1,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, CommandV2, MessageIdV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2,
-    RequestIdV2, RequestV2, VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1,
-    VellumArtifactReferenceV1, VellumDocumentTargetV1,
+    AdmissionPolicyV2, AttentionPreferenceV1, AttentionScopeV1, CommandV2, MessageIdV1,
+    NotificationIntentV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
+    VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
+    VellumDocumentTargetV1,
 };
 use agora_service::transient::TransientLimitsV1;
 use agora_service::typing::TypingLimitsV1;
@@ -510,6 +512,91 @@ fn private_read_position_commits_before_reply_and_recovers_as_exact_replay() {
     );
     assert_eq!(
         recovered.execute(client, advance),
+        DurablePublicationV2::Published {
+            value: accepted,
+            evidence: DurableEvidenceV2::PreviouslyCommitted { revision },
+        }
+    );
+    assert_eq!(store.commit_calls(), 3, "exact replay must not recommit");
+}
+
+#[test]
+fn private_attention_commits_before_reply_and_recovers_as_exact_replay() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let observed_revision = engine.revision().0;
+    let pending = engine.pending_events().len();
+    let store = TestStore::default();
+    let service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let mut durable = DurableServiceV2::initialize(service, store.clone(), config()).unwrap();
+    let DurablePublicationV2::Published {
+        value: Ok(client), ..
+    } = durable.connect("alice")
+    else {
+        panic!("connect must commit");
+    };
+    let preference = AttentionPreferenceV1 {
+        following: true,
+        muted: true,
+        notification_intent: NotificationIntentV1::AddressedOnly,
+    };
+    let set = RequestV2 {
+        request_id: RequestIdV2(42),
+        command: CommandV2::SetAttentionPreference {
+            room_id: "room".to_owned(),
+            observed_revision,
+            scope: AttentionScopeV1::Room,
+            preference,
+        },
+    };
+    let DurablePublicationV2::Published {
+        value: accepted @ ReplyV2::Accepted(OutcomeV2::AttentionPreferenceSet(_)),
+        evidence: DurableEvidenceV2::Committed { revision },
+    } = durable.execute(client, set.clone())
+    else {
+        panic!("private attention must commit before publication");
+    };
+    assert_eq!(store.commit_calls(), 3);
+    assert_eq!(
+        durable.service().unwrap().engine().revision().0,
+        observed_revision
+    );
+    assert_eq!(
+        durable.service().unwrap().engine().pending_events().len(),
+        pending
+    );
+    drop(durable.into_store());
+
+    let mut recovered = DurableServiceV2::recover(store.clone(), config()).unwrap();
+    assert!(
+        recovered
+            .service()
+            .unwrap()
+            .engine()
+            .attention_preference(
+                &ParticipantId::new("alice"),
+                &RoomId::new("room"),
+                EngineAttentionScopeV1::Room,
+            )
+            .unwrap()
+            .following()
+    );
+    assert_eq!(
+        recovered.execute(client, set),
         DurablePublicationV2::Published {
             value: accepted,
             evidence: DurableEvidenceV2::PreviouslyCommitted { revision },
