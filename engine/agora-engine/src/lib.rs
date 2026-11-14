@@ -557,6 +557,7 @@ pub const MAX_REACTION_KEY_BYTES_V1: usize = 64;
 pub const MAX_REACTION_KEYS_PER_MESSAGE_V1: usize = 64;
 pub const MAX_MESSAGE_REVISIONS_V1: usize = 64;
 pub const MAX_READ_POSITIONS_V1: usize = 4_096;
+pub const MAX_ATTENTION_PREFERENCES_V1: usize = 4_096;
 
 /// Closed selector for one participant's private read position.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -616,6 +617,78 @@ pub enum ReadPositionRefusalV1 {
     InvalidScope,
     InvalidTarget,
     Regression,
+    Capacity,
+}
+
+/// Closed target for one participant's private attention intent.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum AttentionScopeV1 {
+    Room,
+    Thread(MessageId),
+    Topic(TopicId),
+}
+
+/// A delivery-neutral notification preference.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NotificationIntentV1 {
+    #[default]
+    Default,
+    AllActivity,
+    AddressedOnly,
+    None,
+}
+
+/// One participant-owned preference product. All-default means no stored row.
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub struct AttentionPreferenceV1 {
+    following: bool,
+    muted: bool,
+    notification_intent: NotificationIntentV1,
+}
+
+impl fmt::Debug for AttentionPreferenceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AttentionPreferenceV1(<redacted>)")
+    }
+}
+
+impl AttentionPreferenceV1 {
+    pub const fn new(
+        following: bool,
+        muted: bool,
+        notification_intent: NotificationIntentV1,
+    ) -> Self {
+        Self {
+            following,
+            muted,
+            notification_intent,
+        }
+    }
+
+    pub const fn following(self) -> bool {
+        self.following
+    }
+
+    pub const fn muted(self) -> bool {
+        self.muted
+    }
+
+    pub const fn notification_intent(self) -> NotificationIntentV1 {
+        self.notification_intent
+    }
+
+    pub fn is_default(self) -> bool {
+        self == Self::default()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AttentionPreferenceRefusalV1 {
+    UnknownParticipant,
+    UnknownRoom,
+    NotMember,
+    Stale { actual_revision: Revision },
+    InvalidScope,
     Capacity,
 }
 
@@ -2519,6 +2592,8 @@ pub struct Engine {
     retained_changes: VecDeque<EventEnvelopeV2>,
     publications: BTreeMap<PublicationKeyV2, PublicationRecordV2>,
     read_positions: BTreeMap<(ParticipantId, RoomId, ReadScopeV1), ReadPositionV1>,
+    attention_preferences:
+        BTreeMap<(ParticipantId, RoomId, AttentionScopeV1), AttentionPreferenceV1>,
 }
 
 impl Default for Engine {
@@ -2546,6 +2621,7 @@ impl Engine {
             retained_changes: VecDeque::new(),
             publications: BTreeMap::new(),
             read_positions: BTreeMap::new(),
+            attention_preferences: BTreeMap::new(),
         }
     }
 
@@ -2731,6 +2807,99 @@ impl Engine {
         };
         self.read_positions.insert(key, position.clone());
         Ok(position)
+    }
+
+    /// Returns only the caller's private attention intent.
+    pub fn attention_preference(
+        &self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+        scope: AttentionScopeV1,
+    ) -> Result<AttentionPreferenceV1, AttentionPreferenceRefusalV1> {
+        self.validate_attention_actor(actor, room_id)?;
+        Ok(self
+            .attention_preferences
+            .get(&(actor.clone(), room_id.clone(), scope))
+            .copied()
+            .unwrap_or_default())
+    }
+
+    /// Replaces one caller-owned intent without changing revision or events.
+    pub fn set_attention_preference(
+        &mut self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+        scope: AttentionScopeV1,
+        observed_revision: Revision,
+        preference: AttentionPreferenceV1,
+    ) -> Result<AttentionPreferenceV1, AttentionPreferenceRefusalV1> {
+        if observed_revision != self.revision {
+            return Err(AttentionPreferenceRefusalV1::Stale {
+                actual_revision: self.revision,
+            });
+        }
+        let key = (actor.clone(), room_id.clone(), scope);
+        self.validate_attention_actor(actor, room_id)?;
+        if preference.is_default() {
+            self.attention_preferences.remove(&key);
+        } else {
+            if !self.attention_preferences.contains_key(&key) {
+                self.validate_attention_scope(room_id, scope)?;
+                if self.attention_preferences.len() == MAX_ATTENTION_PREFERENCES_V1 {
+                    return Err(AttentionPreferenceRefusalV1::Capacity);
+                }
+            }
+            self.attention_preferences.insert(key, preference);
+        }
+        Ok(preference)
+    }
+
+    fn validate_attention_actor(
+        &self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<&Room, AttentionPreferenceRefusalV1> {
+        if !self.participants.contains_key(actor) {
+            return Err(AttentionPreferenceRefusalV1::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(AttentionPreferenceRefusalV1::UnknownRoom)?;
+        if !room.members.contains_key(actor) {
+            return Err(AttentionPreferenceRefusalV1::NotMember);
+        }
+        Ok(room)
+    }
+
+    fn validate_attention_scope(
+        &self,
+        room_id: &RoomId,
+        scope: AttentionScopeV1,
+    ) -> Result<(), AttentionPreferenceRefusalV1> {
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(AttentionPreferenceRefusalV1::UnknownRoom)?;
+        match scope {
+            AttentionScopeV1::Room => {}
+            AttentionScopeV1::Thread(root) => {
+                let root = room
+                    .messages
+                    .iter()
+                    .find(|message| message.id == root)
+                    .ok_or(AttentionPreferenceRefusalV1::InvalidScope)?;
+                if root.reply_to_root.is_some() {
+                    return Err(AttentionPreferenceRefusalV1::InvalidScope);
+                }
+            }
+            AttentionScopeV1::Topic(topic) => {
+                if !room.topics.contains_key(&topic) {
+                    return Err(AttentionPreferenceRefusalV1::InvalidScope);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn rooms(&self) -> impl Iterator<Item = RoomView> + '_ {

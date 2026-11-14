@@ -934,6 +934,23 @@ fn read_conversation_profile(value: u8) -> Result<ConversationProfileV1, Checkpo
         _ => Err(CheckpointError::Invalid),
     }
 }
+fn notification_intent_tag(value: NotificationIntentV1) -> u8 {
+    match value {
+        NotificationIntentV1::Default => 0,
+        NotificationIntentV1::AllActivity => 1,
+        NotificationIntentV1::AddressedOnly => 2,
+        NotificationIntentV1::None => 3,
+    }
+}
+fn read_notification_intent(value: u8) -> Result<NotificationIntentV1, CheckpointError> {
+    match value {
+        0 => Ok(NotificationIntentV1::Default),
+        1 => Ok(NotificationIntentV1::AllActivity),
+        2 => Ok(NotificationIntentV1::AddressedOnly),
+        3 => Ok(NotificationIntentV1::None),
+        _ => Err(CheckpointError::Invalid),
+    }
+}
 fn role_tag(v: Role) -> u8 {
     match v {
         Role::Owner => 0,
@@ -1019,14 +1036,12 @@ impl Engine {
         };
         let include_vellum_artifacts = engine_has_vellum_artifacts(self);
         let include_conversation_profiles = engine_has_conversation_profiles(self);
+        let include_attention_preferences = !self.attention_preferences.is_empty();
         w.raw(b"AGORACP\0")?;
         w.byte(
-            match (include_conversation_profiles, include_vellum_artifacts) {
-                (false, false) => 20,
-                (false, true) => 21,
-                (true, false) => 22,
-                (true, true) => 23,
-            },
+            20 + u8::from(include_vellum_artifacts)
+                + (u8::from(include_conversation_profiles) * 2)
+                + (u8::from(include_attention_preferences) * 4),
         )?;
         for n in limits_values(self.limits) {
             w.count(n)?
@@ -1137,6 +1152,27 @@ impl Engine {
             w.number(position.target_sequence)?;
             w.number(position.observed_revision.0)?;
         }
+        if include_attention_preferences {
+            w.count(self.attention_preferences.len())?;
+            for ((participant, room_id, scope), preference) in &self.attention_preferences {
+                w.text(participant.as_str())?;
+                w.text(room_id.as_str())?;
+                match scope {
+                    AttentionScopeV1::Room => w.byte(1)?,
+                    AttentionScopeV1::Thread(root_message_id) => {
+                        w.byte(2)?;
+                        w.raw(&root_message_id.into_bytes())?;
+                    }
+                    AttentionScopeV1::Topic(topic_id) => {
+                        w.byte(3)?;
+                        w.raw(&topic_id.into_bytes())?;
+                    }
+                }
+                w.byte(u8::from(preference.following))?;
+                w.byte(u8::from(preference.muted))?;
+                w.byte(notification_intent_tag(preference.notification_intent))?;
+            }
+        }
         w.count(self.publications.len())?;
         for (key, p) in &self.publications {
             w.raw(&key.0)?;
@@ -1178,11 +1214,13 @@ impl Engine {
             return Err(CheckpointError::Profile);
         }
         let profile = r.byte()?;
-        if !matches!(profile, 20..=23) {
+        if !matches!(profile, 20..=27) {
             return Err(CheckpointError::Profile);
         }
-        let has_vellum_artifacts = matches!(profile, 21 | 23);
-        let has_conversation_profiles = profile >= 22;
+        let feature_bits = profile - 20;
+        let has_vellum_artifacts = feature_bits & 1 != 0;
+        let has_conversation_profiles = feature_bits & 2 != 0;
+        let has_attention_preferences = feature_bits & 4 != 0;
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
         let mut e = Engine::with_limits(l);
         e.revision = Revision(r.number()?);
@@ -1419,6 +1457,40 @@ impl Engine {
                 position,
             )?;
         }
+        if has_attention_preferences {
+            let count = r.count(MAX_ATTENTION_PREFERENCES_V1)?;
+            for _ in 0..count {
+                let participant = r.participant(l)?;
+                let room_id = r.room(l)?;
+                let scope = match r.byte()? {
+                    1 => AttentionScopeV1::Room,
+                    2 => AttentionScopeV1::Thread(MessageId::from_bytes(r.fixed()?)),
+                    3 => AttentionScopeV1::Topic(TopicId::from_bytes(r.fixed()?)),
+                    _ => return Err(CheckpointError::Invalid),
+                };
+                let preference = AttentionPreferenceV1::new(
+                    match r.byte()? {
+                        0 => false,
+                        1 => true,
+                        _ => return Err(CheckpointError::Invalid),
+                    },
+                    match r.byte()? {
+                        0 => false,
+                        1 => true,
+                        _ => return Err(CheckpointError::Invalid),
+                    },
+                    read_notification_intent(r.byte()?)?,
+                );
+                if preference.is_default() {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                insert(
+                    &mut e.attention_preferences,
+                    (participant, room_id, scope),
+                    preference,
+                )?;
+            }
+        }
         let n = r.count(l.max_publication_receipts)?;
         for _ in 0..n {
             let key = PublicationKeyV2::new(r.fixed()?);
@@ -1478,6 +1550,9 @@ impl Engine {
             return Err(CheckpointError::NonCanonical);
         }
         if has_conversation_profiles && !engine_has_conversation_profiles(&e) {
+            return Err(CheckpointError::NonCanonical);
+        }
+        if has_attention_preferences == e.attention_preferences.is_empty() {
             return Err(CheckpointError::NonCanonical);
         }
         Ok(e)
@@ -2117,6 +2192,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         || e.pending_events.len() > l.max_pending_events
         || e.retained_changes.len() > l.max_retained_changes
         || e.read_positions.len() > MAX_READ_POSITIONS_V1
+        || e.attention_preferences.len() > MAX_ATTENTION_PREFERENCES_V1
     {
         return Err(CheckpointError::Limit);
     }
@@ -2416,6 +2492,36 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             };
             if target.sequence != position.target_sequence || !in_scope {
                 return Err(CheckpointError::Invalid);
+            }
+        }
+    }
+    for ((participant, room_id, scope), preference) in &e.attention_preferences {
+        let room = e.rooms.get(room_id).ok_or(CheckpointError::Invalid)?;
+        if !e.participants.contains_key(participant) || preference.is_default() {
+            return Err(CheckpointError::Invalid);
+        }
+        match scope {
+            AttentionScopeV1::Room => {}
+            AttentionScopeV1::Thread(root_message_id) => {
+                if root_message_id.0[..8] != room.message_identity_incarnation.to_be_bytes()
+                    || u64::from_be_bytes(
+                        root_message_id.0[8..]
+                            .try_into()
+                            .map_err(|_| CheckpointError::Invalid)?,
+                    ) >= room.next_message_sequence
+                    || room
+                        .messages
+                        .iter()
+                        .find(|message| message.id == *root_message_id)
+                        .is_some_and(|message| message.reply_to_root.is_some())
+                {
+                    return Err(CheckpointError::Invalid);
+                }
+            }
+            AttentionScopeV1::Topic(topic_id) => {
+                if !room.topics.contains_key(topic_id) {
+                    return Err(CheckpointError::Invalid);
+                }
             }
         }
     }
