@@ -7,12 +7,13 @@ use super::{
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessagePageV1, AttachmentMessageTargetV1, AttachmentMessageV1, AttachmentObjectKeyV1,
-    AttachmentRoomChangePageV1, AttachmentStoreIdV1, BanPageV2, BannedParticipantV2, CapabilityV2,
-    ChangeGapV2, ClientIdV2, CommandV2, ConversationProfileStatusV1, ConversationProfileV1,
-    IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
-    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageAttachmentV1,
-    MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1,
-    MessageRevisionV1, MessageV2, MessageVellumArtifactReferenceV1, OutcomeV2, PageCursorV2,
+    AttachmentRoomChangePageV1, AttachmentStoreIdV1, AttentionPreferenceV1, AttentionScopeV1,
+    BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2,
+    ConversationProfileStatusV1, ConversationProfileV1, IdentifiedMessagePageV1,
+    IdentifiedMessageV1, IdentifiedRoomChangePageV1, IdentifiedRoomChangeV1, IdentifiedRoomEventV1,
+    MemberPageV2, MemberV2, MessageAttachmentV1, MessageIdV1, MessagePageV2,
+    MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1, MessageV2,
+    MessageVellumArtifactReferenceV1, NotificationIntentV1, OutcomeV2, PageCursorV2,
     ParticipantKindV2, PeerConversationCreatedV1, ReactionStatusV1, ReactionSummaryV1,
     ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
     RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, Sha256DigestV1,
@@ -395,6 +396,23 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             sink.u64(*observed_revision)?;
             encode_read_scope(sink, *scope)?;
             encode_message_id(sink, *target_message_id)
+        }
+        CommandV2::AttentionPreference { room_id, scope } => {
+            sink.u8(66)?;
+            sink.text(room_id)?;
+            encode_attention_scope(sink, *scope)
+        }
+        CommandV2::SetAttentionPreference {
+            room_id,
+            observed_revision,
+            scope,
+            preference,
+        } => {
+            sink.u8(67)?;
+            sink.text(room_id)?;
+            sink.u64(*observed_revision)?;
+            encode_attention_scope(sink, *scope)?;
+            encode_attention_preference(sink, *preference)
         }
         CommandV2::ArchiveThread {
             room_id,
@@ -1419,6 +1437,16 @@ fn decode_command(
         65 => Ok(CommandV2::ConversationProfile {
             room_id: read_text(decoder)?,
         }),
+        66 => Ok(CommandV2::AttentionPreference {
+            room_id: read_text(decoder)?,
+            scope: decode_attention_scope(decoder)?,
+        }),
+        67 => Ok(CommandV2::SetAttentionPreference {
+            room_id: read_text(decoder)?,
+            observed_revision: read_u64(decoder)?,
+            scope: decode_attention_scope(decoder)?,
+            preference: decode_attention_preference(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1540,6 +1568,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::ImmutableAttachmentReferencesV1 => 23,
                     CapabilityV2::VellumArtifactReferencesV1 => 24,
                     CapabilityV2::ConversationProfilesV1 => 25,
+                    CapabilityV2::PrivateAttentionPreferencesV1 => 26,
                 })?;
             }
             Ok(())
@@ -2000,6 +2029,14 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             sink.u8(42)?;
             encode_read_position(sink, position)
         }
+        OutcomeV2::AttentionPreference(preference) => {
+            sink.u8(63)?;
+            encode_attention_preference(sink, *preference)
+        }
+        OutcomeV2::AttentionPreferenceSet(preference) => {
+            sink.u8(64)?;
+            encode_attention_preference(sink, *preference)
+        }
         OutcomeV2::Kicked { revision } => encode_revision_outcome(sink, 13, *revision),
         OutcomeV2::Banned { revision } => encode_revision_outcome(sink, 14, *revision),
         OutcomeV2::Unbanned { revision } => encode_revision_outcome(sink, 15, *revision),
@@ -2132,6 +2169,7 @@ fn decode_outcome(
                     23 => CapabilityV2::ImmutableAttachmentReferencesV1,
                     24 => CapabilityV2::VellumArtifactReferencesV1,
                     25 => CapabilityV2::ConversationProfilesV1,
+                    26 => CapabilityV2::PrivateAttentionPreferencesV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -2533,6 +2571,12 @@ fn decode_outcome(
                 },
             ))
         }
+        63 => Ok(OutcomeV2::AttentionPreference(decode_attention_preference(
+            decoder,
+        )?)),
+        64 => Ok(OutcomeV2::AttentionPreferenceSet(
+            decode_attention_preference(decoder)?,
+        )),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -2897,6 +2941,72 @@ fn decode_read_scope(
         3 => Ok(ReadScopeV1::Topic(decode_topic_id(decoder)?)),
         _ => Err(WireDecodeError::UnknownTag),
     }
+}
+
+fn encode_attention_scope(
+    sink: &mut dyn Sink,
+    scope: AttentionScopeV1,
+) -> Result<(), WireEncodeError> {
+    match scope {
+        AttentionScopeV1::Room => sink.u8(1),
+        AttentionScopeV1::Thread(root) => {
+            sink.u8(2)?;
+            encode_message_id(sink, root)
+        }
+        AttentionScopeV1::Topic(topic) => {
+            sink.u8(3)?;
+            encode_topic_id(sink, topic)
+        }
+    }
+}
+
+fn decode_attention_scope(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<AttentionScopeV1, WireDecodeError> {
+    match read_u8(decoder)? {
+        1 => Ok(AttentionScopeV1::Room),
+        2 => Ok(AttentionScopeV1::Thread(decode_message_id(decoder)?)),
+        3 => Ok(AttentionScopeV1::Topic(decode_topic_id(decoder)?)),
+        _ => Err(WireDecodeError::UnknownTag),
+    }
+}
+
+fn encode_attention_preference(
+    sink: &mut dyn Sink,
+    preference: AttentionPreferenceV1,
+) -> Result<(), WireEncodeError> {
+    sink.u8(u8::from(preference.following))?;
+    sink.u8(u8::from(preference.muted))?;
+    sink.u8(match preference.notification_intent {
+        NotificationIntentV1::Default => 0,
+        NotificationIntentV1::AllActivity => 1,
+        NotificationIntentV1::AddressedOnly => 2,
+        NotificationIntentV1::None => 3,
+    })
+}
+
+fn decode_attention_preference(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<AttentionPreferenceV1, WireDecodeError> {
+    let boolean = |value| match value {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(WireDecodeError::UnknownTag),
+    };
+    let following = boolean(read_u8(decoder)?)?;
+    let muted = boolean(read_u8(decoder)?)?;
+    let notification_intent = match read_u8(decoder)? {
+        0 => NotificationIntentV1::Default,
+        1 => NotificationIntentV1::AllActivity,
+        2 => NotificationIntentV1::AddressedOnly,
+        3 => NotificationIntentV1::None,
+        _ => return Err(WireDecodeError::UnknownTag),
+    };
+    Ok(AttentionPreferenceV1 {
+        following,
+        muted,
+        notification_intent,
+    })
 }
 
 fn encode_read_position(
@@ -5653,6 +5763,7 @@ fn encode_refusal(sink: &mut dyn Sink, refusal: RefusalV2) -> Result<(), WireEnc
         RefusalV2::TopicTagLimit => 29,
         RefusalV2::UnknownTopicTag => 30,
         RefusalV2::ImmutableConversationCohort => 31,
+        RefusalV2::InvalidAttentionScope => 32,
     };
     sink.u8(tag)?;
     if let RefusalV2::Stale { actual_revision } = refusal {
@@ -5696,6 +5807,7 @@ fn decode_refusal(decoder: &mut keystone_codec::Decoder<'_>) -> Result<RefusalV2
         29 => Ok(RefusalV2::TopicTagLimit),
         30 => Ok(RefusalV2::UnknownTopicTag),
         31 => Ok(RefusalV2::ImmutableConversationCohort),
+        32 => Ok(RefusalV2::InvalidAttentionScope),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }

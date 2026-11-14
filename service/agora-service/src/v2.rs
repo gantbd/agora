@@ -5,14 +5,16 @@ use agora_engine::{
     AttachmentIdV1 as EngineAttachmentIdV1, AttachmentIntegrityV1 as EngineAttachmentIntegrityV1,
     AttachmentMessageTargetV1 as EngineAttachmentMessageTargetV1,
     AttachmentObjectKeyV1 as EngineAttachmentObjectKeyV1,
-    AttachmentStoreIdV1 as EngineAttachmentStoreIdV1, BanPageCursor, CommandV2 as EngineCommand,
+    AttachmentStoreIdV1 as EngineAttachmentStoreIdV1, AttentionPreferenceRefusalV1,
+    AttentionPreferenceV1 as EngineAttentionPreferenceV1,
+    AttentionScopeV1 as EngineAttentionScopeV1, BanPageCursor, CommandV2 as EngineCommand,
     ConversationProfileV1 as EngineConversationProfileV1, Engine, MAX_REACTION_KEY_BYTES_V1,
     MemberPageCursor, MessageId, MessagePageCursor, MessageRevisionPageCursorV1,
-    ModerationCausationV1, ModerationReasonV1, ObservationRefusal, OutcomeV2 as EngineOutcome,
-    ParticipantId, ParticipantKind, ReadPositionRefusalV1, ReadScopeV1 as EngineReadScopeV1,
-    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomChangeGap,
-    RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
-    Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicId,
+    ModerationCausationV1, ModerationReasonV1, NotificationIntentV1 as EngineNotificationIntentV1,
+    ObservationRefusal, OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind,
+    ReadPositionRefusalV1, ReadScopeV1 as EngineReadScopeV1, Refusal as EngineRefusal, Revision,
+    RevisionedCommandV2, Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId,
+    RoomPageCursor, Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicId,
     TopicMessagePageCursorV1, TopicPageCursorV1,
     VellumArtifactMessageTargetV1 as EngineVellumArtifactMessageTargetV1,
     VellumArtifactReferenceIdV1 as EngineVellumArtifactReferenceIdV1,
@@ -22,12 +24,13 @@ use agora_engine::{
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessagePageV1, AttachmentMessageTargetV1, AttachmentMessageV1, AttachmentObjectKeyV1,
-    AttachmentRoomChangePageV1, AttachmentStoreIdV1, BanPageV2, BannedParticipantV2, CapabilityV2,
-    ChangeGapV2, ClientIdV2, CommandV2, ConversationProfileStatusV1, ConversationProfileV1,
-    IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
-    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageAttachmentV1,
-    MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1,
-    MessageRevisionV1, MessageV2, MessageVellumArtifactReferenceV1, OutcomeV2, PageCursorV2,
+    AttachmentRoomChangePageV1, AttachmentStoreIdV1, AttentionPreferenceV1, AttentionScopeV1,
+    BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2,
+    ConversationProfileStatusV1, ConversationProfileV1, IdentifiedMessagePageV1,
+    IdentifiedMessageV1, IdentifiedRoomChangePageV1, IdentifiedRoomChangeV1, IdentifiedRoomEventV1,
+    MemberPageV2, MemberV2, MessageAttachmentV1, MessageIdV1, MessagePageV2,
+    MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1, MessageV2,
+    MessageVellumArtifactReferenceV1, NotificationIntentV1, OutcomeV2, PageCursorV2,
     ParticipantKindV2, PeerConversationCreatedV1, ReactionStatusV1, ReactionSummaryV1,
     ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
     RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, Sha256DigestV1,
@@ -346,6 +349,7 @@ impl ServiceV2 {
                 CapabilityV2::ImmutableAttachmentReferencesV1,
                 CapabilityV2::VellumArtifactReferencesV1,
                 CapabilityV2::ConversationProfilesV1,
+                CapabilityV2::PrivateAttentionPreferencesV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::ConversationProfile { room_id } => {
@@ -510,6 +514,21 @@ impl ServiceV2 {
                 *observed_revision,
                 *scope,
                 *target_message_id,
+            ),
+            CommandV2::AttentionPreference { room_id, scope } => {
+                self.attention_preference(participant, room_id, *scope)
+            }
+            CommandV2::SetAttentionPreference {
+                room_id,
+                observed_revision,
+                scope,
+                preference,
+            } => self.set_attention_preference(
+                participant,
+                room_id,
+                *observed_revision,
+                *scope,
+                *preference,
             ),
             CommandV2::CreateTopic {
                 room_id,
@@ -1926,6 +1945,48 @@ impl ServiceV2 {
         ))
     }
 
+    fn attention_preference(
+        &self,
+        participant: &ParticipantId,
+        room_id: &str,
+        scope: AttentionScopeV1,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let preference = self
+            .engine
+            .attention_preference(
+                participant,
+                &RoomId::new(room_id),
+                map_attention_scope_to_engine(scope),
+            )
+            .map_err(map_attention_refusal)?;
+        Ok(OutcomeV2::AttentionPreference(
+            map_attention_preference_from_engine(preference),
+        ))
+    }
+
+    fn set_attention_preference(
+        &mut self,
+        participant: &ParticipantId,
+        room_id: &str,
+        observed_revision: u64,
+        scope: AttentionScopeV1,
+        preference: AttentionPreferenceV1,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let preference = self
+            .engine
+            .set_attention_preference(
+                participant,
+                &RoomId::new(room_id),
+                map_attention_scope_to_engine(scope),
+                Revision(observed_revision),
+                map_attention_preference_to_engine(preference),
+            )
+            .map_err(map_attention_refusal)?;
+        Ok(OutcomeV2::AttentionPreferenceSet(
+            map_attention_preference_from_engine(preference),
+        ))
+    }
+
     fn thread_roots(
         &mut self,
         client: ClientIdV2,
@@ -2844,7 +2905,9 @@ impl ServiceV2 {
             | CommandV2::ThreadStatus { room_id, .. }
             | CommandV2::ReactionStatus { room_id, .. }
             | CommandV2::ReadPosition { room_id, .. }
-            | CommandV2::AdvanceReadPosition { room_id, .. } => valid_room(room_id),
+            | CommandV2::AdvanceReadPosition { room_id, .. }
+            | CommandV2::AttentionPreference { room_id, .. }
+            | CommandV2::SetAttentionPreference { room_id, .. } => valid_room(room_id),
             CommandV2::Changes { room_id, limit, .. }
             | CommandV2::IdentifiedChanges { room_id, limit, .. }
             | CommandV2::AttachmentChanges { room_id, limit, .. }
@@ -3061,6 +3124,61 @@ fn map_read_position_refusal(refusal: ReadPositionRefusalV1) -> RefusalV2 {
         ReadPositionRefusalV1::InvalidTarget => RefusalV2::InvalidReadTarget,
         ReadPositionRefusalV1::Regression => RefusalV2::ReadPositionRegression,
         ReadPositionRefusalV1::Capacity => RefusalV2::Capacity,
+    }
+}
+
+fn map_attention_scope_to_engine(scope: AttentionScopeV1) -> EngineAttentionScopeV1 {
+    match scope {
+        AttentionScopeV1::Room => EngineAttentionScopeV1::Room,
+        AttentionScopeV1::Thread(root) => {
+            EngineAttentionScopeV1::Thread(MessageId::from_bytes(root.into_bytes()))
+        }
+        AttentionScopeV1::Topic(topic) => {
+            EngineAttentionScopeV1::Topic(TopicId::from_bytes(topic.into_bytes()))
+        }
+    }
+}
+
+fn map_attention_preference_to_engine(
+    preference: AttentionPreferenceV1,
+) -> EngineAttentionPreferenceV1 {
+    EngineAttentionPreferenceV1::new(
+        preference.following,
+        preference.muted,
+        match preference.notification_intent {
+            NotificationIntentV1::Default => EngineNotificationIntentV1::Default,
+            NotificationIntentV1::AllActivity => EngineNotificationIntentV1::AllActivity,
+            NotificationIntentV1::AddressedOnly => EngineNotificationIntentV1::AddressedOnly,
+            NotificationIntentV1::None => EngineNotificationIntentV1::None,
+        },
+    )
+}
+
+fn map_attention_preference_from_engine(
+    preference: EngineAttentionPreferenceV1,
+) -> AttentionPreferenceV1 {
+    AttentionPreferenceV1 {
+        following: preference.following(),
+        muted: preference.muted(),
+        notification_intent: match preference.notification_intent() {
+            EngineNotificationIntentV1::Default => NotificationIntentV1::Default,
+            EngineNotificationIntentV1::AllActivity => NotificationIntentV1::AllActivity,
+            EngineNotificationIntentV1::AddressedOnly => NotificationIntentV1::AddressedOnly,
+            EngineNotificationIntentV1::None => NotificationIntentV1::None,
+        },
+    }
+}
+
+fn map_attention_refusal(refusal: AttentionPreferenceRefusalV1) -> RefusalV2 {
+    match refusal {
+        AttentionPreferenceRefusalV1::UnknownParticipant => RefusalV2::UnknownParticipant,
+        AttentionPreferenceRefusalV1::UnknownRoom => RefusalV2::UnknownRoom,
+        AttentionPreferenceRefusalV1::NotMember => RefusalV2::NotMember,
+        AttentionPreferenceRefusalV1::Stale { actual_revision } => RefusalV2::Stale {
+            actual_revision: actual_revision.0,
+        },
+        AttentionPreferenceRefusalV1::InvalidScope => RefusalV2::InvalidAttentionScope,
+        AttentionPreferenceRefusalV1::Capacity => RefusalV2::Capacity,
     }
 }
 

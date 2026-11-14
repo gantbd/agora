@@ -209,6 +209,35 @@ pub struct ReadPositionV1 {
     pub observed_revision: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum AttentionScopeV1 {
+    Room,
+    Thread(MessageIdV1),
+    Topic(TopicIdV1),
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NotificationIntentV1 {
+    #[default]
+    Default,
+    AllActivity,
+    AddressedOnly,
+    None,
+}
+
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub struct AttentionPreferenceV1 {
+    pub following: bool,
+    pub muted: bool,
+    pub notification_intent: NotificationIntentV1,
+}
+
+impl fmt::Debug for AttentionPreferenceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AttentionPreferenceV1(<redacted>)")
+    }
+}
+
 impl fmt::Debug for ReadPositionV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -488,6 +517,16 @@ pub enum CommandV2 {
         observed_revision: u64,
         scope: ReadScopeV1,
         target_message_id: MessageIdV1,
+    },
+    AttentionPreference {
+        room_id: String,
+        scope: AttentionScopeV1,
+    },
+    SetAttentionPreference {
+        room_id: String,
+        observed_revision: u64,
+        scope: AttentionScopeV1,
+        preference: AttentionPreferenceV1,
     },
     CreateRoom {
         room_id: String,
@@ -1242,6 +1281,23 @@ impl fmt::Debug for CommandV2 {
                 .field("scope", scope)
                 .field("target_message_id", target_message_id)
                 .finish(),
+            Self::AttentionPreference { room_id, scope } => formatter
+                .debug_struct("AttentionPreference")
+                .field("room_id_bytes", &room_id.len())
+                .field("scope", scope)
+                .finish(),
+            Self::SetAttentionPreference {
+                room_id,
+                observed_revision,
+                scope,
+                preference: _,
+            } => formatter
+                .debug_struct("SetAttentionPreference")
+                .field("room_id_bytes", &room_id.len())
+                .field("observed_revision", observed_revision)
+                .field("scope", scope)
+                .field("preference", &"<redacted>")
+                .finish(),
         }
     }
 }
@@ -1275,6 +1331,7 @@ pub enum CapabilityV2 {
     ImmutableAttachmentReferencesV1,
     VellumArtifactReferencesV1,
     ConversationProfilesV1,
+    PrivateAttentionPreferencesV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -3342,6 +3399,8 @@ pub enum OutcomeV2 {
     TopicMessages(TopicMessagePageV1),
     ReadPosition(Option<ReadPositionV1>),
     ReadPositionAdvanced(ReadPositionV1),
+    AttentionPreference(AttentionPreferenceV1),
+    AttentionPreferenceSet(AttentionPreferenceV1),
     ChangesOpened {
         revision: u64,
         cursor: PageCursorV2,
@@ -3541,6 +3600,7 @@ pub enum RefusalV2 {
     InvalidReadTarget,
     ReadPositionRegression,
     ImmutableConversationCohort,
+    InvalidAttentionScope,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

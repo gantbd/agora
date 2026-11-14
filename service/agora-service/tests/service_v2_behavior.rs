@@ -2,10 +2,10 @@ use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, ConversationProfileV1,
-    IdentifiedRoomEventV1, MessageIdV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2,
-    RequestV2, RoleV2, RoomEventV2, ThreadLifecycleStateV1, ThreadedRoomEventV1, TopicIdV1,
-    TopicRoomEventV1,
+    AdmissionPolicyV2, AttentionPreferenceV1, AttentionScopeV1, CapabilityV2, ChangeGapV2,
+    ClientIdV2, CommandV2, ConversationProfileV1, IdentifiedRoomEventV1, MessageIdV1,
+    NotificationIntentV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
+    RoleV2, RoomEventV2, ThreadLifecycleStateV1, ThreadedRoomEventV1, TopicIdV1, TopicRoomEventV1,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -14,6 +14,87 @@ fn request(id: u64, command: CommandV2) -> RequestV2 {
         request_id: RequestIdV2(id),
         command,
     }
+}
+
+#[test]
+fn v2_attention_preferences_are_actor_bound_replayable_and_nonpublishing() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let revision = service.engine().revision().0;
+    let events = service.engine().pending_events().count();
+    let preference = AttentionPreferenceV1 {
+        following: true,
+        muted: true,
+        notification_intent: NotificationIntentV1::AddressedOnly,
+    };
+    let set = request(
+        1,
+        CommandV2::SetAttentionPreference {
+            room_id: "room".to_owned(),
+            observed_revision: revision,
+            scope: AttentionScopeV1::Room,
+            preference,
+        },
+    );
+    let accepted = ReplyV2::Accepted(OutcomeV2::AttentionPreferenceSet(preference));
+    assert_eq!(service.execute(alice, set.clone()), accepted);
+    assert_eq!(service.execute(alice, set), accepted);
+    assert_eq!(service.engine().revision().0, revision);
+    assert_eq!(service.engine().pending_events().count(), events);
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                2,
+                CommandV2::AttentionPreference {
+                    room_id: "room".to_owned(),
+                    scope: AttentionScopeV1::Room,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::AttentionPreference(preference))
+    );
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                1,
+                CommandV2::AttentionPreference {
+                    room_id: "room".to_owned(),
+                    scope: AttentionScopeV1::Room,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::AttentionPreference(
+            AttentionPreferenceV1::default()
+        ))
+    );
 }
 
 #[test]
@@ -3672,10 +3753,10 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 25);
+    assert_eq!(capabilities.len(), 26);
     assert_eq!(
         capabilities.last(),
-        Some(&CapabilityV2::ConversationProfilesV1)
+        Some(&CapabilityV2::PrivateAttentionPreferencesV1)
     );
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
