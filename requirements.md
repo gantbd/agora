@@ -715,12 +715,24 @@
   eligibility, bounds, allocation frontiers, and every legacy checkpoint byte.
   Polls carry no approval, workflow, quorum, deadline, winner, or execution
   meaning.
+- **R100 — Room-local topic collections and movement boundary:** the room's
+  bounded topic registry is the first conversation collection and may be
+  observed through a participant-bound, revision-bound stable-ID index filtered
+  by closed lifecycle state and a canonical conjunctive tag set. Entries project
+  current name, creator, lifecycle, aliases, tags, and depth-one supersession
+  without adding state, events, read movement, search authority, or membership
+  inheritance. Existing message/topic relations remain immutable admission
+  provenance; move and copy commands remain absent, and merge/redirect means
+  only explicit qualified topic supersession. Cross-room collections and
+  product hierarchy remain absent.
 
 ## Explicitly open
 
 The R96 conversation-profile, R97 private-attention, R98 shared-pin/private-save,
 and R99 bounded-poll contracts are implemented and commit-pinned
-release-qualified through the private-local stack.
+release-qualified through the private-local stack. The R100 room-local topic
+collection architecture is accepted; implementation and qualification remain
+open.
 Additional
 physical durable storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,

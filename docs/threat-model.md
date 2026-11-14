@@ -488,6 +488,18 @@ Clients and policy adapters must not reinterpret a ballot, plurality, close, or
 reopen as authorization, approval, quorum, finality, task state, scheduling, or
 agent activation.
 
+Topic-collection filters expose authoritative current metadata and therefore
+must remain membership-gated, revision-bound, bounded, and byte-canonical.
+Filter tags are selectors only; they do not become authority, routing,
+subscription, or search ranking. A collection view must never rewrite the
+immutable admitted topic relation of a message or migrate a private read
+position. Treating administrative “move” or “copy” as an in-place relation
+change would corrupt replay; copying another participant's body under their
+identity would counterfeit speech. Only explicit depth-one supersession may be
+projected as merge/redirect, and it must not silently retarget reads or writes.
+No collection observation may infer cross-room membership, roles, or federation
+trust.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

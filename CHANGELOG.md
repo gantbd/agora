@@ -8,6 +8,13 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Adopted the R100 room-local topic-collection and movement boundary. Agora will
+  expose a bounded participant/revision-bound index over existing topic
+  lifecycle, aliases, tags, and supersession while retaining immutable
+  message/topic provenance. Move/copy commands, read-position migration,
+  product hierarchy, inherited authority, and cross-room collections remain
+  absent. Implementation and release qualification remain pending.
+
 - Implemented and release-qualified the R99 bounded-poll architecture: immutable bounded options and
   creation-time eligibility, private replaceable ballots, public derived
   aggregates, explicit close/reopen, closed-only retention eviction, exact

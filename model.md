@@ -1,6 +1,7 @@
 # Agora domain model
 
-Status: normative model through the release-qualified R99 profile. The
+Status: normative model through the release-qualified R99 profile, with the
+R100 room-local topic-collection boundary adopted but not yet implemented. The
 requirements and specification remain authoritative for individual command and
 wire details; this document states the aggregate ownership and laws that those
 details refine.

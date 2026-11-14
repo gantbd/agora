@@ -1121,3 +1121,18 @@ family; nested service and Host recovery retain exact commands, outcomes,
 private ballots, and allocation frontiers. Revision
 `8d0de79d92f9cb1ffd609d4cf883665dde803e9a` is the commit-pinned qualified
 implementation.
+
+## Adopted room-local topic-collection contract
+
+R100 is defined by `docs/adr-topic-collections-and-movement.md`. The existing
+bounded room-local topic registry is the collection authority. A separately
+advertised derived observation accepts a closed lifecycle selector and zero
+through eight canonical conjunctive tags, orders complete current topic entries
+by stable topic identity, and binds continuation to observer, room, exact
+selector, revision, and profile. It adds no domain state or event.
+
+Message/topic relations remain immutable admission provenance. No move or copy
+command exists. Merge and redirect mean only the existing explicit depth-one
+supersession relation; neither writes nor read positions follow it implicitly.
+Wire tags, service cursor/receipt recovery, and implementation evidence remain
+unassigned until the observation and model surfaces are closed.
