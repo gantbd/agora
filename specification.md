@@ -1146,3 +1146,20 @@ facades, and the private Unix route close the implementation. Revision
 `fc446789f227641318850958558e0d7bdef1937d` passed the ordinary gate, every
 release-mode target, 10,000 deterministic soak cycles, and 1,000,000 fixed-seed
 cases on each of the three fuzz targets.
+
+## Adopted admission and moderation control contract
+
+R101 is defined by `docs/adr-admission-and-moderation-controls.md`. It adds an
+opaque non-regressing admission-time observation supplied by the authenticated
+Host, never by the wire request or caller `LogicalTime`; one owner-controlled
+room minimum-post interval covering every message form with no implicit
+role/kind bypass; one hierarchy-bound indefinite posting restriction; and
+private bounded message reports with reporter-only or owner/moderator
+observation and closed-only eviction. Reviews classify an open report only as
+`Dismissed` or `Escalated`; they neither execute nor prove a moderation action.
+
+Aegis evaluation remains passive correlation evidence before the ordinary
+Agora transition. External classifiers have no Agora command or write port.
+The profile adds no Chronos dependency, timed sentence, workflow/case engine,
+moderator assignment, appeal, cross-room sanction, federation, delivery, or
+agent behavior. Implementation and release qualification remain open.

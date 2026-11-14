@@ -725,6 +725,19 @@
   provenance; move and copy commands remain absent, and merge/redirect means
   only explicit qualified topic supersession. Cross-room collections and
   product hierarchy remain absent.
+- **R101 — Admission and moderation controls:** a separately advertised profile
+  must enforce one owner-controlled room admission interval across every message
+  form using opaque non-regressing Host-derived time evidence rather than
+  caller `LogicalTime`, with no implicit role or participant-kind bypass. The
+  existing hierarchy must support an indefinite posting restriction that blocks
+  message admission without removing membership. Current members may create
+  bounded stable reports against retained messages; reporters see their own,
+  owners/moderators see the authority-scoped room queue, and unrelated members
+  see none. Reviews close reports only as dismissed or escalated and make no
+  moderation-action or workflow-completion claim. Closed-only report eviction,
+  exact replay/recovery, content-free diagnostics, and human/agent symmetry are
+  required. Aegis remains a passive decision boundary and classifier evidence
+  must have no direct Agora mutation path.
 
 ## Explicitly open
 
@@ -741,4 +754,8 @@ Credential authentication, network transport, concurrent daemon lifecycle,
 and durable profiles beyond the qualified
 single-owner local Unix directory remain open;
 Protocol V1 bytes and semantics are unchanged.
+
+The R101 admission/moderation architecture is adopted in
+`docs/adr-admission-and-moderation-controls.md`; implementation and qualification
+remain open.
 
