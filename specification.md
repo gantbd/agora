@@ -1113,5 +1113,11 @@ ceiling, creation evicts the oldest closed poll or refuses when every retained
 poll is open. Recovery validates the complete private ballot relation and its
 public derived aggregate rather than trusting an inconsistent cached total.
 No automatic deadline, result interpretation, winner, quorum, or workflow
-transition exists. Wire tags, checkpoint profiles, and implementation evidence
-remain unassigned until the engine transition surface is closed.
+transition exists. The additive `BoundedPollsV1` capability closes exact and
+collection observations, caller-private ballots, creation/vote/lifecycle
+commands, aggregates, refusals, and all four room-event profiles. Engine
+checkpoint profiles 52–83 add poll state without changing the legacy 20–51
+family; nested service and Host recovery retain exact commands, outcomes,
+private ballots, and allocation frontiers. Revision
+`8d0de79d92f9cb1ffd609d4cf883665dde803e9a` is the commit-pinned qualified
+implementation.

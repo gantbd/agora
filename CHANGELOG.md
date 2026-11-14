@@ -8,11 +8,16 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
-- Adopted the R99 bounded-poll architecture: immutable bounded options and
+- Implemented and release-qualified the R99 bounded-poll architecture: immutable bounded options and
   creation-time eligibility, private replaceable ballots, public derived
   aggregates, explicit close/reopen, closed-only retention eviction, exact
   recovery, and no approval, deadline, quorum, winner, or workflow meaning.
-  Implementation and release qualification remain pending.
+  The additive slice spans protocol/wire, service, durable owner, authenticated
+  Host, client, both SDK facades, private Unix transport, an exhaustive
+  four-step schedule model, two frozen frames, 81 compatibility fixtures, and
+  refreshed fuzz seeds. Revision `8d0de79d92f9cb1ffd609d4cf883665dde803e9a`
+  passed the ordinary gate, every release-mode target, 10,000 deterministic
+  soak cycles, and 1,000,000 fixed-seed cases on each fuzz target.
 
 - Implemented the R98 shared-pin/private-save release candidate. Pins are
   bounded revisioned room facts visible to current members; saves are bounded

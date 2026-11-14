@@ -718,10 +718,9 @@
 
 ## Explicitly open
 
-The R96 conversation-profile, R97 private-attention, and R98 shared-pin/private-save
-contracts are implemented and commit-pinned release-qualified through the
-private-local stack. The R99 bounded-poll architecture is accepted, while its
-implementation and release qualification remain open.
+The R96 conversation-profile, R97 private-attention, R98 shared-pin/private-save,
+and R99 bounded-poll contracts are implemented and commit-pinned
+release-qualified through the private-local stack.
 Additional
 physical durable storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,

@@ -147,6 +147,16 @@ not ready for a network service or crates.io release.
   release-mode target, 10,000 deterministic soak cycles, and 1,000,000
   fixed-seed cases on each of the three fuzz targets on Darwin 25.6.0 arm64 /
   macOS 26.6.2 with unchanged tracked bytes afterward;
+- release-qualified the R99 bounded-poll profile through canonical engine
+  recovery, closed protocol/wire/service surfaces, durable publication,
+  authenticated Host, client, both SDK facades, and private Unix transport;
+  private ballots and aggregate-only events, explicit lifecycle, closed-only
+  eviction, an exhaustive four-step human/agent schedule model, two frozen
+  frames, 81-fixture compatibility, and refreshed fuzz seeds are present;
+  revision `8d0de79d92f9cb1ffd609d4cf883665dde803e9a` passed the ordinary gate,
+  every release-mode target, 10,000 deterministic soak cycles, and 1,000,000
+  fixed-seed cases on each fuzz target on Darwin 25.6.0 arm64 / macOS 26.6.2
+  with unchanged tracked bytes afterward;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound
