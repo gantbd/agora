@@ -695,9 +695,8 @@
 
 ## Explicitly open
 
-The R96 conversation-profile contract is implemented and commit-pinned
-release-qualified. R97 private attention is implemented through the private
-local stack; commit-pinned release qualification remains open. Additional
+The R96 conversation-profile and R97 private-attention contracts are implemented
+and commit-pinned release-qualified through the private-local stack. Additional
 physical durable storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,
 federation, delivery acknowledgment, and durable audit are not part of the

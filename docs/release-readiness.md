@@ -131,8 +131,11 @@ not ready for a network service or crates.io release.
   follow/mute/notification intent remains revision/event neutral and makes no
   delivery claim; engine profiles 24–27, service 26/27, Host 25, bounded
   schedule and saturation evidence, two frozen frames, 79 canonical fixtures,
-  and refreshed fuzz seeds are present; commit-pinned qualification remains
-  pending;
+  and refreshed fuzz seeds are present; revision
+  `8864a4097fccc9b4e3083f935babda1dcd4d0870` passed the ordinary gate, every
+  release-mode target, 10,000 deterministic soak cycles, and 1,000,000
+  fixed-seed cases on each of the three fuzz targets on Darwin 25.6.0 arm64 /
+  macOS 26.6.2 with unchanged tracked bytes afterward;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound

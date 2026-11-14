@@ -191,7 +191,12 @@ Protocol/wire, service replay and recovery, durable commit-before-reply, Host
 binding and recovery, exact client uncertainty, both SDK facades, and the real
 private Unix route are closed. Two frozen frames, the advanced canonical
 capability frame, 79-fixture inventory, and refreshed wire/outer fuzz seeds
-provide pre-release evidence. Commit-pinned release qualification remains open.
+provide compatibility and adversarial evidence. Revision
+`8864a4097fccc9b4e3083f935babda1dcd4d0870` passed the ordinary gate, every
+release-mode target, 10,000 deterministic soak cycles, and 1,000,000 fixed-seed
+cases on each of the three fuzz targets on Darwin 25.6.0 arm64 / macOS 26.6.2,
+with unchanged tracked bytes afterward. R97 is satisfied for the claimed
+private-local profile boundary.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;

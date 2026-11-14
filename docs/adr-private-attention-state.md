@@ -1,6 +1,6 @@
 # ADR: private attention state
 
-Status: implemented; release qualification pending
+Status: accepted and release-qualified
 
 Date: 2026-11-14
 
@@ -87,8 +87,10 @@ The engine-through-SDK implementation, durable commit-before-reply path,
 authenticated Host binding and recovery, private Unix route, exhaustive bounded
 kind/schedule model, global-capacity case, engine profiles 24–27, two frozen
 frames, 79-fixture compatibility inventory, and refreshed wire/outer fuzz seeds
-are present. Commit-pinned release qualification remains the final acceptance
-gate.
+are present. Revision `8864a4097fccc9b4e3083f935babda1dcd4d0870` passed
+the ordinary gate, every release-mode target, 10,000 deterministic soak cycles,
+and 1,000,000 fixed-seed cases on each of the three fuzz targets on Darwin
+25.6.0 arm64 / macOS 26.6.2 with unchanged tracked bytes.
 
 ## Nonclaims
 

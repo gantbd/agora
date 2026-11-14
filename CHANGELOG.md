@@ -15,7 +15,9 @@ follow Semantic Versioning once a public release contract is selected.
   The additive profile spans engine, protocol/wire, service, durable owner,
   Host, client, both SDKs, private Unix transport, bounded model and saturation
   evidence, canonical profiles 24–27, two frozen frames, 79 fixtures, and fuzz
-  seeds. Commit-pinned release qualification remains.
+  seeds. Revision `8864a4097fccc9b4e3083f935babda1dcd4d0870` passed
+  the ordinary gate, every release-mode target, 10,000 soak cycles, and
+  1,000,000 fixed-seed cases on each of the three fuzz targets.
 
 - Implemented the R96 conversation-profile contract: ordinary rooms remain
   owner-led, while direct and group-direct rooms are ownerless immutable
