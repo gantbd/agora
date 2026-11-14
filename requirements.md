@@ -702,12 +702,26 @@
   deleting state. Pin creation and save creation require a retained room-local
   message; removal remains possible after eviction. Canonical recovery must
   preserve exact state and every legacy checkpoint byte.
+- **R99 — Bounded polls:** a poll is a bounded room-owned structured
+  conversation object with one stable identity, immutable ordered options,
+  immutable Agora-local eligible cohort, immutable maximum choice count,
+  private actor-owned ballots, public derived aggregates, and explicit
+  open/closed lifecycle. Creation, ballot replacement or retraction, close, and
+  reopen are stale-guarded revisioned room mutations with exact replay. Ballot
+  events and observations must reveal aggregate state but neither voter identity
+  nor another participant's selections. Closing fences ballots; reopening
+  preserves them. Capacity evicts only the oldest closed poll and never an open
+  poll. Canonical recovery must prove aggregate/ballot equality, ordering,
+  eligibility, bounds, allocation frontiers, and every legacy checkpoint byte.
+  Polls carry no approval, workflow, quorum, deadline, winner, or execution
+  meaning.
 
 ## Explicitly open
 
 The R96 conversation-profile, R97 private-attention, and R98 shared-pin/private-save
 contracts are implemented and commit-pinned release-qualified through the
-private-local stack. R99 bounded polls are the next planned capability.
+private-local stack. The R99 bounded-poll architecture is accepted, while its
+implementation and release qualification remain open.
 Additional
 physical durable storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,

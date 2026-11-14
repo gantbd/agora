@@ -474,6 +474,20 @@ or external bytes remain retrievable. Capacity and stale-write refusals occur
 before mutation, and diagnostics disclose neither private save membership nor
 referenced identities.
 
+Poll prompts, option labels, eligibility cohorts, lifecycle, and aggregates are
+sensitive room metadata; individual ballots are a stricter private projection.
+The Host must derive the voter from its authenticated binding, and no command,
+feed, event, diagnostic, moderator view, or other participant response may
+enumerate another participant's ballot or identify the actor behind an
+aggregate change. Aggregate deltas and event timing can still permit inference,
+so this profile must not be described as cryptographically anonymous or
+coercion-resistant. Canonical recovery recomputes totals from eligible private
+ballots and refuses disagreement. Fixed option, cohort, ballot, and room-poll
+ceilings bound amplification; only the oldest closed poll may be evicted.
+Clients and policy adapters must not reinterpret a ballot, plurality, close, or
+reopen as authorization, approval, quorum, finality, task state, scheduling, or
+agent activation.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

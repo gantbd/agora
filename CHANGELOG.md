@@ -8,6 +8,12 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Adopted the R99 bounded-poll architecture: immutable bounded options and
+  creation-time eligibility, private replaceable ballots, public derived
+  aggregates, explicit close/reopen, closed-only retention eviction, exact
+  recovery, and no approval, deadline, quorum, winner, or workflow meaning.
+  Implementation and release qualification remain pending.
+
 - Implemented the R98 shared-pin/private-save release candidate. Pins are
   bounded revisioned room facts visible to current members; saves are bounded
   actor-owned relations with no domain revision or room event. Both retain only

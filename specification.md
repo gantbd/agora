@@ -1089,3 +1089,29 @@ Engine checkpoint profiles 22/23 add peer state without/with Vellum relations;
 service profiles 26/27 and Host profile 25 close the nested durable shape while
 recovering and canonically migrating valid legacy records. Unknown, malformed,
 cross-profile, and old-envelope/new-payload combinations refuse before exposure.
+
+## Adopted bounded-poll contract
+
+The R99 contract is defined by `docs/adr-bounded-polls.md`. A poll is a stable
+room-local structured object with a bounded prompt, 2 through 32 immutable
+ordered options, a canonical immutable cohort of at most 256 Agora
+participants, and an immutable maximum choice count. All cohort members must be
+registered current room members at creation. Eligibility is a creation-time
+snapshot and never substitutes for membership.
+
+One eligible participant owns one private canonical ballot. Setting a ballot
+replaces the complete selection; an empty selection retracts it. Selection
+indices are strictly increasing, in range, and bounded by the poll's maximum
+choice count. Observation exposes the caller's ballot only to that caller and
+exposes only derived totals to every current member. Aggregate change events
+omit both voter and selection. Creation, ballot change, close, and reopen each
+advance the domain revision and publish exactly one room event.
+
+The creator, current owner, or current moderator may close and reopen. Closed
+polls reject ballot changes; reopening preserves ballots. At the 256-poll room
+ceiling, creation evicts the oldest closed poll or refuses when every retained
+poll is open. Recovery validates the complete private ballot relation and its
+public derived aggregate rather than trusting an inconsistent cached total.
+No automatic deadline, result interpretation, winner, quorum, or workflow
+transition exists. Wire tags, checkpoint profiles, and implementation evidence
+remain unassigned until the engine transition surface is closed.

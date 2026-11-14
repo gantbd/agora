@@ -1,6 +1,7 @@
 # Agora domain model
 
-Status: normative model through the implemented R97 private-attention profile. The
+Status: normative model through the release-qualified R98 profile, with the R99
+bounded-poll contract adopted but not yet implemented. The
 requirements and specification remain authoritative for individual command and
 wire details; this document states the aggregate ownership and laws that those
 details refine.
@@ -39,6 +40,9 @@ details refine.
   payload.
 - **Private save:** participant-owned stable message relation. It is durable and
   retention-aware but is not a room event, private message copy, or export.
+- **Poll:** room-owned bounded structured conversation state with an immutable
+  eligible cohort and option law, private participant ballots, public derived
+  aggregates, and explicit lifecycle. It is not approval or workflow state.
 - **Presence and typing:** expiring, source-scoped transient collaboration
   signals. Restart reconstructs them as unknown.
 - **Service request receipt:** bounded client/request evidence for exact replay
@@ -53,8 +57,8 @@ contains more than one class:
 
 | State class | Owner | Examples |
 | --- | --- | --- |
-| Shared conversation authority | Engine | rooms, membership, roles, messages, topics, pins, moderation, outbox, change journal |
-| Private durable projection | Engine behind participant-bound service operations | read positions, attention preferences, saved references |
+| Shared conversation authority | Engine | rooms, membership, roles, messages, topics, pins, poll definitions/aggregates, moderation, outbox, change journal |
+| Private durable projection | Engine behind participant-bound service operations | read positions, attention preferences, saved references, poll ballots |
 | Serialized client coordination | Service | client namespace, exact request receipts, bounded cursors |
 | Authenticated continuity | Host | verified subject/participant/client/context binding and revalidation state |
 | Transient collaboration | Host/service transient profile | presence, typing, transient cursors and replay state |
