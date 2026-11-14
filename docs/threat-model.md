@@ -2,6 +2,18 @@
 
 Status: initial STRIDE/LINDDUN analysis for the v0.3 core boundary.
 
+The adopted direct and group-direct profiles narrow membership mutation by
+retaining an immutable founding cohort and allowing only irreversible departure.
+Atomic creation must reject duplicates, unknown participants, and invalid
+cardinality before publishing any existence fact. Ownerless peer cohorts avoid
+creator privilege but deliberately provide no moderator recovery path. A
+departed peer immediately loses observation authority, while retained IDs,
+events, attribution, and content remain linkable state for current peers and in
+qualified checkpoints. Departure is not erasure. Empty cohorts can retain
+inaccessible data until a later retention profile acts. A shared-room label is
+forbidden as local trust evidence; federation, tenant provenance, remote
+membership, and cross-deployment disclosure remain unimplemented threats.
+
 | Concern | Core treatment | External obligation |
 | --- | --- | --- |
 | Spoofing | IDs grant no authentication; room authority is checked against explicit actor IDs | host binds authenticated principals to IDs |

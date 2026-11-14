@@ -982,3 +982,32 @@ source SBOM, fuzz dependency/seed closure, source-candidate/archive contracts,
 and release qualification must all name or derive the relocated graph exactly.
 The ordinary gate precedes the bounded commit-pinned release profile. Passing a
 semantic test suite without those inventory and artifact checks is insufficient.
+
+## Adopted conversation-profile contract
+
+`Ordinary` preserves the existing owner-led room semantics and existing
+`CreateRoom` grammar. `Direct` and `GroupDirect` are additive authoritative room
+profiles over the same message, topic, ordering, retention, event, and recovery
+substrate. Direct creation supplies exactly two distinct registered founding
+participants. Group-direct creation supplies a canonical strictly increasing
+set of at least three registered participants, bounded by
+`max_members_per_room`. Validation is atomic and occurs before publication.
+
+Every direct or group-direct founder has role `Member`; the command initiator
+gains no special role. Their founding cohort is retained separately from
+current membership. Invite, join, role change, admission-policy change, kick,
+ban, and unban are invalid for these profiles. Any current peer may leave;
+departure removes observation authority and cannot be reversed by join or
+invitation. It does not rewrite the bounded retained history. Empty current
+membership is valid retained state.
+
+Room discovery remains the existing participant-bound enumeration of current
+memberships. Direct and group-direct identifiers are neither public discovery
+handles nor bearer authority. Their observation and history pages recheck
+current membership exactly as ordinary rooms do.
+
+Shared room is intentionally absent from the local profile vocabulary. The
+name denotes a later composition of an ordinary invite-only room and the R106
+Agora-to-Agora federation binding. No local field may assert remote identity,
+tenant trust, replication, or federation readiness. The detailed decision and
+required implementation evidence are in `docs/adr-conversation-profiles.md`.

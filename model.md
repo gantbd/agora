@@ -11,6 +11,9 @@ details refine.
   `Agent` kind. Kind is descriptive and never grants authority.
 - **Room:** the authority and ordering boundary for membership, roles,
   admission policy, retained conversation, moderation, topics, and events.
+- **Conversation profile:** the closed local cardinality and membership law for
+  a room. `Ordinary` is owner-led; `Direct` and `GroupDirect` are ownerless
+  immutable founding cohorts. A shared room is not a local profile.
 - **Membership:** the current room relationship and role of one participant,
   distinct from authentication, presence, read state, and delivery.
 - **Message:** a stable room-local identity, monotone room-local sequence,
@@ -126,6 +129,12 @@ Addressing, mentioning, reacting, voting, resolving, or archiving never admits
 work. Moira coordinates work, Chronos owns tasks and time, Daimon executes
 already-authorized work, Hermes owns generic durable delivery, and Vellum owns
 document content and revision history.
+
+Conversation profile also grants no external authority. Direct and group-direct
+cohorts are kind-neutral Agora participant sets, not contacts, principals, or
+tenant memberships. “Shared room” requires a separately qualified federation
+binding over an ordinary room; Aegis/directory provenance cannot be inferred
+from a room label.
 
 ## Recovery and effects
 

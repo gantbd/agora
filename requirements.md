@@ -671,10 +671,22 @@
   must pass from one clean revision. Qualification changes no package identity,
   wire or checkpoint bytes, capability advertisement, authority law, transport
   claim, or public SDK closure.
+- **R96 — Conversation profiles:** ordinary rooms retain their owner-led
+  open/invite-only lifecycle. A direct conversation must atomically establish
+  exactly two distinct registered peers; a group-direct conversation must
+  atomically establish three through the configured room-member ceiling. The
+  complete founding cohort is immutable, ownerless, participant-kind-neutral,
+  membership-only discoverable, and departure is permitted but irreversible.
+  Current members alone observe the ordinary bounded retained history; leaving
+  revokes observation without rewriting or erasing history. Shared room is not
+  a local profile: it is a future projection of an ordinary invite-only room
+  plus an explicitly qualified Agora federation binding. External identity and
+  tenant trust remain directory/Aegis facts.
 
 ## Explicitly open
 
-Additional physical durable storage adapters, durable event sinks,
+The R96 conversation-profile contract is adopted but not yet an implementation
+claim. Additional physical durable storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,
 federation, delivery acknowledgment, and durable audit are not part of the
 current v0.3 claim.
