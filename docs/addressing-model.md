@@ -1,6 +1,6 @@
 # Bounded addressing model
 
-The executable model in `tests/addressing_model.rs` enumerates a room with three
+The executable model in `engine/agora-engine/tests/addressing_model.rs` enumerates a room with three
 participants. For every one of the eight human/agent kind assignments, each of
 the three authors, and each of the eight canonical recipient subsets, it checks
 that acceptance, retained addressing, revision movement, and event movement equal

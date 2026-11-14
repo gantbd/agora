@@ -16,7 +16,7 @@ fail closed on the new value. Reinterpreting an assigned tag or changing any
 existing field grammar requires a new frame version. Unknown tags, fields, or
 trailing bytes remain refusals.
 
-The immutable `tests/fixtures/checkpoint-v17.hex` artifact pins a representative
+The immutable `engine/agora-engine/tests/fixtures/checkpoint-v17.hex` artifact pins a representative
 V18 state containing both participant kinds, stable message and topic identity,
 topic-scoped messages, thread lifecycle, reactions, message revisions, neutral addressing, replay-safe
 publication, ban and policy-change evidence, one private read position,

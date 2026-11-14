@@ -8,11 +8,11 @@ description = "Transport-neutral client interpretation for Agora"
 publish = false
 
 [dependencies]
-agora-protocol = { path = "../agora-protocol", version = "=0.1.0" }
+agora-protocol = { path = "../../protocol/agora-protocol", version = "=0.1.0" }
 
 [dev-dependencies]
-agora-engine = { path = "../..", version = "=0.3.0" }
-agora-service = { path = "../agora-service", version = "=0.1.0" }
+agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }
+agora-service = { path = "../../service/agora-service", version = "=0.1.0" }
 
 [lints.rust]
 unsafe_code = "forbid"

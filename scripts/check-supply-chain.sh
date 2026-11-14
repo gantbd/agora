@@ -54,6 +54,9 @@ while IFS= read -r declaration; do
     exit 1
   fi
 done < <(rg --no-filename '^[A-Za-z0-9_-]+ = \{.*\}$' \
-  Cargo.toml crates/*/Cargo.toml sdk/*/Cargo.toml | LC_ALL=C sort)
+  engine/*/Cargo.toml protocol/*/Cargo.toml client/*/Cargo.toml \
+  service/*/Cargo.toml host/*/Cargo.toml ports/*/Cargo.toml \
+  adapters/*/Cargo.toml applications/*/Cargo.toml sdk/*/Cargo.toml \
+  | LC_ALL=C sort)
 
 echo 'Agora supply profile closes over 19 locked local components'

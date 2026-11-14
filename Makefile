@@ -1,6 +1,6 @@
-.PHONY: build-source-archive build-source-candidate check check-baseline check-boundaries check-fuzz-contract check-release-contract check-release-qualification check-source-archive-contract check-source-candidate-contract check-supply-chain fmt lint test doc fuzz-smoke qualify-release-candidate qualify-source-archive qualify-source-candidate soak soak-release
+.PHONY: build-source-archive build-source-candidate check check-baseline check-boundaries check-fuzz-contract check-package-classification check-release-contract check-release-qualification check-requirements-traceability check-source-archive-contract check-source-candidate-contract check-supply-chain fmt lint test doc fuzz-smoke qualify-release-candidate qualify-source-archive qualify-source-candidate soak soak-release
 
-check: check-release-contract check-release-qualification check-source-candidate-contract check-source-archive-contract check-baseline check-supply-chain check-boundaries check-fuzz-contract fmt lint test doc
+check: check-release-contract check-release-qualification check-requirements-traceability check-source-candidate-contract check-source-archive-contract check-baseline check-supply-chain check-package-classification check-boundaries check-fuzz-contract fmt lint test doc
 
 check-release-contract:
 	./scripts/check-release-contract.sh
@@ -24,6 +24,14 @@ check-supply-chain:
 	./scripts/check-supply-chain.sh
 	./scripts/check-supply-chain-mutants.sh
 	./scripts/check-source-sbom.sh
+
+check-package-classification:
+	node scripts/check-package-classification.mjs
+	node scripts/check-package-classification-mutants.mjs
+
+check-requirements-traceability:
+	node scripts/check-requirements-traceability.mjs
+	node scripts/check-requirements-traceability-mutants.mjs
 
 check-boundaries:
 	./scripts/check-boundaries.sh

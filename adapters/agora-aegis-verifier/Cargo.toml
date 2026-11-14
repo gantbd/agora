@@ -10,13 +10,13 @@ publish = false
 [dependencies]
 aegis-client = { path = "../../../aegis/crates/aegis-client", version = "=0.1.0" }
 aegis-protocol = { path = "../../../aegis/crates/aegis-protocol", version = "=0.1.0" }
-agora-durable = { path = "../agora-durable", version = "=0.1.0" }
-agora-host = { path = "../agora-host", version = "=0.1.0" }
+agora-durable = { path = "../../service/agora-durable", version = "=0.1.0" }
+agora-host = { path = "../../host/agora-host", version = "=0.1.0" }
 
 [dev-dependencies]
-agora-engine = { path = "../..", version = "=0.3.0" }
-agora-service = { path = "../agora-service", version = "=0.1.0" }
-agora-wire = { path = "../agora-wire", version = "=0.1.0" }
+agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }
+agora-service = { path = "../../service/agora-service", version = "=0.1.0" }
+agora-wire = { path = "../../protocol/agora-wire", version = "=0.1.0" }
 
 [lints.rust]
 unsafe_code = "forbid"

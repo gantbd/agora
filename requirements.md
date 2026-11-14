@@ -389,6 +389,15 @@
   SDK, compatibility, privacy, model, mutation, and restart evidence must close
   before capability advertisement. The selected architecture is detailed in
   [`docs/transient-collaboration.md`](docs/transient-collaboration.md).
+- **R63 — Selectable durable local daemon owner:** the private local daemon must
+  admit an application-selected durable Host owner over the generic checkpoint
+  store port without importing a concrete store into Host or conversation
+  semantics. Successful publication must remain receipt-gated; suppression or
+  fencing must prevent readiness. Clean sequential teardown and reconstruction
+  under a distinct server incarnation must retain committed conversation state
+  while requiring fresh authentication. This does not restore transport
+  sessions, replay disconnected pending requests, automate crash restart, or
+  make Aegis and Agora recovery atomic.
 - **R64 — Durable conversation with volatile collaboration:** one selected Host
   composition must combine receipt-gated durable conversation/session state
   with transient presence and typing without admitting transient signals,
@@ -575,6 +584,78 @@
   and resume successfully from that recorded incarnation to another distinct
   incarnation. This is real process-death evidence, not controller-cache or
   device power-loss durability.
+- **R82 — Stable topic rename:** a separately advertised profile must let a
+  current owner or moderator rename one stable topic without changing its
+  identity, creator, message/reply relations, reactions, revisions, or read
+  scopes. Same-name, collision, stale, unknown, invalid, and unauthorized
+  attempts must refuse atomically. Every change projection must retain actor,
+  topic ID, prior name, and new name.
+- **R83 — Reversible topic resolution:** a separately advertised profile must
+  let a current owner or moderator resolve and reopen one stable topic. Resolved
+  topics refuse new roots and inherited replies while retaining identity,
+  metadata, history, relations, revisions, reactions, and private read scopes.
+  Resolution is conversation admission state, never task completion, approval,
+  delivery, attention, or execution evidence.
+- **R84 — Bounded topic supersession:** a separately advertised profile must
+  let a current owner or moderator set, replace, or clear one depth-one
+  same-room successor for a resolved topic. The relation is explicit navigation
+  metadata; it does not move history, rewrite identity, redirect admission, or
+  create task/workflow meaning. Source and target roles, cycles, and reopening
+  constraints must refuse atomically.
+- **R85 — Bounded topic aliases:** a separately advertised profile must retain
+  at most 16 bounded display aliases per topic under one room-wide current-name
+  and alias collision domain. Add and remove are explicit attributable events;
+  commands and authority continue to select only stable topic identity. Alias
+  order is canonical and alias text grants no lookup or routing authority.
+- **R86 — Bounded topic tags:** a separately advertised profile must retain at
+  most eight bounded byte-exact tags per topic in canonical order. Tags may be
+  shared across topics and equal names or aliases because they are display/index
+  metadata, not identity, hierarchy, permission, routing, search, subscription,
+  workflow, or execution facts.
+- **R87 — Derived search port and bounded reference:** an effect-free search
+  contract must return only stable message identity and room-local sequence with
+  explicit source revision, index generation, and available, incomplete, stale,
+  or unavailable state. A bounded volatile reference adapter may implement one
+  exact substring profile but must receive no participant authority and must
+  never become history, recovery, or durability truth.
+- **R88 — Participant-bound derived search:** a separate service/Host/client
+  profile must derive the observer from the authenticated client, revalidate
+  every identity-only hit against current membership and retained history, bind
+  cursors and exact replay to the client/session epoch, and recover with the
+  volatile index runtime empty. It makes no durable or production-scale index
+  claim.
+- **R89 — Bounded immutable attachment references:** a separately advertised
+  profile must atomically admit a message with at most eight ordered bounded
+  opaque attachment descriptors under room/reply/topic targets. Descriptors are
+  references, never URLs or credentials. Edits preserve them; withdrawal and
+  redaction retain only relation identities while scrubbing locator metadata in
+  every retained projection. Blob I/O, integrity verification, scanning,
+  download authority, and external lifecycle remain outside Agora.
+- **R90 — Typed Vellum artifact references:** a separately advertised profile
+  must admit ordered room-local relations to exact Vellum workspace, document,
+  and source-revision scalar identities without depending on Vellum or storing
+  content, locators, credentials, live witnesses, or edit authority. Tombstones
+  retain only relation identity. Resolution and cross-engine mutation require
+  separately authorized adapters and make no atomicity claim.
+- **R91 — Normative aggregate model:** one top-level model must classify Agora's
+  owned objects and disjoint state classes; state the transition, identity,
+  ordering, observation, participant-symmetry, effect, and recovery laws; name
+  explicit nonclaims; and link to independent executable refinement evidence.
+  It must summarize rather than replace the detailed requirements and
+  specification.
+- **R92 — Exact package classification:** one machine-readable ledger must
+  classify every production workspace package by exact path, closed category,
+  maturity, effect class, public audience, and publication state. A mechanical
+  gate must reject missing, stale, duplicate, malformed, unknown, reordered, or
+  publication-enabled entries. Classification records current truth and grants
+  no authority or qualification beyond each package's existing evidence.
+- **R93 — Categorical package placement:** every production package must occupy
+  the directory category declared by R92: engine, protocol, client, service,
+  host, port, adapter, application, transport, or SDK. The workspace root must
+  be package-free. Relocation must preserve package names and versions, locked
+  dependency closure, canonical wire/checkpoint bytes, capability vocabulary,
+  authority, public SDK dependency closures, and all existing functional
+  evidence. Empty speculative categories are not required.
 
 ## Explicitly open
 

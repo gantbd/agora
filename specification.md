@@ -931,3 +931,36 @@ transport-neutral client, protocol DTOs, and canonical wire codec. It supplies
 no connection lifecycle, transport implementation, credential, retry policy, or
 authority. Neither facade defines new values or behavior, and neither is an
 umbrella over the other.
+
+## Aggregate model and package classification
+
+`model.md` is the normative aggregate map for the qualified conversation
+profile. It classifies shared conversation authority, private durable
+projection, serialized client coordination, authenticated continuity,
+transient collaboration, physical persistence evidence, and operational
+observation as disjoint state classes. It states laws already refined by this
+specification and the executable models; it introduces no command, protocol,
+wire, checkpoint, authority, or deployment behavior.
+
+`package-classification.json` is the exact current workspace-package ledger.
+Every entry binds one Cargo package name to its canonical repository-relative
+manifest directory, one closed category, one maturity, one effect class, one
+sorted nonempty audience set, and `publish = false`. The classification gate
+derives the actual package set and paths from locked offline Cargo metadata and
+requires exact set equality. Paths must be canonical, repository-relative, and
+unique. Entry fields and all vocabularies are closed; unknown or additional
+fields refuse.
+
+Classification maturity is `qualified`, `adopted`, or `reference`. Effect class
+is `pure`, `port-only`, `effectful-adapter`, `composition-root`, or `facade`.
+Categories and audiences use the finite vocabulary implemented by the gate.
+These labels describe ownership and evidence; they do not change dependency
+direction, grant authority, approve publication, or promote a reference adapter
+to a production mechanism.
+
+Each category has one canonical directory prefix: `engine/`, `protocol/`,
+`client/`, `service/`, `host/`, `ports/`, `adapters/`, `applications/`,
+`transport/`, or `sdk/`. The package ledger path must begin with the prefix for
+its declared category. The repository-root manifest is workspace-only and is
+not a package. Categorical placement changes neither the Cargo package identity
+nor any semantic or serialized profile.

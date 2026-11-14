@@ -3,26 +3,27 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if rg -n 'AgentActivation|activate_agents|max_agent_activations' src tests; then
+if rg -n 'AgentActivation|activate_agents|max_agent_activations' \
+  engine protocol client service host ports adapters applications sdk; then
   echo 'agent activation semantics crossed the Agora boundary' >&2
   exit 1
 fi
 
 if rg -n 'std::(fs|net|process)::|tokio|async_std|reqwest|rusqlite' \
-  src crates sdk -g '*.rs' \
-  -g '!crates/agora-storage-directory/**' \
-  -g '!crates/agora-local-daemon/**'; then
+  engine protocol client service host ports adapters applications sdk -g '*.rs' \
+  -g '!adapters/agora-storage-directory/**' \
+  -g '!applications/agora-local-daemon/**'; then
   echo 'effectful runtime dependency crossed an Agora semantic boundary' >&2
   exit 1
 fi
 
-if sed '/^#\[cfg(test)\]/,$d' crates/agora-local-daemon/src/lib.rs \
+if sed '/^#\[cfg(test)\]/,$d' applications/agora-local-daemon/src/lib.rs \
   | rg -n 'std::(net|process)::|Tcp|Udp|tokio|async_std|reqwest|rusqlite'; then
   echo 'unqualified effect entered the private local transport adapter' >&2
   exit 1
 fi
 
-if sed '/^#\[cfg(test)\]/,$d' crates/agora-storage-directory/src/lib.rs \
+if sed '/^#\[cfg(test)\]/,$d' adapters/agora-storage-directory/src/lib.rs \
   | rg -n 'std::(net|process)::|tokio|async_std|reqwest|rusqlite'; then
   echo 'unqualified effect entered the private-directory adapter' >&2
   exit 1

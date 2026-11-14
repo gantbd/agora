@@ -8,7 +8,7 @@ description = "Bounded in-memory semantic reference for Agora derived search"
 publish = false
 
 [dependencies]
-agora-search-port = { path = "../agora-search-port", version = "=0.1.0" }
+agora-search-port = { path = "../../ports/agora-search-port", version = "=0.1.0" }
 
 [lints.rust]
 unsafe_code = "forbid"

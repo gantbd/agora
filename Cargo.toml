@@ -1,44 +1,25 @@
-[package]
-name = "agora-engine"
-version = "0.3.0"
-edition = "2024"
-rust-version = "1.95"
-description = "A bounded chat-room engine for humans and software agents"
-license = "MIT OR Apache-2.0"
-publish = false
-repository = "https://github.com/gantbd/agora"
-readme = "README.md"
-keywords = ["chat", "agents", "collaboration", "rooms"]
-categories = ["data-structures"]
-
-[lib]
-path = "src/lib.rs"
-
-[dependencies]
-
 [workspace]
 resolver = "3"
 members = [
-    ".",
-    "crates/agora-protocol",
-    "crates/agora-wire",
-    "crates/agora-service",
-    "crates/agora-durable",
-    "crates/agora-storage-observation",
-    "crates/agora-storage-directory",
-    "crates/agora-search-port",
-    "crates/agora-search-memory",
-    "crates/agora-host",
-    "crates/agora-client",
-    "crates/agora-aegis-verifier",
-    "crates/agora-local-daemon",
+    "engine/agora-engine",
+    "protocol/agora-protocol",
+    "protocol/agora-wire",
+    "client/agora-client",
+    "service/agora-service",
+    "service/agora-durable",
+    "host/agora-host",
+    "ports/agora-search-port",
+    "ports/agora-storage-observation",
+    "adapters/agora-aegis-verifier",
+    "adapters/agora-search-memory",
+    "adapters/agora-storage-directory",
+    "applications/agora-local-daemon",
     "sdk/embedded",
     "sdk/client",
 ]
 
-[lints.rust]
+[workspace.lints.rust]
 unsafe_code = "forbid"
 
-[lints.clippy]
+[workspace.lints.clippy]
 all = "warn"
-

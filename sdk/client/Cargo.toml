@@ -8,9 +8,9 @@ description = "Protocol-facing client SDK facade for Agora"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-agora-client = { path = "../../crates/agora-client", version = "=0.1.0" }
-agora-protocol = { path = "../../crates/agora-protocol", version = "=0.1.0" }
-agora-wire = { path = "../../crates/agora-wire", version = "=0.1.0" }
+agora-client = { path = "../../client/agora-client", version = "=0.1.0" }
+agora-protocol = { path = "../../protocol/agora-protocol", version = "=0.1.0" }
+agora-wire = { path = "../../protocol/agora-wire", version = "=0.1.0" }
 
 [lints.rust]
 unsafe_code = "forbid"

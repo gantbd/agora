@@ -10,27 +10,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$fixture_root/docs" "$fixture_root/crates/agora-wire" \
-  "$fixture_root/crates/agora-aegis-verifier" \
-  "$fixture_root/crates/agora-client" "$fixture_root/crates/agora-host" \
-  "$fixture_root/crates/agora-protocol" "$fixture_root/crates/agora-service" \
-  "$fixture_root/crates/agora-storage-directory" \
-  "$fixture_root/crates/agora-storage-observation" \
+mkdir -p "$fixture_root/docs" "$fixture_root/engine/agora-engine" \
+  "$fixture_root/protocol/agora-wire" \
+  "$fixture_root/adapters/agora-aegis-verifier" \
+  "$fixture_root/client/agora-client" "$fixture_root/host/agora-host" \
+  "$fixture_root/protocol/agora-protocol" "$fixture_root/service/agora-service" \
+  "$fixture_root/adapters/agora-storage-directory" \
+  "$fixture_root/ports/agora-storage-observation" \
   "$fixture_root/sdk/client" "$fixture_root/sdk/embedded"
 
 for file in CHANGELOG.md Cargo.lock LICENSE-APACHE LICENSE-MIT README.md SECURITY.md \
-  requirements.md specification.md rust-toolchain.toml; do
+  model.md package-classification.json requirements.md specification.md rust-toolchain.toml; do
   cp "$file" "$fixture_root/$file"
 done
-for file in assurance.md compatibility.md release-policy.md release-qualification.md release-readiness.md \
+for file in assurance.md compatibility.md project-boundaries.md release-policy.md release-qualification.md release-readiness.md \
   source-archive.md source-candidate.md supply-chain.md threat-model.md traceability.md; do
   cp "docs/$file" "$fixture_root/docs/$file"
 done
 cp docs/agora-source.cdx.json "$fixture_root/docs/agora-source.cdx.json"
-for manifest in Cargo.toml crates/agora-wire/Cargo.toml crates/agora-aegis-verifier/Cargo.toml crates/agora-client/Cargo.toml \
-  crates/agora-host/Cargo.toml crates/agora-protocol/Cargo.toml \
-  crates/agora-service/Cargo.toml crates/agora-storage-directory/Cargo.toml \
-  crates/agora-storage-observation/Cargo.toml \
+for manifest in Cargo.toml engine/agora-engine/Cargo.toml protocol/agora-wire/Cargo.toml adapters/agora-aegis-verifier/Cargo.toml client/agora-client/Cargo.toml \
+  host/agora-host/Cargo.toml protocol/agora-protocol/Cargo.toml \
+  service/agora-service/Cargo.toml adapters/agora-storage-directory/Cargo.toml \
+  ports/agora-storage-observation/Cargo.toml \
   sdk/client/Cargo.toml sdk/embedded/Cargo.toml; do
   cp "$manifest" "$fixture_root/$manifest"
 done
@@ -54,10 +55,10 @@ expect_refusal() {
   fi
 }
 
-sed 's/^publish = false$/publish = true/' "$source_root/Cargo.toml" \
-  > "$fixture_root/Cargo.toml"
-expect_refusal 'root publication enabled'
-cp "$source_root/Cargo.toml" "$fixture_root/Cargo.toml"
+sed 's/^publish = false$/publish = true/' "$source_root/engine/agora-engine/Cargo.toml" \
+  > "$fixture_root/engine/agora-engine/Cargo.toml"
+expect_refusal 'engine publication enabled'
+cp "$source_root/engine/agora-engine/Cargo.toml" "$fixture_root/engine/agora-engine/Cargo.toml"
 
 sed 's/channel = "1.95.0"/channel = "stable"/' "$source_root/rust-toolchain.toml" \
   > "$fixture_root/rust-toolchain.toml"

@@ -1,0 +1,26 @@
+[package]
+name = "agora-storage-directory"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+description = "Exclusive private-directory checkpoint adapter for Agora"
+publish = false
+
+[dependencies]
+agora-storage-observation = { path = "../../ports/agora-storage-observation", version = "=0.1.0" }
+keystone-storage = { path = "../../../keystone/crates/keystone-storage", version = "=0.0.1" }
+
+[dev-dependencies]
+agora-durable = { path = "../../service/agora-durable", version = "=0.1.0" }
+agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }
+agora-host = { path = "../../host/agora-host", version = "=0.1.0" }
+agora-protocol = { path = "../../protocol/agora-protocol", version = "=0.1.0" }
+agora-service = { path = "../../service/agora-service", version = "=0.1.0" }
+agora-wire = { path = "../../protocol/agora-wire", version = "=0.1.0" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

@@ -85,7 +85,7 @@ frame with checked arithmetic and validates all ceilings before reserving exact
 output capacity. Decoding applies ceilings before copying text or reserving list
 storage and requires complete input consumption.
 
-The fixtures under `crates/agora-wire/tests/fixtures` freeze Connect, addressed
+The fixtures under `protocol/agora-wire/tests/fixtures` freeze Connect, addressed
 Speak with multibyte UTF-8, and a mixed human/agent snapshot. Any semantic change
 requires a new version; V1 bytes must not be reinterpreted.
 

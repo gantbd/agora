@@ -25,7 +25,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$expected/wire" "$expected/outer" "$expected/checkpoint"
-for fixture in crates/agora-wire/tests/fixtures/*.hex; do
+for fixture in protocol/agora-wire/tests/fixtures/*.hex; do
   name=$(basename "$fixture" .hex)
   xxd -r -p "$fixture" "$expected/wire/$name.bin"
   if [[ "$name" == local-client-hello-v1 \
@@ -41,10 +41,10 @@ for fixture in crates/agora-wire/tests/fixtures/*.hex; do
   printf '%08x' "$bytes" | xxd -r -p >"$expected/outer/$name.bin"
   xxd -r -p "$fixture" >>"$expected/outer/$name.bin"
 done
-xxd -r -p tests/fixtures/checkpoint-v20.hex "$expected/checkpoint/engine-v20.bin"
-xxd -r -p crates/agora-service/tests/fixtures/service-checkpoint-v24.hex \
+xxd -r -p engine/agora-engine/tests/fixtures/checkpoint-v20.hex "$expected/checkpoint/engine-v20.bin"
+xxd -r -p service/agora-service/tests/fixtures/service-checkpoint-v24.hex \
   "$expected/checkpoint/service-v24.bin"
-xxd -r -p crates/agora-host/tests/fixtures/host-checkpoint-v24.hex \
+xxd -r -p host/agora-host/tests/fixtures/host-checkpoint-v24.hex \
   "$expected/checkpoint/host-v24.bin"
 
 if ! diff -qr "$expected/wire" fuzz/seeds/wire_canonical \

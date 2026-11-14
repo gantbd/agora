@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "packages": {
+    "agora-aegis-verifier": {
+      "path": "adapters/agora-aegis-verifier",
+      "category": "adapter",
+      "maturity": "qualified",
+      "effect_class": "port-only",
+      "audiences": ["application"],
+      "publish": false
+    },
+    "agora-client": {
+      "path": "client/agora-client",
+      "category": "client",
+      "maturity": "qualified",
+      "effect_class": "pure",
+      "audiences": ["remote-client", "sdk"],
+      "publish": false
+    },
+    "agora-durable": {
+      "path": "service/agora-durable",
+      "category": "service",
+      "maturity": "qualified",
+      "effect_class": "port-only",
+      "audiences": ["application", "trusted-host"],
+      "publish": false
+    },
+    "agora-engine": {
+      "path": "engine/agora-engine",
+      "category": "engine",
+      "maturity": "qualified",
+      "effect_class": "pure",
+      "audiences": ["sdk", "trusted-host"],
+      "publish": false
+    },
+    "agora-host": {
+      "path": "host/agora-host",
+      "category": "host",
+      "maturity": "qualified",
+      "effect_class": "port-only",
+      "audiences": ["application", "sdk", "trusted-host"],
+      "publish": false
+    },
+    "agora-local-daemon": {
+      "path": "applications/agora-local-daemon",
+      "category": "application",
+      "maturity": "qualified",
+      "effect_class": "composition-root",
+      "audiences": ["application"],
+      "publish": false
+    },
+    "agora-protocol": {
+      "path": "protocol/agora-protocol",
+      "category": "protocol",
+      "maturity": "qualified",
+      "effect_class": "pure",
+      "audiences": ["remote-client", "sdk", "trusted-host"],
+      "publish": false
+    },
+    "agora-sdk-client": {
+      "path": "sdk/client",
+      "category": "sdk",
+      "maturity": "qualified",
+      "effect_class": "facade",
+      "audiences": ["remote-client"],
+      "publish": false
+    },
+    "agora-sdk-embedded": {
+      "path": "sdk/embedded",
+      "category": "sdk",
+      "maturity": "qualified",
+      "effect_class": "facade",
+      "audiences": ["trusted-host"],
+      "publish": false
+    },
+    "agora-search-memory": {
+      "path": "adapters/agora-search-memory",
+      "category": "adapter",
+      "maturity": "reference",
+      "effect_class": "pure",
+      "audiences": ["application", "trusted-host"],
+      "publish": false
+    },
+    "agora-search-port": {
+      "path": "ports/agora-search-port",
+      "category": "port",
+      "maturity": "qualified",
+      "effect_class": "pure",
+      "audiences": ["service", "trusted-host"],
+      "publish": false
+    },
+    "agora-service": {
+      "path": "service/agora-service",
+      "category": "service",
+      "maturity": "qualified",
+      "effect_class": "pure",
+      "audiences": ["application", "sdk", "trusted-host"],
+      "publish": false
+    },
+    "agora-storage-directory": {
+      "path": "adapters/agora-storage-directory",
+      "category": "adapter",
+      "maturity": "qualified",
+      "effect_class": "effectful-adapter",
+      "audiences": ["application"],
+      "publish": false
+    },
+    "agora-storage-observation": {
+      "path": "ports/agora-storage-observation",
+      "category": "port",
+      "maturity": "qualified",
+      "effect_class": "pure",
+      "audiences": ["service", "trusted-host"],
+      "publish": false
+    },
+    "agora-wire": {
+      "path": "protocol/agora-wire",
+      "category": "protocol",
+      "maturity": "qualified",
+      "effect_class": "pure",
+      "audiences": ["remote-client", "sdk", "trusted-host"],
+      "publish": false
+    }
+  }
+}

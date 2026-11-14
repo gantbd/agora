@@ -8,7 +8,7 @@ checkpoint_seed_dir=fuzz/seeds/checkpoint_canonical
 outer_seed_dir=fuzz/seeds/outer_frame_canonical
 mkdir -p "$wire_seed_dir" "$checkpoint_seed_dir" "$outer_seed_dir"
 
-for fixture in crates/agora-wire/tests/fixtures/*.hex; do
+for fixture in protocol/agora-wire/tests/fixtures/*.hex; do
   name=$(basename "$fixture" .hex)
   rm -f "$wire_seed_dir/$name.bin" "$outer_seed_dir/$name.bin"
   xxd -r -p "$fixture" "$wire_seed_dir/$name.bin"
@@ -42,11 +42,11 @@ rm -f "$checkpoint_seed_dir/engine-v16.bin" \
   "$checkpoint_seed_dir/host-v22.bin" \
   "$checkpoint_seed_dir/service-v23.bin" \
   "$checkpoint_seed_dir/host-v23.bin"
-xxd -r -p tests/fixtures/checkpoint-v20.hex \
+xxd -r -p engine/agora-engine/tests/fixtures/checkpoint-v20.hex \
   "$checkpoint_seed_dir/engine-v20.bin"
-xxd -r -p crates/agora-service/tests/fixtures/service-checkpoint-v24.hex \
+xxd -r -p service/agora-service/tests/fixtures/service-checkpoint-v24.hex \
   "$checkpoint_seed_dir/service-v24.bin"
-xxd -r -p crates/agora-host/tests/fixtures/host-checkpoint-v24.hex \
+xxd -r -p host/agora-host/tests/fixtures/host-checkpoint-v24.hex \
   "$checkpoint_seed_dir/host-v24.bin"
 
 echo 'Refreshed Agora wire, outer-frame, and checkpoint fuzz seeds from canonical fixtures'

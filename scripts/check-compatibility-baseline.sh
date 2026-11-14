@@ -27,6 +27,9 @@ if [[ ! -s "$expected_packages" || ! -s "$expected_fixtures" ]]; then
 fi
 
 while IFS= read -r manifest; do
+  if ! rg -q '^\[package\]$' "$manifest"; then
+    continue
+  fi
   package_name=$(awk -F ' *= *' '
     /^\[package\]$/ { in_package = 1; next }
     /^\[/ { in_package = 0 }

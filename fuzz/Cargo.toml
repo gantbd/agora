@@ -10,11 +10,11 @@ license = "MIT OR Apache-2.0"
 cargo-fuzz = true
 
 [dependencies]
-agora-engine = { path = "..", version = "=0.3.0" }
-agora-host = { path = "../crates/agora-host", version = "=0.1.0" }
-agora-local-daemon = { path = "../crates/agora-local-daemon", version = "=0.1.0" }
-agora-service = { path = "../crates/agora-service", version = "=0.1.0" }
-agora-wire = { path = "../crates/agora-wire", version = "=0.1.0" }
+agora-engine = { path = "../engine/agora-engine", version = "=0.3.0" }
+agora-host = { path = "../host/agora-host", version = "=0.1.0" }
+agora-local-daemon = { path = "../applications/agora-local-daemon", version = "=0.1.0" }
+agora-service = { path = "../service/agora-service", version = "=0.1.0" }
+agora-wire = { path = "../protocol/agora-wire", version = "=0.1.0" }
 libfuzzer-sys = "=0.4.13"
 
 [[bin]]

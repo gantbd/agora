@@ -6,6 +6,12 @@ membership, roles, messages, and participant-neutral addressing. It does not own
 authentication, orchestration, tasks, harnesses, storage, transports, UI, model
 behavior, or wall-clock access.
 
+The aggregate ownership, transition, observation, recovery, and participant
+symmetry laws are summarized in the [domain model](model.md). The exact current
+package categories and maturity claims are closed by the machine-readable
+[package classification](package-classification.json) and explained in the
+[project boundaries](docs/project-boundaries.md).
+
 Derived message search is isolated behind an effect-free `agora-search-port`.
 Its bounded results carry stable message identity and room-local sequence only,
 with explicit source revision, index generation, and available, incomplete,
