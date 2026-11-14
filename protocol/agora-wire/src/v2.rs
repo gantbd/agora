@@ -732,8 +732,7 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             founding_participant_ids,
             expected_revision,
         } => {
-            if *profile == ConversationProfileV1::Ordinary
-                || founding_participant_ids.is_empty()
+            if !valid_peer_cohort_cardinality(*profile, founding_participant_ids.len())
                 || founding_participant_ids
                     .windows(2)
                     .any(|pair| pair[0] >= pair[1])
@@ -1452,10 +1451,10 @@ fn decode_command(
             let room_id = read_text(decoder)?;
             let name = read_text(decoder)?;
             let profile = decode_conversation_profile(decoder)?;
-            if profile == ConversationProfileV1::Ordinary {
+            let count = read_list(decoder, limits)?;
+            if !valid_peer_cohort_cardinality(profile, count) {
                 return Err(WireDecodeError::Malformed);
             }
-            let count = read_list(decoder, limits)?;
             let mut founding_participant_ids = try_vec(count)?;
             for _ in 0..count {
                 let participant_id = read_text(decoder)?;
@@ -6163,6 +6162,14 @@ fn encode_conversation_profile(value: ConversationProfileV1) -> u8 {
         ConversationProfileV1::Ordinary => 1,
         ConversationProfileV1::Direct => 2,
         ConversationProfileV1::GroupDirect => 3,
+    }
+}
+
+fn valid_peer_cohort_cardinality(profile: ConversationProfileV1, count: usize) -> bool {
+    match profile {
+        ConversationProfileV1::Ordinary => false,
+        ConversationProfileV1::Direct => count == 2,
+        ConversationProfileV1::GroupDirect => count >= 3,
     }
 }
 

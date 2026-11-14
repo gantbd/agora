@@ -9,7 +9,7 @@ use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
     encode_request_v2,
 };
-use agora_wire::{WireEncodeError, WireLimits};
+use agora_wire::{WireDecodeError, WireEncodeError, WireLimits};
 
 fn limits() -> WireLimits {
     WireLimits::reference()
@@ -182,10 +182,29 @@ fn noncanonical_peer_cohorts_refuse_encoding() {
             ConversationProfileV1::Direct,
             vec!["alice".to_owned(), "alice".to_owned()],
         ),
+        request(ConversationProfileV1::Direct, vec!["alice".to_owned()]),
+        request(
+            ConversationProfileV1::GroupDirect,
+            vec!["alice".to_owned(), "bot".to_owned()],
+        ),
     ] {
         assert_eq!(
             encode_request_v2(&value, limits()),
             Err(WireEncodeError::Invalid)
         );
     }
+}
+
+#[test]
+fn malformed_peer_cohort_cardinality_refuses_decoding() {
+    let empty_direct = decode_hex(
+        "02 02 00 00 00 00 00 00 00 03 00 00 00 00 00 00 00 05
+         40 00 00 00 06 64 69 72 65 63 74 00 00 00 06 44 69 72
+         65 63 74 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+         00 08",
+    );
+    assert_eq!(
+        decode_request_v2(&empty_direct, limits()),
+        Err(WireDecodeError::Malformed)
+    );
 }
