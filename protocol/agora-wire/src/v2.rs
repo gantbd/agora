@@ -11,13 +11,14 @@ use agora_protocol::v2::{
     BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2,
     ConversationProfileStatusV1, ConversationProfileV1, IdentifiedMessagePageV1,
     IdentifiedMessageV1, IdentifiedRoomChangePageV1, IdentifiedRoomChangeV1, IdentifiedRoomEventV1,
-    MAX_PINNED_REFERENCES_V1, MAX_SAVED_REFERENCES_V1, MemberPageV2, MemberV2, MessageAttachmentV1,
-    MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1,
-    MessageRevisionV1, MessageV2, MessageVellumArtifactReferenceV1, NotificationIntentV1,
-    OutcomeV2, PageCursorV2, ParticipantKindV2, PeerConversationCreatedV1, PinnedReferenceV1,
-    ReactionStatusV1, ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2,
-    RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
-    RoomSummaryV2, SavedReferenceV1, Sha256DigestV1, StableReferenceAvailabilityV1,
+    MAX_PINNED_REFERENCES_V1, MAX_POLL_ELIGIBLE_PARTICIPANTS_V1, MAX_POLL_OPTIONS_V1, MAX_POLLS_V1,
+    MAX_SAVED_REFERENCES_V1, MemberPageV2, MemberV2, MessageAttachmentV1, MessageIdV1,
+    MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
+    MessageV2, MessageVellumArtifactReferenceV1, NotificationIntentV1, OutcomeV2, PageCursorV2,
+    ParticipantKindV2, PeerConversationCreatedV1, PinnedReferenceV1, PollBallotV1, PollIdV1,
+    PollStatusV1, ReactionStatusV1, ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2,
+    ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
+    RoomPageV2, RoomSummaryV2, SavedReferenceV1, Sha256DigestV1, StableReferenceAvailabilityV1,
     ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
     ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
     TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1, TopicRoomChangePageV1,
@@ -454,6 +455,64 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             sink.u64(*observed_revision)?;
             encode_message_id(sink, *message_id)?;
             sink.u8(u8::from(*saved))
+        }
+        CommandV2::Polls { room_id } => {
+            sink.u8(73)?;
+            sink.text(room_id)
+        }
+        CommandV2::Poll { room_id, poll_id } => {
+            sink.u8(74)?;
+            sink.text(room_id)?;
+            encode_poll_id(sink, *poll_id)
+        }
+        CommandV2::PollBallot { room_id, poll_id } => {
+            sink.u8(75)?;
+            sink.text(room_id)?;
+            encode_poll_id(sink, *poll_id)
+        }
+        CommandV2::CreatePoll {
+            room_id,
+            expected_revision,
+            prompt,
+            options,
+            eligible_participant_ids,
+            max_choices,
+        } => {
+            validate_poll_definition(options, eligible_participant_ids, *max_choices)
+                .map_err(|_| WireEncodeError::Invalid)?;
+            sink.u8(76)?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            sink.text(prompt)?;
+            encode_text_list(sink, options)?;
+            encode_text_list(sink, eligible_participant_ids)?;
+            sink.u8(*max_choices)
+        }
+        CommandV2::SetPollBallot {
+            room_id,
+            expected_revision,
+            poll_id,
+            selections,
+        } => {
+            validate_poll_selections(selections, MAX_POLL_OPTIONS_V1)
+                .map_err(|_| WireEncodeError::Invalid)?;
+            sink.u8(77)?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            encode_poll_id(sink, *poll_id)?;
+            encode_u8_list(sink, selections)
+        }
+        CommandV2::SetPollOpen {
+            room_id,
+            expected_revision,
+            poll_id,
+            open,
+        } => {
+            sink.u8(78)?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            encode_poll_id(sink, *poll_id)?;
+            sink.u8(u8::from(*open))
         }
         CommandV2::ArchiveThread {
             room_id,
@@ -1509,6 +1568,54 @@ fn decode_command(
         72 => Ok(CommandV2::SavedReferences {
             room_id: read_text(decoder)?,
         }),
+        73 => Ok(CommandV2::Polls {
+            room_id: read_text(decoder)?,
+        }),
+        74 => Ok(CommandV2::Poll {
+            room_id: read_text(decoder)?,
+            poll_id: decode_poll_id(decoder)?,
+        }),
+        75 => Ok(CommandV2::PollBallot {
+            room_id: read_text(decoder)?,
+            poll_id: decode_poll_id(decoder)?,
+        }),
+        76 => {
+            let room_id = read_text(decoder)?;
+            let expected_revision = read_u64(decoder)?;
+            let prompt = read_text(decoder)?;
+            let options = decode_text_list(decoder, limits, MAX_POLL_OPTIONS_V1)?;
+            let eligible_participant_ids =
+                decode_text_list(decoder, limits, MAX_POLL_ELIGIBLE_PARTICIPANTS_V1)?;
+            let max_choices = read_u8(decoder)?;
+            validate_poll_definition(&options, &eligible_participant_ids, max_choices)?;
+            Ok(CommandV2::CreatePoll {
+                room_id,
+                expected_revision,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+            })
+        }
+        77 => {
+            let room_id = read_text(decoder)?;
+            let expected_revision = read_u64(decoder)?;
+            let poll_id = decode_poll_id(decoder)?;
+            let selections = decode_u8_list(decoder, limits, MAX_POLL_OPTIONS_V1)?;
+            validate_poll_selections(&selections, MAX_POLL_OPTIONS_V1)?;
+            Ok(CommandV2::SetPollBallot {
+                room_id,
+                expected_revision,
+                poll_id,
+                selections,
+            })
+        }
+        78 => Ok(CommandV2::SetPollOpen {
+            room_id: read_text(decoder)?,
+            expected_revision: read_u64(decoder)?,
+            poll_id: decode_poll_id(decoder)?,
+            open: decode_bool(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1633,6 +1740,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::PrivateAttentionPreferencesV1 => 26,
                     CapabilityV2::SharedPinsV1 => 27,
                     CapabilityV2::PrivateSavedReferencesV1 => 28,
+                    CapabilityV2::BoundedPollsV1 => 29,
                 })?;
             }
             Ok(())
@@ -2144,6 +2252,53 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             }
             Ok(())
         }
+        OutcomeV2::Polls(polls) => {
+            if polls.len() > MAX_POLLS_V1 {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(70)?;
+            sink.list(polls.len())?;
+            for poll in polls {
+                encode_poll_status(sink, poll)?;
+            }
+            Ok(())
+        }
+        OutcomeV2::Poll(poll) => {
+            sink.u8(71)?;
+            encode_poll_status(sink, poll)
+        }
+        OutcomeV2::PollBallot(ballot) => {
+            sink.u8(72)?;
+            encode_poll_ballot(sink, ballot)
+        }
+        OutcomeV2::PollCreated { revision, poll_id } => {
+            sink.u8(73)?;
+            sink.u64(*revision)?;
+            encode_poll_id(sink, *poll_id)
+        }
+        OutcomeV2::PollBallotChanged {
+            revision,
+            poll_id,
+            totals,
+            total_ballots,
+        } => {
+            validate_poll_totals(totals, *total_ballots).map_err(|_| WireEncodeError::Invalid)?;
+            sink.u8(74)?;
+            sink.u64(*revision)?;
+            encode_poll_id(sink, *poll_id)?;
+            encode_u16_list(sink, totals)?;
+            sink.u64(u64::from(*total_ballots))
+        }
+        OutcomeV2::PollLifecycleChanged {
+            revision,
+            poll_id,
+            open,
+        } => {
+            sink.u8(75)?;
+            sink.u64(*revision)?;
+            encode_poll_id(sink, *poll_id)?;
+            sink.u8(u8::from(*open))
+        }
         OutcomeV2::Kicked { revision } => encode_revision_outcome(sink, 13, *revision),
         OutcomeV2::Banned { revision } => encode_revision_outcome(sink, 14, *revision),
         OutcomeV2::Unbanned { revision } => encode_revision_outcome(sink, 15, *revision),
@@ -2279,6 +2434,7 @@ fn decode_outcome(
                     26 => CapabilityV2::PrivateAttentionPreferencesV1,
                     27 => CapabilityV2::SharedPinsV1,
                     28 => CapabilityV2::PrivateSavedReferencesV1,
+                    29 => CapabilityV2::BoundedPollsV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -2721,6 +2877,43 @@ fn decode_outcome(
             }
             Ok(OutcomeV2::SavedReferences(references))
         }
+        70 => {
+            let count = read_list(decoder, limits)?;
+            if count > MAX_POLLS_V1 {
+                return Err(WireDecodeError::Malformed);
+            }
+            let mut polls = try_vec(count)?;
+            for _ in 0..count {
+                polls.push(decode_poll_status(decoder, limits)?);
+            }
+            Ok(OutcomeV2::Polls(polls))
+        }
+        71 => Ok(OutcomeV2::Poll(decode_poll_status(decoder, limits)?)),
+        72 => Ok(OutcomeV2::PollBallot(decode_poll_ballot(decoder, limits)?)),
+        73 => Ok(OutcomeV2::PollCreated {
+            revision: read_u64(decoder)?,
+            poll_id: decode_poll_id(decoder)?,
+        }),
+        74 => {
+            let revision = read_u64(decoder)?;
+            let poll_id = decode_poll_id(decoder)?;
+            let totals = decode_u16_list(decoder, limits, MAX_POLL_OPTIONS_V1)?;
+            let total_ballots: u16 = read_u64(decoder)?
+                .try_into()
+                .map_err(|_| WireDecodeError::Malformed)?;
+            validate_poll_totals(&totals, total_ballots)?;
+            Ok(OutcomeV2::PollBallotChanged {
+                revision,
+                poll_id,
+                totals,
+                total_ballots,
+            })
+        }
+        75 => Ok(OutcomeV2::PollLifecycleChanged {
+            revision: read_u64(decoder)?,
+            poll_id: decode_poll_id(decoder)?,
+            open: decode_bool(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -2918,6 +3111,220 @@ fn decode_topic_id(
         *byte = read_u8(decoder)?;
     }
     Ok(TopicIdV1::new(bytes))
+}
+
+fn encode_poll_id(sink: &mut dyn Sink, poll_id: PollIdV1) -> Result<(), WireEncodeError> {
+    for byte in poll_id.into_bytes() {
+        sink.u8(byte)?;
+    }
+    Ok(())
+}
+
+fn decode_poll_id(decoder: &mut keystone_codec::Decoder<'_>) -> Result<PollIdV1, WireDecodeError> {
+    let mut bytes = [0; 16];
+    for byte in &mut bytes {
+        *byte = read_u8(decoder)?;
+    }
+    Ok(PollIdV1::new(bytes))
+}
+
+fn encode_text_list(sink: &mut dyn Sink, values: &[String]) -> Result<(), WireEncodeError> {
+    sink.list(values.len())?;
+    for value in values {
+        sink.text(value)?;
+    }
+    Ok(())
+}
+
+fn decode_text_list(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+    maximum: usize,
+) -> Result<Vec<String>, WireDecodeError> {
+    let length = read_list(decoder, limits)?;
+    if length > maximum {
+        return Err(WireDecodeError::Limit);
+    }
+    let mut values = try_vec(length)?;
+    for _ in 0..length {
+        values.push(read_text(decoder)?);
+    }
+    Ok(values)
+}
+
+fn encode_u8_list(sink: &mut dyn Sink, values: &[u8]) -> Result<(), WireEncodeError> {
+    sink.list(values.len())?;
+    for value in values {
+        sink.u8(*value)?;
+    }
+    Ok(())
+}
+
+fn decode_u8_list(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+    maximum: usize,
+) -> Result<Vec<u8>, WireDecodeError> {
+    let length = read_list(decoder, limits)?;
+    if length > maximum {
+        return Err(WireDecodeError::Limit);
+    }
+    let mut values = try_vec(length)?;
+    for _ in 0..length {
+        values.push(read_u8(decoder)?);
+    }
+    Ok(values)
+}
+
+fn encode_u16_list(sink: &mut dyn Sink, values: &[u16]) -> Result<(), WireEncodeError> {
+    sink.list(values.len())?;
+    for value in values {
+        sink.u64(u64::from(*value))?;
+    }
+    Ok(())
+}
+
+fn decode_u16_list(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+    maximum: usize,
+) -> Result<Vec<u16>, WireDecodeError> {
+    let length = read_list(decoder, limits)?;
+    if length > maximum {
+        return Err(WireDecodeError::Limit);
+    }
+    let mut values = try_vec(length)?;
+    for _ in 0..length {
+        values.push(u16::try_from(read_u64(decoder)?).map_err(|_| WireDecodeError::Malformed)?);
+    }
+    Ok(values)
+}
+
+fn validate_poll_definition(
+    options: &[String],
+    eligible_participant_ids: &[String],
+    max_choices: u8,
+) -> Result<(), WireDecodeError> {
+    if !(2..=MAX_POLL_OPTIONS_V1).contains(&options.len())
+        || options.iter().any(String::is_empty)
+        || options.iter().collect::<BTreeSet<_>>().len() != options.len()
+        || eligible_participant_ids.is_empty()
+        || eligible_participant_ids.len() > MAX_POLL_ELIGIBLE_PARTICIPANTS_V1
+        || eligible_participant_ids.iter().any(String::is_empty)
+        || !eligible_participant_ids
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+        || max_choices == 0
+        || usize::from(max_choices) > options.len()
+    {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok(())
+}
+
+fn validate_poll_selections(selections: &[u8], option_count: usize) -> Result<(), WireDecodeError> {
+    if selections.len() > option_count
+        || selections
+            .iter()
+            .any(|selection| usize::from(*selection) >= option_count)
+        || !selections.windows(2).all(|pair| pair[0] < pair[1])
+    {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok(())
+}
+
+fn validate_poll_totals(totals: &[u16], total_ballots: u16) -> Result<(), WireDecodeError> {
+    if !(2..=MAX_POLL_OPTIONS_V1).contains(&totals.len())
+        || usize::from(total_ballots) > MAX_POLL_ELIGIBLE_PARTICIPANTS_V1
+        || totals.iter().any(|total| *total > total_ballots)
+    {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok(())
+}
+
+fn encode_poll_status(sink: &mut dyn Sink, poll: &PollStatusV1) -> Result<(), WireEncodeError> {
+    validate_poll_definition(
+        &poll.options,
+        &poll.eligible_participant_ids,
+        poll.max_choices,
+    )
+    .map_err(|_| WireEncodeError::Invalid)?;
+    validate_poll_totals(&poll.totals, poll.total_ballots).map_err(|_| WireEncodeError::Invalid)?;
+    if poll.creator_id.is_empty()
+        || poll.prompt.is_empty()
+        || poll.totals.len() != poll.options.len()
+        || usize::from(poll.total_ballots) > poll.eligible_participant_ids.len()
+    {
+        return Err(WireEncodeError::Invalid);
+    }
+    encode_poll_id(sink, poll.poll_id)?;
+    sink.text(&poll.creator_id)?;
+    sink.text(&poll.prompt)?;
+    encode_text_list(sink, &poll.options)?;
+    encode_text_list(sink, &poll.eligible_participant_ids)?;
+    sink.u8(poll.max_choices)?;
+    sink.u8(u8::from(poll.open))?;
+    encode_u16_list(sink, &poll.totals)?;
+    sink.u64(u64::from(poll.total_ballots))
+}
+
+fn decode_poll_status(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<PollStatusV1, WireDecodeError> {
+    let poll_id = decode_poll_id(decoder)?;
+    let creator_id = read_text(decoder)?;
+    let prompt = read_text(decoder)?;
+    let options = decode_text_list(decoder, limits, MAX_POLL_OPTIONS_V1)?;
+    let eligible_participant_ids =
+        decode_text_list(decoder, limits, MAX_POLL_ELIGIBLE_PARTICIPANTS_V1)?;
+    let max_choices = read_u8(decoder)?;
+    let open = decode_bool(decoder)?;
+    let totals = decode_u16_list(decoder, limits, MAX_POLL_OPTIONS_V1)?;
+    let total_ballots =
+        u16::try_from(read_u64(decoder)?).map_err(|_| WireDecodeError::Malformed)?;
+    validate_poll_definition(&options, &eligible_participant_ids, max_choices)?;
+    validate_poll_totals(&totals, total_ballots)?;
+    if creator_id.is_empty()
+        || prompt.is_empty()
+        || totals.len() != options.len()
+        || usize::from(total_ballots) > eligible_participant_ids.len()
+    {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok(PollStatusV1 {
+        poll_id,
+        creator_id,
+        prompt,
+        options,
+        eligible_participant_ids,
+        max_choices,
+        open,
+        totals,
+        total_ballots,
+    })
+}
+
+fn encode_poll_ballot(sink: &mut dyn Sink, ballot: &PollBallotV1) -> Result<(), WireEncodeError> {
+    validate_poll_selections(&ballot.selections, MAX_POLL_OPTIONS_V1)
+        .map_err(|_| WireEncodeError::Invalid)?;
+    encode_poll_id(sink, ballot.poll_id)?;
+    encode_u8_list(sink, &ballot.selections)
+}
+
+fn decode_poll_ballot(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<PollBallotV1, WireDecodeError> {
+    let poll_id = decode_poll_id(decoder)?;
+    let selections = decode_u8_list(decoder, limits, MAX_POLL_OPTIONS_V1)?;
+    validate_poll_selections(&selections, MAX_POLL_OPTIONS_V1)?;
+    Ok(PollBallotV1 {
+        poll_id,
+        selections,
+    })
 }
 
 fn encode_attachment_target(
@@ -4122,6 +4529,106 @@ fn decode_pin_changed_event(
     ))
 }
 
+fn encode_poll_created_event(
+    sink: &mut dyn Sink,
+    actor_id: &str,
+    poll_id: PollIdV1,
+    prompt: &str,
+    options: &[String],
+    eligible_participant_ids: &[String],
+    max_choices: u8,
+) -> Result<(), WireEncodeError> {
+    validate_poll_definition(options, eligible_participant_ids, max_choices)
+        .map_err(|_| WireEncodeError::Invalid)?;
+    if actor_id.is_empty() || prompt.is_empty() {
+        return Err(WireEncodeError::Invalid);
+    }
+    sink.u8(25)?;
+    sink.text(actor_id)?;
+    encode_poll_id(sink, poll_id)?;
+    sink.text(prompt)?;
+    encode_text_list(sink, options)?;
+    encode_text_list(sink, eligible_participant_ids)?;
+    sink.u8(max_choices)
+}
+
+type DecodedPollCreatedEvent = (String, PollIdV1, String, Vec<String>, Vec<String>, u8);
+
+fn decode_poll_created_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<DecodedPollCreatedEvent, WireDecodeError> {
+    let actor_id = read_text(decoder)?;
+    let poll_id = decode_poll_id(decoder)?;
+    let prompt = read_text(decoder)?;
+    let options = decode_text_list(decoder, limits, MAX_POLL_OPTIONS_V1)?;
+    let eligible_participant_ids =
+        decode_text_list(decoder, limits, MAX_POLL_ELIGIBLE_PARTICIPANTS_V1)?;
+    let max_choices = read_u8(decoder)?;
+    validate_poll_definition(&options, &eligible_participant_ids, max_choices)?;
+    if actor_id.is_empty() || prompt.is_empty() {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok((
+        actor_id,
+        poll_id,
+        prompt,
+        options,
+        eligible_participant_ids,
+        max_choices,
+    ))
+}
+
+fn encode_poll_ballot_changed_event(
+    sink: &mut dyn Sink,
+    poll_id: PollIdV1,
+    totals: &[u16],
+    total_ballots: u16,
+) -> Result<(), WireEncodeError> {
+    validate_poll_totals(totals, total_ballots).map_err(|_| WireEncodeError::Invalid)?;
+    sink.u8(26)?;
+    encode_poll_id(sink, poll_id)?;
+    encode_u16_list(sink, totals)?;
+    sink.u64(u64::from(total_ballots))
+}
+
+fn decode_poll_ballot_changed_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<(PollIdV1, Vec<u16>, u16), WireDecodeError> {
+    let poll_id = decode_poll_id(decoder)?;
+    let totals = decode_u16_list(decoder, limits, MAX_POLL_OPTIONS_V1)?;
+    let total_ballots =
+        u16::try_from(read_u64(decoder)?).map_err(|_| WireDecodeError::Malformed)?;
+    validate_poll_totals(&totals, total_ballots)?;
+    Ok((poll_id, totals, total_ballots))
+}
+
+fn encode_poll_lifecycle_event(
+    sink: &mut dyn Sink,
+    actor_id: &str,
+    poll_id: PollIdV1,
+    open: bool,
+) -> Result<(), WireEncodeError> {
+    if actor_id.is_empty() {
+        return Err(WireEncodeError::Invalid);
+    }
+    sink.u8(27)?;
+    sink.text(actor_id)?;
+    encode_poll_id(sink, poll_id)?;
+    sink.u8(u8::from(open))
+}
+
+fn decode_poll_lifecycle_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<(String, PollIdV1, bool), WireDecodeError> {
+    let actor_id = read_text(decoder)?;
+    if actor_id.is_empty() {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok((actor_id, decode_poll_id(decoder)?, decode_bool(decoder)?))
+}
+
 fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<(), WireEncodeError> {
     sink.u64(page.revision)?;
     sink.list(page.changes.len())?;
@@ -4245,6 +4752,32 @@ fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<()
             } => {
                 encode_pin_changed_event(sink, actor_id, *message_id, *original_sequence, *pinned)?
             }
+            RoomEventV2::PollCreated {
+                actor_id,
+                poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+            } => encode_poll_created_event(
+                sink,
+                actor_id,
+                *poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                *max_choices,
+            )?,
+            RoomEventV2::PollBallotChanged {
+                poll_id,
+                totals,
+                total_ballots,
+            } => encode_poll_ballot_changed_event(sink, *poll_id, totals, *total_ballots)?,
+            RoomEventV2::PollLifecycleChanged {
+                actor_id,
+                poll_id,
+                open,
+            } => encode_poll_lifecycle_event(sink, actor_id, *poll_id, *open)?,
             RoomEventV2::MessageEdited {
                 actor_id,
                 message_id,
@@ -4462,6 +4995,35 @@ fn decode_change_page(
                     pinned,
                 }
             }
+            25 => {
+                let (actor_id, poll_id, prompt, options, eligible_participant_ids, max_choices) =
+                    decode_poll_created_event(decoder, limits)?;
+                RoomEventV2::PollCreated {
+                    actor_id,
+                    poll_id,
+                    prompt,
+                    options,
+                    eligible_participant_ids,
+                    max_choices,
+                }
+            }
+            26 => {
+                let (poll_id, totals, total_ballots) =
+                    decode_poll_ballot_changed_event(decoder, limits)?;
+                RoomEventV2::PollBallotChanged {
+                    poll_id,
+                    totals,
+                    total_ballots,
+                }
+            }
+            27 => {
+                let (actor_id, poll_id, open) = decode_poll_lifecycle_event(decoder)?;
+                RoomEventV2::PollLifecycleChanged {
+                    actor_id,
+                    poll_id,
+                    open,
+                }
+            }
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(RoomChangeV2 {
@@ -4608,6 +5170,32 @@ fn encode_identified_change_page(
             } => {
                 encode_pin_changed_event(sink, actor_id, *message_id, *original_sequence, *pinned)?
             }
+            IdentifiedRoomEventV1::PollCreated {
+                actor_id,
+                poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+            } => encode_poll_created_event(
+                sink,
+                actor_id,
+                *poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                *max_choices,
+            )?,
+            IdentifiedRoomEventV1::PollBallotChanged {
+                poll_id,
+                totals,
+                total_ballots,
+            } => encode_poll_ballot_changed_event(sink, *poll_id, totals, *total_ballots)?,
+            IdentifiedRoomEventV1::PollLifecycleChanged {
+                actor_id,
+                poll_id,
+                open,
+            } => encode_poll_lifecycle_event(sink, actor_id, *poll_id, *open)?,
             IdentifiedRoomEventV1::MessageEdited {
                 actor_id,
                 message_id,
@@ -4834,6 +5422,35 @@ fn decode_identified_change_page(
                     pinned,
                 }
             }
+            25 => {
+                let (actor_id, poll_id, prompt, options, eligible_participant_ids, max_choices) =
+                    decode_poll_created_event(decoder, limits)?;
+                IdentifiedRoomEventV1::PollCreated {
+                    actor_id,
+                    poll_id,
+                    prompt,
+                    options,
+                    eligible_participant_ids,
+                    max_choices,
+                }
+            }
+            26 => {
+                let (poll_id, totals, total_ballots) =
+                    decode_poll_ballot_changed_event(decoder, limits)?;
+                IdentifiedRoomEventV1::PollBallotChanged {
+                    poll_id,
+                    totals,
+                    total_ballots,
+                }
+            }
+            27 => {
+                let (actor_id, poll_id, open) = decode_poll_lifecycle_event(decoder)?;
+                IdentifiedRoomEventV1::PollLifecycleChanged {
+                    actor_id,
+                    poll_id,
+                    open,
+                }
+            }
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(IdentifiedRoomChangeV1 {
@@ -4980,6 +5597,32 @@ fn encode_threaded_change_page(
             } => {
                 encode_pin_changed_event(sink, actor_id, *message_id, *original_sequence, *pinned)?
             }
+            ThreadedRoomEventV1::PollCreated {
+                actor_id,
+                poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+            } => encode_poll_created_event(
+                sink,
+                actor_id,
+                *poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                *max_choices,
+            )?,
+            ThreadedRoomEventV1::PollBallotChanged {
+                poll_id,
+                totals,
+                total_ballots,
+            } => encode_poll_ballot_changed_event(sink, *poll_id, totals, *total_ballots)?,
+            ThreadedRoomEventV1::PollLifecycleChanged {
+                actor_id,
+                poll_id,
+                open,
+            } => encode_poll_lifecycle_event(sink, actor_id, *poll_id, *open)?,
             ThreadedRoomEventV1::MessageEdited {
                 actor_id,
                 message_id,
@@ -5204,6 +5847,35 @@ fn decode_threaded_change_page(
                     pinned,
                 }
             }
+            25 => {
+                let (actor_id, poll_id, prompt, options, eligible_participant_ids, max_choices) =
+                    decode_poll_created_event(decoder, limits)?;
+                ThreadedRoomEventV1::PollCreated {
+                    actor_id,
+                    poll_id,
+                    prompt,
+                    options,
+                    eligible_participant_ids,
+                    max_choices,
+                }
+            }
+            26 => {
+                let (poll_id, totals, total_ballots) =
+                    decode_poll_ballot_changed_event(decoder, limits)?;
+                ThreadedRoomEventV1::PollBallotChanged {
+                    poll_id,
+                    totals,
+                    total_ballots,
+                }
+            }
+            27 => {
+                let (actor_id, poll_id, open) = decode_poll_lifecycle_event(decoder)?;
+                ThreadedRoomEventV1::PollLifecycleChanged {
+                    actor_id,
+                    poll_id,
+                    open,
+                }
+            }
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(ThreadedRoomChangeV1 {
@@ -5350,6 +6022,32 @@ fn encode_topic_change_page(
             } => {
                 encode_pin_changed_event(sink, actor_id, *message_id, *original_sequence, *pinned)?
             }
+            TopicRoomEventV1::PollCreated {
+                actor_id,
+                poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+            } => encode_poll_created_event(
+                sink,
+                actor_id,
+                *poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                *max_choices,
+            )?,
+            TopicRoomEventV1::PollBallotChanged {
+                poll_id,
+                totals,
+                total_ballots,
+            } => encode_poll_ballot_changed_event(sink, *poll_id, totals, *total_ballots)?,
+            TopicRoomEventV1::PollLifecycleChanged {
+                actor_id,
+                poll_id,
+                open,
+            } => encode_poll_lifecycle_event(sink, actor_id, *poll_id, *open)?,
             TopicRoomEventV1::MessageEdited {
                 actor_id,
                 message_id,
@@ -5614,6 +6312,35 @@ fn decode_topic_change_page(
                     message_id,
                     original_sequence,
                     pinned,
+                }
+            }
+            25 => {
+                let (actor_id, poll_id, prompt, options, eligible_participant_ids, max_choices) =
+                    decode_poll_created_event(decoder, limits)?;
+                TopicRoomEventV1::PollCreated {
+                    actor_id,
+                    poll_id,
+                    prompt,
+                    options,
+                    eligible_participant_ids,
+                    max_choices,
+                }
+            }
+            26 => {
+                let (poll_id, totals, total_ballots) =
+                    decode_poll_ballot_changed_event(decoder, limits)?;
+                TopicRoomEventV1::PollBallotChanged {
+                    poll_id,
+                    totals,
+                    total_ballots,
+                }
+            }
+            27 => {
+                let (actor_id, poll_id, open) = decode_poll_lifecycle_event(decoder)?;
+                TopicRoomEventV1::PollLifecycleChanged {
+                    actor_id,
+                    poll_id,
+                    open,
                 }
             }
             _ => return Err(WireDecodeError::UnknownTag),
@@ -6100,6 +6827,12 @@ fn encode_refusal(sink: &mut dyn Sink, refusal: RefusalV2) -> Result<(), WireEnc
         RefusalV2::InvalidAttentionScope => 32,
         RefusalV2::InvalidPinChange => 33,
         RefusalV2::InvalidSaveChange => 34,
+        RefusalV2::InvalidPoll => 35,
+        RefusalV2::PollLimit => 36,
+        RefusalV2::UnknownPoll => 37,
+        RefusalV2::NotPollEligible => 38,
+        RefusalV2::PollClosed => 39,
+        RefusalV2::InvalidPollChange => 40,
     };
     sink.u8(tag)?;
     if let RefusalV2::Stale { actual_revision } = refusal {
@@ -6146,6 +6879,12 @@ fn decode_refusal(decoder: &mut keystone_codec::Decoder<'_>) -> Result<RefusalV2
         32 => Ok(RefusalV2::InvalidAttentionScope),
         33 => Ok(RefusalV2::InvalidPinChange),
         34 => Ok(RefusalV2::InvalidSaveChange),
+        35 => Ok(RefusalV2::InvalidPoll),
+        36 => Ok(RefusalV2::PollLimit),
+        37 => Ok(RefusalV2::UnknownPoll),
+        38 => Ok(RefusalV2::NotPollEligible),
+        39 => Ok(RefusalV2::PollClosed),
+        40 => Ok(RefusalV2::InvalidPollChange),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }

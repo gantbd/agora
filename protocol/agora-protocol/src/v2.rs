@@ -56,6 +56,24 @@ impl fmt::Debug for TopicIdV1 {
     }
 }
 
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PollIdV1([u8; 16]);
+
+impl PollIdV1 {
+    pub const fn new(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+    pub const fn into_bytes(self) -> [u8; 16] {
+        self.0
+    }
+}
+
+impl fmt::Debug for PollIdV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("PollIdV1(<opaque>)")
+    }
+}
+
 macro_rules! opaque_attachment_value {
     ($name:ident, $bytes:expr) => {
         #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -247,6 +265,55 @@ pub enum StableReferenceAvailabilityV1 {
 
 pub const MAX_PINNED_REFERENCES_V1: usize = 256;
 pub const MAX_SAVED_REFERENCES_V1: usize = 4_096;
+pub const MAX_POLLS_V1: usize = 256;
+pub const MAX_POLL_OPTIONS_V1: usize = 32;
+pub const MAX_POLL_ELIGIBLE_PARTICIPANTS_V1: usize = 256;
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct PollStatusV1 {
+    pub poll_id: PollIdV1,
+    pub creator_id: String,
+    pub prompt: String,
+    pub options: Vec<String>,
+    pub eligible_participant_ids: Vec<String>,
+    pub max_choices: u8,
+    pub open: bool,
+    pub totals: Vec<u16>,
+    pub total_ballots: u16,
+}
+
+impl fmt::Debug for PollStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PollStatusV1")
+            .field("poll_id", &self.poll_id)
+            .field("creator_id_bytes", &self.creator_id.len())
+            .field("prompt_bytes", &self.prompt.len())
+            .field("option_count", &self.options.len())
+            .field("eligible_count", &self.eligible_participant_ids.len())
+            .field("max_choices", &self.max_choices)
+            .field("open", &self.open)
+            .field("totals", &self.totals)
+            .field("total_ballots", &self.total_ballots)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct PollBallotV1 {
+    pub poll_id: PollIdV1,
+    pub selections: Vec<u8>,
+}
+
+impl fmt::Debug for PollBallotV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PollBallotV1")
+            .field("poll_id", &self.poll_id)
+            .field("selection_count", &self.selections.len())
+            .finish()
+    }
+}
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct PinnedReferenceV1 {
@@ -586,6 +653,37 @@ pub enum CommandV2 {
         observed_revision: u64,
         message_id: MessageIdV1,
         saved: bool,
+    },
+    Polls {
+        room_id: String,
+    },
+    Poll {
+        room_id: String,
+        poll_id: PollIdV1,
+    },
+    PollBallot {
+        room_id: String,
+        poll_id: PollIdV1,
+    },
+    CreatePoll {
+        room_id: String,
+        expected_revision: u64,
+        prompt: String,
+        options: Vec<String>,
+        eligible_participant_ids: Vec<String>,
+        max_choices: u8,
+    },
+    SetPollBallot {
+        room_id: String,
+        expected_revision: u64,
+        poll_id: PollIdV1,
+        selections: Vec<u8>,
+    },
+    SetPollOpen {
+        room_id: String,
+        expected_revision: u64,
+        poll_id: PollIdV1,
+        open: bool,
     },
     CreateRoom {
         room_id: String,
@@ -1397,6 +1495,55 @@ impl fmt::Debug for CommandV2 {
                 .field("message_id", message_id)
                 .field("saved", saved)
                 .finish(),
+            Self::Polls { room_id } => formatter
+                .debug_struct("Polls")
+                .field("room_id_bytes", &room_id.len())
+                .finish(),
+            Self::Poll { room_id, poll_id } | Self::PollBallot { room_id, poll_id } => formatter
+                .debug_struct("PollObservation")
+                .field("room_id_bytes", &room_id.len())
+                .field("poll_id", poll_id)
+                .finish(),
+            Self::CreatePoll {
+                room_id,
+                expected_revision,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+            } => formatter
+                .debug_struct("CreatePoll")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("prompt_bytes", &prompt.len())
+                .field("option_count", &options.len())
+                .field("eligible_count", &eligible_participant_ids.len())
+                .field("max_choices", max_choices)
+                .finish(),
+            Self::SetPollBallot {
+                room_id,
+                expected_revision,
+                poll_id,
+                selections,
+            } => formatter
+                .debug_struct("SetPollBallot")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("poll_id", poll_id)
+                .field("selection_count", &selections.len())
+                .finish(),
+            Self::SetPollOpen {
+                room_id,
+                expected_revision,
+                poll_id,
+                open,
+            } => formatter
+                .debug_struct("SetPollOpen")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("poll_id", poll_id)
+                .field("open", open)
+                .finish(),
         }
     }
 }
@@ -1433,6 +1580,7 @@ pub enum CapabilityV2 {
     PrivateAttentionPreferencesV1,
     SharedPinsV1,
     PrivateSavedReferencesV1,
+    BoundedPollsV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -2175,6 +2323,24 @@ pub enum RoomEventV2 {
         original_sequence: u64,
         pinned: bool,
     },
+    PollCreated {
+        actor_id: String,
+        poll_id: PollIdV1,
+        prompt: String,
+        options: Vec<String>,
+        eligible_participant_ids: Vec<String>,
+        max_choices: u8,
+    },
+    PollBallotChanged {
+        poll_id: PollIdV1,
+        totals: Vec<u16>,
+        total_ballots: u16,
+    },
+    PollLifecycleChanged {
+        actor_id: String,
+        poll_id: PollIdV1,
+        open: bool,
+    },
     MessageEdited {
         actor_id: String,
         message_id: MessageIdV1,
@@ -2372,6 +2538,42 @@ impl fmt::Debug for RoomEventV2 {
                 .field("original_sequence", original_sequence)
                 .field("pinned", pinned)
                 .finish(),
+            Self::PollCreated {
+                actor_id,
+                poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+            } => formatter
+                .debug_struct("PollCreated")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("poll_id", poll_id)
+                .field("prompt_bytes", &prompt.len())
+                .field("option_count", &options.len())
+                .field("eligible_count", &eligible_participant_ids.len())
+                .field("max_choices", max_choices)
+                .finish(),
+            Self::PollBallotChanged {
+                poll_id,
+                totals,
+                total_ballots,
+            } => formatter
+                .debug_struct("PollBallotChanged")
+                .field("poll_id", poll_id)
+                .field("totals", totals)
+                .field("total_ballots", total_ballots)
+                .finish(),
+            Self::PollLifecycleChanged {
+                actor_id,
+                poll_id,
+                open,
+            } => formatter
+                .debug_struct("PollLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("poll_id", poll_id)
+                .field("open", open)
+                .finish(),
             Self::MessageEdited {
                 actor_id,
                 message_id,
@@ -2502,6 +2704,24 @@ pub enum IdentifiedRoomEventV1 {
         message_id: MessageIdV1,
         original_sequence: u64,
         pinned: bool,
+    },
+    PollCreated {
+        actor_id: String,
+        poll_id: PollIdV1,
+        prompt: String,
+        options: Vec<String>,
+        eligible_participant_ids: Vec<String>,
+        max_choices: u8,
+    },
+    PollBallotChanged {
+        poll_id: PollIdV1,
+        totals: Vec<u16>,
+        total_ballots: u16,
+    },
+    PollLifecycleChanged {
+        actor_id: String,
+        poll_id: PollIdV1,
+        open: bool,
     },
     MessageEdited {
         actor_id: String,
@@ -2700,6 +2920,42 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .field("original_sequence", original_sequence)
                 .field("pinned", pinned)
                 .finish(),
+            Self::PollCreated {
+                actor_id,
+                poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+            } => formatter
+                .debug_struct("PollCreated")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("poll_id", poll_id)
+                .field("prompt_bytes", &prompt.len())
+                .field("option_count", &options.len())
+                .field("eligible_count", &eligible_participant_ids.len())
+                .field("max_choices", max_choices)
+                .finish(),
+            Self::PollBallotChanged {
+                poll_id,
+                totals,
+                total_ballots,
+            } => formatter
+                .debug_struct("PollBallotChanged")
+                .field("poll_id", poll_id)
+                .field("totals", totals)
+                .field("total_ballots", total_ballots)
+                .finish(),
+            Self::PollLifecycleChanged {
+                actor_id,
+                poll_id,
+                open,
+            } => formatter
+                .debug_struct("PollLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("poll_id", poll_id)
+                .field("open", open)
+                .finish(),
             Self::MessageEdited {
                 actor_id,
                 message_id,
@@ -2830,6 +3086,24 @@ pub enum ThreadedRoomEventV1 {
         message_id: MessageIdV1,
         original_sequence: u64,
         pinned: bool,
+    },
+    PollCreated {
+        actor_id: String,
+        poll_id: PollIdV1,
+        prompt: String,
+        options: Vec<String>,
+        eligible_participant_ids: Vec<String>,
+        max_choices: u8,
+    },
+    PollBallotChanged {
+        poll_id: PollIdV1,
+        totals: Vec<u16>,
+        total_ballots: u16,
+    },
+    PollLifecycleChanged {
+        actor_id: String,
+        poll_id: PollIdV1,
+        open: bool,
     },
     MessageEdited {
         actor_id: String,
@@ -3028,6 +3302,42 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .field("original_sequence", original_sequence)
                 .field("pinned", pinned)
                 .finish(),
+            Self::PollCreated {
+                actor_id,
+                poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+            } => formatter
+                .debug_struct("PollCreated")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("poll_id", poll_id)
+                .field("prompt_bytes", &prompt.len())
+                .field("option_count", &options.len())
+                .field("eligible_count", &eligible_participant_ids.len())
+                .field("max_choices", max_choices)
+                .finish(),
+            Self::PollBallotChanged {
+                poll_id,
+                totals,
+                total_ballots,
+            } => formatter
+                .debug_struct("PollBallotChanged")
+                .field("poll_id", poll_id)
+                .field("totals", totals)
+                .field("total_ballots", total_ballots)
+                .finish(),
+            Self::PollLifecycleChanged {
+                actor_id,
+                poll_id,
+                open,
+            } => formatter
+                .debug_struct("PollLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("poll_id", poll_id)
+                .field("open", open)
+                .finish(),
             Self::MessageEdited {
                 actor_id,
                 message_id,
@@ -3158,6 +3468,24 @@ pub enum TopicRoomEventV1 {
         message_id: MessageIdV1,
         original_sequence: u64,
         pinned: bool,
+    },
+    PollCreated {
+        actor_id: String,
+        poll_id: PollIdV1,
+        prompt: String,
+        options: Vec<String>,
+        eligible_participant_ids: Vec<String>,
+        max_choices: u8,
+    },
+    PollBallotChanged {
+        poll_id: PollIdV1,
+        totals: Vec<u16>,
+        total_ballots: u16,
+    },
+    PollLifecycleChanged {
+        actor_id: String,
+        poll_id: PollIdV1,
+        open: bool,
     },
     MessageEdited {
         actor_id: String,
@@ -3361,6 +3689,42 @@ impl fmt::Debug for TopicRoomEventV1 {
                 .field("message_id", message_id)
                 .field("original_sequence", original_sequence)
                 .field("pinned", pinned)
+                .finish(),
+            Self::PollCreated {
+                actor_id,
+                poll_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+            } => formatter
+                .debug_struct("PollCreated")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("poll_id", poll_id)
+                .field("prompt_bytes", &prompt.len())
+                .field("option_count", &options.len())
+                .field("eligible_count", &eligible_participant_ids.len())
+                .field("max_choices", max_choices)
+                .finish(),
+            Self::PollBallotChanged {
+                poll_id,
+                totals,
+                total_ballots,
+            } => formatter
+                .debug_struct("PollBallotChanged")
+                .field("poll_id", poll_id)
+                .field("totals", totals)
+                .field("total_ballots", total_ballots)
+                .finish(),
+            Self::PollLifecycleChanged {
+                actor_id,
+                poll_id,
+                open,
+            } => formatter
+                .debug_struct("PollLifecycleChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("poll_id", poll_id)
+                .field("open", open)
                 .finish(),
             Self::MessageEdited {
                 actor_id,
@@ -3587,6 +3951,24 @@ pub enum OutcomeV2 {
         reference: SavedReferenceV1,
         saved: bool,
     },
+    Polls(Vec<PollStatusV1>),
+    Poll(PollStatusV1),
+    PollBallot(PollBallotV1),
+    PollCreated {
+        revision: u64,
+        poll_id: PollIdV1,
+    },
+    PollBallotChanged {
+        revision: u64,
+        poll_id: PollIdV1,
+        totals: Vec<u16>,
+        total_ballots: u16,
+    },
+    PollLifecycleChanged {
+        revision: u64,
+        poll_id: PollIdV1,
+        open: bool,
+    },
     ChangesOpened {
         revision: u64,
         cursor: PageCursorV2,
@@ -3789,6 +4171,12 @@ pub enum RefusalV2 {
     InvalidAttentionScope,
     InvalidPinChange,
     InvalidSaveChange,
+    InvalidPoll,
+    PollLimit,
+    UnknownPoll,
+    NotPollEligible,
+    PollClosed,
+    InvalidPollChange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

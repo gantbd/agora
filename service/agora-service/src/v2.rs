@@ -12,9 +12,9 @@ use agora_engine::{
     MemberPageCursor, MessageId, MessagePageCursor, MessageRevisionPageCursorV1,
     ModerationCausationV1, ModerationReasonV1, NotificationIntentV1 as EngineNotificationIntentV1,
     ObservationRefusal, OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind,
-    PrivateSaveRefusalV1, ReadPositionRefusalV1, ReadScopeV1 as EngineReadScopeV1,
-    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomChangeGap,
-    RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
+    PollId as EnginePollId, PollObservationRefusalV1, PrivateSaveRefusalV1, ReadPositionRefusalV1,
+    ReadScopeV1 as EngineReadScopeV1, Refusal as EngineRefusal, Revision, RevisionedCommandV2,
+    Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
     Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicId,
     TopicMessagePageCursorV1, TopicPageCursorV1,
     VellumArtifactMessageTargetV1 as EngineVellumArtifactMessageTargetV1,
@@ -32,16 +32,17 @@ use agora_protocol::v2::{
     MemberPageV2, MemberV2, MessageAttachmentV1, MessageIdV1, MessagePageV2,
     MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1, MessageV2,
     MessageVellumArtifactReferenceV1, NotificationIntentV1, OutcomeV2, PageCursorV2,
-    ParticipantKindV2, PeerConversationCreatedV1, PinnedReferenceV1, ReactionStatusV1,
-    ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
-    RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
-    SavedReferenceV1, Sha256DigestV1, StableReferenceAvailabilityV1, ThreadLifecycleStateV1,
-    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
-    ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1, TopicIdV1, TopicMessagePageV1,
-    TopicMessageV1, TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1,
-    TopicStatusV1, TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1,
-    VellumArtifactMessagePageV1, VellumArtifactMessageTargetV1, VellumArtifactMessageV1,
-    VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
+    ParticipantKindV2, PeerConversationCreatedV1, PinnedReferenceV1, PollBallotV1, PollIdV1,
+    PollStatusV1, ReactionStatusV1, ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2,
+    ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
+    RoomPageV2, RoomSummaryV2, SavedReferenceV1, Sha256DigestV1, StableReferenceAvailabilityV1,
+    ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
+    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
+    TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1, TopicRoomChangePageV1,
+    TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1, TopicSupersessionStatusV1,
+    TopicTagStatusV1, TopicV1, VellumArtifactMessagePageV1, VellumArtifactMessageTargetV1,
+    VellumArtifactMessageV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
+    VellumDocumentTargetV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -353,6 +354,7 @@ impl ServiceV2 {
                 CapabilityV2::PrivateAttentionPreferencesV1,
                 CapabilityV2::SharedPinsV1,
                 CapabilityV2::PrivateSavedReferencesV1,
+                CapabilityV2::BoundedPollsV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::ConversationProfile { room_id } => {
@@ -564,6 +566,83 @@ impl ServiceV2 {
                 *observed_revision,
                 *message_id,
                 *saved,
+            ),
+            CommandV2::Polls { room_id } => self
+                .engine
+                .polls(participant, &RoomId::new(room_id))
+                .map(|polls| OutcomeV2::Polls(polls.into_iter().map(map_poll_status).collect()))
+                .map_err(map_poll_observation_refusal),
+            CommandV2::Poll { room_id, poll_id } => self
+                .engine
+                .poll(
+                    participant,
+                    &RoomId::new(room_id),
+                    EnginePollId::from_bytes(poll_id.into_bytes()),
+                )
+                .map(|poll| OutcomeV2::Poll(map_poll_status(poll)))
+                .map_err(map_poll_observation_refusal),
+            CommandV2::PollBallot { room_id, poll_id } => self
+                .engine
+                .poll_ballot(
+                    participant,
+                    &RoomId::new(room_id),
+                    EnginePollId::from_bytes(poll_id.into_bytes()),
+                )
+                .map(|ballot| {
+                    OutcomeV2::PollBallot(PollBallotV1 {
+                        poll_id: PollIdV1::new(ballot.poll_id().into_bytes()),
+                        selections: ballot.selections().to_vec(),
+                    })
+                })
+                .map_err(map_poll_observation_refusal),
+            CommandV2::CreatePoll {
+                room_id,
+                expected_revision,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::CreatePoll {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    prompt: prompt.clone(),
+                    options: options.clone(),
+                    eligible_participants: eligible_participant_ids
+                        .iter()
+                        .map(ParticipantId::new)
+                        .collect(),
+                    max_choices: *max_choices,
+                },
+            ),
+            CommandV2::SetPollBallot {
+                room_id,
+                expected_revision,
+                poll_id,
+                selections,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetPollBallot {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    poll_id: EnginePollId::from_bytes(poll_id.into_bytes()),
+                    selections: selections.clone(),
+                },
+            ),
+            CommandV2::SetPollOpen {
+                room_id,
+                expected_revision,
+                poll_id,
+                open,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetPollOpen {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    poll_id: EnginePollId::from_bytes(poll_id.into_bytes()),
+                    open: *open,
+                },
             ),
             CommandV2::CreateTopic {
                 room_id,
@@ -1356,11 +1435,30 @@ impl ServiceV2 {
                 message_id: MessageIdV1::new(message_id.into_bytes()),
                 message_revision,
             }),
+            EngineOutcome::PollCreated { poll_id, .. } => Ok(OutcomeV2::PollCreated {
+                revision,
+                poll_id: PollIdV1::new(poll_id.into_bytes()),
+            }),
+            EngineOutcome::PollBallotChanged {
+                poll_id,
+                totals,
+                total_ballots,
+                ..
+            } => Ok(OutcomeV2::PollBallotChanged {
+                revision,
+                poll_id: PollIdV1::new(poll_id.into_bytes()),
+                totals,
+                total_ballots,
+            }),
+            EngineOutcome::PollLifecycleChanged { poll_id, open, .. } => {
+                Ok(OutcomeV2::PollLifecycleChanged {
+                    revision,
+                    poll_id: PollIdV1::new(poll_id.into_bytes()),
+                    open,
+                })
+            }
             EngineOutcome::ParticipantRegistered(_)
-            | EngineOutcome::VellumArtifactMessageAccepted { .. }
-            | EngineOutcome::PollCreated { .. }
-            | EngineOutcome::PollBallotChanged { .. }
-            | EngineOutcome::PollLifecycleChanged { .. } => Err(RefusalV2::Unavailable),
+            | EngineOutcome::VellumArtifactMessageAccepted { .. } => Err(RefusalV2::Unavailable),
         }
     }
 
@@ -2310,11 +2408,45 @@ impl ServiceV2 {
                             agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
                                 return Err(RefusalV2::Unavailable);
                             }
-                            agora_engine::DomainEventV2::PollCreated { .. }
-                            | agora_engine::DomainEventV2::PollBallotChanged { .. }
-                            | agora_engine::DomainEventV2::PollLifecycleChanged { .. } => {
-                                return Err(RefusalV2::Unavailable);
-                            }
+                            agora_engine::DomainEventV2::PollCreated {
+                                actor,
+                                poll_id,
+                                prompt,
+                                options,
+                                eligible_participants,
+                                max_choices,
+                                ..
+                            } => RoomEventV2::PollCreated {
+                                actor_id: actor.as_str().to_owned(),
+                                poll_id: PollIdV1::new(poll_id.into_bytes()),
+                                prompt,
+                                options,
+                                eligible_participant_ids: eligible_participants
+                                    .into_iter()
+                                    .map(|participant| participant.as_str().to_owned())
+                                    .collect(),
+                                max_choices,
+                            },
+                            agora_engine::DomainEventV2::PollBallotChanged {
+                                poll_id,
+                                totals,
+                                total_ballots,
+                                ..
+                            } => RoomEventV2::PollBallotChanged {
+                                poll_id: PollIdV1::new(poll_id.into_bytes()),
+                                totals,
+                                total_ballots,
+                            },
+                            agora_engine::DomainEventV2::PollLifecycleChanged {
+                                actor,
+                                poll_id,
+                                open,
+                                ..
+                            } => RoomEventV2::PollLifecycleChanged {
+                                actor_id: actor.as_str().to_owned(),
+                                poll_id: PollIdV1::new(poll_id.into_bytes()),
+                                open,
+                            },
                             agora_engine::DomainEventV2::PinChanged {
                                 actor,
                                 message_id,
@@ -3051,7 +3183,21 @@ impl ServiceV2 {
             | CommandV2::SetPin { room_id, .. }
             | CommandV2::SavedReference { room_id, .. }
             | CommandV2::SavedReferences { room_id }
-            | CommandV2::SetSavedReference { room_id, .. } => valid_room(room_id),
+            | CommandV2::SetSavedReference { room_id, .. }
+            | CommandV2::Polls { room_id }
+            | CommandV2::Poll { room_id, .. }
+            | CommandV2::PollBallot { room_id, .. }
+            | CommandV2::SetPollOpen { room_id, .. } => valid_room(room_id),
+            CommandV2::SetPollBallot {
+                room_id,
+                selections,
+                ..
+            } => {
+                valid_room(room_id)
+                    && selections.len() <= 32
+                    && selections.iter().all(|selection| *selection < 32)
+                    && selections.windows(2).all(|pair| pair[0] < pair[1])
+            }
             CommandV2::Changes { room_id, limit, .. }
             | CommandV2::IdentifiedChanges { room_id, limit, .. }
             | CommandV2::AttachmentChanges { room_id, limit, .. }
@@ -3061,6 +3207,26 @@ impl ServiceV2 {
             }
             CommandV2::CreateRoom { room_id, name, .. } => {
                 valid_room(room_id) && valid_text(name, self.limits.max_room_name_bytes)
+            }
+            CommandV2::CreatePoll {
+                room_id,
+                prompt,
+                options,
+                eligible_participant_ids,
+                max_choices,
+                ..
+            } => {
+                valid_room(room_id)
+                    && valid_text(prompt, 1_024)
+                    && (2..=32).contains(&options.len())
+                    && options.iter().all(|option| valid_text(option, 256))
+                    && !eligible_participant_ids.is_empty()
+                    && eligible_participant_ids.len() <= 256
+                    && eligible_participant_ids
+                        .iter()
+                        .all(|participant| valid_participant(participant))
+                    && *max_choices > 0
+                    && usize::from(*max_choices) <= options.len()
             }
             CommandV2::CreatePeerConversation {
                 room_id,
@@ -3608,11 +3774,45 @@ fn map_identified_room_event(
         agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
             return Err(RefusalV2::Unavailable);
         }
-        agora_engine::DomainEventV2::PollCreated { .. }
-        | agora_engine::DomainEventV2::PollBallotChanged { .. }
-        | agora_engine::DomainEventV2::PollLifecycleChanged { .. } => {
-            return Err(RefusalV2::Unavailable);
-        }
+        agora_engine::DomainEventV2::PollCreated {
+            actor,
+            poll_id,
+            prompt,
+            options,
+            eligible_participants,
+            max_choices,
+            ..
+        } => IdentifiedRoomEventV1::PollCreated {
+            actor_id: actor.as_str().to_owned(),
+            poll_id: PollIdV1::new(poll_id.into_bytes()),
+            prompt,
+            options,
+            eligible_participant_ids: eligible_participants
+                .into_iter()
+                .map(|participant| participant.as_str().to_owned())
+                .collect(),
+            max_choices,
+        },
+        agora_engine::DomainEventV2::PollBallotChanged {
+            poll_id,
+            totals,
+            total_ballots,
+            ..
+        } => IdentifiedRoomEventV1::PollBallotChanged {
+            poll_id: PollIdV1::new(poll_id.into_bytes()),
+            totals,
+            total_ballots,
+        },
+        agora_engine::DomainEventV2::PollLifecycleChanged {
+            actor,
+            poll_id,
+            open,
+            ..
+        } => IdentifiedRoomEventV1::PollLifecycleChanged {
+            actor_id: actor.as_str().to_owned(),
+            poll_id: PollIdV1::new(poll_id.into_bytes()),
+            open,
+        },
         agora_engine::DomainEventV2::PinChanged {
             actor,
             message_id,
@@ -3858,11 +4058,45 @@ fn map_threaded_room_event(
         agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
             return Err(RefusalV2::Unavailable);
         }
-        agora_engine::DomainEventV2::PollCreated { .. }
-        | agora_engine::DomainEventV2::PollBallotChanged { .. }
-        | agora_engine::DomainEventV2::PollLifecycleChanged { .. } => {
-            return Err(RefusalV2::Unavailable);
-        }
+        agora_engine::DomainEventV2::PollCreated {
+            actor,
+            poll_id,
+            prompt,
+            options,
+            eligible_participants,
+            max_choices,
+            ..
+        } => ThreadedRoomEventV1::PollCreated {
+            actor_id: actor.as_str().to_owned(),
+            poll_id: PollIdV1::new(poll_id.into_bytes()),
+            prompt,
+            options,
+            eligible_participant_ids: eligible_participants
+                .into_iter()
+                .map(|participant| participant.as_str().to_owned())
+                .collect(),
+            max_choices,
+        },
+        agora_engine::DomainEventV2::PollBallotChanged {
+            poll_id,
+            totals,
+            total_ballots,
+            ..
+        } => ThreadedRoomEventV1::PollBallotChanged {
+            poll_id: PollIdV1::new(poll_id.into_bytes()),
+            totals,
+            total_ballots,
+        },
+        agora_engine::DomainEventV2::PollLifecycleChanged {
+            actor,
+            poll_id,
+            open,
+            ..
+        } => ThreadedRoomEventV1::PollLifecycleChanged {
+            actor_id: actor.as_str().to_owned(),
+            poll_id: PollIdV1::new(poll_id.into_bytes()),
+            open,
+        },
         agora_engine::DomainEventV2::PinChanged {
             actor,
             message_id,
@@ -4307,6 +4541,39 @@ fn map_topic_room_event(event: agora_engine::DomainEventV2) -> Result<TopicRoomE
             original_sequence,
             pinned,
         },
+        ThreadedRoomEventV1::PollCreated {
+            actor_id,
+            poll_id,
+            prompt,
+            options,
+            eligible_participant_ids,
+            max_choices,
+        } => TopicRoomEventV1::PollCreated {
+            actor_id,
+            poll_id,
+            prompt,
+            options,
+            eligible_participant_ids,
+            max_choices,
+        },
+        ThreadedRoomEventV1::PollBallotChanged {
+            poll_id,
+            totals,
+            total_ballots,
+        } => TopicRoomEventV1::PollBallotChanged {
+            poll_id,
+            totals,
+            total_ballots,
+        },
+        ThreadedRoomEventV1::PollLifecycleChanged {
+            actor_id,
+            poll_id,
+            open,
+        } => TopicRoomEventV1::PollLifecycleChanged {
+            actor_id,
+            poll_id,
+            open,
+        },
         ThreadedRoomEventV1::MessageEdited {
             actor_id,
             message_id,
@@ -4403,6 +4670,34 @@ fn map_observation_refusal(refusal: ObservationRefusal) -> RefusalV2 {
     }
 }
 
+fn map_poll_status(status: agora_engine::PollStatusV1) -> PollStatusV1 {
+    PollStatusV1 {
+        poll_id: PollIdV1::new(status.poll_id().into_bytes()),
+        creator_id: status.creator().as_str().to_owned(),
+        prompt: status.prompt().to_owned(),
+        options: status.options().to_vec(),
+        eligible_participant_ids: status
+            .eligible_participants()
+            .iter()
+            .map(|participant| participant.as_str().to_owned())
+            .collect(),
+        max_choices: status.max_choices(),
+        open: status.is_open(),
+        totals: status.totals().to_vec(),
+        total_ballots: status.total_ballots(),
+    }
+}
+
+fn map_poll_observation_refusal(refusal: PollObservationRefusalV1) -> RefusalV2 {
+    match refusal {
+        PollObservationRefusalV1::UnknownParticipant => RefusalV2::UnknownParticipant,
+        PollObservationRefusalV1::UnknownRoom => RefusalV2::UnknownRoom,
+        PollObservationRefusalV1::NotMember => RefusalV2::NotMember,
+        PollObservationRefusalV1::UnknownPoll => RefusalV2::UnknownPoll,
+        PollObservationRefusalV1::NotEligible => RefusalV2::NotPollEligible,
+    }
+}
+
 fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
     match refusal {
         EngineRefusal::InvalidPinChange => RefusalV2::InvalidPinChange,
@@ -4434,7 +4729,6 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::BanLimit
         | EngineRefusal::ReactionLimit
         | EngineRefusal::PinLimit
-        | EngineRefusal::PollLimit
         | EngineRefusal::MessageRevisionLimit
         | EngineRefusal::TopicLimit
         | EngineRefusal::MessageRetentionDisabled
@@ -4446,6 +4740,18 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::EventSequenceExhausted => RefusalV2::Exhausted,
         EngineRefusal::TopicIdentityExhausted | EngineRefusal::PollIdentityExhausted => {
             RefusalV2::Exhausted
+        }
+        EngineRefusal::PollLimit => RefusalV2::PollLimit,
+        EngineRefusal::UnknownPoll => RefusalV2::UnknownPoll,
+        EngineRefusal::NotPollEligible => RefusalV2::NotPollEligible,
+        EngineRefusal::PollClosed => RefusalV2::PollClosed,
+        EngineRefusal::InvalidPollPrompt
+        | EngineRefusal::InvalidPollOptions
+        | EngineRefusal::InvalidPollEligibility
+        | EngineRefusal::InvalidPollChoiceLimit
+        | EngineRefusal::InvalidPollBallot => RefusalV2::InvalidPoll,
+        EngineRefusal::InvalidPollBallotChange | EngineRefusal::InvalidPollLifecycleChange => {
+            RefusalV2::InvalidPollChange
         }
         EngineRefusal::InvalidParticipantId
         | EngineRefusal::InvalidConversationProfile
@@ -4472,16 +4778,6 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidThreadLifecycleChange
         | EngineRefusal::InvalidReaction
         | EngineRefusal::InvalidReactionChange
-        | EngineRefusal::InvalidPollPrompt
-        | EngineRefusal::InvalidPollOptions
-        | EngineRefusal::InvalidPollEligibility
-        | EngineRefusal::InvalidPollChoiceLimit
-        | EngineRefusal::UnknownPoll
-        | EngineRefusal::NotPollEligible
-        | EngineRefusal::PollClosed
-        | EngineRefusal::InvalidPollBallot
-        | EngineRefusal::InvalidPollBallotChange
-        | EngineRefusal::InvalidPollLifecycleChange
         | EngineRefusal::InvalidMessageEdit
         | EngineRefusal::InvalidTopicName
         | EngineRefusal::InvalidTopicLifecycleChange
