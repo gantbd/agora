@@ -823,7 +823,7 @@ ordinary gate, every release-mode target, 10,000 deterministic soak cycles, and
 1,000,000 fixed-seed cases on each of the three fuzz targets on Darwin 25.6.0
 arm64 / macOS 26.6.2 with unchanged tracked bytes afterward.
 
-The implemented R101 profile makes trusted admission time an explicit Host-to-
+The release-qualified R101 profile makes trusted admission time an explicit Host-to-
 service-to-engine value that never enters the wire request. Core behavior and
 an independent bounded model cover all six message forms, exact interval
 boundaries, role/kind symmetry, restriction hierarchy, refusal atomicity,
@@ -836,8 +836,11 @@ and durable recovery, client uncertainty, both SDK facades, authenticated real
 Unix routing, two frozen frames, the 85-fixture compatibility inventory, and
 refreshed wire/outer fuzz seeds close the implemented surface. Classifier
 truth, appeal/case workflow, timed sanctions, external notification,
-scheduling, and federation remain nonclaims. Commit-pinned release
-qualification is still required.
+scheduling, and federation remain nonclaims. Revision
+`9f93abee4b92687e4db771d653d0a74ca10bfad3` passed the ordinary gate, every release-mode target,
+10,000 deterministic soak cycles, and 1,000,000 fixed-seed cases on each of the
+three fuzz targets on Darwin 25.6.0 arm64 / macOS 26.6.2 with unchanged tracked
+bytes afterward.
 
 The gate does not establish a credential adapter, transport security,
 multi-host serialization, physical-device power-loss behavior, event delivery,

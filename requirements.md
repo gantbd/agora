@@ -759,5 +759,7 @@ The R101 admission/moderation architecture is adopted in
 `docs/adr-admission-and-moderation-controls.md`. Engine, checkpoint,
 protocol/wire, service, authenticated-Host time derivation, private report
 observation/review, compatibility fixtures, and SDK-reexport surfaces are
-implemented; commit-pinned release qualification remains open.
+implemented. Revision `9f93abee4b92687e4db771d653d0a74ca10bfad3` passed the ordinary gate, every
+release-mode target, 10,000 deterministic soak cycles, and 1,000,000 fixed-seed
+cases on each of the three fuzz targets.
 

@@ -1171,4 +1171,6 @@ Aegis evaluation remains passive correlation evidence before the ordinary
 Agora transition. External classifiers have no Agora command or write port.
 The profile adds no Chronos dependency, timed sentence, workflow/case engine,
 moderator assignment, appeal, cross-room sanction, federation, delivery, or
-agent behavior. Commit-pinned release qualification remains open.
+agent behavior. Revision `9f93abee4b92687e4db771d653d0a74ca10bfad3` passed the ordinary gate, every
+release-mode target, 10,000 deterministic soak cycles, and 1,000,000 fixed-seed
+cases on each of the three fuzz targets.

@@ -1,6 +1,6 @@
 # ADR: admission and moderation controls
 
-Status: accepted; implementation complete; release qualification open
+Status: release-qualified
 
 Date: 2026-11-14
 
@@ -167,3 +167,10 @@ sanctions, timed restrictions, cross-room sanctions, federation, delivery,
 identity reputation, task admission, or agent execution. A report is an
 attributed allegation; a review is an Agora-local classification; neither is a
 finding of fact.
+
+## Qualification
+
+Revision `9f93abee4b92687e4db771d653d0a74ca10bfad3` passed the ordinary gate, every release-mode
+target, 10,000 deterministic soak cycles, and 1,000,000 fixed-seed cases on each
+of the three fuzz targets on Darwin 25.6.0 arm64 / macOS 26.6.2, with unchanged
+tracked bytes afterward.

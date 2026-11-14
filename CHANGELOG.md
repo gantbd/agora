@@ -8,7 +8,8 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
-- Implemented the R101 admission and moderation control profile. Trusted Host
+- Implemented and release-qualified the R101 admission and moderation control
+  profile. Trusted Host
   time now drives a kind- and role-neutral minimum message interval across all
   message forms; ordinary-room hierarchy governs indefinite posting
   restrictions; and private bounded message reports support dismissed or
@@ -16,7 +17,9 @@ follow Semantic Versioning once a public release contract is selected.
   includes canonical recovery, closed protocol/wire/service surfaces,
   authenticated Host and private Unix routing, durable exact replay, client
   uncertainty, both SDK facades, two frozen frames, 85 compatibility fixtures,
-  and refreshed fuzz seeds. Commit-pinned release qualification remains open.
+  and refreshed fuzz seeds. Revision `9f93abee4b92687e4db771d653d0a74ca10bfad3`
+  passed the ordinary gate, every release-mode target, 10,000 deterministic
+  soak cycles, and 1,000,000 fixed-seed cases on each of the three fuzz targets.
 
 - Implemented and release-qualified the R100 room-local topic-collection and
   movement boundary. Agora
