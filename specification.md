@@ -1174,3 +1174,25 @@ moderator assignment, appeal, cross-room sanction, federation, delivery, or
 agent behavior. Revision `9f93abee4b92687e4db771d653d0a74ca10bfad3` passed the ordinary gate, every
 release-mode target, 10,000 deterministic soak cycles, and 1,000,000 fixed-seed
 cases on each of the three fuzz targets.
+
+## Adopted Chronos scheduled-publication composition
+
+R102 is defined by `docs/adr-chronos-scheduled-publication.md`. A separately
+owned adapter allocates one opaque scheduled-publication ID, durably binds it to
+canonical plain-room message intent and the original scoped Chronos task
+allocation, and invokes a trusted actor-bound Agora port only after Chronos
+dispatch. Neither engine imports the other.
+
+Agora evaluates current room membership, posting restriction, admission
+interval, bounds, and capacity at the actual attempt. Matching accepted replay
+returns one retained transition; conflicting identity reuse refuses. The
+ordinary participant wire cannot claim schedule provenance. Cancellation before
+any possible dispatch can close without an Agora offer; after dispatch becomes
+possible, the adapter must reconcile the exact publication identity, and a
+later Chronos cancellation never retracts an accepted message.
+
+Chronos remains the owner of eligibility time, lateness, retry, cancellation,
+and task execution. The adapter owns only bounded intent custody, cross-engine
+correlation, and uncertainty reconciliation. Calendars, recurrence, scheduled
+attachments or addressing, workflow meaning, delivery, federation, agent
+execution, erasure, and atomic cross-engine commit remain nonclaims.

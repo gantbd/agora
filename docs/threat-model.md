@@ -510,6 +510,22 @@ and only current owners/moderators see the bounded queue. Classifier output has
 no Agora writer, and Dismissed/Escalated review state must not be represented as
 truth, sanction completion, workflow completion, or external notification.
 
+Scheduled publication introduces task-reference aliasing, publication-ID reuse,
+stale schedule-time authority, cancellation races, lost replies, and partial
+cross-engine persistence as distinct threats. The R102 adapter allocates a
+non-derived opaque ID and durably binds canonical intent before Chronos
+admission. Agora derives the author from a trusted session and checks current
+membership, restriction, interval, and bounds at dispatch; no task or old room
+snapshot grants speaking authority.
+
+After the adapter records that an Agora offer may exist, cancellation is not
+absence evidence. Recovery must replay or inspect the same publication ID; it
+must never issue a fresh ID or task to obtain a convenient result. An accepted
+message is not implicitly erased by cancellation. Weak, malformed, failed, or
+unknown adapter-store publication fences progress rather than inventing a
+cross-engine atomic commit. Chronos task/lease/grant data and message content
+remain out of diagnostics and ordinary room events.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

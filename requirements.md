@@ -739,27 +739,42 @@
   required. Aegis remains a passive decision boundary and classifier evidence
   must have no direct Agora mutation path.
 
+- **R102 — Chronos scheduled-publication composition:** Agora and Chronos MUST
+  remain separately owned engines with no new engine-to-engine dependency. A
+  separate adapter MUST allocate one opaque non-reused scheduled-publication
+  identity before Chronos admission and durably bind it to canonical bounded
+  Agora intent, the authenticated participant, one Chronos service scope, and
+  the original Chronos task allocation. The identity MUST NOT be derived by
+  truncating a task reference, request ID, timestamp, or content digest. Agora
+  MUST expose scheduled publication only through a trusted transport-neutral
+  port outside ordinary participant Wire V2. The port MUST derive the author
+  from the authenticated session, accept no enforcement time from the caller,
+  and enforce current membership, posting restriction, admission interval,
+  bounds, and capacity at the actual publication attempt. The first profile
+  MUST publish only a plain room message with no addressing. Matching identity
+  and intent MUST replay the exact accepted transition across recovery;
+  conflicting reuse MUST refuse, known pre-mutation refusal MUST NOT fabricate
+  success, and outcome-unknown publication MUST reconcile the same identity.
+  The adapter MUST receipt-gate canonical monotone preparation, original
+  allocation, possible dispatch, accepted publication, pre-dispatch
+  cancellation, and reconciliation-required uncertainty. Once dispatch may
+  exist, Chronos cancellation MUST NOT prove message absence or retract an
+  accepted publication. Chronos remains the owner of eligibility, lateness,
+  retry, cancellation, and temporal execution; Agora interprets no schedule
+  time, deadline, recurrence, or catch-up policy. Atomic cross-engine commit,
+  workflow completion, agent execution, delivery, federation, and erasure are
+  nonclaims.
+
 ## Explicitly open
 
-The R96 conversation-profile, R97 private-attention, R98 shared-pin/private-save,
-R99 bounded-poll, and R100 room-local topic-collection contracts are implemented
-and commit-pinned release-qualified through the private-local stack. R100 adds
-derived state only and does not introduce move/copy, read migration, hierarchy,
-inheritance, or cross-room collection authority. Additional physical durable
-storage adapters, durable event sinks,
-credential authenticators, network transports, end-to-end encryption,
-federation, delivery acknowledgment, and durable audit are not part of the
-current v0.3 claim.
-Credential authentication, network transport, concurrent daemon lifecycle,
-and durable profiles beyond the qualified
-single-owner local Unix directory remain open;
-Protocol V1 bytes and semantics are unchanged.
-
-The R101 admission/moderation architecture is adopted in
-`docs/adr-admission-and-moderation-controls.md`. Engine, checkpoint,
-protocol/wire, service, authenticated-Host time derivation, private report
-observation/review, compatibility fixtures, and SDK-reexport surfaces are
-implemented. Revision `9f93abee4b92687e4db771d653d0a74ca10bfad3` passed the ordinary gate, every
-release-mode target, 10,000 deterministic soak cycles, and 1,000,000 fixed-seed
-cases on each of the three fuzz targets.
+The R96 through R101 contracts are implemented and commit-pinned release-
+qualified through the private-local stack. R102 is adopted in
+`docs/adr-chronos-scheduled-publication.md`; its implementation and
+qualification remain open. Additional physical durable storage adapters,
+durable event sinks, credential authenticators, network transports, end-to-end
+encryption, federation, delivery acknowledgment, and durable audit are not part
+of the current v0.3 claim. Credential authentication, network transport,
+concurrent daemon lifecycle, and durable profiles beyond the qualified
+single-owner local Unix directory remain open. Protocol V1 bytes and semantics
+are unchanged.
 

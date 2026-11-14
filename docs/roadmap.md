@@ -31,12 +31,13 @@ requalification remains part of the current release-readiness work.
    workspace/document/source-revision types; document content, live witnesses,
    editing, persistence, agent behavior, and cross-engine transaction claims
    remain outside Agora.
-7. Specify R102 as a separate Chronos scheduled-publication composition:
+7. Implement the adopted R102 Chronos scheduled-publication composition:
    Chronos owns scheduled objects, clock, cancellation, and temporal execution;
    Agora admits only an authenticated, idempotent publication attempt with
    explicit schedule-origin identity. Close cancellation races, late execution,
    unavailable Agora, and unknown-result recovery without importing tasks or
-   scheduling into Agora.
+   scheduling into Agora. The separate adapter must receipt-gate its canonical
+   intent/allocation/reconciliation journal and expose every cancellation cut.
 
 Agent harness selection, prompting, retries, and execution remain out of scope.
 

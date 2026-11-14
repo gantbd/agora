@@ -151,6 +151,14 @@ work. Moira coordinates work, Chronos owns tasks and time, Daimon executes
 already-authorized work, Hermes owns generic durable delivery, and Vellum owns
 document content and revision history.
 
+Scheduled publication is a composition, not an Agora clock. A separate adapter
+owns one opaque cross-engine publication identity and a durable binding between
+canonical Agora intent and the original scoped Chronos task allocation. Chronos
+decides eligibility and cancellation; Agora derives the authenticated author
+and re-evaluates current room admission at the actual attempt. Cancellation
+after a possible offer cannot prove message absence, and accepted publication
+does not become a Chronos task fact.
+
 Conversation profile also grants no external authority. Direct and group-direct
 cohorts are kind-neutral Agora participant sets, not contacts, principals, or
 tenant memberships. “Shared room” requires a separately qualified federation
