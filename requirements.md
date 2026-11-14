@@ -781,6 +781,23 @@
   definitely-not-sent, and outcome-unknown results MUST remain explicit.
   Provider exactly-once, rich payloads, guaranteed delivery, workflow meaning,
   agent activation, federation, and external erasure are nonclaims.
+- **R104 — typed interaction adapter boundary:** Interaction schemas and
+  behavior MUST remain in separately owned typed adapters; Agora MUST NOT host a
+  plugin runtime, callback registry, executable name, credential, arbitrary
+  property bag, prompt, model, or tool definition. Each invocation MUST bind an
+  independently allocated identity, one authenticated participant/session, and
+  one currently visible retained source without accepting caller-asserted actor
+  authority. Humans and agents MUST follow identical binding, visibility,
+  replay, and admission rules. Output MUST be classified as either
+  session-scoped ephemeral adapter state or an admission proposal. Ephemeral
+  output MUST NOT mutate or survive as Agora domain/read/delivery/task state.
+  A proposal MUST NOT become a message until it traverses the ordinary trusted
+  participant-bound admission path with current membership, Aegis authority,
+  admission controls, and Host time. Exact invocation replay, changed-input
+  conflict, definitely-not-sent, outcome-unknown, restart, and cancellation
+  MUST remain explicit in the adapter. Addressing, invocation, provider success,
+  or an external-work reference MUST NOT imply agent activation, task admission,
+  execution, completion, or delivery.
 
 ## Explicitly open
 
