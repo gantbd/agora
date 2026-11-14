@@ -1,6 +1,6 @@
 # ADR: bounded polls
 
-Status: accepted; implementation and release qualification pending
+Status: accepted; implementation and release qualification complete
 
 Date: 2026-11-14
 
@@ -89,6 +89,16 @@ match the private ballots when serialized.
   replay/recovery, durable commit-before-publication, Host actor binding,
   client uncertainty, both SDK facades, private Unix routing, compatibility,
   fuzz closure, ordinary gate, and commit-pinned release qualification.
+
+The complete profile is qualified at revision
+`8d0de79d92f9cb1ffd609d4cf883665dde803e9a`: engine and canonical recovery,
+closed protocol/wire/service surfaces, aggregate-only events in all four feed
+profiles, durable commit-before-publication, authenticated Host binding, exact
+client uncertainty, both SDK facades, real private Unix routing, two frozen
+frames, 81-fixture compatibility and refreshed fuzz seeds, and the independent
+four-step schedule model are present. That revision passed the ordinary gate,
+every release-mode target, 10,000 deterministic soak cycles, and 1,000,000
+fixed-seed cases on each of the three fuzz targets.
 
 ## Nonclaims
 

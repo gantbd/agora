@@ -788,6 +788,22 @@ wire round trips and a frozen marker fixture, facade-only SDK construction,
 exact receipt recovery, and durable commit-before-reply recovery without a
 second store write.
 
+Bounded-poll scenarios prove immutable ordered definitions and creation-time
+cohorts, single/multiple-choice limits, caller-private replacement and
+retraction, aggregate-only room events, creator/owner/moderator lifecycle
+authority, retained ballots across reopen, and oldest-closed-only capacity
+eviction. The independent model executes every four-step schedule over vote,
+retract, close, and reopen under both human/agent kind assignments and checks
+revision, lifecycle, private ballots, and public totals after every step.
+Canonical recovery recomputes aggregates from private ballots and preserves the
+allocation frontier. Closed wire/service/durable/Host/client/SDK/private-Unix
+evidence, two frozen frames, 81-fixture compatibility, and refreshed fuzz seeds
+close the private-local profile. Revision
+`8d0de79d92f9cb1ffd609d4cf883665dde803e9a` passed the ordinary gate, every
+release target, 10,000 soak cycles, and 1,000,000 fixed-seed cases on each fuzz
+target. No approval, winner, quorum, finality, timing, workflow, or agent
+activation claim is made.
+
 The gate does not establish a credential adapter, transport security,
 multi-host serialization, physical-device power-loss behavior, event delivery,
 distributed availability, or orchestrator correctness. Those claims require
