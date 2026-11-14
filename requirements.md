@@ -729,12 +729,11 @@
 ## Explicitly open
 
 The R96 conversation-profile, R97 private-attention, R98 shared-pin/private-save,
-and R99 bounded-poll contracts are implemented and commit-pinned
-release-qualified through the private-local stack. The R100 room-local topic
-collection contract is implemented across the private-local stack with derived
-state only; commit-pinned release qualification remains open.
-Additional
-physical durable storage adapters, durable event sinks,
+R99 bounded-poll, and R100 room-local topic-collection contracts are implemented
+and commit-pinned release-qualified through the private-local stack. R100 adds
+derived state only and does not introduce move/copy, read migration, hierarchy,
+inheritance, or cross-room collection authority. Additional physical durable
+storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,
 federation, delivery acknowledgment, and durable audit are not part of the
 current v0.3 claim.

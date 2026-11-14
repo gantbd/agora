@@ -814,11 +814,14 @@ and tag-filter combinations after every step. Closed protocol/wire values,
 malformed-shape refusal, two frozen frames, profile-28/29 service cursor and
 receipt recovery, profile-26 Host recovery, durable exact replay,
 uncertainty-safe client behavior, both SDK facades, authenticated Host, and a
-real private Unix exchange close the implementation candidate. The 83-fixture
+real private Unix exchange close the implementation. The 83-fixture
 compatibility inventory and refreshed canonical fuzz seeds preserve every older
 byte. Move/copy, read migration, implicit routing, hierarchy, search authority,
 cross-room inheritance, federation, and workflow meaning remain explicit
-nonclaims. Commit-pinned release qualification remains open.
+nonclaims. Revision `fc446789f227641318850958558e0d7bdef1937d` passed the
+ordinary gate, every release-mode target, 10,000 deterministic soak cycles, and
+1,000,000 fixed-seed cases on each of the three fuzz targets on Darwin 25.6.0
+arm64 / macOS 26.6.2 with unchanged tracked bytes afterward.
 
 The gate does not establish a credential adapter, transport security,
 multi-host serialization, physical-device power-loss behavior, event delivery,

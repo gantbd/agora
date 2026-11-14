@@ -8,15 +8,19 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
-- Implemented the R100 room-local topic-collection and movement boundary. Agora
+- Implemented and release-qualified the R100 room-local topic-collection and
+  movement boundary. Agora
   exposes a bounded participant/revision-bound index over existing topic
   lifecycle, aliases, tags, and supersession while retaining immutable
   message/topic provenance. Move/copy commands, read-position migration,
   product hierarchy, inherited authority, and cross-room collections remain
-  absent. The additive candidate spans engine/model, protocol/wire, recoverable
+  absent. The additive profile spans engine/model, protocol/wire, recoverable
   service cursors and receipts, authenticated Host, durable owner, client, both
   SDK facades, private Unix transport, two frozen frames, 83 compatibility
-  fixtures, and refreshed fuzz seeds; release qualification remains pending.
+  fixtures, and refreshed fuzz seeds. Revision
+  `fc446789f227641318850958558e0d7bdef1937d` passed the ordinary gate, every
+  release-mode target, 10,000 deterministic soak cycles, and 1,000,000
+  fixed-seed cases on each of the three fuzz targets.
 
 - Implemented and release-qualified the R99 bounded-poll architecture: immutable bounded options and
   creation-time eligibility, private replaceable ballots, public derived

@@ -1,6 +1,6 @@
 # ADR: room-local topic collections and movement boundary
 
-Status: accepted and implemented; commit-pinned release qualification pending
+Status: accepted, implemented, and commit-pinned release-qualified
 
 Date: 2026-11-14
 

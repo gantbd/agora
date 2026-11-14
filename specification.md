@@ -1142,4 +1142,7 @@ profile 26 encloses those service profiles without changing profile-25 bytes.
 Engine cursor kind 10 retains observer, room, exact filter, revision, and last
 stable topic identity. Two frozen wire frames, independent schedule-model
 evidence, authenticated Host, durable owner, client uncertainty, both SDK
-facades, and the private Unix route close the implementation candidate.
+facades, and the private Unix route close the implementation. Revision
+`fc446789f227641318850958558e0d7bdef1937d` passed the ordinary gate, every
+release-mode target, 10,000 deterministic soak cycles, and 1,000,000 fixed-seed
+cases on each of the three fuzz targets.
