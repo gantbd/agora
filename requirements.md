@@ -785,9 +785,10 @@
 ## Explicitly open
 
 The R96 through R101 contracts are implemented and commit-pinned release-
-qualified through the private-local stack. R102 and R103 are adopted in their
-composition ADRs; their remaining implementation and qualification are tracked
-explicitly in traceability. Additional physical durable storage adapters,
+qualified through the private-local stack. R102 and R103 have qualified generic
+composition foundations; their remaining live Chronos atomic-admission and
+concrete delivery-endpoint profiles are tracked explicitly in traceability.
+Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part
 of the current v0.3 claim. Credential authentication, network transport,

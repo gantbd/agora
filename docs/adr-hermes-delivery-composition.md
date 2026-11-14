@@ -91,12 +91,15 @@ acknowledgment, cursor reconciliation, revocation cuts, and distinct Aegis
 subscribe/deliver/inspect/revoke actions. Revision `cdb81a6` adds frozen
 compatibility, exact supply and package inventories, exhaustive checkpoint
 mutation closure, and deterministic recovery soak evidence; revision `6228986`
-pins the passing qualification to that source commit.
+pins the passing qualification to that source commit. Revision `cc202f5`
+requires a receipt-capable endpoint to reconcile outcome-unknown by stable
+delivery ID under separate Inspect authority without making a second offer;
+`ee0c5e1` re-pins the complete passing gate.
 
 Endpoint setup/proof, credential custody, URL/network policy, and provider-
-specific idempotency or receipt reconciliation remain open profiles. The
-generic foundation never retries an outcome-unknown endpoint offer without
-that evidence and does not claim a provider delivery guarantee.
+specific setup/proof and network policy remain open profiles. The generic
+foundation never retries an outcome-unknown endpoint offer without stable
+receipt evidence and does not claim a provider delivery guarantee.
 
 ## Nonclaims
 
