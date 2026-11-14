@@ -1,3 +1,4 @@
+use agora_delivery_projection_port::{DeliveryProjectionV1, DeliverySourceV1, WakeClassV1};
 use agora_durable::{
     DurableConfigV2, DurableEvidenceV2, DurableHostConfigV2, DurableHostPublicationV2,
     DurableHostStartErrorV2, DurableHostSuppressionV2, DurableHostV2, DurableOwnerStateV2,
@@ -1196,6 +1197,58 @@ fn scheduled_publication_is_commit_gated_and_reconciles_after_unknown_outcome() 
     };
     assert_eq!(accepted.revision, 3);
     assert_eq!(accepted.message_sequence, 0);
+    assert_eq!(store.commit_calls(), 4, "exact retry is storage-inert");
+}
+
+#[test]
+fn delivery_projection_is_commit_gated_and_reconciles_after_unknown_outcome() {
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame(), &context, HostTimeV1(1))
+    else {
+        panic!("connect expected");
+    };
+    let session = opened.session().unwrap();
+    let WireReplyV2::Connected(client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connected frame expected");
+    };
+    assert!(matches!(
+        durable.handle(session, &create_frame(client), &context, HostTimeV1(2)),
+        DurableHostPublicationV2::Published {
+            value: Ok(_),
+            evidence: DurableEvidenceV2::Committed {
+                revision: Revision(2)
+            }
+        }
+    ));
+
+    let source = DeliverySourceV1 { event_sequence: 1 };
+    store.next(NextCommit::IndeterminateAfter);
+    assert_eq!(
+        durable.project_delivery(session, source, &context, HostTimeV1(3)),
+        DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::OutcomeUnknown)
+    );
+    drop(durable.into_store());
+
+    let mut recovered = DurableHostV2::recover(store.clone(), host_config(), Verifier).unwrap();
+    let DurableHostPublicationV2::Published {
+        value: Ok(DeliveryProjectionV1::Visible(wake)),
+        evidence:
+            DurableEvidenceV2::PreviouslyCommitted {
+                revision: Revision(3),
+            },
+    } = recovered.project_delivery(session, source, &context, HostTimeV1(3))
+    else {
+        panic!("exact retry must resolve the committed projection");
+    };
+    assert_eq!(wake.source, source);
+    assert_eq!(wake.class, WakeClassV1::ConversationActivity);
     assert_eq!(store.commit_calls(), 4, "exact retry is storage-inert");
 }
 

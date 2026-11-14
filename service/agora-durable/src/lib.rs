@@ -5,6 +5,9 @@
 //! restores the pre-offer checkpoint. An indeterminate or weak acknowledgement
 //! fences the owner and suppresses the semantic reply.
 
+use agora_delivery_projection_port::{
+    DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
+};
 use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
@@ -1206,6 +1209,20 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
     > {
         let publication =
             self.publish(|host| host.publish_scheduled(session, request, context, now));
+        self.counters.record(&publication);
+        publication
+    }
+
+    /// Revalidates and projects through the durable Host owner. A projection
+    /// escapes only after any session-verification state change is committed.
+    pub fn project_delivery(
+        &mut self,
+        session: HostSessionIdV2,
+        source: DeliverySourceV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<Result<DeliveryProjectionV1, DeliveryProjectionRefusalV1>> {
+        let publication = self.publish(|host| host.project_delivery(session, source, context, now));
         self.counters.record(&publication);
         publication
     }

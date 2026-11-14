@@ -4,6 +4,9 @@ use super::{
     HostLimits, HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier, VerifiedSubjectV1, count,
     identity_bytes, map_encode,
 };
+use agora_delivery_projection_port::{
+    DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
+};
 use agora_protocol::v2::{ClientIdV2, RefusalV2};
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
@@ -215,6 +218,21 @@ impl<V: PrincipalVerifier> HostV2<V> {
             .map_err(|_| ScheduledPublicationRefusalV1::NotAuthorized)?;
         self.service
             .publish_scheduled_at(session.client, request, now.0)
+    }
+
+    /// Revalidates the authenticated observer before projecting a minimized
+    /// wake fact. This path is outside ordinary participant Wire V2.
+    pub fn project_delivery(
+        &mut self,
+        session_id: HostSessionIdV2,
+        source: DeliverySourceV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<DeliveryProjectionV1, DeliveryProjectionRefusalV1> {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| DeliveryProjectionRefusalV1::NotAuthorized)?;
+        self.service.project_delivery(session.client, source)
     }
 
     pub fn close(&mut self, session: HostSessionIdV2) -> bool {

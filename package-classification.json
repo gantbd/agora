@@ -25,6 +25,14 @@
       "audiences": ["application", "trusted-host"],
       "publish": false
     },
+    "agora-delivery-projection-port": {
+      "path": "ports/agora-delivery-projection-port",
+      "category": "port",
+      "maturity": "adopted",
+      "effect_class": "pure",
+      "audiences": ["service", "trusted-host"],
+      "publish": false
+    },
     "agora-engine": {
       "path": "engine/agora-engine",
       "category": "engine",

@@ -1,6 +1,6 @@
 # ADR: Hermes notification-delivery composition
 
-Status: accepted; implementation open
+Status: accepted; Agora projection slice implemented; adapter execution open
 
 Date: 2026-11-14
 
@@ -20,11 +20,13 @@ imports the other. The adapter owns subscription configuration, endpoint
 bindings, delivery identities, visibility-safe projection, durable handoff, and
 retry/revocation policy.
 
-The first profile is a content-minimized wake notification. It identifies an
-opaque subscription and stable Agora event/message reference but carries no
-message body, attachment locator, Vellum target, private attention state,
-membership list, credential, webhook secret, or Hermes authority. Rich payloads
-require a later schema-specific privacy decision.
+The first profile is a content-minimized wake notification. The Agora-derived
+projection carries only its retained source event sequence and a closed wake
+class. Subscription and delivery correlation remain adapter-owned envelope
+metadata. The projection carries no room or message reference, message body,
+attachment locator, Vellum target, private attention state, membership list,
+credential, webhook secret, or Hermes authority. Rich payloads require a later
+schema-specific privacy decision.
 
 A trusted observer-bound Agora projection port derives the participant from an
 authenticated adapter binding and revalidates current room membership before
@@ -68,6 +70,22 @@ silently advanced as delivered.
 - no mutation of Agora read positions or domain state;
 - bounded receipt-gated recovery, corruption closure, Aegis action separation,
   SDK boundaries, and commit-pinned qualification.
+
+## Implemented Agora slice
+
+Agora provides a zero-dependency trusted projection port plus Service, Host,
+durable Host, and embedded SDK surfaces. Projection derives the observer from
+the authenticated client/session, checks current membership at the referenced
+retained event, returns explicit gap/unavailable/not-visible outcomes, and does
+not mutate domain state, event acknowledgments, or read positions. Host session
+revalidation is receipt-gated before a projection can escape, including exact
+recovery after an indeterminate commit. Ordinary Wire V2 exposes no projection
+operation.
+
+The separate adapter consumes Agora's projection vocabulary directly. Its
+subscription journal, Hermes append/replay, endpoint attempt journal,
+revocation cuts, consumer acknowledgment ordering, and Aegis composition remain
+open.
 
 ## Nonclaims
 

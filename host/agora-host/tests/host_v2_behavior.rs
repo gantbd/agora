@@ -1,3 +1,6 @@
+use agora_delivery_projection_port::{
+    DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
+};
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, LogicalTime, OutcomeV2 as EngineOutcome,
     Participant, ParticipantId, ParticipantKind, ReadScopeV1, Revision, RoomId, TopicId,
@@ -222,6 +225,48 @@ fn scheduled_publication_binds_revalidated_session_actor_and_current_host_time()
     );
     assert_eq!(host.service().active_client_count(), 0);
     assert_eq!(calls.get(), 4);
+}
+
+#[test]
+fn delivery_projection_binds_current_authenticated_observer_without_content() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Speak {
+            room_id: "room".into(),
+            author: "alice".into(),
+            at: LogicalTime(1),
+            body: "host secret".to_owned(),
+        })
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(4),
+    );
+    let (session, _, mut context) = open(&mut host, "alice", 1);
+    let source = DeliverySourceV1 { event_sequence: 3 };
+    let projection = host
+        .project_delivery(session, source, &context, HostTimeV1(2))
+        .unwrap();
+    assert!(matches!(projection, DeliveryProjectionV1::Visible(_)));
+    assert!(!format!("{projection:?}").contains("host secret"));
+    context.active = false;
+    assert_eq!(
+        host.project_delivery(session, source, &context, HostTimeV1(3)),
+        Err(DeliveryProjectionRefusalV1::NotAuthorized)
+    );
+    assert_eq!(host.service().active_client_count(), 0);
 }
 
 #[test]

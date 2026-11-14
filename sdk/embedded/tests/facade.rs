@@ -1,4 +1,4 @@
-use agora_sdk_embedded::{engine, host, scheduled_publication, service};
+use agora_sdk_embedded::{delivery_projection, engine, host, scheduled_publication, service};
 
 struct Verifier;
 
@@ -101,6 +101,15 @@ fn facade_names_the_trusted_scheduled_publication_contract() {
     };
     assert_eq!(request.id, id);
     assert_eq!(request.intent.logical_time(), 12);
+}
+
+#[test]
+fn facade_names_the_minimized_delivery_projection_contract() {
+    let wake = delivery_projection::WakeProjectionV1 {
+        source: delivery_projection::DeliverySourceV1 { event_sequence: 9 },
+        class: delivery_projection::WakeClassV1::ConversationActivity,
+    };
+    assert_eq!(wake.source.event_sequence, 9);
 }
 
 #[test]

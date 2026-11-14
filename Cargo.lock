@@ -36,9 +36,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "agora-delivery-projection-port"
+version = "0.1.0"
+
+[[package]]
 name = "agora-durable"
 version = "0.1.0"
 dependencies = [
+ "agora-delivery-projection-port",
  "agora-engine",
  "agora-host",
  "agora-protocol",
@@ -57,6 +62,7 @@ version = "0.3.0"
 name = "agora-host"
 version = "0.1.0"
 dependencies = [
+ "agora-delivery-projection-port",
  "agora-engine",
  "agora-protocol",
  "agora-scheduled-publication-port",
@@ -110,6 +116,7 @@ dependencies = [
 name = "agora-sdk-embedded"
 version = "0.1.0"
 dependencies = [
+ "agora-delivery-projection-port",
  "agora-engine",
  "agora-host",
  "agora-scheduled-publication-port",
@@ -131,6 +138,7 @@ version = "0.1.0"
 name = "agora-service"
 version = "0.1.0"
 dependencies = [
+ "agora-delivery-projection-port",
  "agora-engine",
  "agora-protocol",
  "agora-scheduled-publication-port",

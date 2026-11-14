@@ -1,5 +1,9 @@
 //! Serialized volatile implementation of Agora Protocol V2.
 
+use agora_delivery_projection_port::{
+    DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1, WakeClassV1,
+    WakeProjectionV1,
+};
 use agora_engine::{
     AdmissionPolicy, AdmissionTimeRefusalV1, AdmissionTimeV1,
     AttachmentDescriptorV1 as EngineAttachmentDescriptorV1, AttachmentIdV1 as EngineAttachmentIdV1,
@@ -344,6 +348,47 @@ impl ServiceV2 {
             revision: transition.revision.0,
             message_sequence: sequence,
         })
+    }
+
+    /// Projects one retained event into the initial content-minimized delivery
+    /// profile for the participant bound to `client`. This is observation only:
+    /// no read position, event acknowledgment, or domain state changes.
+    pub fn project_delivery(
+        &self,
+        client: ClientIdV2,
+        source: DeliverySourceV1,
+    ) -> Result<DeliveryProjectionV1, DeliveryProjectionRefusalV1> {
+        let participant = self
+            .clients
+            .get(&client)
+            .ok_or(DeliveryProjectionRefusalV1::NotAuthorized)?;
+        if let Some(discarded) = self.engine.discarded_changes_through()
+            && source.event_sequence <= discarded.0
+        {
+            return Ok(discarded
+                .0
+                .checked_add(1)
+                .map_or(DeliveryProjectionV1::Unavailable, |retained_from| {
+                    DeliveryProjectionV1::Gap { retained_from }
+                }));
+        }
+        let Some(event) = self
+            .engine
+            .retained_changes()
+            .find(|event| event.sequence.0 == source.event_sequence)
+        else {
+            return Ok(DeliveryProjectionV1::Unavailable);
+        };
+        let Some(room_id) = event.event.room_id() else {
+            return Ok(DeliveryProjectionV1::NotVisible);
+        };
+        if self.engine.member_role(room_id, participant).is_none() {
+            return Ok(DeliveryProjectionV1::NotVisible);
+        }
+        Ok(DeliveryProjectionV1::Visible(WakeProjectionV1 {
+            source,
+            class: WakeClassV1::ConversationActivity,
+        }))
     }
 
     fn execute_with_host_time(

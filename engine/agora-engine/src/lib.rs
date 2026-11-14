@@ -3199,7 +3199,7 @@ pub enum DomainEventV2 {
 }
 
 impl DomainEventV2 {
-    fn room_id(&self) -> Option<&RoomId> {
+    pub fn room_id(&self) -> Option<&RoomId> {
         match self {
             Self::ParticipantRegistered { .. } => None,
             Self::RoomCreated { room_id, .. }

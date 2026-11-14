@@ -8,6 +8,7 @@ description = "Zero-authority embedded SDK facade for Agora"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+agora-delivery-projection-port = { path = "../../ports/agora-delivery-projection-port", version = "=0.1.0" }
 agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }
 agora-host = { path = "../../host/agora-host", version = "=0.1.0" }
 agora-scheduled-publication-port = { path = "../../ports/agora-scheduled-publication-port", version = "=0.1.0" }
