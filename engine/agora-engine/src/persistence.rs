@@ -746,6 +746,7 @@ impl<'a> Reader<'a> {
         has_vellum_artifacts: bool,
         has_conversation_profiles: bool,
         has_shared_pins: bool,
+        has_polls: bool,
     ) -> Result<DomainEventV2, CheckpointError> {
         Ok(match self.byte()? {
             0 => DomainEventV2::ParticipantRegistered {
@@ -966,6 +967,79 @@ impl<'a> Reader<'a> {
                     _ => return Err(CheckpointError::Invalid),
                 },
             },
+            24 if has_polls => {
+                let room_id = self.room(l)?;
+                let actor = self.participant(l)?;
+                let poll_id = PollId::from_bytes(self.fixed()?);
+                let prompt = self.text(MAX_POLL_PROMPT_BYTES_V1)?;
+                let option_count = self.count(MAX_POLL_OPTIONS_V1)?;
+                let mut options = Vec::new();
+                options
+                    .try_reserve_exact(option_count)
+                    .map_err(|_| CheckpointError::Capacity)?;
+                for _ in 0..option_count {
+                    options.push(self.text(MAX_POLL_OPTION_BYTES_V1)?);
+                }
+                let eligible_count = self.count(MAX_POLL_ELIGIBLE_PARTICIPANTS_V1)?;
+                let mut eligible_participants = Vec::new();
+                eligible_participants
+                    .try_reserve_exact(eligible_count)
+                    .map_err(|_| CheckpointError::Capacity)?;
+                for _ in 0..eligible_count {
+                    let participant = self.participant(l)?;
+                    if eligible_participants
+                        .last()
+                        .is_some_and(|previous| previous >= &participant)
+                    {
+                        return Err(CheckpointError::NonCanonical);
+                    }
+                    eligible_participants.push(participant);
+                }
+                DomainEventV2::PollCreated {
+                    room_id,
+                    actor,
+                    poll_id,
+                    prompt,
+                    options,
+                    eligible_participants,
+                    max_choices: self.byte()?,
+                }
+            }
+            25 if has_polls => {
+                let room_id = self.room(l)?;
+                let poll_id = PollId::from_bytes(self.fixed()?);
+                let count = self.count(MAX_POLL_OPTIONS_V1)?;
+                let mut totals = Vec::new();
+                totals
+                    .try_reserve_exact(count)
+                    .map_err(|_| CheckpointError::Capacity)?;
+                for _ in 0..count {
+                    totals.push(
+                        self.number()?
+                            .try_into()
+                            .map_err(|_| CheckpointError::Invalid)?,
+                    );
+                }
+                DomainEventV2::PollBallotChanged {
+                    room_id,
+                    poll_id,
+                    totals,
+                    total_ballots: self
+                        .number()?
+                        .try_into()
+                        .map_err(|_| CheckpointError::Invalid)?,
+                }
+            }
+            26 if has_polls => DomainEventV2::PollLifecycleChanged {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                poll_id: PollId::from_bytes(self.fixed()?),
+                open: match self.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::Invalid),
+                },
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -1107,9 +1181,6 @@ impl Engine {
         max_snapshot_bytes: usize,
     ) -> Result<CheckpointV2, CheckpointError> {
         validate(self)?;
-        if engine_has_polls(self) {
-            return Err(CheckpointError::Profile);
-        }
         let mut w = Writer {
             bytes: Vec::new(),
             max: max_snapshot_bytes,
@@ -1119,9 +1190,11 @@ impl Engine {
         let include_attention_preferences = !self.attention_preferences.is_empty();
         let include_private_saves = !self.private_saves.is_empty();
         let include_shared_pins = engine_has_shared_pins(self);
+        let include_polls = engine_has_polls(self);
         w.raw(b"AGORACP\0")?;
         w.byte(
-            20 + u8::from(include_vellum_artifacts)
+            if include_polls { 52 } else { 20 }
+                + u8::from(include_vellum_artifacts)
                 + (u8::from(include_conversation_profiles) * 2)
                 + (u8::from(include_attention_preferences) * 4)
                 + (u8::from(include_private_saves) * 8)
@@ -1202,6 +1275,35 @@ impl Engine {
                     w.raw(&message_id.into_bytes())?;
                     w.number(*original_sequence)?;
                     w.text(pinned_by.as_str())?;
+                }
+            }
+            if include_polls {
+                w.number(room.poll_identity_incarnation)?;
+                w.number(room.next_poll_identity)?;
+                w.count(room.poll_creation_order.len())?;
+                for poll_id in &room.poll_creation_order {
+                    let poll = room.polls.get(poll_id).ok_or(CheckpointError::Invalid)?;
+                    w.raw(&poll_id.into_bytes())?;
+                    w.text(poll.creator.as_str())?;
+                    w.text(&poll.prompt)?;
+                    w.count(poll.options.len())?;
+                    for option in &poll.options {
+                        w.text(option)?;
+                    }
+                    w.count(poll.eligible_participants.len())?;
+                    for participant in &poll.eligible_participants {
+                        w.text(participant.as_str())?;
+                    }
+                    w.byte(poll.max_choices)?;
+                    w.byte(u8::from(poll.open))?;
+                    w.count(poll.ballots.len())?;
+                    for (participant, selections) in &poll.ballots {
+                        w.text(participant.as_str())?;
+                        w.count(selections.len())?;
+                        for selection in selections {
+                            w.byte(*selection)?;
+                        }
+                    }
                 }
             }
             w.count(room.topics.len())?;
@@ -1315,10 +1417,11 @@ impl Engine {
             return Err(CheckpointError::Profile);
         }
         let profile = r.byte()?;
-        if !matches!(profile, 20..=51) {
-            return Err(CheckpointError::Profile);
-        }
-        let feature_bits = profile - 20;
+        let (feature_bits, has_polls) = match profile {
+            20..=51 => (profile - 20, false),
+            52..=83 => (profile - 52, true),
+            _ => return Err(CheckpointError::Profile),
+        };
         let has_vellum_artifacts = feature_bits & 1 != 0;
         let has_conversation_profiles = feature_bits & 2 != 0;
         let has_attention_preferences = feature_bits & 4 != 0;
@@ -1470,6 +1573,100 @@ impl Engine {
                     insert(&mut pins, message_id, (original_sequence, pinned_by))?;
                 }
             }
+            let (poll_identity_incarnation, next_poll_identity, polls, poll_creation_order) =
+                if has_polls {
+                    let poll_identity_incarnation = r.number()?;
+                    let next_poll_identity = r.number()?;
+                    let count = r.count(MAX_POLLS_PER_ROOM_V1)?;
+                    let mut polls = BTreeMap::new();
+                    let mut poll_creation_order = VecDeque::new();
+                    poll_creation_order
+                        .try_reserve(count)
+                        .map_err(|_| CheckpointError::Capacity)?;
+                    for _ in 0..count {
+                        let poll_id = PollId::from_bytes(r.fixed()?);
+                        if poll_creation_order
+                            .back()
+                            .is_some_and(|previous| previous >= &poll_id)
+                        {
+                            return Err(CheckpointError::NonCanonical);
+                        }
+                        let creator = r.participant(l)?;
+                        let prompt = r.text(MAX_POLL_PROMPT_BYTES_V1)?;
+                        let option_count = r.count(MAX_POLL_OPTIONS_V1)?;
+                        let mut options = Vec::new();
+                        options
+                            .try_reserve_exact(option_count)
+                            .map_err(|_| CheckpointError::Capacity)?;
+                        for _ in 0..option_count {
+                            options.push(r.text(MAX_POLL_OPTION_BYTES_V1)?);
+                        }
+                        let eligible_count = r.count(MAX_POLL_ELIGIBLE_PARTICIPANTS_V1)?;
+                        let mut eligible_participants = BTreeSet::new();
+                        for _ in 0..eligible_count {
+                            let participant = r.participant(l)?;
+                            if eligible_participants
+                                .last()
+                                .is_some_and(|previous| previous >= &participant)
+                            {
+                                return Err(CheckpointError::NonCanonical);
+                            }
+                            eligible_participants.insert(participant);
+                        }
+                        let max_choices = r.byte()?;
+                        let open = match r.byte()? {
+                            0 => false,
+                            1 => true,
+                            _ => return Err(CheckpointError::Invalid),
+                        };
+                        let ballot_count = r.count(MAX_POLL_ELIGIBLE_PARTICIPANTS_V1)?;
+                        let mut ballots = BTreeMap::new();
+                        for _ in 0..ballot_count {
+                            let participant = r.participant(l)?;
+                            let selection_count = r.count(MAX_POLL_OPTIONS_V1)?;
+                            let mut selections = BTreeSet::new();
+                            for _ in 0..selection_count {
+                                let selection = r.byte()?;
+                                if selections
+                                    .last()
+                                    .is_some_and(|previous| previous >= &selection)
+                                {
+                                    return Err(CheckpointError::NonCanonical);
+                                }
+                                selections.insert(selection);
+                            }
+                            insert(&mut ballots, participant, selections)?;
+                        }
+                        poll_creation_order.push_back(poll_id);
+                        insert(
+                            &mut polls,
+                            poll_id,
+                            PollV1 {
+                                id: poll_id,
+                                creator,
+                                prompt,
+                                options,
+                                eligible_participants,
+                                max_choices,
+                                open,
+                                ballots,
+                            },
+                        )?;
+                    }
+                    (
+                        poll_identity_incarnation,
+                        next_poll_identity,
+                        polls,
+                        poll_creation_order,
+                    )
+                } else {
+                    (
+                        topic_identity_incarnation,
+                        0,
+                        BTreeMap::new(),
+                        VecDeque::new(),
+                    )
+                };
             let mut topics = BTreeMap::new();
             let count = r.count(l.max_topics_per_room)?;
             for _ in 0..count {
@@ -1538,14 +1735,14 @@ impl Engine {
                     archived_threads,
                     reactions,
                     pins,
-                    polls: BTreeMap::new(),
-                    poll_creation_order: VecDeque::new(),
+                    polls,
+                    poll_creation_order,
                     topics,
                     topic_successors,
                     topic_identity_incarnation,
                     next_topic_identity,
-                    poll_identity_incarnation: topic_identity_incarnation,
-                    next_poll_identity: 0,
+                    poll_identity_incarnation,
+                    next_poll_identity,
                     message_identity_incarnation,
                     next_message_identity,
                     next_message_sequence,
@@ -1665,6 +1862,7 @@ impl Engine {
                     has_vellum_artifacts,
                     has_conversation_profiles,
                     has_shared_pins,
+                    has_polls,
                 )?,
             })
         }
@@ -1681,6 +1879,7 @@ impl Engine {
                     has_vellum_artifacts,
                     has_conversation_profiles,
                     has_shared_pins,
+                    has_polls,
                 )?,
             })
         }
@@ -1701,6 +1900,9 @@ impl Engine {
             return Err(CheckpointError::NonCanonical);
         }
         if has_shared_pins != engine_has_shared_pins(&e) {
+            return Err(CheckpointError::NonCanonical);
+        }
+        if has_polls != engine_has_polls(&e) {
             return Err(CheckpointError::NonCanonical);
         }
         Ok(e)

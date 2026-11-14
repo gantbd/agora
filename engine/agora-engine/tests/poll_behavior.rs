@@ -1,6 +1,6 @@
-use agora_engine::persistence::CheckpointError;
+use agora_engine::persistence::RecoveryLimits;
 use agora_engine::{
-    AdmissionPolicy, CommandV2, DomainEventV2, Engine, MAX_POLLS_PER_ROOM_V1, OutcomeV2,
+    AdmissionPolicy, CommandV2, DomainEventV2, Engine, Limits, MAX_POLLS_PER_ROOM_V1, OutcomeV2,
     Participant, ParticipantId, ParticipantKind, PollObservationRefusalV1, Refusal, Role, RoomId,
 };
 
@@ -193,13 +193,68 @@ fn invalid_poll_inputs_and_duplicate_ballots_are_atomic() {
 }
 
 #[test]
-fn poll_state_fails_closed_until_its_checkpoint_profile_is_qualified() {
+fn poll_state_and_private_ballots_recover_canonically() {
     let (mut engine, room, alice, bot, _) = room_with_members();
-    create_poll(&mut engine, &room, &alice, vec![alice.clone(), bot]);
+    let poll_id = create_poll(&mut engine, &room, &alice, vec![alice.clone(), bot]);
+    engine
+        .apply(CommandV2::SetPollBallot {
+            room_id: room.clone(),
+            actor: alice.clone(),
+            poll_id,
+            selections: vec![0, 2],
+        })
+        .unwrap();
+    let checkpoint = engine.prepare_checkpoint(4 * 1024 * 1024).unwrap();
+    assert_eq!(checkpoint.bytes()[8], 52);
+    let recovered = Engine::recover_checkpoint(
+        checkpoint.bytes(),
+        RecoveryLimits {
+            max_snapshot_bytes: 4 * 1024 * 1024,
+            maximum_engine_limits: Limits::default(),
+        },
+    )
+    .unwrap();
     assert_eq!(
-        engine.prepare_checkpoint(4 * 1024 * 1024).err(),
-        Some(CheckpointError::Profile)
+        recovered
+            .poll_ballot(&alice, &room, poll_id)
+            .unwrap()
+            .selections(),
+        &[0, 2]
     );
+    assert_eq!(
+        recovered.poll(&alice, &room, poll_id).unwrap().totals(),
+        &[1, 0, 1]
+    );
+    assert_eq!(
+        recovered
+            .prepare_checkpoint(4 * 1024 * 1024)
+            .unwrap()
+            .bytes(),
+        checkpoint.bytes()
+    );
+
+    for index in 0..checkpoint.bytes().len() {
+        for bit in 0..8 {
+            let mut mutated = checkpoint.bytes().to_vec();
+            mutated[index] ^= 1 << bit;
+            if let Ok(candidate) = Engine::recover_checkpoint(
+                &mutated,
+                RecoveryLimits {
+                    max_snapshot_bytes: 4 * 1024 * 1024,
+                    maximum_engine_limits: Limits::default(),
+                },
+            ) {
+                assert_eq!(
+                    candidate
+                        .prepare_checkpoint(4 * 1024 * 1024)
+                        .unwrap()
+                        .bytes(),
+                    mutated,
+                    "accepted mutation must already be canonical at byte {index} bit {bit}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
