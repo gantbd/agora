@@ -558,6 +558,7 @@ pub const MAX_REACTION_KEYS_PER_MESSAGE_V1: usize = 64;
 pub const MAX_MESSAGE_REVISIONS_V1: usize = 64;
 pub const MAX_READ_POSITIONS_V1: usize = 4_096;
 pub const MAX_ATTENTION_PREFERENCES_V1: usize = 4_096;
+pub const MAX_PRIVATE_SAVES_V1: usize = 4_096;
 
 /// Closed selector for one participant's private read position.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -689,6 +690,58 @@ pub enum AttentionPreferenceRefusalV1 {
     NotMember,
     Stale { actual_revision: Revision },
     InvalidScope,
+    Capacity,
+}
+
+/// Current availability of a stable message relation. This carries no payload.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StableReferenceAvailabilityV1 {
+    Available,
+    Tombstoned,
+    Evicted,
+}
+
+/// Participant-owned stable message relation with no copied message metadata.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct SavedReferenceV1 {
+    message_id: MessageId,
+    original_sequence: u64,
+    availability: StableReferenceAvailabilityV1,
+}
+
+impl SavedReferenceV1 {
+    pub const fn message_id(self) -> MessageId {
+        self.message_id
+    }
+
+    pub const fn original_sequence(self) -> u64 {
+        self.original_sequence
+    }
+
+    pub const fn availability(self) -> StableReferenceAvailabilityV1 {
+        self.availability
+    }
+}
+
+impl fmt::Debug for SavedReferenceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SavedReferenceV1")
+            .field("message_id", &self.message_id)
+            .field("original_sequence", &self.original_sequence)
+            .field("availability", &self.availability)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PrivateSaveRefusalV1 {
+    UnknownParticipant,
+    UnknownRoom,
+    NotMember,
+    Stale { actual_revision: Revision },
+    UnknownMessage,
+    InvalidChange,
     Capacity,
 }
 
@@ -2594,6 +2647,7 @@ pub struct Engine {
     read_positions: BTreeMap<(ParticipantId, RoomId, ReadScopeV1), ReadPositionV1>,
     attention_preferences:
         BTreeMap<(ParticipantId, RoomId, AttentionScopeV1), AttentionPreferenceV1>,
+    private_saves: BTreeMap<(ParticipantId, RoomId, MessageId), u64>,
 }
 
 impl Default for Engine {
@@ -2622,6 +2676,7 @@ impl Engine {
             publications: BTreeMap::new(),
             read_positions: BTreeMap::new(),
             attention_preferences: BTreeMap::new(),
+            private_saves: BTreeMap::new(),
         }
     }
 
@@ -2900,6 +2955,95 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    /// Observes only the caller's private saved relation.
+    pub fn saved_reference(
+        &self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+        message_id: MessageId,
+    ) -> Result<Option<SavedReferenceV1>, PrivateSaveRefusalV1> {
+        let room = self.validate_private_save_actor(actor, room_id)?;
+        let Some(original_sequence) = self
+            .private_saves
+            .get(&(actor.clone(), room_id.clone(), message_id))
+            .copied()
+        else {
+            return Ok(None);
+        };
+        Ok(Some(SavedReferenceV1 {
+            message_id,
+            original_sequence,
+            availability: stable_reference_availability(room, message_id),
+        }))
+    }
+
+    /// Changes one caller-owned saved relation without a revision or room event.
+    pub fn set_saved_reference(
+        &mut self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+        message_id: MessageId,
+        observed_revision: Revision,
+        saved: bool,
+    ) -> Result<SavedReferenceV1, PrivateSaveRefusalV1> {
+        let room = self.validate_private_save_actor(actor, room_id)?;
+        if observed_revision != self.revision {
+            return Err(PrivateSaveRefusalV1::Stale {
+                actual_revision: self.revision,
+            });
+        }
+        let key = (actor.clone(), room_id.clone(), message_id);
+        let current = self.private_saves.get(&key).copied();
+        if current.is_some() == saved {
+            return Err(PrivateSaveRefusalV1::InvalidChange);
+        }
+        if saved {
+            if self.private_saves.len() == MAX_PRIVATE_SAVES_V1 {
+                return Err(PrivateSaveRefusalV1::Capacity);
+            }
+            let sequence = room
+                .messages
+                .iter()
+                .find(|message| message.id == message_id)
+                .map(|message| message.sequence)
+                .ok_or(PrivateSaveRefusalV1::UnknownMessage)?;
+            let availability = stable_reference_availability(room, message_id);
+            self.private_saves.insert(key, sequence);
+            Ok(SavedReferenceV1 {
+                message_id,
+                original_sequence: sequence,
+                availability,
+            })
+        } else {
+            let original_sequence = current.expect("change validation established saved relation");
+            let availability = stable_reference_availability(room, message_id);
+            self.private_saves.remove(&key);
+            Ok(SavedReferenceV1 {
+                message_id,
+                original_sequence,
+                availability,
+            })
+        }
+    }
+
+    fn validate_private_save_actor(
+        &self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<&Room, PrivateSaveRefusalV1> {
+        if !self.participants.contains_key(actor) {
+            return Err(PrivateSaveRefusalV1::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(PrivateSaveRefusalV1::UnknownRoom)?;
+        if !room.members.contains_key(actor) {
+            return Err(PrivateSaveRefusalV1::NotMember);
+        }
+        Ok(room)
     }
 
     pub fn rooms(&self) -> impl Iterator<Item = RoomView> + '_ {
@@ -6017,4 +6161,20 @@ impl Engine {
             Ok(())
         }
     }
+}
+
+fn stable_reference_availability(
+    room: &Room,
+    message_id: MessageId,
+) -> StableReferenceAvailabilityV1 {
+    room.messages
+        .iter()
+        .find(|message| message.id == message_id)
+        .map_or(StableReferenceAvailabilityV1::Evicted, |message| {
+            if message.is_withdrawn() {
+                StableReferenceAvailabilityV1::Tombstoned
+            } else {
+                StableReferenceAvailabilityV1::Available
+            }
+        })
 }
