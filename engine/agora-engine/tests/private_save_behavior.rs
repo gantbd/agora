@@ -1,3 +1,4 @@
+use agora_engine::persistence::RecoveryLimits;
 use agora_engine::{
     AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, OutcomeV2, Participant, ParticipantId,
     ParticipantKind, PrivateSaveRefusalV1, RoomId, StableReferenceAvailabilityV1,
@@ -208,5 +209,46 @@ fn stale_and_unknown_creation_refuse_before_mutation_while_evicted_removal_works
             )
             .unwrap(),
         None
+    );
+}
+
+#[test]
+fn private_save_checkpoint_is_canonical_and_preserves_evicted_identity() {
+    let mut engine = setup(ParticipantKind::Human, 1);
+    let message_id = speak(&mut engine, 1);
+    let revision = engine.revision();
+    engine
+        .set_saved_reference(
+            &ParticipantId::new("owner"),
+            &RoomId::new("room"),
+            message_id,
+            revision,
+            true,
+        )
+        .unwrap();
+    speak(&mut engine, 2);
+    let checkpoint = engine.prepare_checkpoint(1 << 20).unwrap();
+    assert_eq!(checkpoint.bytes()[8], 28);
+    let recovered = Engine::recover_checkpoint(
+        checkpoint.bytes(),
+        RecoveryLimits {
+            max_snapshot_bytes: 1 << 20,
+            maximum_engine_limits: engine.limits(),
+        },
+    )
+    .unwrap();
+    let saved = recovered
+        .saved_reference(
+            &ParticipantId::new("owner"),
+            &RoomId::new("room"),
+            message_id,
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.original_sequence(), 0);
+    assert_eq!(saved.availability(), StableReferenceAvailabilityV1::Evicted);
+    assert_eq!(
+        recovered.prepare_checkpoint(1 << 20).unwrap().bytes(),
+        checkpoint.bytes()
     );
 }

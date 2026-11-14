@@ -1037,11 +1037,13 @@ impl Engine {
         let include_vellum_artifacts = engine_has_vellum_artifacts(self);
         let include_conversation_profiles = engine_has_conversation_profiles(self);
         let include_attention_preferences = !self.attention_preferences.is_empty();
+        let include_private_saves = !self.private_saves.is_empty();
         w.raw(b"AGORACP\0")?;
         w.byte(
             20 + u8::from(include_vellum_artifacts)
                 + (u8::from(include_conversation_profiles) * 2)
-                + (u8::from(include_attention_preferences) * 4),
+                + (u8::from(include_attention_preferences) * 4)
+                + (u8::from(include_private_saves) * 8),
         )?;
         for n in limits_values(self.limits) {
             w.count(n)?
@@ -1173,6 +1175,15 @@ impl Engine {
                 w.byte(notification_intent_tag(preference.notification_intent))?;
             }
         }
+        if include_private_saves {
+            w.count(self.private_saves.len())?;
+            for ((participant, room_id, message_id), original_sequence) in &self.private_saves {
+                w.text(participant.as_str())?;
+                w.text(room_id.as_str())?;
+                w.raw(&message_id.into_bytes())?;
+                w.number(*original_sequence)?;
+            }
+        }
         w.count(self.publications.len())?;
         for (key, p) in &self.publications {
             w.raw(&key.0)?;
@@ -1214,13 +1225,14 @@ impl Engine {
             return Err(CheckpointError::Profile);
         }
         let profile = r.byte()?;
-        if !matches!(profile, 20..=27) {
+        if !matches!(profile, 20..=35) {
             return Err(CheckpointError::Profile);
         }
         let feature_bits = profile - 20;
         let has_vellum_artifacts = feature_bits & 1 != 0;
         let has_conversation_profiles = feature_bits & 2 != 0;
         let has_attention_preferences = feature_bits & 4 != 0;
+        let has_private_saves = feature_bits & 8 != 0;
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
         let mut e = Engine::with_limits(l);
         e.revision = Revision(r.number()?);
@@ -1491,6 +1503,20 @@ impl Engine {
                 )?;
             }
         }
+        if has_private_saves {
+            let count = r.count(MAX_PRIVATE_SAVES_V1)?;
+            for _ in 0..count {
+                let participant = r.participant(l)?;
+                let room_id = r.room(l)?;
+                let message_id = MessageId::from_bytes(r.fixed()?);
+                let original_sequence = r.number()?;
+                insert(
+                    &mut e.private_saves,
+                    (participant, room_id, message_id),
+                    original_sequence,
+                )?;
+            }
+        }
         let n = r.count(l.max_publication_receipts)?;
         for _ in 0..n {
             let key = PublicationKeyV2::new(r.fixed()?);
@@ -1553,6 +1579,9 @@ impl Engine {
             return Err(CheckpointError::NonCanonical);
         }
         if has_attention_preferences == e.attention_preferences.is_empty() {
+            return Err(CheckpointError::NonCanonical);
+        }
+        if has_private_saves == e.private_saves.is_empty() {
             return Err(CheckpointError::NonCanonical);
         }
         Ok(e)
@@ -2193,6 +2222,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         || e.retained_changes.len() > l.max_retained_changes
         || e.read_positions.len() > MAX_READ_POSITIONS_V1
         || e.attention_preferences.len() > MAX_ATTENTION_PREFERENCES_V1
+        || e.private_saves.len() > MAX_PRIVATE_SAVES_V1
     {
         return Err(CheckpointError::Limit);
     }
@@ -2523,6 +2553,28 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                     return Err(CheckpointError::Invalid);
                 }
             }
+        }
+    }
+    for ((participant, room_id, message_id), original_sequence) in &e.private_saves {
+        let room = e.rooms.get(room_id).ok_or(CheckpointError::Invalid)?;
+        if !e.participants.contains_key(participant)
+            || message_id.0[..8] != room.message_identity_incarnation.to_be_bytes()
+            || u64::from_be_bytes(
+                message_id.0[8..]
+                    .try_into()
+                    .map_err(|_| CheckpointError::Invalid)?,
+            ) >= room.next_message_identity
+            || *original_sequence >= room.next_message_sequence
+        {
+            return Err(CheckpointError::Invalid);
+        }
+        if let Some(message) = room
+            .messages
+            .iter()
+            .find(|message| message.id == *message_id)
+            && message.sequence != *original_sequence
+        {
+            return Err(CheckpointError::Invalid);
         }
     }
     if minimum > e.revision.0 {
