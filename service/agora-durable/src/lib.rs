@@ -12,6 +12,9 @@ use agora_host::v2::persistence::{
 use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
 use agora_host::{HostRefusal, HostTimeV1, PrincipalVerifier};
 use agora_protocol::v2::{ClientIdV2, RefusalV2, ReplyV2, RequestV2};
+use agora_scheduled_publication_port::{
+    ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
+};
 use agora_service::transient::TransientLimitsV1;
 use agora_service::typing::TypingLimitsV1;
 use agora_service::v2::{
@@ -1186,6 +1189,23 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
         now: HostTimeV1,
     ) -> DurableHostPublicationV2<Result<Vec<u8>, HostRefusal>> {
         let publication = self.publish(|host| host.handle(session, frame, context, now));
+        self.counters.record(&publication);
+        publication
+    }
+
+    /// Offers one actor-bound scheduled publication and publishes its semantic
+    /// result only after the resulting Host checkpoint is durable.
+    pub fn publish_scheduled(
+        &mut self,
+        session: HostSessionIdV2,
+        request: ScheduledPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<
+        Result<ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1>,
+    > {
+        let publication =
+            self.publish(|host| host.publish_scheduled(session, request, context, now));
         self.counters.record(&publication);
         publication
     }

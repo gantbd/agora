@@ -97,6 +97,14 @@
       "audiences": ["service", "trusted-host"],
       "publish": false
     },
+    "agora-scheduled-publication-port": {
+      "path": "ports/agora-scheduled-publication-port",
+      "category": "port",
+      "maturity": "adopted",
+      "effect_class": "pure",
+      "audiences": ["service", "trusted-host"],
+      "publish": false
+    },
     "agora-service": {
       "path": "service/agora-service",
       "category": "service",

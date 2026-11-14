@@ -15,6 +15,10 @@ use agora_protocol::v2::{
     TopicCollectionLifecycleV1, VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1,
     VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
+use agora_scheduled_publication_port::{
+    ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationRefusalV1,
+    ScheduledPublicationRequestV1,
+};
 use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
@@ -161,6 +165,63 @@ fn open(
         panic!("connect should succeed");
     };
     (session, client, context)
+}
+
+#[test]
+fn scheduled_publication_binds_revalidated_session_actor_and_current_host_time() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(4),
+    );
+    let (session, _, mut context) = open(&mut host, "alice", 1);
+    let request = ScheduledPublicationRequestV1 {
+        id: ScheduledPublicationIdV1::new([3; 16]).unwrap(),
+        intent: ScheduledPublicationIntentV1::new("room", 10, "scheduled"),
+    };
+    let accepted = host
+        .publish_scheduled(session, request.clone(), &context, HostTimeV1(2))
+        .unwrap();
+    assert_eq!(accepted.revision, 4);
+    assert_eq!(
+        host.service()
+            .engine()
+            .message(&"room".into(), accepted.message_sequence)
+            .unwrap()
+            .author(),
+        &"alice".into()
+    );
+    assert_eq!(
+        host.publish_scheduled(session, request, &context, HostTimeV1(3)),
+        Ok(accepted)
+    );
+    context.active = false;
+    assert_eq!(
+        host.publish_scheduled(
+            session,
+            ScheduledPublicationRequestV1 {
+                id: ScheduledPublicationIdV1::new([4; 16]).unwrap(),
+                intent: ScheduledPublicationIntentV1::new("room", 11, "revoked"),
+            },
+            &context,
+            HostTimeV1(4),
+        ),
+        Err(ScheduledPublicationRefusalV1::NotAuthorized)
+    );
+    assert_eq!(host.service().active_client_count(), 0);
+    assert_eq!(calls.get(), 4);
 }
 
 #[test]

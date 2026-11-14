@@ -29,6 +29,7 @@ version = "0.1.0"
 dependencies = [
  "agora-host",
  "agora-protocol",
+ "agora-scheduled-publication-port",
  "agora-service",
  "agora-storage-observation",
  "keystone-storage",
@@ -55,6 +56,7 @@ name = "agora-host"
 version = "0.1.0"
 dependencies = [
  "agora-protocol",
+ "agora-scheduled-publication-port",
  "agora-service",
  "agora-wire",
 ]
@@ -83,6 +85,10 @@ name = "agora-protocol"
 version = "0.1.0"
 
 [[package]]
+name = "agora-scheduled-publication-port"
+version = "0.1.0"
+
+[[package]]
 name = "agora-search-port"
 version = "0.1.0"
 
@@ -92,6 +98,7 @@ version = "0.1.0"
 dependencies = [
  "agora-engine",
  "agora-protocol",
+ "agora-scheduled-publication-port",
  "agora-search-port",
  "agora-wire",
 ]

@@ -16,9 +16,10 @@ use agora_engine::{
     MessageReportV1 as EngineMessageReportV1, MessageRevisionPageCursorV1, ModerationCausationV1,
     ModerationReasonV1, NotificationIntentV1 as EngineNotificationIntentV1, ObservationRefusal,
     OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind, PollId as EnginePollId,
-    PollObservationRefusalV1, PrivateSaveRefusalV1, ReadPositionRefusalV1,
-    ReadScopeV1 as EngineReadScopeV1, Refusal as EngineRefusal, Revision, RevisionedCommandV2,
-    Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
+    PollObservationRefusalV1, PrivateSaveRefusalV1, PublicationCommandV2, PublicationKeyV2,
+    PublicationRefusalV2, ReadPositionRefusalV1, ReadScopeV1 as EngineReadScopeV1,
+    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomChangeGap,
+    RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
     Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicCollectionCursorV1,
     TopicCollectionFilterV1 as EngineTopicCollectionFilterV1,
     TopicCollectionLifecycleV1 as EngineTopicCollectionLifecycleV1, TopicId,
@@ -50,6 +51,9 @@ use agora_protocol::v2::{
     TopicStatusV1, TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1,
     VellumArtifactMessagePageV1, VellumArtifactMessageTargetV1, VellumArtifactMessageV1,
     VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
+};
+use agora_scheduled_publication_port::{
+    ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -301,6 +305,45 @@ impl ServiceV2 {
         instant_ms: u64,
     ) -> ReplyV2 {
         self.execute_with_host_time(client, request, Some(instant_ms))
+    }
+
+    /// Trusted actor-bound publication path used by scheduling adapters. This
+    /// is deliberately absent from Protocol and Wire V2.
+    pub fn publish_scheduled_at(
+        &mut self,
+        client: ClientIdV2,
+        request: ScheduledPublicationRequestV1,
+        instant_ms: u64,
+    ) -> Result<ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1> {
+        let participant = self
+            .clients
+            .get(&client)
+            .cloned()
+            .ok_or(ScheduledPublicationRefusalV1::NotAuthorized)?;
+        if !valid_text(request.intent.room_id(), self.limits.max_room_id_bytes)
+            || !valid_text(request.intent.body(), self.limits.max_message_body_bytes)
+        {
+            return Err(ScheduledPublicationRefusalV1::InvalidInput);
+        }
+        let command = PublicationCommandV2::new(
+            self.engine.revision(),
+            PublicationKeyV2::new(request.id.into_bytes()),
+            RoomId::new(request.intent.room_id()),
+            participant,
+            agora_engine::LogicalTime(request.intent.logical_time()),
+            request.intent.body(),
+        );
+        let transition = self
+            .engine
+            .publish_at_instant(command, instant_ms)
+            .map_err(map_scheduled_publication_refusal)?;
+        let EngineOutcome::MessageAccepted { sequence, .. } = transition.outcome else {
+            return Err(ScheduledPublicationRefusalV1::Unavailable);
+        };
+        Ok(ScheduledPublicationAcceptedV1 {
+            revision: transition.revision.0,
+            message_sequence: sequence,
+        })
     }
 
     fn execute_with_host_time(
@@ -5299,5 +5342,65 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::AlreadyMember(_)
         | EngineRefusal::NotBanned(_) => RefusalV2::InvalidInput,
         EngineRefusal::UnknownTopic => RefusalV2::UnknownTopic,
+    }
+}
+
+fn map_scheduled_publication_refusal(
+    refusal: PublicationRefusalV2,
+) -> ScheduledPublicationRefusalV1 {
+    match refusal {
+        PublicationRefusalV2::IdempotencyConflict => ScheduledPublicationRefusalV1::Conflict,
+        PublicationRefusalV2::PublicationReceiptLimit => ScheduledPublicationRefusalV1::Capacity,
+        PublicationRefusalV2::AdmissionTime(AdmissionTimeRefusalV1::IdentityExhausted) => {
+            ScheduledPublicationRefusalV1::Exhausted
+        }
+        PublicationRefusalV2::AdmissionTime(
+            AdmissionTimeRefusalV1::Regressed
+            | AdmissionTimeRefusalV1::ForeignObservation
+            | AdmissionTimeRefusalV1::StaleObservation,
+        ) => ScheduledPublicationRefusalV1::Unavailable,
+        PublicationRefusalV2::Core(EngineRefusal::MessageThrottled { retry_after_ms }) => {
+            ScheduledPublicationRefusalV1::AdmissionDeferred { retry_after_ms }
+        }
+        PublicationRefusalV2::Core(
+            EngineRefusal::NotMember(_)
+            | EngineRefusal::NotAuthorized(_)
+            | EngineRefusal::ParticipantBanned(_)
+            | EngineRefusal::PostingRestricted
+            | EngineRefusal::InvitationRequired(_)
+            | EngineRefusal::OwnerCannotLeave,
+        ) => ScheduledPublicationRefusalV1::NotAuthorized,
+        PublicationRefusalV2::Core(
+            EngineRefusal::EventOutboxFull
+            | EngineRefusal::MessageRetentionDisabled
+            | EngineRefusal::ParticipantLimit
+            | EngineRefusal::RoomLimit
+            | EngineRefusal::MemberLimit
+            | EngineRefusal::InvitationLimit
+            | EngineRefusal::BanLimit
+            | EngineRefusal::ReactionLimit
+            | EngineRefusal::PinLimit
+            | EngineRefusal::MessageRevisionLimit
+            | EngineRefusal::TopicLimit
+            | EngineRefusal::AddressedParticipantLimit,
+        ) => ScheduledPublicationRefusalV1::Capacity,
+        PublicationRefusalV2::Core(
+            EngineRefusal::MessageIdentityExhausted
+            | EngineRefusal::MessageSequenceExhausted
+            | EngineRefusal::RevisionExhausted
+            | EngineRefusal::EventSequenceExhausted
+            | EngineRefusal::TopicIdentityExhausted
+            | EngineRefusal::PollIdentityExhausted,
+        ) => ScheduledPublicationRefusalV1::Exhausted,
+        PublicationRefusalV2::Core(
+            EngineRefusal::UnknownParticipant(_) | EngineRefusal::UnknownRoom(_),
+        ) => ScheduledPublicationRefusalV1::NotAuthorized,
+        PublicationRefusalV2::Core(
+            EngineRefusal::AdmissionTimeRequired
+            | EngineRefusal::AdmissionTimeForeign
+            | EngineRefusal::AdmissionTimeStale
+            | EngineRefusal::RevisionConflict { .. },
+        ) => ScheduledPublicationRefusalV1::Unavailable,
+        PublicationRefusalV2::Core(_) => ScheduledPublicationRefusalV1::InvalidInput,
     }
 }

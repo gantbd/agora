@@ -8,6 +8,7 @@ description = "Authenticated transport-neutral host boundary for Agora"
 publish = false
 
 [dependencies]
+agora-scheduled-publication-port = { path = "../../ports/agora-scheduled-publication-port", version = "=0.1.0" }
 agora-protocol = { path = "../../protocol/agora-protocol", version = "=0.1.0" }
 agora-service = { path = "../../service/agora-service", version = "=0.1.0" }
 agora-wire = { path = "../../protocol/agora-wire", version = "=0.1.0" }

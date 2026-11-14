@@ -7,4 +7,5 @@
 
 pub use agora_engine as engine;
 pub use agora_host as host;
+pub use agora_scheduled_publication_port as scheduled_publication;
 pub use agora_service as service;

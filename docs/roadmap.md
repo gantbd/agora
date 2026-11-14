@@ -31,7 +31,8 @@ requalification remains part of the current release-readiness work.
    workspace/document/source-revision types; document content, live witnesses,
    editing, persistence, agent behavior, and cross-engine transaction claims
    remain outside Agora.
-7. Implement the adopted R102 Chronos scheduled-publication composition:
+7. Complete the adopted R102 Chronos scheduled-publication composition after
+   the implemented Agora trusted-port slice:
    Chronos owns scheduled objects, clock, cancellation, and temporal execution;
    Agora admits only an authenticated, idempotent publication attempt with
    explicit schedule-origin identity. Close cancellation races, late execution,

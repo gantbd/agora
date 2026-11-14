@@ -112,8 +112,8 @@ not ready for a network service or crates.io release.
   with locked fuzz-target compilation and unchanged tracked bytes afterward;
 - commit-pinned Horizon 0 categorical qualification of revision
   `2fdb87e6e45df08e0e929e66d88a3425547282e9` on Darwin 25.6.0 arm64 / macOS
-  26.6.2 across the exact 16-package classification, 17-package compatibility
-  inventory, 75 canonical fixtures, 20-component supply/SBOM graph, ordinary
+  26.6.2 across the exact 17-package classification, 18-package compatibility
+  inventory, 85 canonical fixtures, 21-component supply/SBOM graph, ordinary
   gate, all release-mode targets, 10,000 deterministic soak cycles, and
   1,000,000 fixed-seed cases on each of the three fuzz targets, with unchanged
   tracked bytes afterward;

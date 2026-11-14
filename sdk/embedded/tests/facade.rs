@@ -1,4 +1,4 @@
-use agora_sdk_embedded::{engine, host, service};
+use agora_sdk_embedded::{engine, host, scheduled_publication, service};
 
 struct Verifier;
 
@@ -90,6 +90,17 @@ fn facade_alone_constructs_the_embedded_v2_stack() {
         engine::VellumDocumentTargetV1::new(6, 7, 8).unwrap(),
     );
     assert_eq!(reference.target().source_revision(), 8);
+}
+
+#[test]
+fn facade_names_the_trusted_scheduled_publication_contract() {
+    let id = scheduled_publication::ScheduledPublicationIdV1::new([7; 16]).unwrap();
+    let request = scheduled_publication::ScheduledPublicationRequestV1 {
+        id,
+        intent: scheduled_publication::ScheduledPublicationIntentV1::new("room", 12, "scheduled"),
+    };
+    assert_eq!(request.id, id);
+    assert_eq!(request.intent.logical_time(), 12);
 }
 
 #[test]

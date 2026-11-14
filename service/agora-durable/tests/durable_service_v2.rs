@@ -25,6 +25,9 @@ use agora_protocol::v2::{
     VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
     VellumDocumentTargetV1,
 };
+use agora_scheduled_publication_port::{
+    ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationRequestV1,
+};
 use agora_service::transient::TransientLimitsV1;
 use agora_service::typing::TypingLimitsV1;
 use agora_service::v2::{
@@ -1140,6 +1143,60 @@ fn authenticated_host_commits_session_service_and_reply_as_one_recoverable_unit(
     let diagnostic = format!("{observation:?}");
     assert!(!diagnostic.contains("Alice"));
     assert!(!diagnostic.contains("room"));
+}
+
+#[test]
+fn scheduled_publication_is_commit_gated_and_reconciles_after_unknown_outcome() {
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame(), &context, HostTimeV1(1))
+    else {
+        panic!("connect expected");
+    };
+    let session = opened.session().unwrap();
+    let WireReplyV2::Connected(client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connected frame expected");
+    };
+    assert!(matches!(
+        durable.handle(session, &create_frame(client), &context, HostTimeV1(2)),
+        DurableHostPublicationV2::Published {
+            value: Ok(_),
+            evidence: DurableEvidenceV2::Committed {
+                revision: Revision(2)
+            }
+        }
+    ));
+    let request = ScheduledPublicationRequestV1 {
+        id: ScheduledPublicationIdV1::new([8; 16]).unwrap(),
+        intent: ScheduledPublicationIntentV1::new("room", 20, "scheduled"),
+    };
+    store.next(NextCommit::IndeterminateAfter);
+    assert_eq!(
+        durable.publish_scheduled(session, request.clone(), &context, HostTimeV1(3)),
+        DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::OutcomeUnknown)
+    );
+    drop(durable.into_store());
+
+    let mut recovered = DurableHostV2::recover(store.clone(), host_config(), Verifier).unwrap();
+    let DurableHostPublicationV2::Published {
+        value: Ok(accepted),
+        evidence:
+            DurableEvidenceV2::PreviouslyCommitted {
+                revision: Revision(3),
+            },
+    } = recovered.publish_scheduled(session, request, &context, HostTimeV1(3))
+    else {
+        panic!("exact retry must resolve the committed publication");
+    };
+    assert_eq!(accepted.revision, 3);
+    assert_eq!(accepted.message_sequence, 0);
+    assert_eq!(store.commit_calls(), 4, "exact retry is storage-inert");
 }
 
 #[test]

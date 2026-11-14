@@ -2991,6 +2991,7 @@ impl fmt::Debug for PublicationCommandV2 {
 pub enum PublicationRefusalV2 {
     IdempotencyConflict,
     PublicationReceiptLimit,
+    AdmissionTime(AdmissionTimeRefusalV1),
     Core(Refusal),
 }
 
@@ -5223,6 +5224,47 @@ impl Engine {
         &mut self,
         command: PublicationCommandV2,
     ) -> Result<TransitionV2, PublicationRefusalV2> {
+        self.publish_with_admission_time(command, None)
+    }
+
+    /// Publishes with a trusted current admission-time observation. Matching
+    /// replay is resolved before the observation is consulted.
+    pub fn publish_at(
+        &mut self,
+        command: PublicationCommandV2,
+        admission_time: &AdmissionTimeV1,
+    ) -> Result<TransitionV2, PublicationRefusalV2> {
+        self.publish_with_admission_time(command, Some(admission_time))
+    }
+
+    /// Trusted-service convenience that preserves replay as an identity: an
+    /// already accepted exact offer is returned without advancing the clock.
+    pub fn publish_at_instant(
+        &mut self,
+        command: PublicationCommandV2,
+        instant_ms: u64,
+    ) -> Result<TransitionV2, PublicationRefusalV2> {
+        if let Some(existing) = self.publications.get(&command.key) {
+            if existing.room_id == command.room_id
+                && existing.author == command.author
+                && existing.at == command.at
+                && existing.body == command.body
+            {
+                return Ok(existing.transition.clone());
+            }
+            return Err(PublicationRefusalV2::IdempotencyConflict);
+        }
+        let admission_time = self
+            .advance_admission_time(instant_ms)
+            .map_err(PublicationRefusalV2::AdmissionTime)?;
+        self.publish_with_admission_time(command, Some(&admission_time))
+    }
+
+    fn publish_with_admission_time(
+        &mut self,
+        command: PublicationCommandV2,
+        admission_time: Option<&AdmissionTimeV1>,
+    ) -> Result<TransitionV2, PublicationRefusalV2> {
         if let Some(existing) = self.publications.get(&command.key) {
             if existing.room_id == command.room_id
                 && existing.author == command.author
@@ -5242,15 +5284,18 @@ impl Engine {
             author: command.author.clone(),
             at: command.at,
             body: command.body.clone(),
-            transition: self.apply_revisioned(RevisionedCommandV2 {
-                expected_revision: command.expected_revision,
-                command: CommandV2::Speak {
-                    room_id: command.room_id,
-                    author: command.author,
-                    at: command.at,
-                    body: command.body,
+            transition: self.apply_revisioned_with_admission_time(
+                RevisionedCommandV2 {
+                    expected_revision: command.expected_revision,
+                    command: CommandV2::Speak {
+                        room_id: command.room_id,
+                        author: command.author,
+                        at: command.at,
+                        body: command.body,
+                    },
                 },
-            })?,
+                admission_time,
+            )?,
         };
         let transition = record.transition.clone();
         self.publications.insert(command.key, record);

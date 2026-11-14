@@ -19,11 +19,13 @@ agora-client  -> agora-protocol <- agora-service -> agora-engine
                                 <- agora-wire -> keystone-codec
 agora-host -----> agora-wire + agora-service + trusted verifier port
 agora-service --> agora-search-port
+agora-service --> agora-scheduled-publication-port
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-observation --> keystone-storage port
 agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem
 agora-search-memory --> agora-search-port
 agora-search-port --> no normal dependencies
+agora-scheduled-publication-port --> no normal dependencies
 agora-aegis-verifier --> agora-host + agora-durable + Aegis public service port
 agora-local-transport --> agora-wire + Unix endpoint/stream resources
 agora-local-daemon --> agora-local-transport + agora-aegis-verifier + agora-host + agora-durable + agora-wire

@@ -10,6 +10,7 @@ package|transport/agora-local-transport/Cargo.toml|agora-local-transport|0.1.0
 package|protocol/agora-protocol/Cargo.toml|agora-protocol|0.1.0
 package|adapters/agora-search-memory/Cargo.toml|agora-search-memory|0.1.0
 package|ports/agora-search-port/Cargo.toml|agora-search-port|0.1.0
+package|ports/agora-scheduled-publication-port/Cargo.toml|agora-scheduled-publication-port|0.1.0
 package|service/agora-service/Cargo.toml|agora-service|0.1.0
 package|adapters/agora-storage-directory/Cargo.toml|agora-storage-directory|0.1.0
 package|ports/agora-storage-observation/Cargo.toml|agora-storage-observation|0.1.0

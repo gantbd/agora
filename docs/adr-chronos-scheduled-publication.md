@@ -1,6 +1,6 @@
 # ADR: Chronos scheduled-publication composition
 
-Status: accepted; implementation open
+Status: accepted; Agora trusted-port slice implemented, adapter open
 
 Date: 2026-11-14
 
@@ -176,3 +176,15 @@ approval, workflow completion, agent execution, atomic cross-engine commits,
 automatic moderation bypass, message retraction, delivery, federation, or a
 network transport. Chronos cancellation is not Agora erasure, and Agora
 acceptance is not proof that every Chronos bookkeeping write succeeded.
+
+## Implementation status
+
+Agora now provides the zero-dependency `agora-scheduled-publication-port`, an
+embedded-SDK reexport, actor-bound Service/Host dispatch, current Host-time
+admission, exact keyed replay/conflict, and receipt-gated durable Host
+publication. The contract remains absent from Protocol and Wire V2. Tests cover
+nonzero opaque identity, content-safe diagnostics, current interval and posting
+restriction enforcement, authenticated actor binding, revocation, exact replay,
+changed-intent conflict, and recovery after an indeterminate committed store
+outcome. The separate adapter journal, Chronos admission/cancellation, late
+policy, original-allocation lookup, and Aegis composition remain open.

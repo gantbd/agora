@@ -42,6 +42,7 @@ dependencies = [
  "agora-engine",
  "agora-host",
  "agora-protocol",
+ "agora-scheduled-publication-port",
  "agora-service",
  "agora-storage-observation",
  "agora-wire",
@@ -58,6 +59,7 @@ version = "0.1.0"
 dependencies = [
  "agora-engine",
  "agora-protocol",
+ "agora-scheduled-publication-port",
  "agora-service",
  "agora-wire",
 ]
@@ -92,6 +94,10 @@ name = "agora-protocol"
 version = "0.1.0"
 
 [[package]]
+name = "agora-scheduled-publication-port"
+version = "0.1.0"
+
+[[package]]
 name = "agora-sdk-client"
 version = "0.1.0"
 dependencies = [
@@ -106,6 +112,7 @@ version = "0.1.0"
 dependencies = [
  "agora-engine",
  "agora-host",
+ "agora-scheduled-publication-port",
  "agora-service",
 ]
 
@@ -126,6 +133,7 @@ version = "0.1.0"
 dependencies = [
  "agora-engine",
  "agora-protocol",
+ "agora-scheduled-publication-port",
  "agora-search-memory",
  "agora-search-port",
  "agora-wire",

@@ -5,6 +5,9 @@ use super::{
     identity_bytes, map_encode,
 };
 use agora_protocol::v2::{ClientIdV2, RefusalV2};
+use agora_scheduled_publication_port::{
+    ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
+};
 use agora_service::v2::ServiceV2;
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_request_v2, encode_reply_v2};
 use std::collections::{BTreeMap, VecDeque};
@@ -196,6 +199,22 @@ impl<V: PrincipalVerifier> HostV2<V> {
             }
             WireRequestV2::Connect { .. } => Err(HostRefusal::ProtocolViolation),
         }
+    }
+
+    /// Trusted transport-neutral publication path for a configured scheduler
+    /// adapter. The session actor and admission clock are Host-owned facts.
+    pub fn publish_scheduled(
+        &mut self,
+        session_id: HostSessionIdV2,
+        request: ScheduledPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1> {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| ScheduledPublicationRefusalV1::NotAuthorized)?;
+        self.service
+            .publish_scheduled_at(session.client, request, now.0)
     }
 
     pub fn close(&mut self, session: HostSessionIdV2) -> bool {

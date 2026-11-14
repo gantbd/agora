@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }
 agora-protocol = { path = "../../protocol/agora-protocol", version = "=0.1.0" }
+agora-scheduled-publication-port = { path = "../../ports/agora-scheduled-publication-port", version = "=0.1.0" }
 agora-search-port = { path = "../../ports/agora-search-port", version = "=0.1.0" }
 agora-wire = { path = "../../protocol/agora-wire", version = "=0.1.0" }
 

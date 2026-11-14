@@ -9,6 +9,7 @@ members = [
     "service/agora-durable",
     "host/agora-host",
     "ports/agora-search-port",
+    "ports/agora-scheduled-publication-port",
     "ports/agora-storage-observation",
     "adapters/agora-aegis-verifier",
     "adapters/agora-search-memory",
