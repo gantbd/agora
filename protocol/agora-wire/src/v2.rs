@@ -21,11 +21,12 @@ use agora_protocol::v2::{
     RoomPageV2, RoomSummaryV2, SavedReferenceV1, Sha256DigestV1, StableReferenceAvailabilityV1,
     ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
     ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
-    TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1, TopicRoomChangePageV1,
-    TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1, TopicSupersessionStatusV1,
-    TopicTagStatusV1, TopicV1, VellumArtifactMessagePageV1, VellumArtifactMessageTargetV1,
-    VellumArtifactMessageV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
-    VellumDocumentTargetV1,
+    TopicCollectionEntryV1, TopicCollectionFilterV1, TopicCollectionLifecycleV1,
+    TopicCollectionPageV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1,
+    TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1,
+    TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1, VellumArtifactMessagePageV1,
+    VellumArtifactMessageTargetV1, VellumArtifactMessageV1, VellumArtifactReferenceIdV1,
+    VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use std::{collections::BTreeSet, fmt};
 
@@ -610,6 +611,21 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
         } => {
             sink.u8(37)?;
             sink.text(room_id)?;
+            encode_optional_cursor(sink, *cursor)?;
+            sink.u64(u64::from(*limit))
+        }
+        CommandV2::TopicCollection {
+            room_id,
+            filter,
+            cursor,
+            limit,
+        } => {
+            if !valid_topic_collection_filter(filter) {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(79)?;
+            sink.text(room_id)?;
+            encode_topic_collection_filter(sink, filter)?;
             encode_optional_cursor(sink, *cursor)?;
             sink.u64(u64::from(*limit))
         }
@@ -1616,6 +1632,12 @@ fn decode_command(
             poll_id: decode_poll_id(decoder)?,
             open: decode_bool(decoder)?,
         }),
+        79 => Ok(CommandV2::TopicCollection {
+            room_id: read_text(decoder)?,
+            filter: decode_topic_collection_filter(decoder, limits)?,
+            cursor: decode_optional_cursor(decoder)?,
+            limit: read_u32(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1741,6 +1763,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::SharedPinsV1 => 27,
                     CapabilityV2::PrivateSavedReferencesV1 => 28,
                     CapabilityV2::BoundedPollsV1 => 29,
+                    CapabilityV2::TopicCollectionsV1 => 30,
                 })?;
             }
             Ok(())
@@ -1883,6 +1906,13 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             }
             sink.u8(36)?;
             encode_topic_page(sink, page)
+        }
+        OutcomeV2::TopicCollection(page) => {
+            if !valid_topic_collection_page(page) {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(76)?;
+            encode_topic_collection_page(sink, page)
         }
         OutcomeV2::TopicMessages(page) => {
             if page
@@ -2435,6 +2465,7 @@ fn decode_outcome(
                     27 => CapabilityV2::SharedPinsV1,
                     28 => CapabilityV2::PrivateSavedReferencesV1,
                     29 => CapabilityV2::BoundedPollsV1,
+                    30 => CapabilityV2::TopicCollectionsV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -2914,6 +2945,13 @@ fn decode_outcome(
             poll_id: decode_poll_id(decoder)?,
             open: decode_bool(decoder)?,
         }),
+        76 => {
+            let page = decode_topic_collection_page(decoder, limits)?;
+            if !valid_topic_collection_page(&page) {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(OutcomeV2::TopicCollection(page))
+        }
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -4356,6 +4394,161 @@ fn decode_topic_page(
     Ok(TopicPageV1 {
         revision,
         room_id,
+        topics,
+        next: decode_optional_cursor(decoder)?,
+    })
+}
+
+fn encode_topic_collection_filter(
+    sink: &mut dyn Sink,
+    filter: &TopicCollectionFilterV1,
+) -> Result<(), WireEncodeError> {
+    sink.u8(match filter.lifecycle {
+        TopicCollectionLifecycleV1::Any => 1,
+        TopicCollectionLifecycleV1::Active => 2,
+        TopicCollectionLifecycleV1::Resolved => 3,
+    })?;
+    sink.list(filter.tags.len())?;
+    for tag in &filter.tags {
+        sink.text(tag)?;
+    }
+    Ok(())
+}
+
+fn decode_topic_collection_filter(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<TopicCollectionFilterV1, WireDecodeError> {
+    let lifecycle = match read_u8(decoder)? {
+        1 => TopicCollectionLifecycleV1::Any,
+        2 => TopicCollectionLifecycleV1::Active,
+        3 => TopicCollectionLifecycleV1::Resolved,
+        _ => return Err(WireDecodeError::UnknownTag),
+    };
+    let count = read_list(decoder, limits)?;
+    if count > 8 {
+        return Err(WireDecodeError::Limit);
+    }
+    let mut tags = try_vec(count)?;
+    for _ in 0..count {
+        tags.push(read_text(decoder)?);
+    }
+    let filter = TopicCollectionFilterV1 { lifecycle, tags };
+    if !valid_topic_collection_filter(&filter) {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok(filter)
+}
+
+fn valid_topic_collection_filter(filter: &TopicCollectionFilterV1) -> bool {
+    canonical_text_set(&filter.tags, 8)
+}
+
+fn canonical_text_set(values: &[String], maximum: usize) -> bool {
+    values.len() <= maximum
+        && values.iter().all(|value| !value.is_empty())
+        && values.windows(2).all(|pair| pair[0] < pair[1])
+}
+
+fn valid_topic_collection_page(page: &TopicCollectionPageV1) -> bool {
+    valid_topic_collection_filter(&page.filter)
+        && page.topics.len() <= 256
+        && page
+            .topics
+            .windows(2)
+            .all(|pair| pair[0].topic_id < pair[1].topic_id)
+        && page.topics.iter().all(|topic| {
+            !topic.name.is_empty()
+                && !topic.creator_id.is_empty()
+                && canonical_text_set(&topic.aliases, 16)
+                && canonical_text_set(&topic.tags, 8)
+                && topic.successor_topic_id != Some(topic.topic_id)
+                && match page.filter.lifecycle {
+                    TopicCollectionLifecycleV1::Any => true,
+                    TopicCollectionLifecycleV1::Active => !topic.resolved,
+                    TopicCollectionLifecycleV1::Resolved => topic.resolved,
+                }
+                && page
+                    .filter
+                    .tags
+                    .iter()
+                    .all(|tag| topic.tags.binary_search(tag).is_ok())
+        })
+}
+
+fn encode_topic_collection_page(
+    sink: &mut dyn Sink,
+    page: &TopicCollectionPageV1,
+) -> Result<(), WireEncodeError> {
+    sink.u64(page.revision)?;
+    sink.text(&page.room_id)?;
+    encode_topic_collection_filter(sink, &page.filter)?;
+    sink.list(page.topics.len())?;
+    for topic in &page.topics {
+        encode_topic_id(sink, topic.topic_id)?;
+        sink.text(&topic.name)?;
+        sink.text(&topic.creator_id)?;
+        sink.u8(u8::from(topic.resolved))?;
+        sink.list(topic.aliases.len())?;
+        for alias in &topic.aliases {
+            sink.text(alias)?;
+        }
+        sink.list(topic.tags.len())?;
+        for tag in &topic.tags {
+            sink.text(tag)?;
+        }
+        encode_optional_topic_id(sink, topic.successor_topic_id)?;
+    }
+    encode_optional_cursor(sink, page.next)
+}
+
+fn decode_topic_collection_page(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<TopicCollectionPageV1, WireDecodeError> {
+    let revision = read_u64(decoder)?;
+    let room_id = read_text(decoder)?;
+    let filter = decode_topic_collection_filter(decoder, limits)?;
+    let count = read_list(decoder, limits)?;
+    if count > 256 {
+        return Err(WireDecodeError::Limit);
+    }
+    let mut topics = try_vec(count)?;
+    for _ in 0..count {
+        let topic_id = decode_topic_id(decoder)?;
+        let name = read_text(decoder)?;
+        let creator_id = read_text(decoder)?;
+        let resolved = decode_bool(decoder)?;
+        let alias_count = read_list(decoder, limits)?;
+        if alias_count > 16 {
+            return Err(WireDecodeError::Limit);
+        }
+        let mut aliases = try_vec(alias_count)?;
+        for _ in 0..alias_count {
+            aliases.push(read_text(decoder)?);
+        }
+        let tag_count = read_list(decoder, limits)?;
+        if tag_count > 8 {
+            return Err(WireDecodeError::Limit);
+        }
+        let mut tags = try_vec(tag_count)?;
+        for _ in 0..tag_count {
+            tags.push(read_text(decoder)?);
+        }
+        topics.push(TopicCollectionEntryV1 {
+            topic_id,
+            name,
+            creator_id,
+            resolved,
+            aliases,
+            tags,
+            successor_topic_id: decode_optional_topic_id(decoder)?,
+        });
+    }
+    Ok(TopicCollectionPageV1 {
+        revision,
+        room_id,
+        filter,
         topics,
         next: decode_optional_cursor(decoder)?,
     })

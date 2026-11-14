@@ -526,6 +526,12 @@ pub enum CommandV2 {
         cursor: Option<PageCursorV2>,
         limit: u32,
     },
+    TopicCollection {
+        room_id: String,
+        filter: TopicCollectionFilterV1,
+        cursor: Option<PageCursorV2>,
+        limit: u32,
+    },
     TopicMessages {
         room_id: String,
         topic_id: TopicIdV1,
@@ -1278,6 +1284,18 @@ impl fmt::Debug for CommandV2 {
                 .field("has_cursor", &cursor.is_some())
                 .field("limit", limit)
                 .finish(),
+            Self::TopicCollection {
+                room_id,
+                filter,
+                cursor,
+                limit,
+            } => formatter
+                .debug_struct("TopicCollection")
+                .field("room_id_bytes", &room_id.len())
+                .field("filter", filter)
+                .field("has_cursor", &cursor.is_some())
+                .field("limit", limit)
+                .finish(),
             Self::TopicMessages {
                 room_id,
                 topic_id,
@@ -1581,6 +1599,7 @@ pub enum CapabilityV2 {
     SharedPinsV1,
     PrivateSavedReferencesV1,
     BoundedPollsV1,
+    TopicCollectionsV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -1787,6 +1806,77 @@ pub struct TopicV1 {
     pub topic_id: TopicIdV1,
     pub name: String,
     pub creator_id: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum TopicCollectionLifecycleV1 {
+    Any,
+    Active,
+    Resolved,
+}
+
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+pub struct TopicCollectionFilterV1 {
+    pub lifecycle: TopicCollectionLifecycleV1,
+    pub tags: Vec<String>,
+}
+
+impl fmt::Debug for TopicCollectionFilterV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicCollectionFilterV1")
+            .field("lifecycle", &self.lifecycle)
+            .field("tag_count", &self.tags.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicCollectionEntryV1 {
+    pub topic_id: TopicIdV1,
+    pub name: String,
+    pub creator_id: String,
+    pub resolved: bool,
+    pub aliases: Vec<String>,
+    pub tags: Vec<String>,
+    pub successor_topic_id: Option<TopicIdV1>,
+}
+
+impl fmt::Debug for TopicCollectionEntryV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicCollectionEntryV1")
+            .field("topic_id", &self.topic_id)
+            .field("name_bytes", &self.name.len())
+            .field("creator_id_bytes", &self.creator_id.len())
+            .field("resolved", &self.resolved)
+            .field("alias_count", &self.aliases.len())
+            .field("tag_count", &self.tags.len())
+            .field("has_successor", &self.successor_topic_id.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicCollectionPageV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub filter: TopicCollectionFilterV1,
+    pub topics: Vec<TopicCollectionEntryV1>,
+    pub next: Option<PageCursorV2>,
+}
+
+impl fmt::Debug for TopicCollectionPageV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicCollectionPageV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("filter", &self.filter)
+            .field("topic_count", &self.topics.len())
+            .field("has_next", &self.next.is_some())
+            .finish()
+    }
 }
 
 impl fmt::Debug for TopicV1 {
@@ -3933,6 +4023,7 @@ pub enum OutcomeV2 {
     ReactionStatus(ReactionStatusV1),
     MessageRevisions(MessageRevisionPageV1),
     Topics(TopicPageV1),
+    TopicCollection(TopicCollectionPageV1),
     TopicMessages(TopicMessagePageV1),
     ReadPosition(Option<ReadPositionV1>),
     ReadPositionAdvanced(ReadPositionV1),
