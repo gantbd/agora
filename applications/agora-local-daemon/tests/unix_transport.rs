@@ -686,13 +686,15 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     let path = socket_path();
     let port = Port::default();
     let calls = port.calls.clone();
+    let mut private_limits = daemon_limits();
+    private_limits.max_frames_after_connect = 13;
     let daemon = DaemonV1::bind_new(
         &path,
         host(port),
         Authentication,
         Clock(1),
         incarnation(),
-        daemon_limits(),
+        private_limits,
     )
     .unwrap();
     let metadata = fs::symlink_metadata(&path).unwrap();
@@ -707,7 +709,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     let mut stream = UnixStream::connect(&path).unwrap();
     let hello = handshake(&mut stream);
     assert_eq!(hello.max_frame_bytes(), 8_192);
-    assert_eq!(hello.max_frames_after_connect(), 12);
+    assert_eq!(hello.max_frames_after_connect(), 13);
     assert_eq!(hello.server_incarnation(), incarnation());
     assert!(hello.supports_capability_discovery());
     assert!(!format!("{hello:?}").contains("a5"));
@@ -959,6 +961,58 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
             ..
         }))
     ));
+    let create_poll = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(9),
+                command: ProtocolCommand::CreatePoll {
+                    room_id: "room".to_owned(),
+                    expected_revision: 7,
+                    prompt: "Ship?".to_owned(),
+                    options: vec!["yes".to_owned(), "no".to_owned()],
+                    eligible_participant_ids: vec!["alice".to_owned()],
+                    max_choices: 1,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &create_poll);
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::PollCreated {
+        revision: 8,
+        poll_id,
+    })) = decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap()
+    else {
+        panic!("poll creation expected");
+    };
+    let vote = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(10),
+                command: ProtocolCommand::SetPollBallot {
+                    room_id: "room".to_owned(),
+                    expected_revision: 8,
+                    poll_id,
+                    selections: vec![0],
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &vote);
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::PollBallotChanged {
+            revision: 9,
+            totals,
+            total_ballots: 1,
+            ..
+        })) if totals == vec![1, 0]
+    ));
     drop(stream);
 
     let (result, daemon) = server.join().unwrap();
@@ -978,12 +1032,12 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert_eq!(observation.transport, daemon.health());
     assert_eq!(observation.host.open_offers, 1);
     assert_eq!(observation.host.authenticated, 1);
-    assert_eq!(observation.host.frame_offers, 10);
-    assert_eq!(observation.host.executed, 10);
+    assert_eq!(observation.host.frame_offers, 12);
+    assert_eq!(observation.host.executed, 12);
     assert_eq!(observation.service.connect_offers, 1);
     assert_eq!(observation.service.connected, 1);
-    assert_eq!(observation.service.request_offers, 10);
-    assert_eq!(observation.service.accepted, 9);
+    assert_eq!(observation.service.request_offers, 12);
+    assert_eq!(observation.service.accepted, 11);
     assert_eq!(observation.service.replayed, 1);
     assert_eq!(observation.service.disconnected, 1);
     assert!(!observation.fidelity_lost);
@@ -991,7 +1045,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert!(!diagnostic.contains("alice"));
     assert!(!diagnostic.contains("room"));
     assert!(!diagnostic.contains("Room"));
-    assert_eq!(calls.lock().unwrap().len(), 11);
+    assert_eq!(calls.lock().unwrap().len(), 13);
     drop(daemon);
     assert!(!path.exists());
     remove_parent(&path);

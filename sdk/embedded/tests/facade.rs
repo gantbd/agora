@@ -149,6 +149,20 @@ fn facade_names_shared_pin_and_private_save_engine_values() {
 }
 
 #[test]
+fn facade_names_bounded_poll_engine_values() {
+    let poll_id = engine::PollId::from_bytes([7; 16]);
+    let command = engine::CommandV2::SetPollBallot {
+        room_id: "room".into(),
+        actor: "alice".into(),
+        poll_id,
+        selections: vec![0],
+    };
+    assert!(matches!(command, engine::CommandV2::SetPollBallot { .. }));
+    assert_eq!(engine::MAX_POLLS_PER_ROOM_V1, 256);
+    assert_eq!(engine::MAX_POLL_OPTIONS_V1, 32);
+}
+
+#[test]
 fn facade_constructs_the_additive_transient_host_profile() {
     let engine = engine::Engine::new();
     let service = service::v2::ServiceV2::new(engine, service::v2::ServiceLimitsV2::default());

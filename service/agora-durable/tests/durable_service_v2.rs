@@ -364,6 +364,91 @@ fn committed_lost_reply_recovers_as_exact_replay_without_duplicate_event() {
 }
 
 #[test]
+fn committed_poll_and_private_ballot_recover_with_exact_receipts() {
+    let (mut durable, store, client) = initialized();
+    let create_room = create_request("room");
+    assert!(matches!(
+        durable.execute(client, create_room),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 2 }),
+            ..
+        }
+    ));
+    let create_poll = RequestV2 {
+        request_id: RequestIdV2(8),
+        command: CommandV2::CreatePoll {
+            room_id: "room".to_owned(),
+            expected_revision: 2,
+            prompt: "Ship?".to_owned(),
+            options: vec!["yes".to_owned(), "no".to_owned()],
+            eligible_participant_ids: vec!["alice".to_owned()],
+            max_choices: 1,
+        },
+    };
+    let DurablePublicationV2::Published {
+        value:
+            ReplyV2::Accepted(OutcomeV2::PollCreated {
+                revision: 3,
+                poll_id,
+            }),
+        ..
+    } = durable.execute(client, create_poll.clone())
+    else {
+        panic!("poll creation must commit")
+    };
+    let vote = RequestV2 {
+        request_id: RequestIdV2(9),
+        command: CommandV2::SetPollBallot {
+            room_id: "room".to_owned(),
+            expected_revision: 3,
+            poll_id,
+            selections: vec![0],
+        },
+    };
+    assert!(matches!(
+        durable.execute(client, vote.clone()),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::PollBallotChanged {
+                revision: 4,
+                total_ballots: 1,
+                ..
+            }),
+            ..
+        }
+    ));
+    drop(durable.into_store());
+
+    let mut recovered = DurableServiceV2::recover(store, config()).unwrap();
+    assert_eq!(
+        recovered.execute(client, vote),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::PollBallotChanged {
+                revision: 4,
+                poll_id,
+                totals: vec![1, 0],
+                total_ballots: 1,
+            }),
+            evidence: DurableEvidenceV2::PreviouslyCommitted {
+                revision: Revision(4),
+            },
+        }
+    );
+    assert!(matches!(
+        recovered.execute(
+            client,
+            RequestV2 {
+                request_id: RequestIdV2(10),
+                command: CommandV2::PollBallot { room_id: "room".to_owned(), poll_id },
+            }
+        ),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::PollBallot(ballot)),
+            ..
+        } if ballot.selections == vec![0]
+    ));
+}
+
+#[test]
 fn vellum_artifact_admission_commits_as_one_unit_and_recovers_exact_replay() {
     let (mut durable, store, client) = initialized();
     assert!(matches!(

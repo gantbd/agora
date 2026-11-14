@@ -4,9 +4,9 @@ use agora_client::v2::{
 use agora_protocol::v2::{
     AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1, AttachmentMessageTargetV1,
     AttachmentObjectKeyV1, AttachmentStoreIdV1, AttentionPreferenceV1, AttentionScopeV1,
-    ClientIdV2, CommandV2, MessageIdV1, NotificationIntentV1, RefusalV2, ReplyV2, RequestIdV2,
-    RequestV2, Sha256DigestV1, VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1,
-    VellumArtifactReferenceV1, VellumDocumentTargetV1,
+    ClientIdV2, CommandV2, MessageIdV1, NotificationIntentV1, PollIdV1, RefusalV2, ReplyV2,
+    RequestIdV2, RequestV2, Sha256DigestV1, VellumArtifactMessageTargetV1,
+    VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use std::collections::VecDeque;
 
@@ -97,6 +97,41 @@ fn save_command(saved: bool) -> CommandV2 {
         message_id: MessageIdV1::new([8; 16]),
         saved,
     }
+}
+
+fn poll_ballot_command(selections: Vec<u8>) -> CommandV2 {
+    CommandV2::SetPollBallot {
+        room_id: "room".to_owned(),
+        expected_revision: 4,
+        poll_id: PollIdV1::new([9; 16]),
+        selections,
+    }
+}
+
+#[test]
+fn poll_uncertainty_replays_only_the_exact_private_ballot() {
+    let port = RecordingPortV2 {
+        replies: [
+            Err(PortFailureV2::OutcomeUnknown("lost")),
+            Ok(ReplyV2::Refused(RefusalV2::Unavailable)),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let mut client = ClientV2::new(ClientIdV2(7), port);
+    assert_eq!(
+        client.execute(poll_ballot_command(vec![0])),
+        Err(ClientErrorV2::OutcomeUnknown("lost"))
+    );
+    assert_eq!(
+        client.execute(poll_ballot_command(vec![1])),
+        Err(ClientErrorV2::UnresolvedOutcome)
+    );
+    assert_eq!(
+        client.execute(poll_ballot_command(vec![0])),
+        Ok(ReplyV2::Refused(RefusalV2::Unavailable))
+    );
+    assert!(client.pending_request().is_none());
 }
 
 #[test]

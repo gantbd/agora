@@ -10,6 +10,28 @@ struct TransientPort;
 struct SearchPort;
 
 #[test]
+fn facade_names_bounded_poll_protocol_and_wire_values() {
+    let request = wire::v2::WireRequestV2::Execute {
+        client: protocol::v2::ClientIdV2(1),
+        request: protocol::v2::RequestV2 {
+            request_id: protocol::v2::RequestIdV2(1),
+            command: protocol::v2::CommandV2::SetPollBallot {
+                room_id: "room".to_owned(),
+                expected_revision: 2,
+                poll_id: protocol::v2::PollIdV1::new([7; 16]),
+                selections: vec![0],
+            },
+        },
+    };
+    let limits = wire::WireLimits::reference();
+    let bytes = wire::v2::encode_request_v2(&request, limits).unwrap();
+    assert_eq!(
+        wire::v2::decode_request_v2(&bytes, limits).unwrap(),
+        request
+    );
+}
+
+#[test]
 fn facade_names_shared_pin_and_private_save_protocol_and_wire_values() {
     let message_id = protocol::v2::MessageIdV1::new([9; 16]);
     for (index, command) in [

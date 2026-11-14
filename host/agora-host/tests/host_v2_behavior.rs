@@ -510,6 +510,116 @@ fn v2_pins_and_saves_bind_authenticated_participants_without_merging_visibility(
 }
 
 #[test]
+fn v2_polls_bind_authenticated_human_and_agent_without_disclosing_ballots() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let revision = engine.revision().0;
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(2),
+    );
+    let (alice_session, alice_client, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, bot_client, bot_context) = open(&mut host, "bot", 2);
+
+    let create = encode_request_v2(
+        &WireRequestV2::Execute {
+            client: alice_client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::CreatePoll {
+                    room_id: "room".to_owned(),
+                    expected_revision: revision,
+                    prompt: "Ship?".to_owned(),
+                    options: vec!["yes".to_owned(), "no".to_owned()],
+                    eligible_participant_ids: vec!["alice".to_owned(), "bot".to_owned()],
+                    max_choices: 1,
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::PollCreated { revision, poll_id })) =
+        decode_reply_v2(
+            &host
+                .handle(alice_session, &create, &alice_context, HostTimeV1(3))
+                .unwrap(),
+            limits(2).wire,
+        )
+        .unwrap()
+    else {
+        panic!("poll creation expected")
+    };
+
+    let vote = encode_request_v2(
+        &WireRequestV2::Execute {
+            client: bot_client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::SetPollBallot {
+                    room_id: "room".to_owned(),
+                    expected_revision: revision,
+                    poll_id,
+                    selections: vec![0],
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host.handle(bot_session, &vote, &bot_context, HostTimeV1(4)).unwrap(),
+            limits(2).wire,
+        ).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::PollBallotChanged {
+            totals, total_ballots: 1, ..
+        })) if totals == vec![1, 0]
+    ));
+
+    let observe = encode_request_v2(
+        &WireRequestV2::Execute {
+            client: alice_client,
+            request: RequestV2 {
+                request_id: RequestIdV2(2),
+                command: CommandV2::PollBallot {
+                    room_id: "room".to_owned(),
+                    poll_id,
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host.handle(alice_session, &observe, &alice_context, HostTimeV1(5)).unwrap(),
+            limits(2).wire,
+        ).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::PollBallot(ballot)))
+            if ballot.selections.is_empty()
+    ));
+    assert!(calls.get() >= 5);
+}
+
+#[test]
 fn v2_attention_receipt_and_private_state_recover_through_host_checkpoint() {
     let mut engine = engine();
     engine

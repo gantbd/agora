@@ -96,6 +96,12 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `46` | SavedReference | room, message ID |
 | `47` | SetSavedReference | room, observed revision, message ID, saved Boolean |
 | `48` | SavedReferences | room |
+| `49` | Polls | room |
+| `4a` | Poll | room, 16-byte opaque poll ID |
+| `4b` | PollBallot | room, poll ID; caller is derived from the bound client |
+| `4c` | CreatePoll | room, expected revision, prompt, ordered option list, canonical eligible-participant list, maximum choices `u8` |
+| `4d` | SetPollBallot | room, expected revision, poll ID, strictly increasing option-index list |
+| `4e` | SetPollOpen | room, expected revision, poll ID, open Boolean |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -125,6 +131,11 @@ VellumArtifactMessageAccepted are `3b` and `3c`. PeerConversationCreated and
 ConversationProfile are `3d` and `3e`. AttentionPreference and
 AttentionPreferenceSet are `3f` and `40`. Pins, PinChanged, SavedReference,
 SavedReferenceSet, and SavedReferences are `41` through `45`.
+Polls, Poll, PollBallot, PollCreated, PollBallotChanged, and
+PollLifecycleChanged are `46` through `4b`. Poll definitions carry bounded
+immutable options and a canonical eligible cohort; public status and mutation
+outcomes carry only aggregate totals. The private PollBallot outcome is
+caller-bound and never names another participant.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -299,6 +310,12 @@ is derived from the client binding and is never present on the wire.
 | `20` | InvalidAttentionScope | — |
 | `21` | InvalidPinChange | — |
 | `22` | InvalidSaveChange | — |
+| `23` | InvalidPoll | — |
+| `24` | PollLimit | — |
+| `25` | UnknownPoll | — |
+| `26` | NotPollEligible | — |
+| `27` | PollClosed | — |
+| `28` | InvalidPollChange | — |
 
 ## Closure and evidence
 
@@ -358,7 +375,12 @@ Tombstoned `01`, or Evicted `02`. Pin event tag `18` carries actor, message ID,
 original sequence, and resulting Boolean in all four change projections. Pin
 lists are capped at 256 and private save lists at 4,096 before allocation. The
 frozen set-pin and saved-reference-list frames pin the additive grammar without
-changing older frames. Truncation, trailing data,
+changing older frames. Capability tag `1d` advertises `BoundedPollsV1`.
+Commands `49` through `4e`, outcomes `46` through `4b`, refusals `23` through
+`28`, and room-event tags `19` through `1b` close public definitions and
+aggregates, caller-private ballots, and explicit lifecycle in every feed
+profile. Poll creation and aggregate-reply fixtures freeze both definition and
+aggregate grammar. Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push
 delivery, or an authenticated host.

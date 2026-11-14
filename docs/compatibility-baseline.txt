@@ -41,6 +41,7 @@ fixture|protocol/agora-wire/tests/fixtures/changes-reply-v2.hex|101|0e62f74e8368
 fixture|protocol/agora-wire/tests/fixtures/connect-request-v1.hex|11|4c13512cfcb29d053b6e56610b4693ac9ad5f6cd88650349bfb2df13c75c5fe4
 fixture|protocol/agora-wire/tests/fixtures/conversation-profile-status-reply-v2.hex|47|b78c2f5e2b2cc0c041b9f5b13c8f61d847cc29e25f5d3327b26de740439dbcc8
 fixture|protocol/agora-wire/tests/fixtures/create-peer-conversation-request-v2.hex|72|d22727a5e2fe07fcd7add77b66174c53c2bc4101717668be4699b2f741e2d58d
+fixture|protocol/agora-wire/tests/fixtures/create-poll-request-v2.hex|107|dcca5b35cc6871c2041d400e18083f7862bcfd25e092ec0cfc9547e6d360e3b4
 fixture|protocol/agora-wire/tests/fixtures/create-room-request-v2.hex|50|3941c9e17887deddf2bf1e20c6446f3f0510390db656581cffadd0d01cdd9000
 fixture|protocol/agora-wire/tests/fixtures/identified-changes-reply-v2.hex|123|23aa4c0cc49057fea07926b9e6e337abc38eadfd1bddba9d9ca22d797b6392a3
 fixture|protocol/agora-wire/tests/fixtures/identified-messages-reply-v2.hex|123|3b69a08eba773bc77f5b840f8da0acef68f753c7c957be10c4623ba1ad5cfa4d
@@ -56,6 +57,7 @@ fixture|protocol/agora-wire/tests/fixtures/message-revision-page-reply-v2.hex|12
 fixture|protocol/agora-wire/tests/fixtures/messages-reply-v2.hex|104|ef10c0a4aacca3be9317207eec8bc9fd5f2403a1a64379fbfee961331cfcbb79
 fixture|protocol/agora-wire/tests/fixtures/moderation-change-reply-v2.hex|88|92d23511ef2797a1b5cda3b902ce4aa3a3d5b122fdd65d3e2ccd6a1257697817
 fixture|protocol/agora-wire/tests/fixtures/policy-change-reply-v2.hex|57|dfbeed5148328bee4e31e288a6f082ae89de76deafd9880f48a5f861075d39a4
+fixture|protocol/agora-wire/tests/fixtures/poll-ballot-changed-reply-v2.hex|60|b84a5ecfa6af3307ec72d440f5c7ba5f0e7add2008bb8e996c6ed05eeba01ecf
 fixture|protocol/agora-wire/tests/fixtures/reaction-change-reply-v2.hex|79|89e01f4510e548f09124732d748ce58d9d6ab323dad31203d4501c3583ecf8bf
 fixture|protocol/agora-wire/tests/fixtures/reaction-status-reply-v2.hex|65|edd5b71afc68f1750fc761c83ef37b036c4840bae30976cbcad7d7717d29e933
 fixture|protocol/agora-wire/tests/fixtures/read-position-reply-v2.hex|64|4863e95b916612c2d8fb531546d5f62b9a5888b008ba727f37921c1382d455da

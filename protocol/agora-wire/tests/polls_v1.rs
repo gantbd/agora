@@ -7,6 +7,13 @@ use agora_wire::v2::{
     WireReplyV2, WireRequestV2, decode_reply_v2, decode_request_v2, encode_reply_v2,
     encode_request_v2,
 };
+
+fn decode_hex(source: &str) -> Vec<u8> {
+    source
+        .split_whitespace()
+        .map(|pair| u8::from_str_radix(pair, 16).unwrap())
+        .collect()
+}
 use agora_wire::{WireEncodeError, WireLimits};
 
 fn poll_id() -> PollIdV1 {
@@ -71,6 +78,12 @@ fn poll_vocabulary_round_trips_canonically() {
             },
         };
         let bytes = encode_request_v2(&value, WireLimits::reference()).unwrap();
+        if index == 3 {
+            assert_eq!(
+                bytes,
+                decode_hex(include_str!("fixtures/create-poll-request-v2.hex"))
+            );
+        }
         assert_eq!(
             decode_request_v2(&bytes, WireLimits::reference()).unwrap(),
             value
@@ -118,9 +131,15 @@ fn poll_vocabulary_round_trips_canonically() {
             has_more: false,
         }),
     ];
-    for outcome in outcomes {
+    for (index, outcome) in outcomes.into_iter().enumerate() {
         let value = WireReplyV2::Executed(ReplyV2::Accepted(outcome));
         let bytes = encode_reply_v2(&value, WireLimits::reference()).unwrap();
+        if index == 5 {
+            assert_eq!(
+                bytes,
+                decode_hex(include_str!("fixtures/poll-ballot-changed-reply-v2.hex"))
+            );
+        }
         assert_eq!(
             decode_reply_v2(&bytes, WireLimits::reference()).unwrap(),
             value
