@@ -526,6 +526,15 @@ unknown adapter-store publication fences progress rather than inventing a
 cross-engine atomic commit. Chronos task/lease/grant data and message content
 remain out of diagnostics and ordinary room events.
 
+Hermes delivery introduces subscription substitution, stale visibility, payload
+over-disclosure, endpoint-secret leakage, SSRF/provider abuse, append reply loss,
+duplicate external delivery, cursor confusion, revocation races, and retention
+gaps. R103 uses actor-bound current visibility, an initially content-minimized
+schema, independent delivery IDs, exact Hermes replay, durable endpoint success
+before cursor advancement, and pre-offer revocation checks. Hermes identifiers
+grant no authority and never become Agora read positions. Providers may still
+duplicate or retain notifications; revocation is not remote erasure.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

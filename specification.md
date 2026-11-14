@@ -1196,3 +1196,18 @@ and task execution. The adapter owns only bounded intent custody, cross-engine
 correlation, and uncertainty reconciliation. Calendars, recurrence, scheduled
 attachments or addressing, workflow meaning, delivery, federation, agent
 execution, erasure, and atomic cross-engine commit remain nonclaims.
+
+## Adopted Hermes notification-delivery composition
+
+R103 is defined by `docs/adr-hermes-delivery-composition.md`. A separately owned
+adapter binds authenticated subscriptions and independently allocated delivery
+IDs to visibility-safe Agora source projections before exact Hermes append. The
+initial payload is a content-minimized wake reference, not message content.
+
+The endpoint worker revalidates subscription, current Agora visibility, and
+endpoint authority before every offer. It records endpoint success durably
+before advancing its Hermes consumer cursor. Hermes producer/consumer IDs and
+cursors are correlation only. Their acknowledgment never changes an Agora read
+position, attention preference, presence fact, or domain revision. Lost append
+replies replay the exact envelope; endpoint uncertainty, revocation, membership
+loss, and retention gaps remain explicit.

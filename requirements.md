@@ -764,13 +764,30 @@
   time, deadline, recurrence, or catch-up policy. Atomic cross-engine commit,
   workflow completion, agent execution, delivery, federation, and erasure are
   nonclaims.
+- **R103 — Hermes notification-delivery composition:** Agora and Hermes MUST
+  remain separately owned engines and MUST be composed by a separate adapter.
+  The first profile MUST use a trusted observer-bound visibility projection and
+  a content-minimized wake schema; it MUST NOT copy message bodies, attachment
+  locators, Vellum targets, attention settings, credentials, or endpoint
+  secrets into Hermes. Subscription identity MUST be independently allocated
+  and bound to an authenticated participant. Before Hermes append, the adapter
+  MUST durably bind one independently allocated delivery ID to the exact
+  subscription, Agora source reference, schema, and payload, and MUST replay the
+  exact Hermes envelope after uncertain append. Delivery MUST revalidate current
+  subscription, membership visibility, and endpoint authority. Endpoint success
+  MUST be durable before Hermes consumer acknowledgment. Hermes acknowledgment
+  MUST NOT alter Agora read position, attention state, presence, or domain
+  acceptance. Retention gaps, membership loss, revocation,
+  definitely-not-sent, and outcome-unknown results MUST remain explicit.
+  Provider exactly-once, rich payloads, guaranteed delivery, workflow meaning,
+  agent activation, federation, and external erasure are nonclaims.
 
 ## Explicitly open
 
 The R96 through R101 contracts are implemented and commit-pinned release-
-qualified through the private-local stack. R102 is adopted in
-`docs/adr-chronos-scheduled-publication.md`; its implementation and
-qualification remain open. Additional physical durable storage adapters,
+qualified through the private-local stack. R102 and R103 are adopted in their
+composition ADRs; their remaining implementation and qualification are tracked
+explicitly in traceability. Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part
 of the current v0.3 claim. Credential authentication, network transport,

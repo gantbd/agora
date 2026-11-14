@@ -39,6 +39,10 @@ requalification remains part of the current release-readiness work.
    unavailable Agora, and unknown-result recovery without importing tasks or
    scheduling into Agora. The separate adapter must receipt-gate its canonical
    intent/allocation/reconciliation journal and expose every cancellation cut.
+8. Implement the adopted R103 Hermes notification-delivery composition through
+   a separate adapter: content-minimized observer-bound projection, durable
+   exact handoff, current visibility and revocation, endpoint uncertainty, and
+   consumer acknowledgment that never mutates Agora read state.
 
 Agent harness selection, prompting, retries, and execution remain out of scope.
 

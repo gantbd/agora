@@ -159,6 +159,14 @@ and re-evaluates current room admission at the actual attempt. Cancellation
 after a possible offer cannot prove message absence, and accepted publication
 does not become a Chronos task fact.
 
+Notification delivery is a projection and handoff, not conversation state. A
+separate adapter binds one authenticated participant subscription to a
+content-minimized projection and one Hermes delivery identity. Agora visibility
+is rechecked before projection and endpoint offer. Hermes progress orders that
+consumer's delivery work only; it is disjoint from Agora read position,
+attention, presence, and acceptance. Revocation or membership loss suppresses
+future offers but does not prove deletion from provider queues or devices.
+
 Conversation profile also grants no external authority. Direct and group-direct
 cohorts are kind-neutral Agora participant sets, not contacts, principals, or
 tenant memberships. “Shared room” requires a separately qualified federation
