@@ -1475,6 +1475,97 @@ pub struct TopicPageV1 {
     pub next: Option<TopicPageCursorV1>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum TopicCollectionLifecycleV1 {
+    Any,
+    Active,
+    Resolved,
+}
+
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+pub struct TopicCollectionFilterV1 {
+    pub lifecycle: TopicCollectionLifecycleV1,
+    pub tags: Vec<String>,
+}
+
+impl fmt::Debug for TopicCollectionFilterV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicCollectionFilterV1")
+            .field("lifecycle", &self.lifecycle)
+            .field("tag_count", &self.tags.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicCollectionEntryV1 {
+    pub topic_id: TopicId,
+    pub name: String,
+    pub creator: ParticipantId,
+    pub resolved: bool,
+    pub aliases: Vec<String>,
+    pub tags: Vec<String>,
+    pub successor_topic_id: Option<TopicId>,
+}
+
+impl fmt::Debug for TopicCollectionEntryV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicCollectionEntryV1")
+            .field("topic_id", &self.topic_id)
+            .field("name_bytes", &self.name.len())
+            .field("creator_id_bytes", &self.creator.as_str().len())
+            .field("resolved", &self.resolved)
+            .field("alias_count", &self.aliases.len())
+            .field("tag_count", &self.tags.len())
+            .field("has_successor", &self.successor_topic_id.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicCollectionCursorV1 {
+    revision: Revision,
+    observer: ParticipantId,
+    room_id: RoomId,
+    filter: TopicCollectionFilterV1,
+    after: TopicId,
+}
+
+impl TopicCollectionCursorV1 {
+    pub fn is_bound_to(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        filter: &TopicCollectionFilterV1,
+    ) -> bool {
+        &self.observer == observer && &self.room_id == room_id && &self.filter == filter
+    }
+}
+
+impl fmt::Debug for TopicCollectionCursorV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TopicCollectionCursorV1")
+            .field("revision", &self.revision)
+            .field("observer_id_bytes", &self.observer.as_str().len())
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("filter", &self.filter)
+            .field("after", &self.after)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TopicCollectionPageV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub filter: TopicCollectionFilterV1,
+    pub topics: Vec<TopicCollectionEntryV1>,
+    pub next: Option<TopicCollectionCursorV1>,
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct TopicStatusV1 {
     pub revision: Revision,
@@ -3881,6 +3972,102 @@ impl Engine {
         Ok(TopicPageV1 {
             revision: self.revision,
             room_id: room_id.clone(),
+            topics,
+            next,
+        })
+    }
+
+    pub fn topic_collection_page(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        filter: &TopicCollectionFilterV1,
+        cursor: Option<&TopicCollectionCursorV1>,
+        limit: usize,
+    ) -> Result<TopicCollectionPageV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        if limit == 0 || limit > self.limits.max_topics_per_room {
+            return Err(ObservationRefusal::InvalidLimit);
+        }
+        if filter.tags.len() > MAX_TOPIC_TAGS_PER_TOPIC_V1
+            || filter
+                .tags
+                .iter()
+                .any(|tag| tag.is_empty() || tag.len() > self.limits.max_topic_name_bytes)
+            || !filter.tags.windows(2).all(|pair| pair[0] < pair[1])
+        {
+            return Err(ObservationRefusal::InvalidTarget);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        let after = if let Some(cursor) = cursor {
+            if !cursor.is_bound_to(observer, room_id, filter) {
+                return Err(ObservationRefusal::ForeignCursor);
+            }
+            if cursor.revision != self.revision {
+                return Err(ObservationRefusal::Stale {
+                    actual_revision: self.revision,
+                });
+            }
+            Some(cursor.after)
+        } else {
+            None
+        };
+        let mut topics = Vec::new();
+        topics
+            .try_reserve_exact(limit)
+            .map_err(|_| ObservationRefusal::Capacity)?;
+        let mut has_more = false;
+        for (topic_id, topic) in &room.topics {
+            if after.is_some_and(|after| *topic_id <= after)
+                || !match filter.lifecycle {
+                    TopicCollectionLifecycleV1::Any => true,
+                    TopicCollectionLifecycleV1::Active => !topic.resolved,
+                    TopicCollectionLifecycleV1::Resolved => topic.resolved,
+                }
+                || !filter.tags.iter().all(|tag| topic.tags.contains(tag))
+            {
+                continue;
+            }
+            if topics.len() == limit {
+                has_more = true;
+                break;
+            }
+            topics.push(TopicCollectionEntryV1 {
+                topic_id: *topic_id,
+                name: topic.name.clone(),
+                creator: topic.creator.clone(),
+                resolved: topic.resolved,
+                aliases: topic.aliases.iter().cloned().collect(),
+                tags: topic.tags.iter().cloned().collect(),
+                successor_topic_id: room.topic_successors.get(topic_id).copied(),
+            });
+        }
+        let next = if has_more {
+            Some(TopicCollectionCursorV1 {
+                revision: self.revision,
+                observer: observer.clone(),
+                room_id: room_id.clone(),
+                filter: filter.clone(),
+                after: topics
+                    .last()
+                    .ok_or(ObservationRefusal::InconsistentState)?
+                    .topic_id,
+            })
+        } else {
+            None
+        };
+        Ok(TopicCollectionPageV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            filter: filter.clone(),
             topics,
             next,
         })
