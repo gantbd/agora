@@ -463,6 +463,17 @@ participants/rooms, foreign thread identity, and unknown topics. A consumer
 must not reinterpret stored intent as a delivery subscription, device policy,
 urgency, read receipt, attention proof, workflow admission, or agent activation.
 
+Shared pins are visible room facts while private saves are sensitive behavioral
+metadata. Implementations must not merge their storage, observation, events, or
+search projections. Both retain only stable message identity and original
+sequence: copying body, revision, attachment, or Vellum artifact metadata would
+bypass tombstoning and create an unauthorized retention authority. Save access
+is actor-bound and current-membership-gated; pin access is room-membership-gated.
+Evicted and tombstoned availability is explicit and never implies that payload
+or external bytes remain retrievable. Capacity and stale-write refusals occur
+before mutation, and diagnostics disclose neither private save membership nor
+referenced identities.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

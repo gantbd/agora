@@ -860,6 +860,31 @@ checkpoint profiles 24 through 27 add the private map while profiles 20 through
 the nested state and exact request receipt. Follow, mute, and notification
 intent remain delivery-neutral inputs; Hermes composition is separately owned.
 
+## Shared pin and private save profile V1
+
+Both relations name a stable room-local message identity and its original
+sequence. A pin is bounded shared room state; a save is bounded caller-owned
+private state. Neither stores a message body, revision body, addressing set,
+attachment descriptor, Vellum artifact target, or external object identifier.
+Observation reports `Available`, `Tombstoned`, or `Evicted` by comparing the
+stable relation with current retained message state.
+
+Any current member may pin a retained message or unpin an existing relation.
+The operation must change state, is capacity-fenced before mutation, advances
+the engine revision, and publishes exactly one room event. Current-member room
+observation exposes the bounded shared set. Withdrawal and redaction retain the
+pin as a tombstoned reference; history eviction retains it as an evicted
+reference. An unpin remains valid in either state.
+
+A current member may save a retained message, observe only its own saved
+references, or remove an existing save. Mutation names the exact observed
+engine revision for concurrency fencing but neither advances that revision nor
+publishes an event or derived search fact. Reversible membership loss retains
+but gates the private relation. Removal remains valid after history eviction.
+
+Pins and saves never extend message, attachment, or Vellum artifact payload
+retention and never authorize access to referenced external bytes.
+
 ## Immutable attachment-reference core profile V1
 
 An additive engine command admits one message body, canonical addressing, one

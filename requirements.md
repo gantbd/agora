@@ -692,11 +692,22 @@
   observed engine revision, idempotent, private, kind-neutral, domain-revision
   neutral, and room-event neutral. Canonical recovery must preserve exact state
   and every legacy checkpoint byte.
+- **R98 — Shared pins and private saves:** a shared pin is a bounded room-owned
+  stable message relation changed by current members through revisioned pin and
+  unpin events; a private save is a bounded participant-owned stable message
+  relation changed without a domain revision or room event. Both preserve only
+  message identity and original sequence across tombstone and history eviction,
+  classify availability explicitly, and never copy body, revision, attachment,
+  or Vellum artifact metadata. Membership loss gates access without silently
+  deleting state. Pin creation and save creation require a retained room-local
+  message; removal remains possible after eviction. Canonical recovery must
+  preserve exact state and every legacy checkpoint byte.
 
 ## Explicitly open
 
 The R96 conversation-profile and R97 private-attention contracts are implemented
-and commit-pinned release-qualified through the private-local stack. Additional
+and commit-pinned release-qualified through the private-local stack. R98 shared
+pins and private saves are adopted but not implemented. Additional
 physical durable storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,
 federation, delivery acknowledgment, and durable audit are not part of the

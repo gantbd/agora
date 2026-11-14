@@ -34,6 +34,11 @@ details refine.
 - **Private attention preference:** participant-owned room/thread/topic intent
   comprising independent follow, mute, and notification fields. It is durable
   but is not a room event, delivery subscription, or evidence of attention.
+- **Shared pin:** room-owned stable message relation and room event. It retains
+  identity across tombstone/eviction but never retains message or artifact
+  payload.
+- **Private save:** participant-owned stable message relation. It is durable and
+  retention-aware but is not a room event, private message copy, or export.
 - **Presence and typing:** expiring, source-scoped transient collaboration
   signals. Restart reconstructs them as unknown.
 - **Service request receipt:** bounded client/request evidence for exact replay
@@ -48,8 +53,8 @@ contains more than one class:
 
 | State class | Owner | Examples |
 | --- | --- | --- |
-| Shared conversation authority | Engine | rooms, membership, roles, messages, topics, moderation, outbox, change journal |
-| Private durable projection | Engine behind participant-bound service operations | read positions, attention preferences |
+| Shared conversation authority | Engine | rooms, membership, roles, messages, topics, pins, moderation, outbox, change journal |
+| Private durable projection | Engine behind participant-bound service operations | read positions, attention preferences, saved references |
 | Serialized client coordination | Service | client namespace, exact request receipts, bounded cursors |
 | Authenticated continuity | Host | verified subject/participant/client/context binding and revalidation state |
 | Transient collaboration | Host/service transient profile | presence, typing, transient cursors and replay state |
