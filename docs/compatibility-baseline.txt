@@ -56,6 +56,8 @@ fixture|protocol/agora-wire/tests/fixtures/message-edited-change-reply-v2.hex|96
 fixture|protocol/agora-wire/tests/fixtures/message-revision-page-reply-v2.hex|127|d9972f4eaf78a713e44ee927e8480f830148217a78dfa9ac533cd9a2b01b7b23
 fixture|protocol/agora-wire/tests/fixtures/messages-reply-v2.hex|104|ef10c0a4aacca3be9317207eec8bc9fd5f2403a1a64379fbfee961331cfcbb79
 fixture|protocol/agora-wire/tests/fixtures/moderation-change-reply-v2.hex|88|92d23511ef2797a1b5cda3b902ce4aa3a3d5b122fdd65d3e2ccd6a1257697817
+fixture|protocol/agora-wire/tests/fixtures/admission-restriction-request-v2.hex|73|e20077c1c4d722d9698fd531b9a494e59921f404bd031bdf4d859f8131c5c7df
+fixture|protocol/agora-wire/tests/fixtures/message-report-list-reply-v2.hex|107|d2a7c09e994963f1033eb4f710906481d7b86310d99847f53c83178e6df5b3fa
 fixture|protocol/agora-wire/tests/fixtures/policy-change-reply-v2.hex|57|dfbeed5148328bee4e31e288a6f082ae89de76deafd9880f48a5f861075d39a4
 fixture|protocol/agora-wire/tests/fixtures/poll-ballot-changed-reply-v2.hex|60|b84a5ecfa6af3307ec72d440f5c7ba5f0e7add2008bb8e996c6ed05eeba01ecf
 fixture|protocol/agora-wire/tests/fixtures/reaction-change-reply-v2.hex|79|89e01f4510e548f09124732d748ce58d9d6ab323dad31203d4501c3583ecf8bf

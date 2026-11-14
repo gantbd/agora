@@ -168,6 +168,16 @@ not ready for a network service or crates.io release.
   ordinary gate, every release-mode target, 10,000 deterministic soak cycles,
   and 1,000,000 fixed-seed cases on each of the three fuzz targets on Darwin
   25.6.0 arm64 / macOS 26.6.2 with unchanged tracked bytes afterward;
+- implemented the R101 admission/moderation profile through canonical engine
+  recovery, closed protocol/wire/service surfaces, durable publication,
+  authenticated Host, uncertainty-safe client, both SDK facades, and private
+  Unix transport. Host-derived opaque time controls every message form without
+  role or participant-kind bypass; hierarchy-bound posting restrictions and
+  private bounded report/review state remain separate from sanctions,
+  classifiers, Aegis decisions, tasks, and scheduling. Independent model,
+  privacy, recovery, capacity, frozen-frame, 85-fixture compatibility, and
+  refreshed fuzz-seed evidence pass focused gates; commit-pinned release
+  qualification remains open;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound

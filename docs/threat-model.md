@@ -500,6 +500,16 @@ projected as merge/redirect, and it must not silently retarget reads or writes.
 No collection observation may infer cross-room membership, roles, or federation
 trust.
 
+Admission enforcement must never trust caller `LogicalTime` or wire-carried
+elapsed time. The authenticated Host supplies non-regressing time out of band;
+missing, regressed, stale, or foreign evidence refuses before message mutation.
+Posting restrictions share the all-message admission choke point and have no
+role or participant-kind bypass. Reports are private allegations: ordinary room
+feeds expose none of their existence or content, reporters see only their own,
+and only current owners/moderators see the bounded queue. Classifier output has
+no Agora writer, and Dismissed/Escalated review state must not be represented as
+truth, sanction completion, workflow completion, or external notification.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

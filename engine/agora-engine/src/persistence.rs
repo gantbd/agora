@@ -399,6 +399,34 @@ impl Writer {
                 self.byte(admission_tag(*previous))?;
                 self.byte(admission_tag(*admission))
             }
+            DomainEventV2::MessageIntervalChanged {
+                room_id,
+                actor,
+                previous_interval_ms,
+                minimum_interval_ms,
+            } => {
+                self.byte(27)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.number(*previous_interval_ms)?;
+                self.number(*minimum_interval_ms)
+            }
+            DomainEventV2::PostingRestrictionChanged {
+                room_id,
+                actor,
+                participant,
+                restricted,
+                reason,
+                causation,
+            } => {
+                self.byte(28)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.text(participant.as_str())?;
+                self.byte(u8::from(*restricted))?;
+                self.text(reason.as_str())?;
+                self.raw(&causation.into_bytes())
+            }
             DomainEventV2::MessageWithdrawn {
                 room_id,
                 actor,
@@ -748,6 +776,7 @@ impl<'a> Reader<'a> {
         has_conversation_profiles: bool,
         has_shared_pins: bool,
         has_polls: bool,
+        has_admission_control: bool,
     ) -> Result<DomainEventV2, CheckpointError> {
         Ok(match self.byte()? {
             0 => DomainEventV2::ParticipantRegistered {
@@ -1041,6 +1070,24 @@ impl<'a> Reader<'a> {
                     _ => return Err(CheckpointError::Invalid),
                 },
             },
+            27 if has_admission_control => DomainEventV2::MessageIntervalChanged {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                previous_interval_ms: self.number()?,
+                minimum_interval_ms: self.number()?,
+            },
+            28 if has_admission_control => DomainEventV2::PostingRestrictionChanged {
+                room_id: self.room(l)?,
+                actor: self.participant(l)?,
+                participant: self.participant(l)?,
+                restricted: match self.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::Invalid),
+                },
+                reason: ModerationReasonV1::new(self.text(l.max_moderation_reason_bytes)?),
+                causation: ModerationCausationV1::new(self.fixed()?),
+            },
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -1192,21 +1239,33 @@ impl Engine {
         let include_private_saves = !self.private_saves.is_empty();
         let include_shared_pins = engine_has_shared_pins(self);
         let include_polls = engine_has_polls(self);
-        let include_admission_time = self.admission_time_floor_ms.is_some();
+        let include_admission_control = engine_has_admission_control(self);
+        let include_message_reports = !self.message_reports.is_empty();
         w.raw(b"AGORACP\0")?;
-        w.byte(
-            if include_admission_time {
-                if include_polls { 116 } else { 84 }
-            } else if include_polls {
-                52
-            } else {
-                20
-            } + u8::from(include_vellum_artifacts)
-                + (u8::from(include_conversation_profiles) * 2)
-                + (u8::from(include_attention_preferences) * 4)
-                + (u8::from(include_private_saves) * 8)
-                + (u8::from(include_shared_pins) * 16),
-        )?;
+        let feature_bits = u8::from(include_vellum_artifacts)
+            + (u8::from(include_conversation_profiles) * 2)
+            + (u8::from(include_attention_preferences) * 4)
+            + (u8::from(include_private_saves) * 8)
+            + (u8::from(include_shared_pins) * 16);
+        if include_message_reports {
+            w.byte(148)?;
+            w.byte(
+                feature_bits
+                    | (u8::from(include_polls) << 5)
+                    | (u8::from(include_admission_control) << 6)
+                    | 0x80,
+            )?;
+        } else {
+            w.byte(
+                if include_admission_control {
+                    if include_polls { 116 } else { 84 }
+                } else if include_polls {
+                    52
+                } else {
+                    20
+                } + feature_bits,
+            )?;
+        }
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -1215,12 +1274,12 @@ impl Engine {
         w.option(self.last_published_event)?;
         w.option(self.acknowledged_through)?;
         w.option(self.discarded_changes_through)?;
-        if include_admission_time {
-            w.number(
-                self.admission_time_floor_ms
-                    .ok_or(CheckpointError::Invalid)?,
-            )?;
-            w.number(self.admission_time_sequence)?;
+        if include_admission_control {
+            w.byte(u8::from(self.admission_time_floor_ms.is_some()))?;
+            if let Some(floor) = self.admission_time_floor_ms {
+                w.number(floor)?;
+                w.number(self.admission_time_sequence)?;
+            }
         }
         w.count(self.participants.len())?;
         for (id, p) in &self.participants {
@@ -1258,6 +1317,18 @@ impl Engine {
             for (id, role) in &room.bans {
                 w.text(id.as_str())?;
                 w.byte(role_tag(*role))?
+            }
+            if include_admission_control {
+                w.number(room.minimum_message_interval_ms)?;
+                w.count(room.last_message_admission_ms.len())?;
+                for (participant, instant_ms) in &room.last_message_admission_ms {
+                    w.text(participant.as_str())?;
+                    w.number(*instant_ms)?;
+                }
+                w.count(room.posting_restrictions.len())?;
+                for participant in &room.posting_restrictions {
+                    w.text(participant.as_str())?;
+                }
             }
             w.count(room.messages.len())?;
             for m in &room.messages {
@@ -1390,6 +1461,35 @@ impl Engine {
                 w.number(*original_sequence)?;
             }
         }
+        if include_message_reports {
+            w.number(self.next_message_report_id)?;
+            w.count(self.message_reports.len())?;
+            for report in self.message_reports.values() {
+                w.number(report.report_id.get())?;
+                w.text(report.room_id.as_str())?;
+                w.raw(&report.message_id.into_bytes())?;
+                w.number(report.original_sequence)?;
+                w.text(report.target_author.as_str())?;
+                w.text(report.reporter.as_str())?;
+                w.text(report.reason.as_str())?;
+                w.raw(&report.causation.into_bytes())?;
+                w.number(report.creation_order)?;
+                w.byte(match report.disposition {
+                    MessageReportDispositionV1::Pending => 1,
+                    MessageReportDispositionV1::Dismissed => 2,
+                    MessageReportDispositionV1::Escalated => 3,
+                })?;
+                match (&report.review_reason, report.review_causation) {
+                    (None, None) => w.byte(0)?,
+                    (Some(reason), Some(causation)) => {
+                        w.byte(1)?;
+                        w.text(reason.as_str())?;
+                        w.raw(&causation.into_bytes())?;
+                    }
+                    _ => return Err(CheckpointError::Invalid),
+                }
+            }
+        }
         w.count(self.publications.len())?;
         for (key, p) in &self.publications {
             w.raw(&key.0)?;
@@ -1431,11 +1531,23 @@ impl Engine {
             return Err(CheckpointError::Profile);
         }
         let profile = r.byte()?;
-        let (feature_bits, has_polls, has_admission_time) = match profile {
-            20..=51 => (profile - 20, false, false),
-            52..=83 => (profile - 52, true, false),
-            84..=115 => (profile - 84, false, true),
-            116..=147 => (profile - 116, true, true),
+        let (feature_bits, has_polls, has_admission_control, has_message_reports) = match profile {
+            20..=51 => (profile - 20, false, false, false),
+            52..=83 => (profile - 52, true, false, false),
+            84..=115 => (profile - 84, false, true, false),
+            116..=147 => (profile - 116, true, true, false),
+            148 => {
+                let extended = r.byte()?;
+                if extended & 0x80 == 0 {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                (
+                    extended & 0x1f,
+                    extended & 0x20 != 0,
+                    extended & 0x40 != 0,
+                    true,
+                )
+            }
             _ => return Err(CheckpointError::Profile),
         };
         let has_vellum_artifacts = feature_bits & 1 != 0;
@@ -1450,11 +1562,17 @@ impl Engine {
         e.last_published_event = r.option()?;
         e.acknowledged_through = r.option()?;
         e.discarded_changes_through = r.option()?;
-        if has_admission_time {
-            e.admission_time_floor_ms = Some(r.number()?);
-            e.admission_time_sequence = r.number()?;
-            if e.admission_time_sequence == 0 {
-                return Err(CheckpointError::Invalid);
+        if has_admission_control {
+            match r.byte()? {
+                0 => {}
+                1 => {
+                    e.admission_time_floor_ms = Some(r.number()?);
+                    e.admission_time_sequence = r.number()?;
+                    if e.admission_time_sequence == 0 {
+                        return Err(CheckpointError::Invalid);
+                    }
+                }
+                _ => return Err(CheckpointError::Invalid),
             }
         }
         let n = r.count(l.max_participants)?;
@@ -1523,6 +1641,38 @@ impl Engine {
                     return Err(CheckpointError::NonCanonical);
                 }
             }
+            let (minimum_message_interval_ms, last_message_admission_ms, posting_restrictions) =
+                if has_admission_control {
+                    let minimum_message_interval_ms = r.number()?;
+                    let count = r.count(l.max_participants)?;
+                    let mut last_message_admission_ms = BTreeMap::new();
+                    for _ in 0..count {
+                        insert(
+                            &mut last_message_admission_ms,
+                            r.participant(l)?,
+                            r.number()?,
+                        )?;
+                    }
+                    let count = r.count(l.max_participants)?;
+                    let mut posting_restrictions = BTreeSet::new();
+                    for _ in 0..count {
+                        let participant = r.participant(l)?;
+                        if posting_restrictions
+                            .last()
+                            .is_some_and(|old| old >= &participant)
+                        {
+                            return Err(CheckpointError::NonCanonical);
+                        }
+                        posting_restrictions.insert(participant);
+                    }
+                    (
+                        minimum_message_interval_ms,
+                        last_message_admission_ms,
+                        posting_restrictions,
+                    )
+                } else {
+                    (0, BTreeMap::new(), BTreeSet::new())
+                };
             let n = r.count(l.max_messages_per_room)?;
             let mut messages = VecDeque::new();
             messages
@@ -1753,6 +1903,9 @@ impl Engine {
                     members,
                     invitations,
                     bans,
+                    minimum_message_interval_ms,
+                    last_message_admission_ms,
+                    posting_restrictions,
                     messages,
                     thread_roots,
                     archived_threads,
@@ -1843,6 +1996,56 @@ impl Engine {
                 )?;
             }
         }
+        if has_message_reports {
+            e.next_message_report_id = r.number()?;
+            if e.next_message_report_id == 0 {
+                return Err(CheckpointError::Invalid);
+            }
+            let count = r.count(MAX_MESSAGE_REPORTS_V1)?;
+            for _ in 0..count {
+                let report_id =
+                    MessageReportIdV1::new(r.number()?).ok_or(CheckpointError::Invalid)?;
+                let room_id = r.room(l)?;
+                let message_id = MessageId::from_bytes(r.fixed()?);
+                let original_sequence = r.number()?;
+                let target_author = r.participant(l)?;
+                let reporter = r.participant(l)?;
+                let reason = ModerationReasonV1::new(r.text(l.max_moderation_reason_bytes)?);
+                let causation = ModerationCausationV1::new(r.fixed()?);
+                let creation_order = r.number()?;
+                let disposition = match r.byte()? {
+                    1 => MessageReportDispositionV1::Pending,
+                    2 => MessageReportDispositionV1::Dismissed,
+                    3 => MessageReportDispositionV1::Escalated,
+                    _ => return Err(CheckpointError::Invalid),
+                };
+                let (review_reason, review_causation) = match r.byte()? {
+                    0 => (None, None),
+                    1 => (
+                        Some(ModerationReasonV1::new(
+                            r.text(l.max_moderation_reason_bytes)?,
+                        )),
+                        Some(ModerationCausationV1::new(r.fixed()?)),
+                    ),
+                    _ => return Err(CheckpointError::Invalid),
+                };
+                let report = MessageReportRecordV1 {
+                    report_id,
+                    room_id: room_id.clone(),
+                    message_id,
+                    original_sequence,
+                    target_author,
+                    reporter,
+                    reason,
+                    causation,
+                    creation_order,
+                    disposition,
+                    review_reason,
+                    review_causation,
+                };
+                insert(&mut e.message_reports, report_id, report)?;
+            }
+        }
         let n = r.count(l.max_publication_receipts)?;
         for _ in 0..n {
             let key = PublicationKeyV2::new(r.fixed()?);
@@ -1886,6 +2089,7 @@ impl Engine {
                     has_conversation_profiles,
                     has_shared_pins,
                     has_polls,
+                    has_admission_control,
                 )?,
             })
         }
@@ -1903,6 +2107,7 @@ impl Engine {
                     has_conversation_profiles,
                     has_shared_pins,
                     has_polls,
+                    has_admission_control,
                 )?,
             })
         }
@@ -1922,13 +2127,16 @@ impl Engine {
         if has_private_saves == e.private_saves.is_empty() {
             return Err(CheckpointError::NonCanonical);
         }
+        if has_message_reports == e.message_reports.is_empty() {
+            return Err(CheckpointError::NonCanonical);
+        }
         if has_shared_pins != engine_has_shared_pins(&e) {
             return Err(CheckpointError::NonCanonical);
         }
         if has_polls != engine_has_polls(&e) {
             return Err(CheckpointError::NonCanonical);
         }
-        if has_admission_time != e.admission_time_floor_ms.is_some() {
+        if has_admission_control != engine_has_admission_control(&e) {
             return Err(CheckpointError::NonCanonical);
         }
         Ok(e)
@@ -1982,6 +2190,26 @@ fn engine_has_polls(engine: &Engine) -> bool {
                     DomainEventV2::PollCreated { .. }
                         | DomainEventV2::PollBallotChanged { .. }
                         | DomainEventV2::PollLifecycleChanged { .. }
+                )
+            })
+}
+
+fn engine_has_admission_control(engine: &Engine) -> bool {
+    engine.admission_time_floor_ms.is_some()
+        || engine.rooms.values().any(|room| {
+            room.minimum_message_interval_ms != 0
+                || !room.last_message_admission_ms.is_empty()
+                || !room.posting_restrictions.is_empty()
+        })
+        || engine
+            .pending_events
+            .iter()
+            .chain(&engine.retained_changes)
+            .any(|envelope| {
+                matches!(
+                    envelope.event,
+                    DomainEventV2::MessageIntervalChanged { .. }
+                        | DomainEventV2::PostingRestrictionChanged { .. }
                 )
             })
 }
@@ -2667,6 +2895,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         || e.read_positions.len() > MAX_READ_POSITIONS_V1
         || e.attention_preferences.len() > MAX_ATTENTION_PREFERENCES_V1
         || e.private_saves.len() > MAX_PRIVATE_SAVES_V1
+        || e.message_reports.len() > MAX_MESSAGE_REPORTS_V1
     {
         return Err(CheckpointError::Limit);
     }
@@ -2723,6 +2952,9 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             || room.pins.len() > MAX_ROOM_PINS_V1
             || room.polls.len() > MAX_POLLS_PER_ROOM_V1
             || room.poll_creation_order.len() != room.polls.len()
+            || room.minimum_message_interval_ms > MAX_MESSAGE_INTERVAL_MS_V1
+            || room.last_message_admission_ms.len() > l.max_participants
+            || room.posting_restrictions.len() > l.max_participants
         {
             return Err(CheckpointError::Invalid);
         }
@@ -2745,6 +2977,9 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                     || room.admission != AdmissionPolicy::InviteOnly
                     || !room.invitations.is_empty()
                     || !room.bans.is_empty()
+                    || room.minimum_message_interval_ms != 0
+                    || !room.last_message_admission_ms.is_empty()
+                    || !room.posting_restrictions.is_empty()
                     || room.members.iter().any(|(id, role)| {
                         *role != Role::Member || !room.founding_members.contains(id)
                     })
@@ -2768,6 +3003,21 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                 .bans
                 .keys()
                 .any(|id| room.members.contains_key(id) || room.invitations.contains(id))
+        {
+            return Err(CheckpointError::Invalid);
+        }
+        if room
+            .last_message_admission_ms
+            .iter()
+            .any(|(participant, instant_ms)| {
+                !e.participants.contains_key(participant)
+                    || e.admission_time_floor_ms
+                        .is_none_or(|floor| *instant_ms > floor)
+            })
+            || room
+                .posting_restrictions
+                .iter()
+                .any(|participant| !e.participants.contains_key(participant))
         {
             return Err(CheckpointError::Invalid);
         }
@@ -3086,6 +3336,66 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             .iter()
             .find(|message| message.id == *message_id)
             && message.sequence != *original_sequence
+        {
+            return Err(CheckpointError::Invalid);
+        }
+    }
+    if e.next_message_report_id == 0
+        || e.message_reports
+            .last_key_value()
+            .is_some_and(|(id, _)| id.get() >= e.next_message_report_id)
+    {
+        return Err(CheckpointError::Invalid);
+    }
+    let mut reported_targets = BTreeSet::new();
+    let mut report_counts = BTreeMap::<RoomId, usize>::new();
+    for (report_id, report) in &e.message_reports {
+        let room = e
+            .rooms
+            .get(&report.room_id)
+            .ok_or(CheckpointError::Invalid)?;
+        if *report_id != report.report_id
+            || !e.participants.contains_key(&report.reporter)
+            || !e.participants.contains_key(&report.target_author)
+            || report.reason.as_str().is_empty()
+            || report.reason.as_str().len() > l.max_moderation_reason_bytes
+            || report.creation_order != report_id.get()
+            || report.message_id.0[..8] != room.message_identity_incarnation.to_be_bytes()
+            || u64::from_be_bytes(
+                report.message_id.0[8..]
+                    .try_into()
+                    .map_err(|_| CheckpointError::Invalid)?,
+            ) >= room.next_message_identity
+            || report.original_sequence >= room.next_message_sequence
+            || (report.disposition == MessageReportDispositionV1::Pending
+                && !reported_targets.insert((
+                    report.reporter.clone(),
+                    report.room_id.clone(),
+                    report.message_id,
+                )))
+            || match (&report.review_reason, report.review_causation) {
+                (None, None) => report.disposition != MessageReportDispositionV1::Pending,
+                (Some(reason), Some(_)) => {
+                    report.disposition == MessageReportDispositionV1::Pending
+                        || reason.as_str().is_empty()
+                        || reason.as_str().len() > l.max_moderation_reason_bytes
+                }
+                _ => true,
+            }
+        {
+            return Err(CheckpointError::Invalid);
+        }
+        let count = report_counts.entry(report.room_id.clone()).or_default();
+        *count += 1;
+        if *count > MAX_MESSAGE_REPORTS_PER_ROOM_V1 {
+            return Err(CheckpointError::Limit);
+        }
+        if let Some(message) = room
+            .messages
+            .iter()
+            .find(|message| message.id == report.message_id)
+            && (message.sequence != report.original_sequence
+                || message.author != report.target_author)
         {
             return Err(CheckpointError::Invalid);
         }
@@ -3509,6 +3819,23 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
                 return Err(CheckpointError::Invalid);
             }
         }
+        DomainEventV2::MessageIntervalChanged {
+            room_id,
+            actor,
+            previous_interval_ms,
+            minimum_interval_ms,
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            if r.profile != ConversationProfileV1::Ordinary
+                || owner(r)? != actor
+                || previous_interval_ms == minimum_interval_ms
+                || *previous_interval_ms > MAX_MESSAGE_INTERVAL_MS_V1
+                || *minimum_interval_ms > MAX_MESSAGE_INTERVAL_MS_V1
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
         DomainEventV2::ParticipantKicked {
             room_id,
             actor,
@@ -3524,6 +3851,23 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             ..
         }
         | DomainEventV2::ParticipantUnbanned {
+            room_id,
+            actor,
+            participant: id,
+            reason,
+            ..
+        } => {
+            if room(room_id)?.profile != ConversationProfileV1::Ordinary {
+                return Err(CheckpointError::Invalid);
+            }
+            participant(actor)?;
+            participant(id)?;
+            bounded(reason.as_str(), e.limits.max_moderation_reason_bytes)?;
+            if actor == id || owner(room(room_id)?)? == id {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::PostingRestrictionChanged {
             room_id,
             actor,
             participant: id,

@@ -40,10 +40,11 @@ use agora_protocol::transient::{
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1, AttentionPreferenceV1,
-    AttentionScopeV1, CommandV2 as ProtocolCommand, ConversationProfileV1, NotificationIntentV1,
-    OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1, TopicCollectionFilterV1,
-    TopicCollectionLifecycleV1, VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1,
-    VellumArtifactReferenceV1, VellumDocumentTargetV1,
+    AttentionScopeV1, CommandV2 as ProtocolCommand, ConversationProfileV1,
+    MessageReportDispositionV1, NotificationIntentV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2,
+    RequestV2, Sha256DigestV1, TopicCollectionFilterV1, TopicCollectionLifecycleV1,
+    VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
+    VellumDocumentTargetV1,
 };
 use agora_service::search::port::{
     SearchCursorV1, SearchGenerationV1, SearchHitV1, SearchObservationV1, SearchPageV1,
@@ -687,7 +688,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     let port = Port::default();
     let calls = port.calls.clone();
     let mut private_limits = daemon_limits();
-    private_limits.max_frames_after_connect = 16;
+    private_limits.max_frames_after_connect = 19;
     let daemon = DaemonV1::bind_new(
         &path,
         host(port),
@@ -709,7 +710,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     let mut stream = UnixStream::connect(&path).unwrap();
     let hello = handshake(&mut stream);
     assert_eq!(hello.max_frame_bytes(), 8_192);
-    assert_eq!(hello.max_frames_after_connect(), 16);
+    assert_eq!(hello.max_frames_after_connect(), 19);
     assert_eq!(hello.server_incarnation(), incarnation());
     assert!(hello.supports_capability_discovery());
     assert!(!format!("{hello:?}").contains("a5"));
@@ -1088,6 +1089,71 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
                 && page.topics[0].topic_id == topic_id
                 && page.topics[0].tags == vec!["urgent"]
     ));
+    let configure_admission = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(14),
+                command: ProtocolCommand::SetMinimumMessageInterval {
+                    room_id: "room".to_owned(),
+                    minimum_interval_ms: 25,
+                    expected_revision: 11,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &configure_admission);
+    assert_eq!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::MessageIntervalChanged {
+            revision: 12,
+        }))
+    );
+    let submit_report = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(15),
+                command: ProtocolCommand::SubmitMessageReport {
+                    room_id: "room".to_owned(),
+                    observed_revision: 12,
+                    message_id,
+                    reason: "review".to_owned(),
+                    causation: [7; 16],
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &submit_report);
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::MessageReportSubmitted(report)))
+            if report.message_id == message_id
+                && report.disposition == MessageReportDispositionV1::Pending
+    ));
+    let reports = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(16),
+                command: ProtocolCommand::MessageReports {
+                    room_id: "room".to_owned(),
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &reports);
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::MessageReports(reports)))
+            if reports.len() == 1 && reports[0].message_id == message_id
+    ));
     drop(stream);
 
     let (result, daemon) = server.join().unwrap();
@@ -1107,12 +1173,12 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert_eq!(observation.transport, daemon.health());
     assert_eq!(observation.host.open_offers, 1);
     assert_eq!(observation.host.authenticated, 1);
-    assert_eq!(observation.host.frame_offers, 15);
-    assert_eq!(observation.host.executed, 15);
+    assert_eq!(observation.host.frame_offers, 18);
+    assert_eq!(observation.host.executed, 18);
     assert_eq!(observation.service.connect_offers, 1);
     assert_eq!(observation.service.connected, 1);
-    assert_eq!(observation.service.request_offers, 15);
-    assert_eq!(observation.service.accepted, 14);
+    assert_eq!(observation.service.request_offers, 18);
+    assert_eq!(observation.service.accepted, 17);
     assert_eq!(observation.service.replayed, 1);
     assert_eq!(observation.service.disconnected, 1);
     assert!(!observation.fidelity_lost);
@@ -1120,7 +1186,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert!(!diagnostic.contains("alice"));
     assert!(!diagnostic.contains("room"));
     assert!(!diagnostic.contains("Room"));
-    assert_eq!(calls.lock().unwrap().len(), 16);
+    assert_eq!(calls.lock().unwrap().len(), 19);
     drop(daemon);
     assert!(!path.exists());
     remove_parent(&path);

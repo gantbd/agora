@@ -60,8 +60,8 @@ contains more than one class:
 
 | State class | Owner | Examples |
 | --- | --- | --- |
-| Shared conversation authority | Engine | rooms, membership, roles, messages, topics, pins, poll definitions/aggregates, moderation, outbox, change journal |
-| Private durable projection | Engine behind participant-bound service operations | read positions, attention preferences, saved references, poll ballots |
+| Shared conversation authority | Engine | rooms, membership, roles, messages, topics, pins, poll definitions/aggregates, admission interval, posting restrictions, moderation, outbox, change journal |
+| Private durable projection | Engine behind participant-bound service operations | read positions, attention preferences, saved references, poll ballots, message reports and reviews |
 | Serialized client coordination | Service | client namespace, exact request receipts, bounded cursors |
 | Authenticated continuity | Host | verified subject/participant/client/context binding and revalidation state |
 | Transient collaboration | Host/service transient profile | presence, typing, transient cursors and replay state |

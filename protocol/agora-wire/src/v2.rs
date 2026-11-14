@@ -5,15 +5,16 @@ use super::{
     read_text, read_u8, read_u64, try_vec,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
-    AttachmentMessagePageV1, AttachmentMessageTargetV1, AttachmentMessageV1, AttachmentObjectKeyV1,
-    AttachmentRoomChangePageV1, AttachmentStoreIdV1, AttentionPreferenceV1, AttentionScopeV1,
-    BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2,
-    ConversationProfileStatusV1, ConversationProfileV1, IdentifiedMessagePageV1,
+    AdmissionControlStatusV1, AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1,
+    AttachmentIntegrityV1, AttachmentMessagePageV1, AttachmentMessageTargetV1, AttachmentMessageV1,
+    AttachmentObjectKeyV1, AttachmentRoomChangePageV1, AttachmentStoreIdV1, AttentionPreferenceV1,
+    AttentionScopeV1, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
+    CommandV2, ConversationProfileStatusV1, ConversationProfileV1, IdentifiedMessagePageV1,
     IdentifiedMessageV1, IdentifiedRoomChangePageV1, IdentifiedRoomChangeV1, IdentifiedRoomEventV1,
-    MAX_PINNED_REFERENCES_V1, MAX_POLL_ELIGIBLE_PARTICIPANTS_V1, MAX_POLL_OPTIONS_V1, MAX_POLLS_V1,
-    MAX_SAVED_REFERENCES_V1, MemberPageV2, MemberV2, MessageAttachmentV1, MessageIdV1,
-    MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
+    MAX_MESSAGE_REPORTS_V1, MAX_PINNED_REFERENCES_V1, MAX_POLL_ELIGIBLE_PARTICIPANTS_V1,
+    MAX_POLL_OPTIONS_V1, MAX_POLLS_V1, MAX_SAVED_REFERENCES_V1, MemberPageV2, MemberV2,
+    MessageAttachmentV1, MessageIdV1, MessagePageV2, MessageReportDispositionV1, MessageReportIdV1,
+    MessageReportV1, MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1,
     MessageV2, MessageVellumArtifactReferenceV1, NotificationIntentV1, OutcomeV2, PageCursorV2,
     ParticipantKindV2, PeerConversationCreatedV1, PinnedReferenceV1, PollBallotV1, PollIdV1,
     PollStatusV1, ReactionStatusV1, ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2,
@@ -1060,6 +1061,75 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             }
             Ok(())
         }
+        CommandV2::AdmissionControl { room_id } => {
+            sink.u8(80)?;
+            sink.text(room_id)
+        }
+        CommandV2::SetMinimumMessageInterval {
+            room_id,
+            minimum_interval_ms,
+            expected_revision,
+        } => {
+            sink.u8(81)?;
+            sink.text(room_id)?;
+            sink.u64(*minimum_interval_ms)?;
+            sink.u64(*expected_revision)
+        }
+        CommandV2::SetPostingRestricted {
+            room_id,
+            participant_id,
+            restricted,
+            reason,
+            causation,
+            expected_revision,
+        } => {
+            sink.u8(82)?;
+            sink.text(room_id)?;
+            sink.text(participant_id)?;
+            sink.u8(u8::from(*restricted))?;
+            sink.text(reason)?;
+            encode_causation(sink, causation)?;
+            sink.u64(*expected_revision)
+        }
+        CommandV2::MessageReports { room_id } => {
+            sink.u8(83)?;
+            sink.text(room_id)
+        }
+        CommandV2::ModerationReports { room_id } => {
+            sink.u8(84)?;
+            sink.text(room_id)
+        }
+        CommandV2::SubmitMessageReport {
+            room_id,
+            observed_revision,
+            message_id,
+            reason,
+            causation,
+        } => {
+            sink.u8(85)?;
+            sink.text(room_id)?;
+            sink.u64(*observed_revision)?;
+            encode_message_id(sink, *message_id)?;
+            sink.text(reason)?;
+            encode_causation(sink, causation)
+        }
+        CommandV2::ReviewMessageReport {
+            room_id,
+            report_id,
+            disposition,
+            reason,
+            causation,
+        } => {
+            if *disposition == MessageReportDispositionV1::Pending || report_id.0 == 0 {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(86)?;
+            sink.text(room_id)?;
+            sink.u64(report_id.0)?;
+            sink.u8(encode_report_disposition(*disposition))?;
+            sink.text(reason)?;
+            encode_causation(sink, causation)
+        }
     }
 }
 
@@ -1638,6 +1708,52 @@ fn decode_command(
             cursor: decode_optional_cursor(decoder)?,
             limit: read_u32(decoder)?,
         }),
+        80 => Ok(CommandV2::AdmissionControl {
+            room_id: read_text(decoder)?,
+        }),
+        81 => Ok(CommandV2::SetMinimumMessageInterval {
+            room_id: read_text(decoder)?,
+            minimum_interval_ms: read_u64(decoder)?,
+            expected_revision: read_u64(decoder)?,
+        }),
+        82 => Ok(CommandV2::SetPostingRestricted {
+            room_id: read_text(decoder)?,
+            participant_id: read_text(decoder)?,
+            restricted: decode_bool(decoder)?,
+            reason: read_text(decoder)?,
+            causation: decode_causation(decoder)?,
+            expected_revision: read_u64(decoder)?,
+        }),
+        83 => Ok(CommandV2::MessageReports {
+            room_id: read_text(decoder)?,
+        }),
+        84 => Ok(CommandV2::ModerationReports {
+            room_id: read_text(decoder)?,
+        }),
+        85 => Ok(CommandV2::SubmitMessageReport {
+            room_id: read_text(decoder)?,
+            observed_revision: read_u64(decoder)?,
+            message_id: decode_message_id(decoder)?,
+            reason: read_text(decoder)?,
+            causation: decode_causation(decoder)?,
+        }),
+        86 => {
+            let room_id = read_text(decoder)?;
+            let report_id = MessageReportIdV1(read_u64(decoder)?);
+            let disposition = decode_report_disposition(decoder)?;
+            let reason = read_text(decoder)?;
+            let causation = decode_causation(decoder)?;
+            if report_id.0 == 0 || disposition == MessageReportDispositionV1::Pending {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(CommandV2::ReviewMessageReport {
+                room_id,
+                report_id,
+                disposition,
+                reason,
+                causation,
+            })
+        }
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1764,6 +1880,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::PrivateSavedReferencesV1 => 28,
                     CapabilityV2::BoundedPollsV1 => 29,
                     CapabilityV2::TopicCollectionsV1 => 30,
+                    CapabilityV2::AdmissionModerationControlsV1 => 31,
                 })?;
             }
             Ok(())
@@ -2357,6 +2474,42 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             }
             Ok(())
         }
+        OutcomeV2::AdmissionControl(status) => {
+            sink.u8(77)?;
+            sink.u64(status.revision)?;
+            sink.text(&status.room_id)?;
+            sink.u64(status.minimum_message_interval_ms)?;
+            sink.u8(u8::from(status.observer_posting_restricted))
+        }
+        OutcomeV2::MessageIntervalChanged { revision } => {
+            encode_revision_outcome(sink, 78, *revision)
+        }
+        OutcomeV2::PostingRestrictionChanged { revision } => {
+            encode_revision_outcome(sink, 79, *revision)
+        }
+        OutcomeV2::MessageReports(reports) => {
+            if reports.len() > MAX_MESSAGE_REPORTS_V1
+                || reports
+                    .windows(2)
+                    .any(|pair| pair[0].report_id >= pair[1].report_id)
+            {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(80)?;
+            sink.list(reports.len())?;
+            for report in reports {
+                encode_message_report(sink, report)?;
+            }
+            Ok(())
+        }
+        OutcomeV2::MessageReportSubmitted(report) => {
+            sink.u8(81)?;
+            encode_message_report(sink, report)
+        }
+        OutcomeV2::MessageReportReviewed(report) => {
+            sink.u8(82)?;
+            encode_message_report(sink, report)
+        }
     }
 }
 
@@ -2367,6 +2520,113 @@ fn encode_revision_outcome(
 ) -> Result<(), WireEncodeError> {
     sink.u8(tag)?;
     sink.u64(revision)
+}
+
+fn encode_report_disposition(disposition: MessageReportDispositionV1) -> u8 {
+    match disposition {
+        MessageReportDispositionV1::Pending => 1,
+        MessageReportDispositionV1::Dismissed => 2,
+        MessageReportDispositionV1::Escalated => 3,
+    }
+}
+
+fn decode_report_disposition(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<MessageReportDispositionV1, WireDecodeError> {
+    match read_u8(decoder)? {
+        1 => Ok(MessageReportDispositionV1::Pending),
+        2 => Ok(MessageReportDispositionV1::Dismissed),
+        3 => Ok(MessageReportDispositionV1::Escalated),
+        _ => Err(WireDecodeError::UnknownTag),
+    }
+}
+
+fn encode_message_report(
+    sink: &mut dyn Sink,
+    report: &MessageReportV1,
+) -> Result<(), WireEncodeError> {
+    if report.report_id.0 == 0
+        || report.room_id.is_empty()
+        || report.target_author_id.is_empty()
+        || report.reporter_id.is_empty()
+        || report.reason.is_empty()
+        || report.creation_order != report.report_id.0
+        || match (&report.review_reason, report.review_causation) {
+            (None, None) => report.disposition != MessageReportDispositionV1::Pending,
+            (Some(reason), Some(_)) => {
+                report.disposition == MessageReportDispositionV1::Pending || reason.is_empty()
+            }
+            _ => true,
+        }
+    {
+        return Err(WireEncodeError::Invalid);
+    }
+    sink.u64(report.report_id.0)?;
+    sink.text(&report.room_id)?;
+    encode_message_id(sink, report.message_id)?;
+    sink.u64(report.original_sequence)?;
+    sink.text(&report.target_author_id)?;
+    encode_reference_availability(sink, report.target_availability)?;
+    sink.text(&report.reporter_id)?;
+    sink.text(&report.reason)?;
+    encode_causation(sink, &report.causation)?;
+    sink.u64(report.creation_order)?;
+    sink.u8(encode_report_disposition(report.disposition))?;
+    match (&report.review_reason, report.review_causation) {
+        (None, None) => sink.u8(0),
+        (Some(reason), Some(causation)) => {
+            sink.u8(1)?;
+            sink.text(reason)?;
+            encode_causation(sink, &causation)
+        }
+        _ => Err(WireEncodeError::Invalid),
+    }
+}
+
+fn decode_message_report(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<MessageReportV1, WireDecodeError> {
+    let report = MessageReportV1 {
+        report_id: MessageReportIdV1(read_u64(decoder)?),
+        room_id: read_text(decoder)?,
+        message_id: decode_message_id(decoder)?,
+        original_sequence: read_u64(decoder)?,
+        target_author_id: read_text(decoder)?,
+        target_availability: decode_reference_availability(decoder)?,
+        reporter_id: read_text(decoder)?,
+        reason: read_text(decoder)?,
+        causation: decode_causation(decoder)?,
+        creation_order: read_u64(decoder)?,
+        disposition: decode_report_disposition(decoder)?,
+        review_reason: None,
+        review_causation: None,
+    };
+    let mut report = report;
+    match read_u8(decoder)? {
+        0 => {}
+        1 => {
+            report.review_reason = Some(read_text(decoder)?);
+            report.review_causation = Some(decode_causation(decoder)?);
+        }
+        _ => return Err(WireDecodeError::Malformed),
+    }
+    if report.report_id.0 == 0
+        || report.room_id.is_empty()
+        || report.target_author_id.is_empty()
+        || report.reporter_id.is_empty()
+        || report.reason.is_empty()
+        || report.creation_order != report.report_id.0
+        || match (&report.review_reason, report.review_causation) {
+            (None, None) => report.disposition != MessageReportDispositionV1::Pending,
+            (Some(reason), Some(_)) => {
+                report.disposition == MessageReportDispositionV1::Pending || reason.is_empty()
+            }
+            _ => true,
+        }
+    {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok(report)
 }
 
 fn decode_outcome(
@@ -2466,6 +2726,7 @@ fn decode_outcome(
                     28 => CapabilityV2::PrivateSavedReferencesV1,
                     29 => CapabilityV2::BoundedPollsV1,
                     30 => CapabilityV2::TopicCollectionsV1,
+                    31 => CapabilityV2::AdmissionModerationControlsV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -2952,6 +3213,41 @@ fn decode_outcome(
             }
             Ok(OutcomeV2::TopicCollection(page))
         }
+        77 => Ok(OutcomeV2::AdmissionControl(AdmissionControlStatusV1 {
+            revision: read_u64(decoder)?,
+            room_id: read_text(decoder)?,
+            minimum_message_interval_ms: read_u64(decoder)?,
+            observer_posting_restricted: decode_bool(decoder)?,
+        })),
+        78 => Ok(OutcomeV2::MessageIntervalChanged {
+            revision: read_u64(decoder)?,
+        }),
+        79 => Ok(OutcomeV2::PostingRestrictionChanged {
+            revision: read_u64(decoder)?,
+        }),
+        80 => {
+            let count = read_list(decoder, limits)?;
+            if count > MAX_MESSAGE_REPORTS_V1 {
+                return Err(WireDecodeError::Malformed);
+            }
+            let mut reports = try_vec(count)?;
+            for _ in 0..count {
+                reports.push(decode_message_report(decoder)?);
+            }
+            if reports
+                .windows(2)
+                .any(|pair| pair[0].report_id >= pair[1].report_id)
+            {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(OutcomeV2::MessageReports(reports))
+        }
+        81 => Ok(OutcomeV2::MessageReportSubmitted(decode_message_report(
+            decoder,
+        )?)),
+        82 => Ok(OutcomeV2::MessageReportReviewed(decode_message_report(
+            decoder,
+        )?)),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -4822,6 +5118,71 @@ fn decode_poll_lifecycle_event(
     Ok((actor_id, decode_poll_id(decoder)?, decode_bool(decoder)?))
 }
 
+fn encode_message_interval_event(
+    sink: &mut dyn Sink,
+    actor_id: &str,
+    previous_interval_ms: u64,
+    minimum_interval_ms: u64,
+) -> Result<(), WireEncodeError> {
+    if actor_id.is_empty() {
+        return Err(WireEncodeError::Invalid);
+    }
+    sink.u8(28)?;
+    sink.text(actor_id)?;
+    sink.u64(previous_interval_ms)?;
+    sink.u64(minimum_interval_ms)
+}
+
+fn decode_message_interval_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<(String, u64, u64), WireDecodeError> {
+    let actor_id = read_text(decoder)?;
+    if actor_id.is_empty() {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok((actor_id, read_u64(decoder)?, read_u64(decoder)?))
+}
+
+fn encode_posting_restriction_event(
+    sink: &mut dyn Sink,
+    actor_id: &str,
+    participant_id: &str,
+    restricted: bool,
+    reason: &str,
+    causation: &[u8; 16],
+) -> Result<(), WireEncodeError> {
+    if actor_id.is_empty() || participant_id.is_empty() || reason.is_empty() {
+        return Err(WireEncodeError::Invalid);
+    }
+    sink.u8(29)?;
+    sink.text(actor_id)?;
+    sink.text(participant_id)?;
+    sink.u8(u8::from(restricted))?;
+    sink.text(reason)?;
+    encode_causation(sink, causation)
+}
+
+type DecodedPostingRestrictionEvent = (String, String, bool, String, [u8; 16]);
+
+fn decode_posting_restriction_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<DecodedPostingRestrictionEvent, WireDecodeError> {
+    let actor_id = read_text(decoder)?;
+    let participant_id = read_text(decoder)?;
+    let restricted = decode_bool(decoder)?;
+    let reason = read_text(decoder)?;
+    if actor_id.is_empty() || participant_id.is_empty() || reason.is_empty() {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok((
+        actor_id,
+        participant_id,
+        restricted,
+        reason,
+        decode_causation(decoder)?,
+    ))
+}
+
 fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<(), WireEncodeError> {
     sink.u64(page.revision)?;
     sink.list(page.changes.len())?;
@@ -5032,6 +5393,30 @@ fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<()
                 tag,
                 added,
             } => encode_topic_tag_event(sink, actor_id, *topic_id, tag, *added)?,
+            RoomEventV2::MessageIntervalChanged {
+                actor_id,
+                previous_interval_ms,
+                minimum_interval_ms,
+            } => encode_message_interval_event(
+                sink,
+                actor_id,
+                *previous_interval_ms,
+                *minimum_interval_ms,
+            )?,
+            RoomEventV2::PostingRestrictionChanged {
+                actor_id,
+                participant_id,
+                restricted,
+                reason,
+                causation,
+            } => encode_posting_restriction_event(
+                sink,
+                actor_id,
+                participant_id,
+                *restricted,
+                reason,
+                causation,
+            )?,
         }
     }
     sink.u64(page.next.0)?;
@@ -5215,6 +5600,26 @@ fn decode_change_page(
                     actor_id,
                     poll_id,
                     open,
+                }
+            }
+            28 => {
+                let (actor_id, previous_interval_ms, minimum_interval_ms) =
+                    decode_message_interval_event(decoder)?;
+                RoomEventV2::MessageIntervalChanged {
+                    actor_id,
+                    previous_interval_ms,
+                    minimum_interval_ms,
+                }
+            }
+            29 => {
+                let (actor_id, participant_id, restricted, reason, causation) =
+                    decode_posting_restriction_event(decoder)?;
+                RoomEventV2::PostingRestrictionChanged {
+                    actor_id,
+                    participant_id,
+                    restricted,
+                    reason,
+                    causation,
                 }
             }
             _ => return Err(WireDecodeError::UnknownTag),
@@ -5450,6 +5855,30 @@ fn encode_identified_change_page(
                 tag,
                 added,
             } => encode_topic_tag_event(sink, actor_id, *topic_id, tag, *added)?,
+            IdentifiedRoomEventV1::MessageIntervalChanged {
+                actor_id,
+                previous_interval_ms,
+                minimum_interval_ms,
+            } => encode_message_interval_event(
+                sink,
+                actor_id,
+                *previous_interval_ms,
+                *minimum_interval_ms,
+            )?,
+            IdentifiedRoomEventV1::PostingRestrictionChanged {
+                actor_id,
+                participant_id,
+                restricted,
+                reason,
+                causation,
+            } => encode_posting_restriction_event(
+                sink,
+                actor_id,
+                participant_id,
+                *restricted,
+                reason,
+                causation,
+            )?,
         }
     }
     sink.u64(page.next.0)?;
@@ -5642,6 +6071,26 @@ fn decode_identified_change_page(
                     actor_id,
                     poll_id,
                     open,
+                }
+            }
+            28 => {
+                let (actor_id, previous_interval_ms, minimum_interval_ms) =
+                    decode_message_interval_event(decoder)?;
+                IdentifiedRoomEventV1::MessageIntervalChanged {
+                    actor_id,
+                    previous_interval_ms,
+                    minimum_interval_ms,
+                }
+            }
+            29 => {
+                let (actor_id, participant_id, restricted, reason, causation) =
+                    decode_posting_restriction_event(decoder)?;
+                IdentifiedRoomEventV1::PostingRestrictionChanged {
+                    actor_id,
+                    participant_id,
+                    restricted,
+                    reason,
+                    causation,
                 }
             }
             _ => return Err(WireDecodeError::UnknownTag),
@@ -5877,6 +6326,30 @@ fn encode_threaded_change_page(
                 tag,
                 added,
             } => encode_topic_tag_event(sink, actor_id, *topic_id, tag, *added)?,
+            ThreadedRoomEventV1::MessageIntervalChanged {
+                actor_id,
+                previous_interval_ms,
+                minimum_interval_ms,
+            } => encode_message_interval_event(
+                sink,
+                actor_id,
+                *previous_interval_ms,
+                *minimum_interval_ms,
+            )?,
+            ThreadedRoomEventV1::PostingRestrictionChanged {
+                actor_id,
+                participant_id,
+                restricted,
+                reason,
+                causation,
+            } => encode_posting_restriction_event(
+                sink,
+                actor_id,
+                participant_id,
+                *restricted,
+                reason,
+                causation,
+            )?,
         }
     }
     sink.u64(page.next.0)?;
@@ -6067,6 +6540,26 @@ fn decode_threaded_change_page(
                     actor_id,
                     poll_id,
                     open,
+                }
+            }
+            28 => {
+                let (actor_id, previous_interval_ms, minimum_interval_ms) =
+                    decode_message_interval_event(decoder)?;
+                ThreadedRoomEventV1::MessageIntervalChanged {
+                    actor_id,
+                    previous_interval_ms,
+                    minimum_interval_ms,
+                }
+            }
+            29 => {
+                let (actor_id, participant_id, restricted, reason, causation) =
+                    decode_posting_restriction_event(decoder)?;
+                ThreadedRoomEventV1::PostingRestrictionChanged {
+                    actor_id,
+                    participant_id,
+                    restricted,
+                    reason,
+                    causation,
                 }
             }
             _ => return Err(WireDecodeError::UnknownTag),
@@ -6302,6 +6795,30 @@ fn encode_topic_change_page(
                 tag,
                 added,
             } => encode_topic_tag_event(sink, actor_id, *topic_id, tag, *added)?,
+            TopicRoomEventV1::MessageIntervalChanged {
+                actor_id,
+                previous_interval_ms,
+                minimum_interval_ms,
+            } => encode_message_interval_event(
+                sink,
+                actor_id,
+                *previous_interval_ms,
+                *minimum_interval_ms,
+            )?,
+            TopicRoomEventV1::PostingRestrictionChanged {
+                actor_id,
+                participant_id,
+                restricted,
+                reason,
+                causation,
+            } => encode_posting_restriction_event(
+                sink,
+                actor_id,
+                participant_id,
+                *restricted,
+                reason,
+                causation,
+            )?,
         }
     }
     sink.u64(page.next.0)?;
@@ -6534,6 +7051,26 @@ fn decode_topic_change_page(
                     actor_id,
                     poll_id,
                     open,
+                }
+            }
+            28 => {
+                let (actor_id, previous_interval_ms, minimum_interval_ms) =
+                    decode_message_interval_event(decoder)?;
+                TopicRoomEventV1::MessageIntervalChanged {
+                    actor_id,
+                    previous_interval_ms,
+                    minimum_interval_ms,
+                }
+            }
+            29 => {
+                let (actor_id, participant_id, restricted, reason, causation) =
+                    decode_posting_restriction_event(decoder)?;
+                TopicRoomEventV1::PostingRestrictionChanged {
+                    actor_id,
+                    participant_id,
+                    restricted,
+                    reason,
+                    causation,
                 }
             }
             _ => return Err(WireDecodeError::UnknownTag),
@@ -7026,10 +7563,19 @@ fn encode_refusal(sink: &mut dyn Sink, refusal: RefusalV2) -> Result<(), WireEnc
         RefusalV2::NotPollEligible => 38,
         RefusalV2::PollClosed => 39,
         RefusalV2::InvalidPollChange => 40,
+        RefusalV2::PostingRestricted => 41,
+        RefusalV2::MessageThrottled { .. } => 42,
+        RefusalV2::InvalidMessageReport => 43,
+        RefusalV2::UnknownMessageReport => 44,
+        RefusalV2::MessageReportLimit => 45,
+        RefusalV2::InvalidMessageReportChange => 46,
     };
     sink.u8(tag)?;
     if let RefusalV2::Stale { actual_revision } = refusal {
         sink.u64(actual_revision)?;
+    }
+    if let RefusalV2::MessageThrottled { retry_after_ms } = refusal {
+        sink.u64(retry_after_ms)?;
     }
     Ok(())
 }
@@ -7078,6 +7624,14 @@ fn decode_refusal(decoder: &mut keystone_codec::Decoder<'_>) -> Result<RefusalV2
         38 => Ok(RefusalV2::NotPollEligible),
         39 => Ok(RefusalV2::PollClosed),
         40 => Ok(RefusalV2::InvalidPollChange),
+        41 => Ok(RefusalV2::PostingRestricted),
+        42 => Ok(RefusalV2::MessageThrottled {
+            retry_after_ms: read_u64(decoder)?,
+        }),
+        43 => Ok(RefusalV2::InvalidMessageReport),
+        44 => Ok(RefusalV2::UnknownMessageReport),
+        45 => Ok(RefusalV2::MessageReportLimit),
+        46 => Ok(RefusalV2::InvalidMessageReportChange),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }

@@ -1,6 +1,6 @@
 # ADR: admission and moderation controls
 
-Status: accepted; implementation and release qualification open
+Status: accepted; implementation complete; release qualification open
 
 Date: 2026-11-14
 
@@ -80,12 +80,12 @@ expiry law.
 A current member may create a stable room-local report against one retained
 message visible through that membership. A report retains reporter, target
 message and author identities, bounded nonempty reason, opaque causation,
-creation order, and `Open` state. It copies no message body, attachment, Vellum
+creation order, and `Pending` state. It copies no message body, attachment, Vellum
 reference, reaction, or revision content. Human and agent reporters obey the
 same law. One reporter may have at most one open report for the same target.
 
 Reports are not room events. A reporter may observe their own reports; current
-owners and moderators may page the room's reports. No other member learns that
+owners and moderators may observe the room's bounded report set. No other member learns that
 a report exists. An authorized reviewer may close an open report with exactly
 `Dismissed` or `Escalated`, a bounded review reason, and opaque review
 causation. `Escalated` is a review classification, not proof that kick, ban,
@@ -120,7 +120,7 @@ appeal, and re-evaluation contract.
   timestamps or adding ambient clock I/O to the engine.
 - Slow mode and posting restriction share the message-admission choke point but
   remain distinct facts with distinct authority and refusal semantics.
-- Report privacy requires isolated observation, cursor, receipt, recovery, and
+- Report privacy requires isolated observation, receipt, recovery, and
   wire profiles rather than adding report variants to ordinary room feeds.
 - Moderation review records human/agent participant judgment without pretending
   that review is workflow completion or an external policy decision.

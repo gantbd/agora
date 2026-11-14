@@ -731,6 +731,14 @@ pub enum CommandV2 {
         admission: AdmissionPolicyV2,
         expected_revision: u64,
     },
+    AdmissionControl {
+        room_id: String,
+    },
+    SetMinimumMessageInterval {
+        room_id: String,
+        minimum_interval_ms: u64,
+        expected_revision: u64,
+    },
     Kick {
         room_id: String,
         participant_id: String,
@@ -751,6 +759,34 @@ pub enum CommandV2 {
         reason: String,
         causation: [u8; 16],
         expected_revision: u64,
+    },
+    SetPostingRestricted {
+        room_id: String,
+        participant_id: String,
+        restricted: bool,
+        reason: String,
+        causation: [u8; 16],
+        expected_revision: u64,
+    },
+    MessageReports {
+        room_id: String,
+    },
+    ModerationReports {
+        room_id: String,
+    },
+    SubmitMessageReport {
+        room_id: String,
+        observed_revision: u64,
+        message_id: MessageIdV1,
+        reason: String,
+        causation: [u8; 16],
+    },
+    ReviewMessageReport {
+        room_id: String,
+        report_id: MessageReportIdV1,
+        disposition: MessageReportDispositionV1,
+        reason: String,
+        causation: [u8; 16],
     },
     Speak {
         room_id: String,
@@ -1068,6 +1104,20 @@ impl fmt::Debug for CommandV2 {
                 .field("admission", admission)
                 .field("expected_revision", expected_revision)
                 .finish(),
+            Self::AdmissionControl { room_id } => formatter
+                .debug_struct("AdmissionControl")
+                .field("room_id_bytes", &room_id.len())
+                .finish(),
+            Self::SetMinimumMessageInterval {
+                room_id,
+                minimum_interval_ms,
+                expected_revision,
+            } => formatter
+                .debug_struct("SetMinimumMessageInterval")
+                .field("room_id_bytes", &room_id.len())
+                .field("minimum_interval_ms", minimum_interval_ms)
+                .field("expected_revision", expected_revision)
+                .finish(),
             Self::Kick {
                 room_id,
                 participant_id,
@@ -1095,6 +1145,54 @@ impl fmt::Debug for CommandV2 {
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
                 .field("expected_revision", expected_revision)
+                .finish(),
+            Self::SetPostingRestricted {
+                room_id,
+                participant_id,
+                restricted,
+                reason,
+                expected_revision,
+                ..
+            } => formatter
+                .debug_struct("SetPostingRestricted")
+                .field("room_id_bytes", &room_id.len())
+                .field("participant_id_bytes", &participant_id.len())
+                .field("restricted", restricted)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .field("expected_revision", expected_revision)
+                .finish(),
+            Self::MessageReports { room_id } | Self::ModerationReports { room_id } => formatter
+                .debug_struct("MessageReports")
+                .field("room_id_bytes", &room_id.len())
+                .finish(),
+            Self::SubmitMessageReport {
+                room_id,
+                observed_revision,
+                message_id,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("SubmitMessageReport")
+                .field("room_id_bytes", &room_id.len())
+                .field("observed_revision", observed_revision)
+                .field("message_id", message_id)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::ReviewMessageReport {
+                room_id,
+                report_id,
+                disposition,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("ReviewMessageReport")
+                .field("room_id_bytes", &room_id.len())
+                .field("report_id", report_id)
+                .field("disposition", disposition)
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
                 .finish(),
             Self::Speak {
                 room_id,
@@ -1600,6 +1698,7 @@ pub enum CapabilityV2 {
     PrivateSavedReferencesV1,
     BoundedPollsV1,
     TopicCollectionsV1,
+    AdmissionModerationControlsV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -2273,6 +2372,73 @@ pub struct ConversationProfileStatusV1 {
     pub founding_participant_ids: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdmissionControlStatusV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub minimum_message_interval_ms: u64,
+    pub observer_posting_restricted: bool,
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub struct MessageReportIdV1(pub u64);
+
+pub const MAX_MESSAGE_REPORTS_V1: usize = 256;
+
+impl fmt::Debug for MessageReportIdV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MessageReportIdV1(<opaque>)")
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MessageReportDispositionV1 {
+    Pending,
+    Dismissed,
+    Escalated,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessageReportV1 {
+    pub report_id: MessageReportIdV1,
+    pub room_id: String,
+    pub message_id: MessageIdV1,
+    pub original_sequence: u64,
+    pub target_author_id: String,
+    pub target_availability: StableReferenceAvailabilityV1,
+    pub reporter_id: String,
+    pub reason: String,
+    pub causation: [u8; 16],
+    pub creation_order: u64,
+    pub disposition: MessageReportDispositionV1,
+    pub review_reason: Option<String>,
+    pub review_causation: Option<[u8; 16]>,
+}
+
+impl fmt::Debug for MessageReportV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageReportV1")
+            .field("report_id", &self.report_id)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("message_id", &self.message_id)
+            .field("original_sequence", &self.original_sequence)
+            .field("target_author_id_bytes", &self.target_author_id.len())
+            .field("target_availability", &self.target_availability)
+            .field("reporter_id_bytes", &self.reporter_id.len())
+            .field("reason_bytes", &self.reason.len())
+            .field("causation", &"<opaque>")
+            .field("creation_order", &self.creation_order)
+            .field("disposition", &self.disposition)
+            .field(
+                "review_reason_bytes",
+                &self.review_reason.as_ref().map(String::len),
+            )
+            .field("has_review_causation", &self.review_causation.is_some())
+            .finish()
+    }
+}
+
 impl fmt::Debug for ConversationProfileStatusV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -2362,6 +2528,11 @@ pub enum RoomEventV2 {
         previous: AdmissionPolicyV2,
         admission: AdmissionPolicyV2,
     },
+    MessageIntervalChanged {
+        actor_id: String,
+        previous_interval_ms: u64,
+        minimum_interval_ms: u64,
+    },
     ParticipantKicked {
         actor_id: String,
         participant_id: String,
@@ -2377,6 +2548,13 @@ pub enum RoomEventV2 {
     ParticipantUnbanned {
         actor_id: String,
         participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    PostingRestrictionChanged {
+        actor_id: String,
+        participant_id: String,
+        restricted: bool,
         reason: String,
         causation: [u8; 16],
     },
@@ -2536,6 +2714,16 @@ impl fmt::Debug for RoomEventV2 {
                 .field("previous", previous)
                 .field("admission", admission)
                 .finish(),
+            Self::MessageIntervalChanged {
+                actor_id,
+                previous_interval_ms,
+                minimum_interval_ms,
+            } => formatter
+                .debug_struct("MessageIntervalChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("previous_interval_ms", previous_interval_ms)
+                .field("minimum_interval_ms", minimum_interval_ms)
+                .finish(),
             Self::ParticipantKicked {
                 actor_id,
                 participant_id,
@@ -2557,6 +2745,20 @@ impl fmt::Debug for RoomEventV2 {
                 .debug_struct("ModerationEvent")
                 .field("actor_id_bytes", &actor_id.len())
                 .field("participant_id_bytes", &participant_id.len())
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::PostingRestrictionChanged {
+                actor_id,
+                participant_id,
+                restricted,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("PostingRestrictionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("participant_id_bytes", &participant_id.len())
+                .field("restricted", restricted)
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
                 .finish(),
@@ -2744,6 +2946,11 @@ pub enum IdentifiedRoomEventV1 {
         previous: AdmissionPolicyV2,
         admission: AdmissionPolicyV2,
     },
+    MessageIntervalChanged {
+        actor_id: String,
+        previous_interval_ms: u64,
+        minimum_interval_ms: u64,
+    },
     ParticipantKicked {
         actor_id: String,
         participant_id: String,
@@ -2759,6 +2966,13 @@ pub enum IdentifiedRoomEventV1 {
     ParticipantUnbanned {
         actor_id: String,
         participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    PostingRestrictionChanged {
+        actor_id: String,
+        participant_id: String,
+        restricted: bool,
         reason: String,
         causation: [u8; 16],
     },
@@ -2918,6 +3132,16 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .field("previous", previous)
                 .field("admission", admission)
                 .finish(),
+            Self::MessageIntervalChanged {
+                actor_id,
+                previous_interval_ms,
+                minimum_interval_ms,
+            } => formatter
+                .debug_struct("MessageIntervalChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("previous_interval_ms", previous_interval_ms)
+                .field("minimum_interval_ms", minimum_interval_ms)
+                .finish(),
             Self::ParticipantKicked {
                 actor_id,
                 participant_id,
@@ -2939,6 +3163,20 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .debug_struct("ModerationEvent")
                 .field("actor_id_bytes", &actor_id.len())
                 .field("participant_id_bytes", &participant_id.len())
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::PostingRestrictionChanged {
+                actor_id,
+                participant_id,
+                restricted,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("PostingRestrictionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("participant_id_bytes", &participant_id.len())
+                .field("restricted", restricted)
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
                 .finish(),
@@ -3126,6 +3364,11 @@ pub enum ThreadedRoomEventV1 {
         previous: AdmissionPolicyV2,
         admission: AdmissionPolicyV2,
     },
+    MessageIntervalChanged {
+        actor_id: String,
+        previous_interval_ms: u64,
+        minimum_interval_ms: u64,
+    },
     ParticipantKicked {
         actor_id: String,
         participant_id: String,
@@ -3141,6 +3384,13 @@ pub enum ThreadedRoomEventV1 {
     ParticipantUnbanned {
         actor_id: String,
         participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    PostingRestrictionChanged {
+        actor_id: String,
+        participant_id: String,
+        restricted: bool,
         reason: String,
         causation: [u8; 16],
     },
@@ -3300,6 +3550,16 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .field("previous", previous)
                 .field("admission", admission)
                 .finish(),
+            Self::MessageIntervalChanged {
+                actor_id,
+                previous_interval_ms,
+                minimum_interval_ms,
+            } => formatter
+                .debug_struct("MessageIntervalChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("previous_interval_ms", previous_interval_ms)
+                .field("minimum_interval_ms", minimum_interval_ms)
+                .finish(),
             Self::ParticipantKicked {
                 actor_id,
                 participant_id,
@@ -3321,6 +3581,20 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .debug_struct("ModerationEvent")
                 .field("actor_id_bytes", &actor_id.len())
                 .field("participant_id_bytes", &participant_id.len())
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::PostingRestrictionChanged {
+                actor_id,
+                participant_id,
+                restricted,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("PostingRestrictionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("participant_id_bytes", &participant_id.len())
+                .field("restricted", restricted)
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
                 .finish(),
@@ -3508,6 +3782,11 @@ pub enum TopicRoomEventV1 {
         previous: AdmissionPolicyV2,
         admission: AdmissionPolicyV2,
     },
+    MessageIntervalChanged {
+        actor_id: String,
+        previous_interval_ms: u64,
+        minimum_interval_ms: u64,
+    },
     ParticipantKicked {
         actor_id: String,
         participant_id: String,
@@ -3523,6 +3802,13 @@ pub enum TopicRoomEventV1 {
     ParticipantUnbanned {
         actor_id: String,
         participant_id: String,
+        reason: String,
+        causation: [u8; 16],
+    },
+    PostingRestrictionChanged {
+        actor_id: String,
+        participant_id: String,
+        restricted: bool,
         reason: String,
         causation: [u8; 16],
     },
@@ -3688,6 +3974,16 @@ impl fmt::Debug for TopicRoomEventV1 {
                 .field("previous", previous)
                 .field("admission", admission)
                 .finish(),
+            Self::MessageIntervalChanged {
+                actor_id,
+                previous_interval_ms,
+                minimum_interval_ms,
+            } => formatter
+                .debug_struct("MessageIntervalChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("previous_interval_ms", previous_interval_ms)
+                .field("minimum_interval_ms", minimum_interval_ms)
+                .finish(),
             Self::ParticipantKicked {
                 actor_id,
                 participant_id,
@@ -3709,6 +4005,20 @@ impl fmt::Debug for TopicRoomEventV1 {
                 .debug_struct("ModerationEvent")
                 .field("actor_id_bytes", &actor_id.len())
                 .field("participant_id_bytes", &participant_id.len())
+                .field("reason_bytes", &reason.len())
+                .field("causation", &"<opaque>")
+                .finish(),
+            Self::PostingRestrictionChanged {
+                actor_id,
+                participant_id,
+                restricted,
+                reason,
+                ..
+            } => formatter
+                .debug_struct("PostingRestrictionChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("participant_id_bytes", &participant_id.len())
+                .field("restricted", restricted)
                 .field("reason_bytes", &reason.len())
                 .field("causation", &"<opaque>")
                 .finish(),
@@ -4081,6 +4391,7 @@ pub enum OutcomeV2 {
         profile: ConversationProfileV1,
     },
     ConversationProfile(ConversationProfileStatusV1),
+    AdmissionControl(AdmissionControlStatusV1),
     InvitationRecorded {
         revision: u64,
     },
@@ -4096,6 +4407,9 @@ pub enum OutcomeV2 {
     RoomPolicyChanged {
         revision: u64,
     },
+    MessageIntervalChanged {
+        revision: u64,
+    },
     Kicked {
         revision: u64,
     },
@@ -4105,6 +4419,12 @@ pub enum OutcomeV2 {
     Unbanned {
         revision: u64,
     },
+    PostingRestrictionChanged {
+        revision: u64,
+    },
+    MessageReports(Vec<MessageReportV1>),
+    MessageReportSubmitted(MessageReportV1),
+    MessageReportReviewed(MessageReportV1),
     MessageAccepted {
         revision: u64,
         sequence: u64,
@@ -4268,6 +4588,12 @@ pub enum RefusalV2 {
     NotPollEligible,
     PollClosed,
     InvalidPollChange,
+    PostingRestricted,
+    MessageThrottled { retry_after_ms: u64 },
+    InvalidMessageReport,
+    UnknownMessageReport,
+    MessageReportLimit,
+    InvalidMessageReportChange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

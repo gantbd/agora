@@ -756,6 +756,8 @@ single-owner local Unix directory remain open;
 Protocol V1 bytes and semantics are unchanged.
 
 The R101 admission/moderation architecture is adopted in
-`docs/adr-admission-and-moderation-controls.md`; implementation and qualification
-remain open.
+`docs/adr-admission-and-moderation-controls.md`. Engine, checkpoint,
+protocol/wire, service, authenticated-Host time derivation, private report
+observation/review, compatibility fixtures, and SDK-reexport surfaces are
+implemented; commit-pinned release qualification remains open.
 

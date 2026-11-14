@@ -116,6 +116,15 @@ The service retains the exact request and reply. Matching retry returns the
 original reply without applying a second transition; changed content under the
 same request ID conflicts.
 
+The R101 profile keeps admission authority explicit. `ServiceV2::execute_at`
+accepts trusted host time outside the protocol request, derives one opaque
+engine observation, and routes all six message forms through the same admission
+choke point. Roles and participant kinds do not bypass the interval. Posting
+restriction remains a revisioned room fact, while reports and their reviews are
+private service outcomes and checkpoint state rather than room events. Reporter
+views and moderator queues are separate commands; no classifier, Aegis result,
+or review disposition performs a moderation transition.
+
 Client, retired-client, request-receipt, identifier, input, fan-out, and snapshot
 limits are checked explicitly. Structurally oversized requests are refused before
 receipt retention. A full receipt index backpressures a new request before the

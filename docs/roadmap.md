@@ -31,7 +31,7 @@ requalification remains part of the current release-readiness work.
    workspace/document/source-revision types; document content, live witnesses,
    editing, persistence, agent behavior, and cross-engine transaction claims
    remain outside Agora.
-7. Implement the adopted R101 admission/moderation profile: Host-derived opaque
+7. Release-qualify the implemented R101 admission/moderation profile: Host-derived opaque
    enforcement time, an all-message room interval without implicit bypass,
    hierarchy-bound posting restriction, and private bounded report/review facts.
    Keep classifier output outside Agora mutation authority and retain Chronos as

@@ -111,6 +111,29 @@ fn facade_names_authoritative_conversation_profiles() {
 }
 
 #[test]
+fn facade_names_admission_and_private_report_engine_values() {
+    let command = engine::CommandV2::SetMinimumMessageInterval {
+        room_id: "room".into(),
+        actor: "alice".into(),
+        minimum_interval_ms: 25,
+    };
+    assert!(matches!(
+        command,
+        engine::CommandV2::SetMinimumMessageInterval {
+            minimum_interval_ms: 25,
+            ..
+        }
+    ));
+    assert_eq!(engine::MAX_MESSAGE_REPORTS_PER_ROOM_V1, 256);
+    assert_eq!(engine::MAX_MESSAGE_REPORTS_V1, 65_536);
+    assert_eq!(engine::MessageReportIdV1::new(7).unwrap().get(), 7);
+    assert_eq!(
+        engine::MessageReportDispositionV1::Pending,
+        engine::MessageReportDispositionV1::Pending
+    );
+}
+
+#[test]
 fn facade_names_private_attention_engine_values() {
     let preference = engine::AttentionPreferenceV1::new(
         true,

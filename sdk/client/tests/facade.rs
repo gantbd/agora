@@ -10,6 +10,45 @@ struct TransientPort;
 struct SearchPort;
 
 #[test]
+fn facade_names_admission_and_private_report_protocol_and_wire_values() {
+    let message_id = protocol::v2::MessageIdV1::new([6; 16]);
+    for (index, command) in [
+        protocol::v2::CommandV2::SetMinimumMessageInterval {
+            room_id: "room".to_owned(),
+            minimum_interval_ms: 25,
+            expected_revision: 2,
+        },
+        protocol::v2::CommandV2::SubmitMessageReport {
+            room_id: "room".to_owned(),
+            observed_revision: 3,
+            message_id,
+            reason: "review".to_owned(),
+            causation: [7; 16],
+        },
+        protocol::v2::CommandV2::MessageReports {
+            room_id: "room".to_owned(),
+        },
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let request = wire::v2::WireRequestV2::Execute {
+            client: protocol::v2::ClientIdV2(1),
+            request: protocol::v2::RequestV2 {
+                request_id: protocol::v2::RequestIdV2(index as u64 + 1),
+                command,
+            },
+        };
+        let limits = wire::WireLimits::reference();
+        let encoded = wire::v2::encode_request_v2(&request, limits).unwrap();
+        assert_eq!(
+            wire::v2::decode_request_v2(&encoded, limits).unwrap(),
+            request
+        );
+    }
+}
+
+#[test]
 fn facade_names_topic_collection_protocol_and_wire_values() {
     let request = wire::v2::WireRequestV2::Execute {
         client: protocol::v2::ClientIdV2(1),

@@ -20,9 +20,10 @@ use agora_protocol::transient::{
 };
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttentionPreferenceV1, AttentionScopeV1, CommandV2, MessageIdV1,
-    NotificationIntentV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
-    TopicCollectionFilterV1, TopicCollectionLifecycleV1, VellumArtifactMessageTargetV1,
-    VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
+    MessageReportDispositionV1, NotificationIntentV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2,
+    RequestIdV2, RequestV2, TopicCollectionFilterV1, TopicCollectionLifecycleV1,
+    VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
+    VellumDocumentTargetV1,
 };
 use agora_service::transient::TransientLimitsV1;
 use agora_service::typing::TypingLimitsV1;
@@ -525,6 +526,87 @@ fn committed_topic_collection_receipt_recovers_exact_metadata() {
         } if page.topics.len() == 1
             && page.topics[0].topic_id == topic_id
             && page.topics[0].tags == vec!["urgent"]
+    ));
+}
+
+#[test]
+fn committed_private_report_recovers_with_exact_receipt_and_visibility() {
+    let (mut durable, store, client) = initialized();
+    assert!(matches!(
+        durable.execute(client, create_request("room")),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::RoomCreated { revision: 2 }),
+            ..
+        }
+    ));
+    let DurablePublicationV2::Published {
+        value:
+            ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+                revision: 3,
+                message_id,
+                ..
+            }),
+        ..
+    } = durable.execute(
+        client,
+        RequestV2 {
+            request_id: RequestIdV2(8),
+            command: CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: 2,
+                logical_time: 3,
+                body: "target".to_owned(),
+                addressed_to: Vec::new(),
+            },
+        },
+    )
+    else {
+        panic!("message must commit")
+    };
+    let report_request = RequestV2 {
+        request_id: RequestIdV2(9),
+        command: CommandV2::SubmitMessageReport {
+            room_id: "room".to_owned(),
+            observed_revision: 3,
+            message_id,
+            reason: "review".to_owned(),
+            causation: [9; 16],
+        },
+    };
+    let published = durable.execute(client, report_request.clone());
+    assert!(matches!(
+        &published,
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::MessageReportSubmitted(report)),
+            ..
+        } if report.message_id == message_id
+            && report.disposition == MessageReportDispositionV1::Pending
+    ));
+    drop(durable.into_store());
+
+    let mut recovered = DurableServiceV2::recover(store, config()).unwrap();
+    assert!(matches!(
+        recovered.execute(client, report_request),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::MessageReportSubmitted(report)),
+            evidence: DurableEvidenceV2::PreviouslyCommitted { .. },
+        } if report.message_id == message_id
+            && report.disposition == MessageReportDispositionV1::Pending
+    ));
+    assert!(matches!(
+        recovered.execute(
+            client,
+            RequestV2 {
+                request_id: RequestIdV2(10),
+                command: CommandV2::MessageReports {
+                    room_id: "room".to_owned(),
+                },
+            },
+        ),
+        DurablePublicationV2::Published {
+            value: ReplyV2::Accepted(OutcomeV2::MessageReports(reports)),
+            ..
+        } if reports.len() == 1 && reports[0].message_id == message_id
     ));
 }
 

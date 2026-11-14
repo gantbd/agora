@@ -12,6 +12,9 @@ pub const MAX_TOPIC_ALIASES_PER_TOPIC_V1: usize = 16;
 pub const MAX_TOPIC_TAGS_PER_TOPIC_V1: usize = 8;
 pub const MAX_ATTACHMENTS_PER_MESSAGE_V1: usize = 8;
 pub const MAX_VELLUM_ARTIFACT_REFERENCES_PER_MESSAGE_V1: usize = 8;
+pub const MAX_MESSAGE_INTERVAL_MS_V1: u64 = 86_400_000;
+pub const MAX_MESSAGE_REPORTS_PER_ROOM_V1: usize = 256;
+pub const MAX_MESSAGE_REPORTS_V1: usize = 65_536;
 
 /// Opaque observation of the engine's current trusted admission-time floor.
 ///
@@ -2065,6 +2068,9 @@ struct Room {
     members: BTreeMap<ParticipantId, Role>,
     invitations: BTreeSet<ParticipantId>,
     bans: BTreeMap<ParticipantId, Role>,
+    minimum_message_interval_ms: u64,
+    last_message_admission_ms: BTreeMap<ParticipantId, u64>,
+    posting_restrictions: BTreeSet<ParticipantId>,
     messages: VecDeque<Message>,
     thread_roots: BTreeSet<MessageId>,
     archived_threads: BTreeSet<MessageId>,
@@ -2138,6 +2144,133 @@ impl ModerationReasonV1 {
     }
 }
 
+/// Current room-local message-admission controls visible to a current member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdmissionControlStatusV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub minimum_message_interval_ms: u64,
+    pub observer_posting_restricted: bool,
+}
+
+/// Opaque engine-local identity for one private message report.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MessageReportIdV1(u64);
+
+impl MessageReportIdV1 {
+    pub const fn new(value: u64) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl fmt::Debug for MessageReportIdV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MessageReportIdV1(<opaque>)")
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MessageReportDispositionV1 {
+    Pending,
+    Dismissed,
+    Escalated,
+}
+
+/// Private report state. Report text is content and is excluded from Debug.
+#[derive(Clone, Eq, PartialEq)]
+pub struct MessageReportV1 {
+    pub report_id: MessageReportIdV1,
+    pub room_id: RoomId,
+    pub message_id: MessageId,
+    pub original_sequence: u64,
+    pub target_author: ParticipantId,
+    pub target_availability: StableReferenceAvailabilityV1,
+    pub reporter: ParticipantId,
+    pub reason: ModerationReasonV1,
+    pub causation: ModerationCausationV1,
+    pub creation_order: u64,
+    pub disposition: MessageReportDispositionV1,
+    pub review_reason: Option<ModerationReasonV1>,
+    pub review_causation: Option<ModerationCausationV1>,
+}
+
+impl fmt::Debug for MessageReportV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageReportV1")
+            .field("report_id", &self.report_id)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("message_id", &self.message_id)
+            .field("original_sequence", &self.original_sequence)
+            .field("target_author_id_bytes", &self.target_author.as_str().len())
+            .field("target_availability", &self.target_availability)
+            .field("reporter_id_bytes", &self.reporter.as_str().len())
+            .field("reason_bytes", &self.reason.as_str().len())
+            .field("causation", &"<opaque>")
+            .field("creation_order", &self.creation_order)
+            .field("disposition", &self.disposition)
+            .field(
+                "review_reason_bytes",
+                &self
+                    .review_reason
+                    .as_ref()
+                    .map(|reason| reason.as_str().len()),
+            )
+            .field("has_review_causation", &self.review_causation.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+struct MessageReportRecordV1 {
+    report_id: MessageReportIdV1,
+    room_id: RoomId,
+    message_id: MessageId,
+    original_sequence: u64,
+    target_author: ParticipantId,
+    reporter: ParticipantId,
+    reason: ModerationReasonV1,
+    causation: ModerationCausationV1,
+    creation_order: u64,
+    disposition: MessageReportDispositionV1,
+    review_reason: Option<ModerationReasonV1>,
+    review_causation: Option<ModerationCausationV1>,
+}
+
+impl fmt::Debug for MessageReportRecordV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MessageReportRecordV1")
+            .field("report_id", &self.report_id)
+            .field("room_id_bytes", &self.room_id.as_str().len())
+            .field("message_id", &self.message_id)
+            .field("reporter_id_bytes", &self.reporter.as_str().len())
+            .field("reason_bytes", &self.reason.as_str().len())
+            .field("disposition", &self.disposition)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MessageReportRefusalV1 {
+    UnknownParticipant,
+    UnknownRoom,
+    NotMember,
+    NotAuthorized,
+    Stale { actual_revision: Revision },
+    UnknownMessage,
+    UnknownReport,
+    InvalidReason,
+    InvalidChange,
+    DuplicateReport,
+    Capacity,
+    IdentityExhausted,
+}
+
 impl fmt::Debug for ModerationReasonV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -2168,9 +2301,14 @@ pub enum RoomActionV1 {
     RedactAny,
     ManageRole,
     ManageRoomPolicy,
+    ConfigureAdmission,
     Kick,
     Ban,
     Unban,
+    RestrictPosting,
+    RestorePosting,
+    Report,
+    ReviewReport,
     InspectHistory,
     ManageTopics,
 }
@@ -2206,9 +2344,16 @@ impl CommandV2 {
             Self::Leave { .. } => Some(RoomActionV1::Leave),
             Self::SetRole { .. } => Some(RoomActionV1::ManageRole),
             Self::SetAdmissionPolicy { .. } => Some(RoomActionV1::ManageRoomPolicy),
+            Self::SetMinimumMessageInterval { .. } => Some(RoomActionV1::ConfigureAdmission),
             Self::Kick { .. } => Some(RoomActionV1::Kick),
             Self::Ban { .. } => Some(RoomActionV1::Ban),
             Self::Unban { .. } => Some(RoomActionV1::Unban),
+            Self::SetPostingRestricted {
+                restricted: true, ..
+            } => Some(RoomActionV1::RestrictPosting),
+            Self::SetPostingRestricted {
+                restricted: false, ..
+            } => Some(RoomActionV1::RestorePosting),
             Self::Speak { .. } | Self::SpeakAddressed { .. } | Self::SpeakInTopic { .. } => {
                 Some(RoomActionV1::Speak)
             }
@@ -2285,6 +2430,11 @@ pub enum CommandV2 {
         actor: ParticipantId,
         admission: AdmissionPolicy,
     },
+    SetMinimumMessageInterval {
+        room_id: RoomId,
+        actor: ParticipantId,
+        minimum_interval_ms: u64,
+    },
     Kick {
         room_id: RoomId,
         actor: ParticipantId,
@@ -2303,6 +2453,14 @@ pub enum CommandV2 {
         room_id: RoomId,
         actor: ParticipantId,
         participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
+    SetPostingRestricted {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        restricted: bool,
         reason: ModerationReasonV1,
         causation: ModerationCausationV1,
     },
@@ -2485,6 +2643,12 @@ pub enum OutcomeV2 {
         previous: AdmissionPolicy,
         admission: AdmissionPolicy,
     },
+    MessageIntervalChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        previous_interval_ms: u64,
+        minimum_interval_ms: u64,
+    },
     Kicked {
         room_id: RoomId,
         actor: ParticipantId,
@@ -2503,6 +2667,14 @@ pub enum OutcomeV2 {
         room_id: RoomId,
         actor: ParticipantId,
         participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
+    PostingRestrictionChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        restricted: bool,
         reason: ModerationReasonV1,
         causation: ModerationCausationV1,
     },
@@ -2683,6 +2855,15 @@ pub enum Refusal {
     ImmutableConversationCohort,
     InvalidRoleChange,
     InvalidPolicyChange,
+    InvalidMessageInterval,
+    InvalidPostingRestrictionChange,
+    PostingRestricted,
+    AdmissionTimeRequired,
+    AdmissionTimeForeign,
+    AdmissionTimeStale,
+    MessageThrottled {
+        retry_after_ms: u64,
+    },
     UnknownMessage,
     InvalidReplyTarget,
     ThreadArchived,
@@ -2909,6 +3090,12 @@ pub enum DomainEventV2 {
         previous: AdmissionPolicy,
         admission: AdmissionPolicy,
     },
+    MessageIntervalChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        previous_interval_ms: u64,
+        minimum_interval_ms: u64,
+    },
     ParticipantKicked {
         room_id: RoomId,
         actor: ParticipantId,
@@ -2927,6 +3114,14 @@ pub enum DomainEventV2 {
         room_id: RoomId,
         actor: ParticipantId,
         participant: ParticipantId,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    },
+    PostingRestrictionChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        restricted: bool,
         reason: ModerationReasonV1,
         causation: ModerationCausationV1,
     },
@@ -3019,9 +3214,11 @@ impl DomainEventV2 {
             | Self::ParticipantLeft { room_id, .. }
             | Self::RoleChanged { room_id, .. }
             | Self::RoomPolicyChanged { room_id, .. }
+            | Self::MessageIntervalChanged { room_id, .. }
             | Self::ParticipantKicked { room_id, .. }
             | Self::ParticipantBanned { room_id, .. }
             | Self::ParticipantUnbanned { room_id, .. }
+            | Self::PostingRestrictionChanged { room_id, .. }
             | Self::MessageAccepted { room_id, .. }
             | Self::MessageWithdrawn { room_id, .. }
             | Self::MessageRedacted { room_id, .. }
@@ -3095,6 +3292,8 @@ pub struct Engine {
     attention_preferences:
         BTreeMap<(ParticipantId, RoomId, AttentionScopeV1), AttentionPreferenceV1>,
     private_saves: BTreeMap<(ParticipantId, RoomId, MessageId), u64>,
+    message_reports: BTreeMap<MessageReportIdV1, MessageReportRecordV1>,
+    next_message_report_id: u64,
     admission_time_namespace: Arc<()>,
     admission_time_floor_ms: Option<u64>,
     admission_time_sequence: u64,
@@ -3127,6 +3326,8 @@ impl Engine {
             read_positions: BTreeMap::new(),
             attention_preferences: BTreeMap::new(),
             private_saves: BTreeMap::new(),
+            message_reports: BTreeMap::new(),
+            next_message_report_id: 1,
             admission_time_namespace: Arc::new(()),
             admission_time_floor_ms: None,
             admission_time_sequence: 0,
@@ -3190,6 +3391,31 @@ impl Engine {
 
     pub fn room(&self, id: &RoomId) -> Option<RoomView> {
         self.rooms.get(id).map(Room::view)
+    }
+
+    /// Observes the current shared admission interval and only the observer's
+    /// own posting-restriction state.
+    pub fn admission_control(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<AdmissionControlStatusV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        Ok(AdmissionControlStatusV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            minimum_message_interval_ms: room.minimum_message_interval_ms,
+            observer_posting_restricted: room.posting_restrictions.contains(observer),
+        })
     }
 
     pub fn conversation_profile(
@@ -3664,6 +3890,207 @@ impl Engine {
             .ok_or(PrivateSaveRefusalV1::UnknownRoom)?;
         if !room.members.contains_key(actor) {
             return Err(PrivateSaveRefusalV1::NotMember);
+        }
+        Ok(room)
+    }
+
+    /// Submits one bounded private report without publishing a room event.
+    pub fn submit_message_report(
+        &mut self,
+        reporter: &ParticipantId,
+        room_id: &RoomId,
+        message_id: MessageId,
+        observed_revision: Revision,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    ) -> Result<MessageReportV1, MessageReportRefusalV1> {
+        if observed_revision != self.revision {
+            return Err(MessageReportRefusalV1::Stale {
+                actual_revision: self.revision,
+            });
+        }
+        if reason.as_str().is_empty()
+            || reason.as_str().len() > self.limits.max_moderation_reason_bytes
+        {
+            return Err(MessageReportRefusalV1::InvalidReason);
+        }
+        let room = self.validate_report_member(reporter, room_id)?;
+        let (original_sequence, target_author) = room
+            .messages
+            .iter()
+            .find(|message| message.id == message_id)
+            .map(|message| (message.sequence, message.author.clone()))
+            .ok_or(MessageReportRefusalV1::UnknownMessage)?;
+        if self.message_reports.values().any(|report| {
+            &report.reporter == reporter
+                && &report.room_id == room_id
+                && report.message_id == message_id
+                && report.disposition == MessageReportDispositionV1::Pending
+        }) {
+            return Err(MessageReportRefusalV1::DuplicateReport);
+        }
+        let room_report_count = self
+            .message_reports
+            .values()
+            .filter(|report| &report.room_id == room_id)
+            .count();
+        if room_report_count == MAX_MESSAGE_REPORTS_PER_ROOM_V1 {
+            let evict = self
+                .message_reports
+                .iter()
+                .find_map(|(id, report)| {
+                    (&report.room_id == room_id
+                        && report.disposition != MessageReportDispositionV1::Pending)
+                        .then_some(*id)
+                })
+                .ok_or(MessageReportRefusalV1::Capacity)?;
+            self.message_reports.remove(&evict);
+        }
+        if self.message_reports.len() == MAX_MESSAGE_REPORTS_V1 {
+            return Err(MessageReportRefusalV1::Capacity);
+        }
+        let report_id = MessageReportIdV1::new(self.next_message_report_id)
+            .ok_or(MessageReportRefusalV1::IdentityExhausted)?;
+        let next = self
+            .next_message_report_id
+            .checked_add(1)
+            .ok_or(MessageReportRefusalV1::IdentityExhausted)?;
+        let record = MessageReportRecordV1 {
+            report_id,
+            room_id: room_id.clone(),
+            message_id,
+            original_sequence,
+            target_author,
+            reporter: reporter.clone(),
+            reason,
+            causation,
+            creation_order: report_id.get(),
+            disposition: MessageReportDispositionV1::Pending,
+            review_reason: None,
+            review_causation: None,
+        };
+        self.message_reports.insert(report_id, record.clone());
+        self.next_message_report_id = next;
+        Ok(self.message_report_view(&record))
+    }
+
+    /// Returns only reports submitted by the caller in one current room.
+    pub fn message_reports(
+        &self,
+        reporter: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<Vec<MessageReportV1>, MessageReportRefusalV1> {
+        self.validate_report_member(reporter, room_id)?;
+        Ok(self
+            .message_reports
+            .values()
+            .filter(|report| &report.reporter == reporter && &report.room_id == room_id)
+            .map(|report| self.message_report_view(report))
+            .collect())
+    }
+
+    /// Returns the room's private moderation queue to an owner or moderator.
+    pub fn moderation_reports(
+        &self,
+        reviewer: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<Vec<MessageReportV1>, MessageReportRefusalV1> {
+        self.validate_report_reviewer(reviewer, room_id)?;
+        Ok(self
+            .message_reports
+            .values()
+            .filter(|report| &report.room_id == room_id)
+            .map(|report| self.message_report_view(report))
+            .collect())
+    }
+
+    /// Records only a closed review disposition; it performs no moderation
+    /// action and starts no workflow.
+    pub fn review_message_report(
+        &mut self,
+        reviewer: &ParticipantId,
+        room_id: &RoomId,
+        report_id: MessageReportIdV1,
+        disposition: MessageReportDispositionV1,
+        review_reason: ModerationReasonV1,
+        review_causation: ModerationCausationV1,
+    ) -> Result<MessageReportV1, MessageReportRefusalV1> {
+        self.validate_report_reviewer(reviewer, room_id)?;
+        if disposition == MessageReportDispositionV1::Pending {
+            return Err(MessageReportRefusalV1::InvalidChange);
+        }
+        if review_reason.as_str().is_empty()
+            || review_reason.as_str().len() > self.limits.max_moderation_reason_bytes
+        {
+            return Err(MessageReportRefusalV1::InvalidReason);
+        }
+        let report = self
+            .message_reports
+            .get_mut(&report_id)
+            .ok_or(MessageReportRefusalV1::UnknownReport)?;
+        if &report.room_id != room_id {
+            return Err(MessageReportRefusalV1::UnknownReport);
+        }
+        if report.disposition != MessageReportDispositionV1::Pending {
+            return Err(MessageReportRefusalV1::InvalidChange);
+        }
+        report.disposition = disposition;
+        report.review_reason = Some(review_reason);
+        report.review_causation = Some(review_causation);
+        let record = report.clone();
+        Ok(self.message_report_view(&record))
+    }
+
+    fn message_report_view(&self, report: &MessageReportRecordV1) -> MessageReportV1 {
+        let target_availability = self
+            .rooms
+            .get(&report.room_id)
+            .map_or(StableReferenceAvailabilityV1::Evicted, |room| {
+                stable_reference_availability(room, report.message_id)
+            });
+        MessageReportV1 {
+            report_id: report.report_id,
+            room_id: report.room_id.clone(),
+            message_id: report.message_id,
+            original_sequence: report.original_sequence,
+            target_author: report.target_author.clone(),
+            target_availability,
+            reporter: report.reporter.clone(),
+            reason: report.reason.clone(),
+            causation: report.causation,
+            creation_order: report.creation_order,
+            disposition: report.disposition,
+            review_reason: report.review_reason.clone(),
+            review_causation: report.review_causation,
+        }
+    }
+
+    fn validate_report_member(
+        &self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<&Room, MessageReportRefusalV1> {
+        if !self.participants.contains_key(actor) {
+            return Err(MessageReportRefusalV1::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(MessageReportRefusalV1::UnknownRoom)?;
+        if !room.members.contains_key(actor) {
+            return Err(MessageReportRefusalV1::NotMember);
+        }
+        Ok(room)
+    }
+
+    fn validate_report_reviewer(
+        &self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<&Room, MessageReportRefusalV1> {
+        let room = self.validate_report_member(actor, room_id)?;
+        if !matches!(room.members.get(actor), Some(Role::Owner | Role::Moderator)) {
+            return Err(MessageReportRefusalV1::NotAuthorized);
         }
         Ok(room)
     }
@@ -4875,10 +5302,43 @@ impl Engine {
         .map(|transition| transition.outcome)
     }
 
+    /// Applies a command with explicit trusted admission-time evidence. The
+    /// evidence is consulted only by message admission controls.
+    pub fn apply_at(
+        &mut self,
+        command: CommandV2,
+        admission_time: &AdmissionTimeV1,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.apply_revisioned_at(
+            RevisionedCommandV2 {
+                expected_revision: self.revision,
+                command,
+            },
+            admission_time,
+        )
+        .map(|transition| transition.outcome)
+    }
+
     /// Applies exactly one optimistic command and publishes exactly one event.
     pub fn apply_revisioned(
         &mut self,
         envelope: RevisionedCommandV2,
+    ) -> Result<TransitionV2, Refusal> {
+        self.apply_revisioned_with_admission_time(envelope, None)
+    }
+
+    pub fn apply_revisioned_at(
+        &mut self,
+        envelope: RevisionedCommandV2,
+        admission_time: &AdmissionTimeV1,
+    ) -> Result<TransitionV2, Refusal> {
+        self.apply_revisioned_with_admission_time(envelope, Some(admission_time))
+    }
+
+    fn apply_revisioned_with_admission_time(
+        &mut self,
+        envelope: RevisionedCommandV2,
+        admission_time: Option<&AdmissionTimeV1>,
     ) -> Result<TransitionV2, Refusal> {
         if envelope.expected_revision != self.revision {
             return Err(Refusal::RevisionConflict {
@@ -4903,7 +5363,7 @@ impl Engine {
                 .ok_or(Refusal::EventSequenceExhausted)?,
         );
         let event_source = envelope.command.clone();
-        let outcome = self.apply_command(envelope.command)?;
+        let outcome = self.apply_command(envelope.command, admission_time)?;
         let event = self.event_for(&event_source, &outcome);
 
         self.revision = next_revision;
@@ -4930,7 +5390,11 @@ impl Engine {
         })
     }
 
-    fn apply_command(&mut self, command: CommandV2) -> Result<OutcomeV2, Refusal> {
+    fn apply_command(
+        &mut self,
+        command: CommandV2,
+        admission_time: Option<&AdmissionTimeV1>,
+    ) -> Result<OutcomeV2, Refusal> {
         match command {
             CommandV2::RegisterParticipant(participant) => self.register(participant),
             CommandV2::CreateRoom {
@@ -4970,6 +5434,11 @@ impl Engine {
                 actor,
                 admission,
             } => self.set_admission_policy(room_id, actor, admission),
+            CommandV2::SetMinimumMessageInterval {
+                room_id,
+                actor,
+                minimum_interval_ms,
+            } => self.set_minimum_message_interval(room_id, actor, minimum_interval_ms),
             CommandV2::Kick {
                 room_id,
                 actor,
@@ -4991,37 +5460,58 @@ impl Engine {
                 reason,
                 causation,
             } => self.unban(room_id, actor, participant, reason, causation),
+            CommandV2::SetPostingRestricted {
+                room_id,
+                actor,
+                participant,
+                restricted,
+                reason,
+                causation,
+            } => self.set_posting_restricted(
+                room_id,
+                actor,
+                participant,
+                restricted,
+                reason,
+                causation,
+            ),
             CommandV2::Speak {
                 room_id,
                 author,
                 at,
                 body,
-            } => self.speak(MessageAdmission {
-                room_id,
-                author,
-                at,
-                body,
-                addressed_to: Vec::new(),
-                placement: MessagePlacement::Unscoped,
-                attachments: None,
-                vellum_artifacts: None,
-            }),
+            } => self.speak(
+                MessageAdmission {
+                    room_id,
+                    author,
+                    at,
+                    body,
+                    addressed_to: Vec::new(),
+                    placement: MessagePlacement::Unscoped,
+                    attachments: None,
+                    vellum_artifacts: None,
+                },
+                admission_time,
+            ),
             CommandV2::SpeakAddressed {
                 room_id,
                 author,
                 at,
                 body,
                 addressed_to,
-            } => self.speak(MessageAdmission {
-                room_id,
-                author,
-                at,
-                body,
-                addressed_to,
-                placement: MessagePlacement::Unscoped,
-                attachments: None,
-                vellum_artifacts: None,
-            }),
+            } => self.speak(
+                MessageAdmission {
+                    room_id,
+                    author,
+                    at,
+                    body,
+                    addressed_to,
+                    placement: MessagePlacement::Unscoped,
+                    attachments: None,
+                    vellum_artifacts: None,
+                },
+                admission_time,
+            ),
             CommandV2::SpeakReply {
                 room_id,
                 author,
@@ -5029,16 +5519,19 @@ impl Engine {
                 at,
                 body,
                 addressed_to,
-            } => self.speak(MessageAdmission {
-                room_id,
-                author,
-                at,
-                body,
-                addressed_to,
-                placement: MessagePlacement::Reply(root_message_id),
-                attachments: None,
-                vellum_artifacts: None,
-            }),
+            } => self.speak(
+                MessageAdmission {
+                    room_id,
+                    author,
+                    at,
+                    body,
+                    addressed_to,
+                    placement: MessagePlacement::Reply(root_message_id),
+                    attachments: None,
+                    vellum_artifacts: None,
+                },
+                admission_time,
+            ),
             CommandV2::CreateTopic {
                 room_id,
                 actor,
@@ -5083,16 +5576,19 @@ impl Engine {
                 at,
                 body,
                 addressed_to,
-            } => self.speak(MessageAdmission {
-                room_id,
-                author,
-                at,
-                body,
-                addressed_to,
-                placement: MessagePlacement::Topic(topic_id),
-                attachments: None,
-                vellum_artifacts: None,
-            }),
+            } => self.speak(
+                MessageAdmission {
+                    room_id,
+                    author,
+                    at,
+                    body,
+                    addressed_to,
+                    placement: MessagePlacement::Topic(topic_id),
+                    attachments: None,
+                    vellum_artifacts: None,
+                },
+                admission_time,
+            ),
             CommandV2::SpeakWithAttachments {
                 room_id,
                 author,
@@ -5101,22 +5597,27 @@ impl Engine {
                 body,
                 addressed_to,
                 attachments,
-            } => self.speak(MessageAdmission {
-                room_id,
-                author,
-                at,
-                body,
-                addressed_to,
-                placement: match target {
-                    AttachmentMessageTargetV1::Room => MessagePlacement::Unscoped,
-                    AttachmentMessageTargetV1::Reply(message_id) => {
-                        MessagePlacement::Reply(message_id)
-                    }
-                    AttachmentMessageTargetV1::Topic(topic_id) => MessagePlacement::Topic(topic_id),
+            } => self.speak(
+                MessageAdmission {
+                    room_id,
+                    author,
+                    at,
+                    body,
+                    addressed_to,
+                    placement: match target {
+                        AttachmentMessageTargetV1::Room => MessagePlacement::Unscoped,
+                        AttachmentMessageTargetV1::Reply(message_id) => {
+                            MessagePlacement::Reply(message_id)
+                        }
+                        AttachmentMessageTargetV1::Topic(topic_id) => {
+                            MessagePlacement::Topic(topic_id)
+                        }
+                    },
+                    attachments: Some(attachments),
+                    vellum_artifacts: None,
                 },
-                attachments: Some(attachments),
-                vellum_artifacts: None,
-            }),
+                admission_time,
+            ),
             CommandV2::SpeakWithVellumArtifacts {
                 room_id,
                 author,
@@ -5125,24 +5626,27 @@ impl Engine {
                 body,
                 addressed_to,
                 references,
-            } => self.speak(MessageAdmission {
-                room_id,
-                author,
-                at,
-                body,
-                addressed_to,
-                placement: match target {
-                    VellumArtifactMessageTargetV1::Room => MessagePlacement::Unscoped,
-                    VellumArtifactMessageTargetV1::Reply(message_id) => {
-                        MessagePlacement::Reply(message_id)
-                    }
-                    VellumArtifactMessageTargetV1::Topic(topic_id) => {
-                        MessagePlacement::Topic(topic_id)
-                    }
+            } => self.speak(
+                MessageAdmission {
+                    room_id,
+                    author,
+                    at,
+                    body,
+                    addressed_to,
+                    placement: match target {
+                        VellumArtifactMessageTargetV1::Room => MessagePlacement::Unscoped,
+                        VellumArtifactMessageTargetV1::Reply(message_id) => {
+                            MessagePlacement::Reply(message_id)
+                        }
+                        VellumArtifactMessageTargetV1::Topic(topic_id) => {
+                            MessagePlacement::Topic(topic_id)
+                        }
+                    },
+                    attachments: None,
+                    vellum_artifacts: Some(references),
                 },
-                attachments: None,
-                vellum_artifacts: Some(references),
-            }),
+                admission_time,
+            ),
             CommandV2::WithdrawMessage {
                 room_id,
                 actor,
@@ -5403,6 +5907,20 @@ impl Engine {
                 admission: *admission,
             },
             (
+                CommandV2::SetMinimumMessageInterval { .. },
+                OutcomeV2::MessageIntervalChanged {
+                    room_id,
+                    actor,
+                    previous_interval_ms,
+                    minimum_interval_ms,
+                },
+            ) => DomainEventV2::MessageIntervalChanged {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                previous_interval_ms: *previous_interval_ms,
+                minimum_interval_ms: *minimum_interval_ms,
+            },
+            (
                 CommandV2::Kick { .. },
                 OutcomeV2::Kicked {
                     room_id,
@@ -5447,6 +5965,24 @@ impl Engine {
                 room_id: room_id.clone(),
                 actor: actor.clone(),
                 participant: participant.clone(),
+                reason: reason.clone(),
+                causation: *causation,
+            },
+            (
+                CommandV2::SetPostingRestricted { .. },
+                OutcomeV2::PostingRestrictionChanged {
+                    room_id,
+                    actor,
+                    participant,
+                    restricted,
+                    reason,
+                    causation,
+                },
+            ) => DomainEventV2::PostingRestrictionChanged {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                participant: participant.clone(),
+                restricted: *restricted,
                 reason: reason.clone(),
                 causation: *causation,
             },
@@ -5728,6 +6264,9 @@ impl Engine {
                 members,
                 invitations: BTreeSet::new(),
                 bans: BTreeMap::new(),
+                minimum_message_interval_ms: 0,
+                last_message_admission_ms: BTreeMap::new(),
+                posting_restrictions: BTreeSet::new(),
                 messages: VecDeque::new(),
                 thread_roots: BTreeSet::new(),
                 archived_threads: BTreeSet::new(),
@@ -5808,6 +6347,9 @@ impl Engine {
                 members,
                 invitations: BTreeSet::new(),
                 bans: BTreeMap::new(),
+                minimum_message_interval_ms: 0,
+                last_message_admission_ms: BTreeMap::new(),
+                posting_restrictions: BTreeSet::new(),
                 messages: VecDeque::new(),
                 thread_roots: BTreeSet::new(),
                 archived_threads: BTreeSet::new(),
@@ -5989,6 +6531,81 @@ impl Engine {
             self.limits.max_moderation_reason_bytes,
             Refusal::InvalidModerationReason,
         )
+    }
+
+    fn set_minimum_message_interval(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        minimum_interval_ms: u64,
+    ) -> Result<OutcomeV2, Refusal> {
+        if minimum_interval_ms > MAX_MESSAGE_INTERVAL_MS_V1 {
+            return Err(Refusal::InvalidMessageInterval);
+        }
+        let room = self.room_ref(&room_id)?;
+        if room.profile != ConversationProfileV1::Ordinary {
+            return Err(Refusal::ImmutableConversationCohort);
+        }
+        if room.members.get(&actor) != Some(&Role::Owner) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        let previous_interval_ms = room.minimum_message_interval_ms;
+        if previous_interval_ms == minimum_interval_ms {
+            return Err(Refusal::InvalidMessageInterval);
+        }
+        self.rooms
+            .get_mut(&room_id)
+            .expect("room established by validation")
+            .minimum_message_interval_ms = minimum_interval_ms;
+        Ok(OutcomeV2::MessageIntervalChanged {
+            room_id,
+            actor,
+            previous_interval_ms,
+            minimum_interval_ms,
+        })
+    }
+
+    fn set_posting_restricted(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        participant: ParticipantId,
+        restricted: bool,
+        reason: ModerationReasonV1,
+        causation: ModerationCausationV1,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_moderation_reason(&reason)?;
+        let room = self.room_ref(&room_id)?;
+        if room.profile != ConversationProfileV1::Ordinary {
+            return Err(Refusal::ImmutableConversationCohort);
+        }
+        if !Self::moderation_authorized(room, &actor, &participant) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        if !room.members.contains_key(&participant) {
+            return Err(Refusal::NotMember(participant));
+        }
+        if room.posting_restrictions.contains(&participant) == restricted {
+            return Err(Refusal::InvalidPostingRestrictionChange);
+        }
+        let restrictions = &mut self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation")
+            .posting_restrictions;
+        if restricted {
+            restrictions.insert(participant.clone());
+        } else {
+            restrictions.remove(&participant);
+        }
+        Ok(OutcomeV2::PostingRestrictionChanged {
+            room_id,
+            actor,
+            participant,
+            restricted,
+            reason,
+            causation,
+        })
     }
 
     fn moderation_authorized(
@@ -6441,7 +7058,11 @@ impl Engine {
         })
     }
 
-    fn speak(&mut self, admission: MessageAdmission) -> Result<OutcomeV2, Refusal> {
+    fn speak(
+        &mut self,
+        admission: MessageAdmission,
+        admission_time: Option<&AdmissionTimeV1>,
+    ) -> Result<OutcomeV2, Refusal> {
         let MessageAdmission {
             room_id,
             author,
@@ -6464,6 +7085,38 @@ impl Engine {
         if !room.members.contains_key(&author) {
             return Err(Refusal::NotMember(author));
         }
+        if room.posting_restrictions.contains(&author) {
+            return Err(Refusal::PostingRestricted);
+        }
+        let admitted_at_ms = if room.minimum_message_interval_ms == 0 {
+            admission_time.and_then(|time| {
+                self.validate_admission_time(time)
+                    .ok()
+                    .map(|()| time.instant_ms)
+            })
+        } else {
+            let time = admission_time.ok_or(Refusal::AdmissionTimeRequired)?;
+            self.validate_admission_time(time)
+                .map_err(|refusal| match refusal {
+                    AdmissionTimeRefusalV1::ForeignObservation => Refusal::AdmissionTimeForeign,
+                    AdmissionTimeRefusalV1::StaleObservation => Refusal::AdmissionTimeStale,
+                    AdmissionTimeRefusalV1::Regressed
+                    | AdmissionTimeRefusalV1::IdentityExhausted => Refusal::AdmissionTimeStale,
+                })?;
+            if let Some(previous) = room.last_message_admission_ms.get(&author) {
+                let next = previous
+                    .checked_add(room.minimum_message_interval_ms)
+                    .ok_or(Refusal::MessageThrottled {
+                        retry_after_ms: room.minimum_message_interval_ms,
+                    })?;
+                if time.instant_ms < next {
+                    return Err(Refusal::MessageThrottled {
+                        retry_after_ms: next - time.instant_ms,
+                    });
+                }
+            }
+            Some(time.instant_ms)
+        };
         let reply_to_root = match placement {
             MessagePlacement::Reply(root) => Some(root),
             MessagePlacement::Unscoped | MessagePlacement::Topic(_) => None,
@@ -6618,7 +7271,7 @@ impl Engine {
                 .collect(),
             revisions: vec![MessageRevisionV1 {
                 number: 0,
-                editor: author,
+                editor: author.clone(),
                 at,
                 availability: MessageRevisionAvailabilityV1::Available,
                 body,
@@ -6626,6 +7279,10 @@ impl Engine {
         });
         room.next_message_identity = next_message_identity;
         room.next_message_sequence = next;
+        if let Some(admitted_at_ms) = admitted_at_ms {
+            room.last_message_admission_ms
+                .insert(author.clone(), admitted_at_ms);
+        }
         if let Some(root) = reply_to_root {
             room.thread_roots.insert(root);
         }

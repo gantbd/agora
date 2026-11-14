@@ -29,6 +29,14 @@ Host time is an explicit trusted input. Each session retains its last successful
 verification time; regression retires the session before calling the verifier,
 so an expired credential cannot be revived by replaying an older time.
 
+For the additive admission-control profile, Host V2 also derives engine
+admission-time evidence from that same accepted `HostTimeV1` and supplies it
+directly to Service V2. No enforcement timestamp is accepted from Wire V2.
+Only message commands need the evidence, and only an enabled room interval
+consumes it; exact service replay resolves before a later host time can alter a
+retained reply. This is immediate admission enforcement, not scheduling, a
+rate-limiter service, or a Chronos task.
+
 The verifier returns only `VerifiedSubjectV1`, an opaque attribution value. Its
 error vocabulary is erased at the host boundary. Authentication failures produce
 the same `ConnectRefused(Unavailable)` frame regardless of participant existence;
@@ -155,7 +163,7 @@ automatic restart. See
 ## Deliberate exclusions
 
 The host itself is not a network server, credential verifier, authorization-policy
-engine, secret store, rate limiter, TLS terminator, or audit sink. A production
+engine, secret store, general rate-limiter service, TLS terminator, or audit sink. A production
 composition root may pair it with the qualified directory and local transport
 adapters, but must still define transport uncertainty, credential rotation,
 backup/restore, power-loss expectations, operational lifecycle, and abuse policy.

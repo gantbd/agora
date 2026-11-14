@@ -291,7 +291,7 @@ embedded facade constructs the profile without direct crate dependencies.
 
 The standalone opt-in fuzz profile pins cargo-fuzz 0.13.2,
 nightly-2026-11-01, and libfuzzer-sys 0.4.13. Its committed binary seed corpus
-is regenerated from and checked against all fifty-three wire and fixed local
+is regenerated from and checked against all sixty-nine wire and fixed local
 control fixtures plus the current engine, service, and host checkpoint fixtures.
 `wire_canonical` drives all eight public conversation/transient/search request/reply
 decoders, seven fixed-width handshake/session-control decoders, and the local
@@ -299,7 +299,7 @@ route envelope;
 `checkpoint_canonical` drives all three semantic
 recovery layers;
 `outer_frame_canonical` drives the daemon's production length-prefix codec over
-the forty-six complete-frame protocol seeds (the seven fixed-width local
+the sixty-two complete-frame protocol seeds (the seven fixed-width local
 control fixtures are deliberately excluded). An accepted
 candidate must re-encode exactly, and an accepted frame prefix must preserve its
 unconsumed stream suffix. The qualified smoke ran 20,000 fixed-seed cases on all
@@ -822,6 +822,22 @@ nonclaims. Revision `fc446789f227641318850958558e0d7bdef1937d` passed the
 ordinary gate, every release-mode target, 10,000 deterministic soak cycles, and
 1,000,000 fixed-seed cases on each of the three fuzz targets on Darwin 25.6.0
 arm64 / macOS 26.6.2 with unchanged tracked bytes afterward.
+
+The implemented R101 profile makes trusted admission time an explicit Host-to-
+service-to-engine value that never enters the wire request. Core behavior and
+an independent bounded model cover all six message forms, exact interval
+boundaries, role/kind symmetry, restriction hierarchy, refusal atomicity,
+leave/rejoin continuity, opaque evidence freshness, and canonical recovery.
+Private report scenarios cover reporter/moderator visibility, duplicate-open
+refusal, dismissed/escalated review, stable tombstoned/evicted targets,
+closed-only capacity eviction, global bounds, and the absence of implicit room
+events or sanctions. Closed protocol/wire/service/Host values, exact service
+and durable recovery, client uncertainty, both SDK facades, authenticated real
+Unix routing, two frozen frames, the 85-fixture compatibility inventory, and
+refreshed wire/outer fuzz seeds close the implemented surface. Classifier
+truth, appeal/case workflow, timed sanctions, external notification,
+scheduling, and federation remain nonclaims. Commit-pinned release
+qualification is still required.
 
 The gate does not establish a credential adapter, transport security,
 multi-host serialization, physical-device power-loss behavior, event delivery,

@@ -103,6 +103,13 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `4d` | SetPollBallot | room, expected revision, poll ID, strictly increasing option-index list |
 | `4e` | SetPollOpen | room, expected revision, poll ID, open Boolean |
 | `4f` | TopicCollection | room, lifecycle/tag filter, optional cursor, limit |
+| `50` | AdmissionControl | room; caller-private restriction state is derived from the bound client |
+| `51` | SetMinimumMessageInterval | room, minimum interval milliseconds, expected revision |
+| `52` | SetPostingRestricted | room, participant, restricted Boolean, bounded reason, 16-byte opaque causation, expected revision |
+| `53` | MessageReports | room; returns only reports owned by the bound participant |
+| `54` | ModerationReports | room; owner/moderator authority is derived from the bound participant |
+| `55` | SubmitMessageReport | room, observed revision, message ID, bounded reason, 16-byte opaque causation |
+| `56` | ReviewMessageReport | room, report ID, Dismissed/Escalated disposition, bounded review reason, 16-byte opaque causation |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -146,6 +153,16 @@ canonical aliases and tags, and an optional depth-one successor topic ID.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
+
+AdmissionControl, MessageIntervalChanged, and PostingRestrictionChanged are
+`4d` through `4f`. MessageReports, MessageReportSubmitted, and
+MessageReportReviewed are `50` through `52`. Admission status carries the
+shared minimum interval plus only the bound observer's restriction Boolean.
+Report lists are capped at 256 and strictly ordered by opaque report identity.
+Each report carries stable target identity, original sequence and author,
+current target availability, reporter, bounded reasons, opaque causations,
+creation order, and the closed Pending/Dismissed/Escalated disposition. Report
+content never appears in ordinary room-change feeds.
 
 A room page contains revision, room-summary list, and optional cursor. Each
 summary contains room ID, name, admission, observer role, member count, retained
@@ -323,6 +340,12 @@ is derived from the client binding and is never present on the wire.
 | `26` | NotPollEligible | — |
 | `27` | PollClosed | — |
 | `28` | InvalidPollChange | — |
+| `29` | PostingRestricted | — |
+| `2a` | MessageThrottled | remaining interval milliseconds `u64` |
+| `2b` | InvalidMessageReport | — |
+| `2c` | UnknownMessageReport | — |
+| `2d` | MessageReportLimit | — |
+| `2e` | InvalidMessageReportChange | — |
 
 ## Closure and evidence
 
@@ -392,6 +415,12 @@ Capability tag `1e` advertises `TopicCollectionsV1`. Command `4f` and outcome
 `4c` are additive and their frozen request/reply frames pin the filter and full
 metadata grammar. They add no mutation, refusal, event, or message-relation
 encoding.
+Capability tag `1f` advertises `AdmissionModerationControlsV1`. Commands `50`
+through `56`, outcomes `4d` through `52`, refusals `29` through `2e`, and room
+event tags `1c` and `1d` are additive. Trusted admission time is absent from
+the frame: the authenticated Host supplies it out of band only when a nonzero
+interval is active. Frozen restriction-request and private-report-list frames
+pin the new public grammar without changing any prior fixture.
 Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push

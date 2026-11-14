@@ -1158,8 +1158,17 @@ private bounded message reports with reporter-only or owner/moderator
 observation and closed-only eviction. Reviews classify an open report only as
 `Dismissed` or `Escalated`; they neither execute nor prove a moderation action.
 
+The implemented profile advertises `AdmissionModerationControlsV1`. Wire
+commands `50` through `56`, outcomes `4d` through `52`, refusals `29` through
+`2e`, capability `1f`, and room-event tags `1c`/`1d` are additive. The service
+derives every actor from its bound client. The authenticated Host passes its
+`HostTimeV1` to the service; the service advances engine admission time only
+for a message addressed to a room with a nonzero interval and resolves exact
+request replay before advancing the clock. Reports use a private, canonical
+checkpoint profile and never enter ordinary room-change feeds.
+
 Aegis evaluation remains passive correlation evidence before the ordinary
 Agora transition. External classifiers have no Agora command or write port.
 The profile adds no Chronos dependency, timed sentence, workflow/case engine,
 moderator assignment, appeal, cross-room sanction, federation, delivery, or
-agent behavior. Implementation and release qualification remain open.
+agent behavior. Commit-pinned release qualification remains open.

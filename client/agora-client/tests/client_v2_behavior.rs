@@ -121,6 +121,44 @@ fn topic_collection_command(tags: Vec<String>) -> CommandV2 {
     }
 }
 
+fn report_command(reason: &str) -> CommandV2 {
+    CommandV2::SubmitMessageReport {
+        room_id: "room".to_owned(),
+        observed_revision: 4,
+        message_id: MessageIdV1::new([8; 16]),
+        reason: reason.to_owned(),
+        causation: [7; 16],
+    }
+}
+
+#[test]
+fn private_report_uncertainty_replays_only_the_exact_allegation() {
+    let port = RecordingPortV2 {
+        replies: [
+            Err(PortFailureV2::OutcomeUnknown("lost")),
+            Ok(ReplyV2::Refused(RefusalV2::Unavailable)),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let mut client = ClientV2::new(ClientIdV2(7), port);
+    assert_eq!(
+        client.execute(report_command("review")),
+        Err(ClientErrorV2::OutcomeUnknown("lost"))
+    );
+    assert_eq!(
+        client.execute(report_command("changed")),
+        Err(ClientErrorV2::UnresolvedOutcome)
+    );
+    assert_eq!(
+        client.execute(report_command("review")),
+        Ok(ReplyV2::Refused(RefusalV2::Unavailable))
+    );
+    let (port, pending) = client.into_parts();
+    assert!(pending.is_none());
+    assert_eq!(port.requests[0], port.requests[1]);
+}
+
 #[test]
 fn topic_collection_uncertainty_replays_only_the_exact_filter() {
     let port = RecordingPortV2 {

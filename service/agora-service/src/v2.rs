@@ -1,18 +1,22 @@
 //! Serialized volatile implementation of Agora Protocol V2.
 
 use agora_engine::{
-    AdmissionPolicy, AttachmentDescriptorV1 as EngineAttachmentDescriptorV1,
-    AttachmentIdV1 as EngineAttachmentIdV1, AttachmentIntegrityV1 as EngineAttachmentIntegrityV1,
+    AdmissionPolicy, AdmissionTimeRefusalV1, AdmissionTimeV1,
+    AttachmentDescriptorV1 as EngineAttachmentDescriptorV1, AttachmentIdV1 as EngineAttachmentIdV1,
+    AttachmentIntegrityV1 as EngineAttachmentIntegrityV1,
     AttachmentMessageTargetV1 as EngineAttachmentMessageTargetV1,
     AttachmentObjectKeyV1 as EngineAttachmentObjectKeyV1,
     AttachmentStoreIdV1 as EngineAttachmentStoreIdV1, AttentionPreferenceRefusalV1,
     AttentionPreferenceV1 as EngineAttentionPreferenceV1,
     AttentionScopeV1 as EngineAttentionScopeV1, BanPageCursor, CommandV2 as EngineCommand,
     ConversationProfileV1 as EngineConversationProfileV1, Engine, MAX_REACTION_KEY_BYTES_V1,
-    MemberPageCursor, MessageId, MessagePageCursor, MessageRevisionPageCursorV1,
-    ModerationCausationV1, ModerationReasonV1, NotificationIntentV1 as EngineNotificationIntentV1,
-    ObservationRefusal, OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind,
-    PollId as EnginePollId, PollObservationRefusalV1, PrivateSaveRefusalV1, ReadPositionRefusalV1,
+    MemberPageCursor, MessageId, MessagePageCursor,
+    MessageReportDispositionV1 as EngineMessageReportDispositionV1,
+    MessageReportIdV1 as EngineMessageReportIdV1, MessageReportRefusalV1,
+    MessageReportV1 as EngineMessageReportV1, MessageRevisionPageCursorV1, ModerationCausationV1,
+    ModerationReasonV1, NotificationIntentV1 as EngineNotificationIntentV1, ObservationRefusal,
+    OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind, PollId as EnginePollId,
+    PollObservationRefusalV1, PrivateSaveRefusalV1, ReadPositionRefusalV1,
     ReadScopeV1 as EngineReadScopeV1, Refusal as EngineRefusal, Revision, RevisionedCommandV2,
     Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
     Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicCollectionCursorV1,
@@ -25,27 +29,27 @@ use agora_engine::{
     VellumDocumentTargetV1 as EngineVellumDocumentTargetV1,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
-    AttachmentMessagePageV1, AttachmentMessageTargetV1, AttachmentMessageV1, AttachmentObjectKeyV1,
-    AttachmentRoomChangePageV1, AttachmentStoreIdV1, AttentionPreferenceV1, AttentionScopeV1,
-    BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2,
-    ConversationProfileStatusV1, ConversationProfileV1, IdentifiedMessagePageV1,
+    AdmissionControlStatusV1, AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1,
+    AttachmentIntegrityV1, AttachmentMessagePageV1, AttachmentMessageTargetV1, AttachmentMessageV1,
+    AttachmentObjectKeyV1, AttachmentRoomChangePageV1, AttachmentStoreIdV1, AttentionPreferenceV1,
+    AttentionScopeV1, BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2,
+    CommandV2, ConversationProfileStatusV1, ConversationProfileV1, IdentifiedMessagePageV1,
     IdentifiedMessageV1, IdentifiedRoomChangePageV1, IdentifiedRoomChangeV1, IdentifiedRoomEventV1,
     MemberPageV2, MemberV2, MessageAttachmentV1, MessageIdV1, MessagePageV2,
-    MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1, MessageV2,
-    MessageVellumArtifactReferenceV1, NotificationIntentV1, OutcomeV2, PageCursorV2,
-    ParticipantKindV2, PeerConversationCreatedV1, PinnedReferenceV1, PollBallotV1, PollIdV1,
-    PollStatusV1, ReactionStatusV1, ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2,
-    ReplyV2, RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2,
-    RoomPageV2, RoomSummaryV2, SavedReferenceV1, Sha256DigestV1, StableReferenceAvailabilityV1,
-    ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
-    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
-    TopicCollectionEntryV1, TopicCollectionFilterV1, TopicCollectionLifecycleV1,
-    TopicCollectionPageV1, TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1,
-    TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1,
-    TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1, VellumArtifactMessagePageV1,
-    VellumArtifactMessageTargetV1, VellumArtifactMessageV1, VellumArtifactReferenceIdV1,
-    VellumArtifactReferenceV1, VellumDocumentTargetV1,
+    MessageReportDispositionV1, MessageReportIdV1, MessageReportV1, MessageRevisionAvailabilityV1,
+    MessageRevisionPageV1, MessageRevisionV1, MessageV2, MessageVellumArtifactReferenceV1,
+    NotificationIntentV1, OutcomeV2, PageCursorV2, ParticipantKindV2, PeerConversationCreatedV1,
+    PinnedReferenceV1, PollBallotV1, PollIdV1, PollStatusV1, ReactionStatusV1, ReactionSummaryV1,
+    ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
+    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, SavedReferenceV1,
+    Sha256DigestV1, StableReferenceAvailabilityV1, ThreadLifecycleStateV1, ThreadMessagePageV1,
+    ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1, ThreadedRoomChangeV1,
+    ThreadedRoomEventV1, TopicAliasStatusV1, TopicCollectionEntryV1, TopicCollectionFilterV1,
+    TopicCollectionLifecycleV1, TopicCollectionPageV1, TopicIdV1, TopicMessagePageV1,
+    TopicMessageV1, TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1,
+    TopicStatusV1, TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1,
+    VellumArtifactMessagePageV1, VellumArtifactMessageTargetV1, VellumArtifactMessageV1,
+    VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -285,6 +289,26 @@ impl ServiceV2 {
     }
 
     pub fn execute(&mut self, client: ClientIdV2, request: RequestV2) -> ReplyV2 {
+        self.execute_with_host_time(client, request, None)
+    }
+
+    /// Executes with a trusted host-derived, non-regressing admission instant.
+    /// Exact retained-request replay is resolved before the clock advances.
+    pub fn execute_at(
+        &mut self,
+        client: ClientIdV2,
+        request: RequestV2,
+        instant_ms: u64,
+    ) -> ReplyV2 {
+        self.execute_with_host_time(client, request, Some(instant_ms))
+    }
+
+    fn execute_with_host_time(
+        &mut self,
+        client: ClientIdV2,
+        request: RequestV2,
+        instant_ms: Option<u64>,
+    ) -> ReplyV2 {
         count(&mut self.usage.request_offers, &mut self.usage.overflowed);
         let Some(participant) = self.clients.get(&client).cloned() else {
             count(&mut self.usage.refused, &mut self.usage.overflowed);
@@ -307,7 +331,35 @@ impl ServiceV2 {
             count(&mut self.usage.refused, &mut self.usage.overflowed);
             return ReplyV2::Refused(RefusalV2::RequestLimit);
         }
-        let reply = match self.execute_new(client, &participant, &request.command) {
+        let admission_time =
+            if command_needs_admission_time(&self.engine, &participant, &request.command) {
+                match instant_ms {
+                    Some(instant_ms) => match self.engine.advance_admission_time(instant_ms) {
+                        Ok(time) => Some(time),
+                        Err(refusal) => {
+                            let reply = ReplyV2::Refused(map_admission_time_refusal(refusal));
+                            count(&mut self.usage.refused, &mut self.usage.overflowed);
+                            self.retained.insert(
+                                key,
+                                RetainedRequestV2 {
+                                    request,
+                                    reply: reply.clone(),
+                                },
+                            );
+                            return reply;
+                        }
+                    },
+                    None => None,
+                }
+            } else {
+                None
+            };
+        let reply = match self.execute_new(
+            client,
+            &participant,
+            &request.command,
+            admission_time.as_ref(),
+        ) {
             Ok(outcome) => ReplyV2::Accepted(outcome),
             Err(refusal) => ReplyV2::Refused(refusal),
         };
@@ -330,6 +382,7 @@ impl ServiceV2 {
         client: ClientIdV2,
         participant: &ParticipantId,
         command: &CommandV2,
+        admission_time: Option<&AdmissionTimeV1>,
     ) -> Result<OutcomeV2, RefusalV2> {
         match command {
             CommandV2::Capabilities => Ok(OutcomeV2::Capabilities(vec![
@@ -363,6 +416,7 @@ impl ServiceV2 {
                 CapabilityV2::PrivateSavedReferencesV1,
                 CapabilityV2::BoundedPollsV1,
                 CapabilityV2::TopicCollectionsV1,
+                CapabilityV2::AdmissionModerationControlsV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::ConversationProfile { room_id } => {
@@ -382,6 +436,85 @@ impl ServiceV2 {
                             .collect(),
                     },
                 ))
+            }
+            CommandV2::AdmissionControl { room_id } => {
+                let status = self
+                    .engine
+                    .admission_control(participant, &RoomId::new(room_id))
+                    .map_err(map_observation_refusal)?;
+                Ok(OutcomeV2::AdmissionControl(AdmissionControlStatusV1 {
+                    revision: status.revision.0,
+                    room_id: status.room_id.as_str().to_owned(),
+                    minimum_message_interval_ms: status.minimum_message_interval_ms,
+                    observer_posting_restricted: status.observer_posting_restricted,
+                }))
+            }
+            CommandV2::MessageReports { room_id } => self
+                .engine
+                .message_reports(participant, &RoomId::new(room_id))
+                .map(|reports| {
+                    OutcomeV2::MessageReports(
+                        reports
+                            .into_iter()
+                            .map(map_message_report_from_engine)
+                            .collect(),
+                    )
+                })
+                .map_err(map_message_report_refusal),
+            CommandV2::ModerationReports { room_id } => self
+                .engine
+                .moderation_reports(participant, &RoomId::new(room_id))
+                .map(|reports| {
+                    OutcomeV2::MessageReports(
+                        reports
+                            .into_iter()
+                            .map(map_message_report_from_engine)
+                            .collect(),
+                    )
+                })
+                .map_err(map_message_report_refusal),
+            CommandV2::SubmitMessageReport {
+                room_id,
+                observed_revision,
+                message_id,
+                reason,
+                causation,
+            } => self
+                .engine
+                .submit_message_report(
+                    participant,
+                    &RoomId::new(room_id),
+                    MessageId::from_bytes(message_id.into_bytes()),
+                    Revision(*observed_revision),
+                    ModerationReasonV1::new(reason),
+                    ModerationCausationV1::new(*causation),
+                )
+                .map(|report| {
+                    OutcomeV2::MessageReportSubmitted(map_message_report_from_engine(report))
+                })
+                .map_err(map_message_report_refusal),
+            CommandV2::ReviewMessageReport {
+                room_id,
+                report_id,
+                disposition,
+                reason,
+                causation,
+            } => {
+                let report_id = EngineMessageReportIdV1::new(report_id.0)
+                    .ok_or(RefusalV2::InvalidMessageReport)?;
+                self.engine
+                    .review_message_report(
+                        participant,
+                        &RoomId::new(room_id),
+                        report_id,
+                        map_report_disposition_to_engine(*disposition),
+                        ModerationReasonV1::new(reason),
+                        ModerationCausationV1::new(*causation),
+                    )
+                    .map(|report| {
+                        OutcomeV2::MessageReportReviewed(map_message_report_from_engine(report))
+                    })
+                    .map_err(map_message_report_refusal)
             }
             CommandV2::Members {
                 room_id,
@@ -778,7 +911,7 @@ impl ServiceV2 {
                 logical_time,
                 body,
                 addressed_to,
-            } => self.mutate(
+            } => self.mutate_at(
                 *expected_revision,
                 EngineCommand::SpeakInTopic {
                     room_id: RoomId::new(room_id),
@@ -788,6 +921,7 @@ impl ServiceV2 {
                     body: body.clone(),
                     addressed_to: addressed_to.iter().map(ParticipantId::new).collect(),
                 },
+                admission_time,
             ),
             CommandV2::CreateRoom {
                 room_id,
@@ -917,6 +1051,18 @@ impl ServiceV2 {
                     admission: map_admission_to_engine(*admission),
                 },
             ),
+            CommandV2::SetMinimumMessageInterval {
+                room_id,
+                minimum_interval_ms,
+                expected_revision,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetMinimumMessageInterval {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    minimum_interval_ms: *minimum_interval_ms,
+                },
+            ),
             CommandV2::Kick {
                 room_id,
                 participant_id,
@@ -965,6 +1111,24 @@ impl ServiceV2 {
                     causation: ModerationCausationV1::new(*causation),
                 },
             ),
+            CommandV2::SetPostingRestricted {
+                room_id,
+                participant_id,
+                restricted,
+                reason,
+                causation,
+                expected_revision,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetPostingRestricted {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    participant: ParticipantId::new(participant_id),
+                    restricted: *restricted,
+                    reason: ModerationReasonV1::new(reason),
+                    causation: ModerationCausationV1::new(*causation),
+                },
+            ),
             CommandV2::Speak {
                 room_id,
                 expected_revision,
@@ -988,7 +1152,7 @@ impl ServiceV2 {
                         addressed_to: addressed_to.iter().map(ParticipantId::new).collect(),
                     }
                 };
-                self.mutate(*expected_revision, command)
+                self.mutate_at(*expected_revision, command, admission_time)
             }
             CommandV2::SpeakIdentified {
                 room_id,
@@ -1013,7 +1177,7 @@ impl ServiceV2 {
                         addressed_to: addressed_to.iter().map(ParticipantId::new).collect(),
                     }
                 };
-                self.mutate_identified(*expected_revision, command)
+                self.mutate_identified(*expected_revision, command, admission_time)
             }
             CommandV2::SpeakReply {
                 room_id,
@@ -1032,6 +1196,7 @@ impl ServiceV2 {
                     body: body.clone(),
                     addressed_to: addressed_to.iter().map(ParticipantId::new).collect(),
                 },
+                admission_time,
             ),
             CommandV2::SpeakWithAttachments {
                 room_id,
@@ -1056,6 +1221,7 @@ impl ServiceV2 {
                         .map(map_attachment_descriptor_to_engine)
                         .collect(),
                 },
+                admission_time,
             ),
             CommandV2::SpeakWithVellumArtifacts {
                 room_id,
@@ -1080,6 +1246,7 @@ impl ServiceV2 {
                         .map(map_vellum_artifact_reference_to_engine)
                         .collect(),
                 },
+                admission_time,
             ),
             CommandV2::WithdrawMessage {
                 room_id,
@@ -1140,14 +1307,14 @@ impl ServiceV2 {
         &mut self,
         expected_revision: u64,
         command: EngineCommand,
+        admission_time: Option<&AdmissionTimeV1>,
     ) -> Result<OutcomeV2, RefusalV2> {
-        let transition = self
-            .engine
-            .apply_revisioned(RevisionedCommandV2 {
-                expected_revision: Revision(expected_revision),
-                command,
-            })
-            .map_err(map_engine_refusal)?;
+        let transition = apply_revisioned_with_optional_time(
+            &mut self.engine,
+            expected_revision,
+            command,
+            admission_time,
+        )?;
         let EngineOutcome::MessageAccepted { room_id, sequence } = transition.outcome else {
             return Err(RefusalV2::Unavailable);
         };
@@ -1167,14 +1334,14 @@ impl ServiceV2 {
         &mut self,
         expected_revision: u64,
         command: EngineCommand,
+        admission_time: Option<&AdmissionTimeV1>,
     ) -> Result<OutcomeV2, RefusalV2> {
-        let transition = self
-            .engine
-            .apply_revisioned(RevisionedCommandV2 {
-                expected_revision: Revision(expected_revision),
-                command,
-            })
-            .map_err(map_engine_refusal)?;
+        let transition = apply_revisioned_with_optional_time(
+            &mut self.engine,
+            expected_revision,
+            command,
+            admission_time,
+        )?;
         let EngineOutcome::AttachmentMessageAccepted {
             message_id,
             sequence,
@@ -1196,14 +1363,14 @@ impl ServiceV2 {
         &mut self,
         expected_revision: u64,
         command: EngineCommand,
+        admission_time: Option<&AdmissionTimeV1>,
     ) -> Result<OutcomeV2, RefusalV2> {
-        let transition = self
-            .engine
-            .apply_revisioned(RevisionedCommandV2 {
-                expected_revision: Revision(expected_revision),
-                command,
-            })
-            .map_err(map_engine_refusal)?;
+        let transition = apply_revisioned_with_optional_time(
+            &mut self.engine,
+            expected_revision,
+            command,
+            admission_time,
+        )?;
         let EngineOutcome::VellumArtifactMessageAccepted {
             message_id,
             sequence,
@@ -1225,14 +1392,14 @@ impl ServiceV2 {
         &mut self,
         expected_revision: u64,
         command: EngineCommand,
+        admission_time: Option<&AdmissionTimeV1>,
     ) -> Result<OutcomeV2, RefusalV2> {
-        let transition = self
-            .engine
-            .apply_revisioned(RevisionedCommandV2 {
-                expected_revision: Revision(expected_revision),
-                command,
-            })
-            .map_err(map_engine_refusal)?;
+        let transition = apply_revisioned_with_optional_time(
+            &mut self.engine,
+            expected_revision,
+            command,
+            admission_time,
+        )?;
         let EngineOutcome::ReplyAccepted {
             room_id,
             root_message_id,
@@ -1266,6 +1433,13 @@ impl ServiceV2 {
                 command,
             })
             .map_err(map_engine_refusal)?;
+        self.map_transition(transition)
+    }
+
+    fn map_transition(
+        &mut self,
+        transition: agora_engine::TransitionV2,
+    ) -> Result<OutcomeV2, RefusalV2> {
         let revision = transition.revision.0;
         match transition.outcome {
             EngineOutcome::RoomCreated(_) => Ok(OutcomeV2::RoomCreated { revision }),
@@ -1284,9 +1458,15 @@ impl ServiceV2 {
             EngineOutcome::RoomPolicyChanged { .. } => {
                 Ok(OutcomeV2::RoomPolicyChanged { revision })
             }
+            EngineOutcome::MessageIntervalChanged { .. } => {
+                Ok(OutcomeV2::MessageIntervalChanged { revision })
+            }
             EngineOutcome::Kicked { .. } => Ok(OutcomeV2::Kicked { revision }),
             EngineOutcome::Banned { .. } => Ok(OutcomeV2::Banned { revision }),
             EngineOutcome::Unbanned { .. } => Ok(OutcomeV2::Unbanned { revision }),
+            EngineOutcome::PostingRestrictionChanged { .. } => {
+                Ok(OutcomeV2::PostingRestrictionChanged { revision })
+            }
             EngineOutcome::MessageAccepted { sequence, .. } => {
                 Ok(OutcomeV2::MessageAccepted { revision, sequence })
             }
@@ -1474,6 +1654,21 @@ impl ServiceV2 {
             EngineOutcome::ParticipantRegistered(_)
             | EngineOutcome::VellumArtifactMessageAccepted { .. } => Err(RefusalV2::Unavailable),
         }
+    }
+
+    fn mutate_at(
+        &mut self,
+        expected_revision: u64,
+        command: EngineCommand,
+        admission_time: Option<&AdmissionTimeV1>,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let transition = apply_revisioned_with_optional_time(
+            &mut self.engine,
+            expected_revision,
+            command,
+            admission_time,
+        )?;
+        self.map_transition(transition)
     }
 
     fn thread_status(
@@ -2658,6 +2853,16 @@ impl ServiceV2 {
                                 previous: map_admission_from_engine(previous),
                                 admission: map_admission_from_engine(admission),
                             },
+                            agora_engine::DomainEventV2::MessageIntervalChanged {
+                                actor,
+                                previous_interval_ms,
+                                minimum_interval_ms,
+                                ..
+                            } => RoomEventV2::MessageIntervalChanged {
+                                actor_id: actor.as_str().to_owned(),
+                                previous_interval_ms,
+                                minimum_interval_ms,
+                            },
                             agora_engine::DomainEventV2::ParticipantKicked {
                                 actor,
                                 participant,
@@ -2691,6 +2896,20 @@ impl ServiceV2 {
                             } => RoomEventV2::ParticipantUnbanned {
                                 actor_id: actor.as_str().to_owned(),
                                 participant_id: participant.as_str().to_owned(),
+                                reason: reason.as_str().to_owned(),
+                                causation: causation.into_bytes(),
+                            },
+                            agora_engine::DomainEventV2::PostingRestrictionChanged {
+                                actor,
+                                participant,
+                                restricted,
+                                reason,
+                                causation,
+                                ..
+                            } => RoomEventV2::PostingRestrictionChanged {
+                                actor_id: actor.as_str().to_owned(),
+                                participant_id: participant.as_str().to_owned(),
+                                restricted,
                                 reason: reason.as_str().to_owned(),
                                 causation: causation.into_bytes(),
                             },
@@ -3234,6 +3453,13 @@ impl ServiceV2 {
         match command {
             CommandV2::Capabilities => true,
             CommandV2::ConversationProfile { room_id } => valid_room(room_id),
+            CommandV2::AdmissionControl { room_id } => valid_room(room_id),
+            CommandV2::MessageReports { room_id }
+            | CommandV2::ModerationReports { room_id }
+            | CommandV2::ReviewMessageReport { room_id, .. } => valid_room(room_id),
+            CommandV2::SubmitMessageReport {
+                room_id, reason, ..
+            } => valid_room(room_id) && valid_text(reason, self.limits.max_moderation_reason_bytes),
             CommandV2::Rooms { limit, .. } => valid_page(*limit),
             CommandV2::Members { room_id, limit, .. }
             | CommandV2::Bans { room_id, limit, .. }
@@ -3397,10 +3623,21 @@ impl ServiceV2 {
                     && valid_participant(participant_id)
                     && valid_text(reason, self.limits.max_moderation_reason_bytes)
             }
+            CommandV2::SetPostingRestricted {
+                room_id,
+                participant_id,
+                reason,
+                ..
+            } => {
+                valid_room(room_id)
+                    && valid_participant(participant_id)
+                    && valid_text(reason, self.limits.max_moderation_reason_bytes)
+            }
             CommandV2::Join { room_id, .. } | CommandV2::Leave { room_id, .. } => {
                 valid_room(room_id)
             }
-            CommandV2::SetAdmissionPolicy { room_id, .. } => valid_room(room_id),
+            CommandV2::SetAdmissionPolicy { room_id, .. }
+            | CommandV2::SetMinimumMessageInterval { room_id, .. } => valid_room(room_id),
             CommandV2::WithdrawMessage { room_id, .. } => valid_room(room_id),
             CommandV2::RedactMessage {
                 room_id, reason, ..
@@ -3480,6 +3717,51 @@ impl ServiceV2 {
                     && (1..=8).contains(&references.len())
             }
         }
+    }
+}
+
+fn command_needs_admission_time(
+    engine: &Engine,
+    participant: &ParticipantId,
+    command: &CommandV2,
+) -> bool {
+    let room_id = match command {
+        CommandV2::Speak { room_id, .. }
+        | CommandV2::SpeakIdentified { room_id, .. }
+        | CommandV2::SpeakReply { room_id, .. }
+        | CommandV2::SpeakInTopic { room_id, .. }
+        | CommandV2::SpeakWithAttachments { room_id, .. }
+        | CommandV2::SpeakWithVellumArtifacts { room_id, .. } => room_id,
+        _ => return false,
+    };
+    engine
+        .admission_control(participant, &RoomId::new(room_id))
+        .is_ok_and(|status| status.minimum_message_interval_ms > 0)
+}
+
+fn apply_revisioned_with_optional_time(
+    engine: &mut Engine,
+    expected_revision: u64,
+    command: EngineCommand,
+    admission_time: Option<&AdmissionTimeV1>,
+) -> Result<agora_engine::TransitionV2, RefusalV2> {
+    let envelope = RevisionedCommandV2 {
+        expected_revision: Revision(expected_revision),
+        command,
+    };
+    match admission_time {
+        Some(time) => engine.apply_revisioned_at(envelope, time),
+        None => engine.apply_revisioned(envelope),
+    }
+    .map_err(map_engine_refusal)
+}
+
+fn map_admission_time_refusal(refusal: AdmissionTimeRefusalV1) -> RefusalV2 {
+    match refusal {
+        AdmissionTimeRefusalV1::IdentityExhausted => RefusalV2::Exhausted,
+        AdmissionTimeRefusalV1::Regressed
+        | AdmissionTimeRefusalV1::ForeignObservation
+        | AdmissionTimeRefusalV1::StaleObservation => RefusalV2::Unavailable,
     }
 }
 
@@ -4038,6 +4320,16 @@ fn map_identified_room_event(
             previous: map_admission_from_engine(previous),
             admission: map_admission_from_engine(admission),
         },
+        agora_engine::DomainEventV2::MessageIntervalChanged {
+            actor,
+            previous_interval_ms,
+            minimum_interval_ms,
+            ..
+        } => IdentifiedRoomEventV1::MessageIntervalChanged {
+            actor_id: actor.as_str().to_owned(),
+            previous_interval_ms,
+            minimum_interval_ms,
+        },
         agora_engine::DomainEventV2::ParticipantKicked {
             actor,
             participant,
@@ -4071,6 +4363,20 @@ fn map_identified_room_event(
         } => IdentifiedRoomEventV1::ParticipantUnbanned {
             actor_id: actor.as_str().to_owned(),
             participant_id: participant.as_str().to_owned(),
+            reason: reason.as_str().to_owned(),
+            causation: causation.into_bytes(),
+        },
+        agora_engine::DomainEventV2::PostingRestrictionChanged {
+            actor,
+            participant,
+            restricted,
+            reason,
+            causation,
+            ..
+        } => IdentifiedRoomEventV1::PostingRestrictionChanged {
+            actor_id: actor.as_str().to_owned(),
+            participant_id: participant.as_str().to_owned(),
+            restricted,
             reason: reason.as_str().to_owned(),
             causation: causation.into_bytes(),
         },
@@ -4322,6 +4628,16 @@ fn map_threaded_room_event(
             previous: map_admission_from_engine(previous),
             admission: map_admission_from_engine(admission),
         },
+        agora_engine::DomainEventV2::MessageIntervalChanged {
+            actor,
+            previous_interval_ms,
+            minimum_interval_ms,
+            ..
+        } => ThreadedRoomEventV1::MessageIntervalChanged {
+            actor_id: actor.as_str().to_owned(),
+            previous_interval_ms,
+            minimum_interval_ms,
+        },
         agora_engine::DomainEventV2::ParticipantKicked {
             actor,
             participant,
@@ -4355,6 +4671,20 @@ fn map_threaded_room_event(
         } => ThreadedRoomEventV1::ParticipantUnbanned {
             actor_id: actor.as_str().to_owned(),
             participant_id: participant.as_str().to_owned(),
+            reason: reason.as_str().to_owned(),
+            causation: causation.into_bytes(),
+        },
+        agora_engine::DomainEventV2::PostingRestrictionChanged {
+            actor,
+            participant,
+            restricted,
+            reason,
+            causation,
+            ..
+        } => ThreadedRoomEventV1::PostingRestrictionChanged {
+            actor_id: actor.as_str().to_owned(),
+            participant_id: participant.as_str().to_owned(),
+            restricted,
             reason: reason.as_str().to_owned(),
             causation: causation.into_bytes(),
         },
@@ -4532,6 +4862,15 @@ fn map_topic_room_event(event: agora_engine::DomainEventV2) -> Result<TopicRoomE
             previous,
             admission,
         },
+        ThreadedRoomEventV1::MessageIntervalChanged {
+            actor_id,
+            previous_interval_ms,
+            minimum_interval_ms,
+        } => TopicRoomEventV1::MessageIntervalChanged {
+            actor_id,
+            previous_interval_ms,
+            minimum_interval_ms,
+        },
         ThreadedRoomEventV1::ParticipantKicked {
             actor_id,
             participant_id,
@@ -4562,6 +4901,19 @@ fn map_topic_room_event(event: agora_engine::DomainEventV2) -> Result<TopicRoomE
         } => TopicRoomEventV1::ParticipantUnbanned {
             actor_id,
             participant_id,
+            reason,
+            causation,
+        },
+        ThreadedRoomEventV1::PostingRestrictionChanged {
+            actor_id,
+            participant_id,
+            restricted,
+            reason,
+            causation,
+        } => TopicRoomEventV1::PostingRestrictionChanged {
+            actor_id,
+            participant_id,
+            restricted,
             reason,
             causation,
         },
@@ -4793,6 +5145,61 @@ fn map_poll_observation_refusal(refusal: PollObservationRefusalV1) -> RefusalV2 
     }
 }
 
+fn map_report_disposition_to_engine(
+    disposition: MessageReportDispositionV1,
+) -> EngineMessageReportDispositionV1 {
+    match disposition {
+        MessageReportDispositionV1::Pending => EngineMessageReportDispositionV1::Pending,
+        MessageReportDispositionV1::Dismissed => EngineMessageReportDispositionV1::Dismissed,
+        MessageReportDispositionV1::Escalated => EngineMessageReportDispositionV1::Escalated,
+    }
+}
+
+fn map_message_report_from_engine(report: EngineMessageReportV1) -> MessageReportV1 {
+    MessageReportV1 {
+        report_id: MessageReportIdV1(report.report_id.get()),
+        room_id: report.room_id.as_str().to_owned(),
+        message_id: MessageIdV1::new(report.message_id.into_bytes()),
+        original_sequence: report.original_sequence,
+        target_author_id: report.target_author.as_str().to_owned(),
+        target_availability: map_stable_reference_availability(report.target_availability),
+        reporter_id: report.reporter.as_str().to_owned(),
+        reason: report.reason.as_str().to_owned(),
+        causation: report.causation.into_bytes(),
+        creation_order: report.creation_order,
+        disposition: match report.disposition {
+            EngineMessageReportDispositionV1::Pending => MessageReportDispositionV1::Pending,
+            EngineMessageReportDispositionV1::Dismissed => MessageReportDispositionV1::Dismissed,
+            EngineMessageReportDispositionV1::Escalated => MessageReportDispositionV1::Escalated,
+        },
+        review_reason: report
+            .review_reason
+            .map(|reason| reason.as_str().to_owned()),
+        review_causation: report
+            .review_causation
+            .map(ModerationCausationV1::into_bytes),
+    }
+}
+
+fn map_message_report_refusal(refusal: MessageReportRefusalV1) -> RefusalV2 {
+    match refusal {
+        MessageReportRefusalV1::UnknownParticipant => RefusalV2::UnknownParticipant,
+        MessageReportRefusalV1::UnknownRoom => RefusalV2::UnknownRoom,
+        MessageReportRefusalV1::NotMember => RefusalV2::NotMember,
+        MessageReportRefusalV1::NotAuthorized => RefusalV2::NotAuthorized,
+        MessageReportRefusalV1::Stale { actual_revision } => RefusalV2::Stale {
+            actual_revision: actual_revision.0,
+        },
+        MessageReportRefusalV1::UnknownMessage
+        | MessageReportRefusalV1::InvalidReason
+        | MessageReportRefusalV1::DuplicateReport => RefusalV2::InvalidMessageReport,
+        MessageReportRefusalV1::UnknownReport => RefusalV2::UnknownMessageReport,
+        MessageReportRefusalV1::InvalidChange => RefusalV2::InvalidMessageReportChange,
+        MessageReportRefusalV1::Capacity => RefusalV2::MessageReportLimit,
+        MessageReportRefusalV1::IdentityExhausted => RefusalV2::Exhausted,
+    }
+}
+
 fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
     match refusal {
         EngineRefusal::InvalidPinChange => RefusalV2::InvalidPinChange,
@@ -4806,6 +5213,13 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvitationRequired(_)
         | EngineRefusal::OwnerCannotLeave => RefusalV2::NotAuthorized,
         EngineRefusal::ParticipantBanned(_) => RefusalV2::Banned,
+        EngineRefusal::PostingRestricted => RefusalV2::PostingRestricted,
+        EngineRefusal::MessageThrottled { retry_after_ms } => {
+            RefusalV2::MessageThrottled { retry_after_ms }
+        }
+        EngineRefusal::AdmissionTimeRequired
+        | EngineRefusal::AdmissionTimeForeign
+        | EngineRefusal::AdmissionTimeStale => RefusalV2::Unavailable,
         EngineRefusal::ThreadArchived => RefusalV2::ThreadArchived,
         EngineRefusal::TopicResolved => RefusalV2::TopicResolved,
         EngineRefusal::InvalidTopicSupersession => RefusalV2::InvalidTopicSupersession,
@@ -4868,6 +5282,8 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidModerationReason
         | EngineRefusal::InvalidRoleChange
         | EngineRefusal::InvalidPolicyChange
+        | EngineRefusal::InvalidMessageInterval
+        | EngineRefusal::InvalidPostingRestrictionChange
         | EngineRefusal::UnknownMessage
         | EngineRefusal::InvalidReplyTarget
         | EngineRefusal::InvalidThreadLifecycleChange

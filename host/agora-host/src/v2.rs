@@ -177,7 +177,7 @@ impl<V: PrincipalVerifier> HostV2<V> {
                     self.retire(session_id);
                     return self.unavailable();
                 }
-                let reply = self.service.execute(client, request);
+                let reply = self.service.execute_at(client, request, now.0);
                 let frame = encode_reply_v2(&WireReplyV2::Executed(reply), self.limits.wire)
                     .map_err(map_encode)?;
                 count(&mut self.usage.executed, &mut self.usage.overflowed);

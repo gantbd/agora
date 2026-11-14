@@ -163,6 +163,114 @@ fn open(
     (session, client, context)
 }
 
+#[test]
+fn v2_host_supplies_trusted_time_for_symmetric_message_admission() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(4),
+    );
+    let (alice_session, alice_client, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, bot_client, bot_context) = open(&mut host, "bot", 2);
+    let frame = |client, request_id, command| {
+        encode_request_v2(
+            &WireRequestV2::Execute {
+                client,
+                request: RequestV2 {
+                    request_id: RequestIdV2(request_id),
+                    command,
+                },
+            },
+            limits(4).wire,
+        )
+        .unwrap()
+    };
+    let decode = |bytes: Vec<u8>| decode_reply_v2(&bytes, limits(4).wire).unwrap();
+
+    assert!(matches!(
+        decode(
+            host.handle(
+                alice_session,
+                &frame(
+                    alice_client,
+                    1,
+                    CommandV2::SetMinimumMessageInterval {
+                        room_id: "room".to_owned(),
+                        minimum_interval_ms: 100,
+                        expected_revision: 4,
+                    },
+                ),
+                &alice_context,
+                HostTimeV1(10),
+            )
+            .unwrap()
+        ),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::MessageIntervalChanged {
+            revision: 5
+        }))
+    ));
+    let speak = |expected_revision, body: &str| CommandV2::Speak {
+        room_id: "room".to_owned(),
+        expected_revision,
+        logical_time: 0,
+        body: body.to_owned(),
+        addressed_to: Vec::new(),
+    };
+    for (session, client, context, request_id, revision, body) in [
+        (alice_session, alice_client, &alice_context, 2, 5, "alice"),
+        (bot_session, bot_client, &bot_context, 1, 6, "bot"),
+    ] {
+        assert!(matches!(
+            decode(
+                host.handle(
+                    session,
+                    &frame(client, request_id, speak(revision, body)),
+                    context,
+                    HostTimeV1(100),
+                )
+                .unwrap()
+            ),
+            WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::MessageAccepted { .. }))
+        ));
+    }
+    let throttled = frame(alice_client, 3, speak(7, "too soon"));
+    let expected = WireReplyV2::Executed(ReplyV2::Refused(RefusalV2::MessageThrottled {
+        retry_after_ms: 51,
+    }));
+    assert_eq!(
+        decode(
+            host.handle(alice_session, &throttled, &alice_context, HostTimeV1(149),)
+                .unwrap()
+        ),
+        expected
+    );
+    assert_eq!(
+        decode(
+            host.handle(alice_session, &throttled, &alice_context, HostTimeV1(150),)
+                .unwrap()
+        ),
+        expected
+    );
+}
+
 fn create_frame(client: ClientIdV2, request_id: u64, revision: u64) -> Vec<u8> {
     encode_request_v2(
         &WireRequestV2::Execute {

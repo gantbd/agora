@@ -418,6 +418,13 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::NonCanonicalAddressing
         | EngineRefusal::InvalidRoleChange
         | EngineRefusal::InvalidPolicyChange
+        | EngineRefusal::InvalidMessageInterval
+        | EngineRefusal::InvalidPostingRestrictionChange
+        | EngineRefusal::PostingRestricted
+        | EngineRefusal::AdmissionTimeRequired
+        | EngineRefusal::AdmissionTimeForeign
+        | EngineRefusal::AdmissionTimeStale
+        | EngineRefusal::MessageThrottled { .. }
         | EngineRefusal::UnknownMessage
         | EngineRefusal::InvalidReplyTarget
         | EngineRefusal::ThreadArchived

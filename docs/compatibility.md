@@ -337,6 +337,16 @@ reject search under collaboration profile 2 and transient frames under search
 profile 3. The existing control hello supplies the connection/server-bound
 replay epoch used by the search client uncertainty fence.
 
+Admission and moderation controls are additive. Capability tag `1f` advertises
+`AdmissionModerationControlsV1`; command tags `50` through `56`, outcome tags
+`4d` through `52`, refusal tags `29` through `2e`, and room-event tags `1c` and
+`1d` were previously unassigned. Enforcement time is deliberately absent from
+the wire grammar. Report records are confined to new private outcomes and never
+reinterpret an ordinary change feed. Engine checkpoint profile `148` adds an
+explicit feature byte only when private reports exist; profiles `20` through
+`147` retain their exact prior grammar and bytes. The frozen restriction request
+and report-list reply pin representative new frames.
+
 ## Conservative baseline gate
 
 `docs/compatibility-baseline.txt` records the exact sorted Cargo package

@@ -140,7 +140,7 @@ fn filtered_collection_cursor_is_client_filter_and_checkpoint_bound() {
     assert!(matches!(
         service.execute(agent, request(1, CommandV2::Capabilities)),
         ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities))
-            if capabilities.last() == Some(&CapabilityV2::TopicCollectionsV1)
+            if capabilities.contains(&CapabilityV2::TopicCollectionsV1)
     ));
     let ReplyV2::Accepted(OutcomeV2::TopicCollection(first)) = service.execute(
         agent,

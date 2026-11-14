@@ -33,6 +33,14 @@ membership, conversation visibility, speaking, moderation, delivery, task, or
 agent-execution authority; Agora still evaluates every room operation from the
 participant bound to the service client.
 
+Agora's passive room-action vocabulary includes `ConfigureAdmission`,
+`RestrictPosting`, `RestorePosting`, `Report`, and `ReviewReport` so a
+composition may correlate policy evidence without creating another mutation
+path. This adapter continues to authorize only session-level `Submit`; an Aegis
+decision does not set an interval, restrict a participant, create or review a
+report, or establish classifier truth. The authenticated Agora transition
+derives its actor and independently enforces room authority and invariants.
+
 The separate restore adapter prebinds one Agora durable store key, Host
 checkpoint scope, and opaque 128-bit Aegis resource. For each validated loaded
 checkpoint it requests `Administer` in the `Agora` namespace at explicit trusted

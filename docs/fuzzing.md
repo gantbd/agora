@@ -24,7 +24,7 @@ The ordinary stable gate does not install or run either external tool.
 under the exact offline locked dependency graph, verifies the toolchain/dependency
 pins, and proves every committed binary seed is the exact
 decoded form of a canonical wire or checkpoint fixture. Outer-frame seeds are
-the forty-six canonical complete-frame protocol fixtures with their exact
+the sixty-two canonical complete-frame protocol fixtures with their exact
 four-byte length prefix. The seven fixed-width local handshake/session-control
 fixtures are deliberately excluded from that corpus.
 Refresh those seeds
