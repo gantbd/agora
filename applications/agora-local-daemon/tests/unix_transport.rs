@@ -40,9 +40,9 @@ use agora_protocol::transient::{
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1,
-    CommandV2 as ProtocolCommand, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
-    Sha256DigestV1, VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1,
-    VellumArtifactReferenceV1, VellumDocumentTargetV1,
+    CommandV2 as ProtocolCommand, ConversationProfileV1, OutcomeV2, RefusalV2, ReplyV2,
+    RequestIdV2, RequestV2, Sha256DigestV1, VellumArtifactMessageTargetV1,
+    VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use agora_service::search::port::{
     SearchCursorV1, SearchGenerationV1, SearchHitV1, SearchObservationV1, SearchPageV1,
@@ -814,6 +814,51 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
             OutcomeV2::VellumArtifactMessageAccepted { revision: 5, .. }
         ))
     ));
+    let peer = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(3),
+                command: ProtocolCommand::CreatePeerConversation {
+                    room_id: "direct".to_owned(),
+                    name: "Direct".to_owned(),
+                    profile: ConversationProfileV1::Direct,
+                    founding_participant_ids: vec!["alice".to_owned(), "bot".to_owned()],
+                    expected_revision: 5,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &peer);
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::PeerConversationCreated {
+            revision: 6,
+            profile: ConversationProfileV1::Direct,
+        }))
+    ));
+    let profile = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(4),
+                command: ProtocolCommand::ConversationProfile {
+                    room_id: "direct".to_owned(),
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &profile);
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::ConversationProfile(status)))
+            if status.profile == ConversationProfileV1::Direct
+                && status.founding_participant_ids == ["alice", "bot"]
+    ));
     drop(stream);
 
     let (result, daemon) = server.join().unwrap();
@@ -833,12 +878,12 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert_eq!(observation.transport, daemon.health());
     assert_eq!(observation.host.open_offers, 1);
     assert_eq!(observation.host.authenticated, 1);
-    assert_eq!(observation.host.frame_offers, 4);
-    assert_eq!(observation.host.executed, 4);
+    assert_eq!(observation.host.frame_offers, 6);
+    assert_eq!(observation.host.executed, 6);
     assert_eq!(observation.service.connect_offers, 1);
     assert_eq!(observation.service.connected, 1);
-    assert_eq!(observation.service.request_offers, 4);
-    assert_eq!(observation.service.accepted, 3);
+    assert_eq!(observation.service.request_offers, 6);
+    assert_eq!(observation.service.accepted, 5);
     assert_eq!(observation.service.replayed, 1);
     assert_eq!(observation.service.disconnected, 1);
     assert!(!observation.fidelity_lost);
@@ -846,7 +891,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert!(!diagnostic.contains("alice"));
     assert!(!diagnostic.contains("room"));
     assert!(!diagnostic.contains("Room"));
-    assert_eq!(calls.lock().unwrap().len(), 5);
+    assert_eq!(calls.lock().unwrap().len(), 7);
     drop(daemon);
     assert!(!path.exists());
     remove_parent(&path);

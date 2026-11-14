@@ -394,6 +394,9 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::EventSequenceExhausted => RefusalV1::Exhausted,
         EngineRefusal::TopicIdentityExhausted => RefusalV1::Exhausted,
         EngineRefusal::InvalidParticipantId
+        | EngineRefusal::InvalidConversationProfile
+        | EngineRefusal::InvalidConversationCohort
+        | EngineRefusal::ImmutableConversationCohort
         | EngineRefusal::InvalidRoomId
         | EngineRefusal::InvalidDisplayName
         | EngineRefusal::InvalidRoomName

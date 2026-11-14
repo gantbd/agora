@@ -2,9 +2,10 @@ use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind,
 };
 use agora_protocol::v2::{
-    AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, IdentifiedRoomEventV1,
-    MessageIdV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
-    RoomEventV2, ThreadLifecycleStateV1, ThreadedRoomEventV1, TopicIdV1, TopicRoomEventV1,
+    AdmissionPolicyV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2, ConversationProfileV1,
+    IdentifiedRoomEventV1, MessageIdV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2,
+    RequestV2, RoleV2, RoomEventV2, ThreadLifecycleStateV1, ThreadedRoomEventV1, TopicIdV1,
+    TopicRoomEventV1,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -13,6 +14,104 @@ fn request(id: u64, command: CommandV2) -> RequestV2 {
         request_id: RequestIdV2(id),
         command,
     }
+}
+
+#[test]
+fn v2_peer_conversations_bind_initiator_and_expose_profile_only_to_current_members() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+        ("outsider", ParticipantKind::Human),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let outsider = service.connect("outsider").unwrap();
+
+    let create = request(
+        1,
+        CommandV2::CreatePeerConversation {
+            room_id: "direct".to_owned(),
+            name: "Direct".to_owned(),
+            profile: ConversationProfileV1::Direct,
+            founding_participant_ids: vec!["alice".to_owned(), "bot".to_owned()],
+            expected_revision: 3,
+        },
+    );
+    assert_eq!(
+        service.execute(alice, create.clone()),
+        ReplyV2::Accepted(OutcomeV2::PeerConversationCreated {
+            revision: 4,
+            profile: ConversationProfileV1::Direct,
+        })
+    );
+    assert_eq!(
+        service.execute(alice, create),
+        ReplyV2::Accepted(OutcomeV2::PeerConversationCreated {
+            revision: 4,
+            profile: ConversationProfileV1::Direct,
+        })
+    );
+
+    assert!(matches!(
+        service.execute(
+            bot,
+            request(
+                1,
+                CommandV2::ConversationProfile {
+                    room_id: "direct".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::ConversationProfile(status))
+            if status.profile == ConversationProfileV1::Direct
+                && status.founding_participant_ids == vec!["alice", "bot"]
+    ));
+    assert_eq!(
+        service.execute(
+            outsider,
+            request(
+                1,
+                CommandV2::ConversationProfile {
+                    room_id: "direct".to_owned(),
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::NotMember)
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                2,
+                CommandV2::Leave {
+                    room_id: "direct".to_owned(),
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Left { revision: 5 })
+    );
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                3,
+                CommandV2::Join {
+                    room_id: "direct".to_owned(),
+                    expected_revision: 5,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::ImmutableConversationCohort)
+    );
 }
 
 #[test]
@@ -3573,10 +3672,10 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 24);
+    assert_eq!(capabilities.len(), 25);
     assert_eq!(
         capabilities.last(),
-        Some(&CapabilityV2::VellumArtifactReferencesV1)
+        Some(&CapabilityV2::ConversationProfilesV1)
     );
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);

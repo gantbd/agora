@@ -34,10 +34,12 @@ fixture|adapters/agora-storage-directory/tests/fixtures/directory-record-v1.hex|
 fixture|protocol/agora-wire/tests/fixtures/attachment-history-reply-v2.hex|262|c43b30c668bfeb34b036075100c2e420dad351d0e04796ded477d6defabde3ac
 fixture|protocol/agora-wire/tests/fixtures/attachment-speak-request-v2.hex|210|a15d3269011f56a41235fca83e737f76b6e02b21382486c0f7c338a968e9b4ab
 fixture|protocol/agora-wire/tests/fixtures/bans-reply-v2.hex|56|1eceb89d5dd13236623b366cc25ac4d12535cdc87dec8101f2290615f819832a
-fixture|protocol/agora-wire/tests/fixtures/capabilities-reply-v2.hex|34|cf9d93cba276359f7f483c778e9160e37b155a15bacf3ceceb619fc992fe6d00
+fixture|protocol/agora-wire/tests/fixtures/capabilities-reply-v2.hex|37|200acf9c8a0b0476a1450fe8dc2ca87e2b78cd88ccecfa1fc8f99e14a16d98b0
 fixture|protocol/agora-wire/tests/fixtures/change-retention-gap-reply-v2.hex|21|415ddc0de4cede801f07bba20d704e8ba8c4483c2b68171b331481207ef2b079
 fixture|protocol/agora-wire/tests/fixtures/changes-reply-v2.hex|101|0e62f74e8368688c28ac2b5b167d4653605b59ed951834165a4cbf5e3509662d
 fixture|protocol/agora-wire/tests/fixtures/connect-request-v1.hex|11|4c13512cfcb29d053b6e56610b4693ac9ad5f6cd88650349bfb2df13c75c5fe4
+fixture|protocol/agora-wire/tests/fixtures/conversation-profile-status-reply-v2.hex|47|b78c2f5e2b2cc0c041b9f5b13c8f61d847cc29e25f5d3327b26de740439dbcc8
+fixture|protocol/agora-wire/tests/fixtures/create-peer-conversation-request-v2.hex|72|d22727a5e2fe07fcd7add77b66174c53c2bc4101717668be4699b2f741e2d58d
 fixture|protocol/agora-wire/tests/fixtures/create-room-request-v2.hex|50|3941c9e17887deddf2bf1e20c6446f3f0510390db656581cffadd0d01cdd9000
 fixture|protocol/agora-wire/tests/fixtures/identified-changes-reply-v2.hex|123|23aa4c0cc49057fea07926b9e6e337abc38eadfd1bddba9d9ca22d797b6392a3
 fixture|protocol/agora-wire/tests/fixtures/identified-messages-reply-v2.hex|123|3b69a08eba773bc77f5b840f8da0acef68f753c7c957be10c4623ba1ad5cfa4d

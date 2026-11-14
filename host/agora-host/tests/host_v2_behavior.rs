@@ -10,7 +10,7 @@ use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, Verifie
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1, ClientIdV2, CommandV2,
-    OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1,
+    ConversationProfileV1, OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1,
     VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
     VellumDocumentTargetV1,
 };
@@ -219,6 +219,45 @@ fn v2_verified_connection_binds_actor_and_exact_replay() {
     assert_eq!(room.members[0].0.as_str(), "alice");
     assert_eq!(host.usage().executed, 2);
     assert!(!format!("{host:?}").contains("alice"));
+}
+
+#[test]
+fn v2_peer_creation_binds_the_authenticated_initiator() {
+    let (mut host, _) = make_host(2);
+    let (session, client, context) = open(&mut host, "alice", 1);
+    let create = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::CreatePeerConversation {
+                    room_id: "direct".to_owned(),
+                    name: "Direct".to_owned(),
+                    profile: ConversationProfileV1::Direct,
+                    founding_participant_ids: vec!["alice".to_owned(), "bot".to_owned()],
+                    expected_revision: 2,
+                },
+            },
+        },
+        limits(8).wire,
+    )
+    .unwrap();
+    let reply = host
+        .handle(session, &create, &context, HostTimeV1(2))
+        .unwrap();
+    assert_eq!(
+        decode_reply_v2(&reply, limits(8).wire).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::PeerConversationCreated {
+            revision: 3,
+            profile: ConversationProfileV1::Direct,
+        }))
+    );
+    let event = host.service().engine().pending_events().last().unwrap();
+    assert!(matches!(
+        &event.event,
+        agora_engine::DomainEventV2::PeerConversationCreated { initiator, .. }
+            if initiator.as_str() == "alice"
+    ));
 }
 
 #[test]
@@ -431,7 +470,7 @@ fn v2_vellum_artifact_receipt_and_actor_binding_recover_through_host_checkpoint(
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    assert_eq!(checkpoint.bytes()[8], 24);
+    assert_eq!(checkpoint.bytes()[8], 25);
 
     let mut recovered = HostV2::recover_checkpoint(
         checkpoint.bytes(),
@@ -901,13 +940,14 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    let fixture = include_str!("fixtures/host-checkpoint-v24.hex").trim();
-    let actual = checkpoint
-        .bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    assert_eq!(actual, fixture);
+    let mut fixture = decode_hex(include_str!("fixtures/host-checkpoint-v24.hex"));
+    fixture[8] = 25;
+    let service_offset = fixture
+        .windows(8)
+        .position(|window| window == b"AGORASV\0")
+        .unwrap();
+    fixture[service_offset + 8] = 26;
+    assert_eq!(checkpoint.bytes(), fixture);
 
     let calls = Rc::new(Cell::new(0));
     let mut recovered = HostV2::recover_checkpoint(
@@ -1123,14 +1163,65 @@ fn fixed_seed_host_checkpoint_mutations_refuse_or_remain_canonical() {
                 calls: Rc::new(Cell::new(0)),
             },
         ) {
+            let migrated = recovered
+                .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+                .unwrap();
+            let round_trip = HostV2::recover_checkpoint(
+                migrated.bytes(),
+                CHECKPOINT_SCOPE,
+                recovery_limits(),
+                Verifier {
+                    calls: Rc::new(Cell::new(0)),
+                },
+            )
+            .unwrap_or_else(|error| {
+                panic!(
+                    "accepted legacy mutation must migrate canonically at sample {sample} bit {bit}: {error:?}"
+                )
+            });
             assert_eq!(
-                recovered
+                round_trip
                     .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
                     .unwrap()
                     .bytes(),
-                candidate,
-                "accepted mutation must remain canonical at sample {sample} bit {bit}"
+                migrated.bytes(),
+                "accepted legacy mutation must stabilize after migration at sample {sample} bit {bit}"
             );
         }
     }
+}
+
+#[test]
+fn legacy_host_checkpoint_migrates_to_current_host_and_service_envelopes() {
+    let legacy = decode_hex(include_str!("fixtures/host-checkpoint-v24.hex"));
+    let recovered = HostV2::recover_checkpoint(
+        &legacy,
+        CHECKPOINT_SCOPE,
+        recovery_limits(),
+        Verifier {
+            calls: Rc::new(Cell::new(0)),
+        },
+    )
+    .unwrap();
+    let migrated = recovered
+        .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+        .unwrap();
+    assert_eq!(migrated.bytes()[8], 25);
+    let service_offset = migrated
+        .bytes()
+        .windows(8)
+        .position(|window| window == b"AGORASV\0")
+        .unwrap();
+    assert_eq!(migrated.bytes()[service_offset + 8], 26);
+    assert!(
+        HostV2::recover_checkpoint(
+            migrated.bytes(),
+            CHECKPOINT_SCOPE,
+            recovery_limits(),
+            Verifier {
+                calls: Rc::new(Cell::new(0)),
+            },
+        )
+        .is_ok()
+    );
 }

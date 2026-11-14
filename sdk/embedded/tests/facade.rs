@@ -93,6 +93,24 @@ fn facade_alone_constructs_the_embedded_v2_stack() {
 }
 
 #[test]
+fn facade_names_authoritative_conversation_profiles() {
+    let command = engine::CommandV2::CreatePeerConversation {
+        room_id: "direct".into(),
+        name: "Direct".to_owned(),
+        initiator: "alice".into(),
+        profile: engine::ConversationProfileV1::Direct,
+        founding_members: vec!["alice".into(), "bot".into()],
+    };
+    assert!(matches!(
+        command,
+        engine::CommandV2::CreatePeerConversation {
+            profile: engine::ConversationProfileV1::Direct,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn facade_constructs_the_additive_transient_host_profile() {
     let engine = engine::Engine::new();
     let service = service::v2::ServiceV2::new(engine, service::v2::ServiceLimitsV2::default());

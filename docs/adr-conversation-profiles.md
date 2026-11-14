@@ -1,6 +1,6 @@
 # ADR: conversation profiles
 
-Status: adopted; implementation pending
+Status: implemented; release qualification pending
 
 Date: 2026-11-14
 
@@ -97,6 +97,11 @@ or federation claim without evidence.
 - Canonical checkpoint advance, exact replay, legacy-byte preservation,
   adversarial decode closure, bounded schedule model, fuzz corpus, and
   commit-pinned release qualification.
+
+The engine-through-SDK implementation, authenticated Host binding, private
+Unix transport route, bounded permutation/schedule model, canonical recovery,
+two frozen wire frames, compatibility inventory, and fuzz seeds are present.
+Commit-pinned release qualification remains the final acceptance gate.
 
 ## Nonclaims
 

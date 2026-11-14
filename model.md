@@ -1,6 +1,6 @@
 # Agora domain model
 
-Status: normative model for the qualified R90 local conversation profile. The
+Status: normative model for the implemented R96 local conversation profile. The
 requirements and specification remain authoritative for individual command and
 wire details; this document states the aggregate ownership and laws that those
 details refine.
@@ -164,6 +164,9 @@ models and behavioral suites refine parts of this document:
   reply/topic relation laws.
 - `engine/agora-engine/tests/lifecycle_model.rs` — thread/topic lifecycle
   schedules.
+- `engine/agora-engine/tests/conversation_profile_behavior.rs` — exhaustive
+  three-peer kind/initiator/departure-order schedules, immutable-cohort laws,
+  atomic cardinality refusal, privacy loss, and canonical zero-member recovery.
 - `service/agora-service/tests/service_v2_schedule_model.rs` — multi-client
   serialized service schedules, replay, and kind symmetry.
 - Engine, protocol, wire, service, Host, durable, adapter, SDK, compatibility,

@@ -5,7 +5,8 @@ use agora_service::v2::persistence::{ServiceCheckpointScopeV1, ServiceRecoveryLi
 use std::collections::BTreeSet;
 
 const MAGIC: &[u8; 8] = b"AGORAHST";
-const VERSION: u8 = 24;
+const VERSION_V24: u8 = 24;
+const VERSION_V25: u8 = 25;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct HostCheckpointScopeV1([u8; 16]);
@@ -270,7 +271,7 @@ fn encode_state(
         max: max_snapshot_bytes,
     };
     writer.raw(MAGIC)?;
-    writer.byte(VERSION)?;
+    writer.byte(VERSION_V25)?;
     writer.raw(&scope.0)?;
     write_limits(&mut writer, limits)?;
     writer.number(next_session)?;
@@ -299,7 +300,11 @@ fn decode_state(
         return Err(HostCheckpointErrorV2::Limit);
     }
     let mut reader = Reader { bytes, position: 0 };
-    if reader.raw(MAGIC.len())? != MAGIC || reader.byte()? != VERSION {
+    if reader.raw(MAGIC.len())? != MAGIC {
+        return Err(HostCheckpointErrorV2::Profile);
+    }
+    let version = reader.byte()?;
+    if !matches!(version, VERSION_V24 | VERSION_V25) {
         return Err(HostCheckpointErrorV2::Profile);
     }
     if reader.fixed::<16>()? != expected_scope.0 {
@@ -307,8 +312,18 @@ fn decode_state(
     }
     let limits = read_limits(&mut reader, bounds.maximum_host_limits)?;
     let next_session = reader.number()?;
+    let service_bytes = reader.blob(bounds.max_service_snapshot_bytes)?;
+    let service_version = service_bytes
+        .get(b"AGORASV\0".len())
+        .copied()
+        .ok_or(HostCheckpointErrorV2::Service)?;
+    if (version == VERSION_V24 && !matches!(service_version, 24 | 25))
+        || (version == VERSION_V25 && !matches!(service_version, 26 | 27))
+    {
+        return Err(HostCheckpointErrorV2::Profile);
+    }
     let service = ServiceV2::recover_checkpoint(
-        reader.blob(bounds.max_service_snapshot_bytes)?,
+        service_bytes,
         expected_scope.service_scope(),
         bounds.service,
     )
@@ -383,7 +398,19 @@ fn decode_state(
         expected_scope,
         bounds.max_snapshot_bytes,
     )?;
-    if canonical.bytes() != bytes {
+    let canonical_matches = if version == VERSION_V24 {
+        let mut legacy = canonical.bytes().to_vec();
+        legacy[MAGIC.len()] = VERSION_V24;
+        let service_offset = legacy
+            .windows(b"AGORASV\0".len())
+            .position(|window| window == b"AGORASV\0")
+            .ok_or(HostCheckpointErrorV2::Service)?;
+        legacy[service_offset + b"AGORASV\0".len()] = service_version;
+        legacy == bytes
+    } else {
+        canonical.bytes() == bytes
+    };
+    if !canonical_matches {
         return Err(HostCheckpointErrorV2::NonCanonical);
     }
     Ok(state)

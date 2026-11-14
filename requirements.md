@@ -685,8 +685,8 @@
 
 ## Explicitly open
 
-The R96 conversation-profile contract is adopted but not yet an implementation
-claim. Additional physical durable storage adapters, durable event sinks,
+The R96 conversation-profile contract is implemented; its commit-pinned release
+qualification remains open. Additional physical durable storage adapters, durable event sinks,
 credential authenticators, network transports, end-to-end encryption,
 federation, delivery acknowledgment, and durable audit are not part of the
 current v0.3 claim.

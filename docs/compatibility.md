@@ -250,6 +250,20 @@ All older tags, projections, frames, and fixtures remain byte-identical. Two
 frozen artifact frames raise compatibility closure to 75 fixtures and seed both
 canonical wire fuzz profiles.
 
+Conversation profiles are additive. `CreatePeerConversation` uses command tag
+64 (`40` hex), `ConversationProfile` uses 65 (`41`), creation/status outcomes
+use 61/62 (`3d`/`3e`), capability tag 25 (`19`), immutable-cohort refusal 31
+(`1f`), and peer-creation event 23 (`17`) in every change projection. Profile
+scalars are Ordinary `01`, Direct `02`, and GroupDirect `03`; peer cohorts are
+strictly increasing and retain the initiator. The legacy room-summary grammar
+and older frames remain unchanged except the intentionally expanded canonical
+capability response. Engine profiles 22/23 retain peer state
+without/with Vellum relations. Service profiles 26/27 and Host profile 25 form
+the new canonical envelopes; valid profiles 24/25 service and 24 Host recover
+only with their historical payload vocabulary and migrate deterministically.
+Two frozen frames raise compatibility closure to 77 fixtures and seed both
+canonical wire fuzz profiles.
+
 Transient collaboration Wire V1 is a new, separately invoked grammar. Its
 profile byte `01`, presence command/outcome tags `01` through `03`, typing
 command/outcome tags `04` through `06`, reply tags `81` and `82`, and refusal

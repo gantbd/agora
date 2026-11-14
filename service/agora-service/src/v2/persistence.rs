@@ -19,6 +19,66 @@ use std::fmt;
 const MAGIC: &[u8; 8] = b"AGORASV\0";
 const VERSION_V24: u8 = 24;
 const VERSION_V25: u8 = 25;
+const VERSION_V26: u8 = 26;
+const VERSION_V27: u8 = 27;
+
+fn command_uses_conversation_profiles(command: &CommandV2) -> bool {
+    matches!(
+        command,
+        CommandV2::CreatePeerConversation { .. } | CommandV2::ConversationProfile { .. }
+    )
+}
+
+fn reply_uses_conversation_profiles(reply: &ReplyV2) -> bool {
+    let ReplyV2::Accepted(outcome) = reply else {
+        return false;
+    };
+    match outcome {
+        OutcomeV2::PeerConversationCreated { .. } | OutcomeV2::ConversationProfile(_) => true,
+        OutcomeV2::Capabilities(capabilities) => {
+            capabilities.contains(&CapabilityV2::ConversationProfilesV1)
+        }
+        OutcomeV2::Changes(page) => page
+            .changes
+            .iter()
+            .any(|change| matches!(change.event, RoomEventV2::PeerConversationCreated(_))),
+        OutcomeV2::IdentifiedChanges(page) => page.changes.iter().any(|change| {
+            matches!(
+                change.event,
+                IdentifiedRoomEventV1::PeerConversationCreated(_)
+            )
+        }),
+        OutcomeV2::AttachmentChanges(page) => page.identified.changes.iter().any(|change| {
+            matches!(
+                change.event,
+                IdentifiedRoomEventV1::PeerConversationCreated(_)
+            )
+        }),
+        OutcomeV2::ThreadedChanges(page) => page.changes.iter().any(|change| {
+            matches!(
+                change.event,
+                ThreadedRoomEventV1::PeerConversationCreated(_)
+            )
+        }),
+        OutcomeV2::TopicChanges(page) => page
+            .changes
+            .iter()
+            .any(|change| matches!(change.event, TopicRoomEventV1::PeerConversationCreated(_))),
+        _ => false,
+    }
+}
+
+fn retained_uses_vellum(retained: &RetainedRequestV2) -> bool {
+    matches!(
+        retained.request.command,
+        CommandV2::VellumArtifactMessages { .. } | CommandV2::SpeakWithVellumArtifacts { .. }
+    ) || matches!(
+        retained.reply,
+        ReplyV2::Accepted(
+            OutcomeV2::VellumArtifactMessages(_) | OutcomeV2::VellumArtifactMessageAccepted { .. }
+        )
+    )
+}
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ServiceCheckpointScopeV1([u8; 16]);
@@ -289,29 +349,17 @@ impl ServiceV2 {
             bytes: Vec::new(),
             max: max_snapshot_bytes,
         };
-        let requires_v25 = engine.bytes().get(8) == Some(&21)
+        let includes_vellum = matches!(engine.bytes().get(8), Some(21 | 23))
             || self
                 .cursors
                 .values()
                 .any(|record| matches!(record.page, CursorPage::VellumArtifactMessages { .. }))
-            || self.retained.values().any(|retained| {
-                matches!(
-                    retained.request.command,
-                    CommandV2::VellumArtifactMessages { .. }
-                        | CommandV2::SpeakWithVellumArtifacts { .. }
-                ) || matches!(
-                    retained.reply,
-                    ReplyV2::Accepted(
-                        OutcomeV2::VellumArtifactMessages(_)
-                            | OutcomeV2::VellumArtifactMessageAccepted { .. }
-                    )
-                )
-            });
+            || self.retained.values().any(retained_uses_vellum);
         writer.raw(MAGIC)?;
-        writer.byte(if requires_v25 {
-            VERSION_V25
+        writer.byte(if includes_vellum {
+            VERSION_V27
         } else {
-            VERSION_V24
+            VERSION_V26
         })?;
         writer.raw(&scope.0)?;
         write_limits(&mut writer, self.limits)?;
@@ -522,7 +570,10 @@ impl ServiceV2 {
             return Err(ServiceCheckpointErrorV2::Profile);
         }
         let version = reader.byte()?;
-        if !matches!(version, VERSION_V24 | VERSION_V25) {
+        if !matches!(
+            version,
+            VERSION_V24 | VERSION_V25 | VERSION_V26 | VERSION_V27
+        ) {
             return Err(ServiceCheckpointErrorV2::Profile);
         }
         if reader.fixed::<16>()? != expected_scope.0 {
@@ -532,6 +583,13 @@ impl ServiceV2 {
         let next_client = reader.number()?;
         let next_cursor = reader.number()?;
         let engine_bytes = reader.blob(bounds.max_engine_snapshot_bytes)?;
+        let engine_profile = engine_bytes
+            .get(MAGIC.len())
+            .copied()
+            .ok_or(ServiceCheckpointErrorV2::Engine)?;
+        if matches!(version, VERSION_V24 | VERSION_V25) && engine_profile >= 22 {
+            return Err(ServiceCheckpointErrorV2::Profile);
+        }
         let engine = Engine::recover_checkpoint(
             engine_bytes,
             RecoveryLimits {
@@ -599,6 +657,12 @@ impl ServiceV2 {
                 WireReplyV2::Executed(reply) => reply,
                 _ => return Err(ServiceCheckpointErrorV2::Invalid),
             };
+            if matches!(version, VERSION_V24 | VERSION_V25)
+                && (command_uses_conversation_profiles(&request.command)
+                    || reply_uses_conversation_profiles(&reply))
+            {
+                return Err(ServiceCheckpointErrorV2::Profile);
+            }
             let key = (client, request_id);
             if retained
                 .last_key_value()
@@ -852,7 +916,7 @@ impl ServiceV2 {
                     }
                     CursorPage::AttachmentChanges { room_id, position }
                 }
-                17 if version == VERSION_V25 => {
+                17 if matches!(version, VERSION_V25 | VERSION_V27) => {
                     let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
                     let cursor = MessagePageCursor::recover_checkpoint(
                         reader.blob(bounds.max_snapshot_bytes)?,
@@ -900,7 +964,19 @@ impl ServiceV2 {
             return Err(ServiceCheckpointErrorV2::Invalid);
         }
         let canonical = service.prepare_checkpoint(expected_scope, bounds.max_snapshot_bytes)?;
-        if canonical.bytes() != bytes {
+        if matches!(version, VERSION_V24 | VERSION_V25)
+            && canonical.bytes()[MAGIC.len()] != version + 2
+        {
+            return Err(ServiceCheckpointErrorV2::Profile);
+        }
+        let canonical_matches = if matches!(version, VERSION_V24 | VERSION_V25) {
+            let mut legacy = canonical.bytes().to_vec();
+            legacy[MAGIC.len()] = version;
+            legacy == bytes
+        } else {
+            canonical.bytes() == bytes
+        };
+        if !canonical_matches {
             return Err(ServiceCheckpointErrorV2::NonCanonical);
         }
         Ok(service)

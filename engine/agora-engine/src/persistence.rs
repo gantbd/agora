@@ -208,6 +208,22 @@ impl Writer {
                 self.text(owner.as_str())?;
                 self.byte(admission_tag(*admission))
             }
+            DomainEventV2::PeerConversationCreated {
+                room_id,
+                initiator,
+                profile,
+                founding_members,
+            } => {
+                self.byte(22)?;
+                self.text(room_id.as_str())?;
+                self.text(initiator.as_str())?;
+                self.byte(conversation_profile_tag(*profile))?;
+                self.count(founding_members.len())?;
+                for participant in founding_members {
+                    self.text(participant.as_str())?;
+                }
+                Ok(())
+            }
             DomainEventV2::TopicCreated {
                 room_id,
                 actor,
@@ -663,6 +679,7 @@ impl<'a> Reader<'a> {
         &mut self,
         l: Limits,
         has_vellum_artifacts: bool,
+        has_conversation_profiles: bool,
     ) -> Result<DomainEventV2, CheckpointError> {
         Ok(match self.byte()? {
             0 => DomainEventV2::ParticipantRegistered {
@@ -846,6 +863,32 @@ impl<'a> Reader<'a> {
                     _ => return Err(CheckpointError::Invalid),
                 },
             },
+            22 if has_conversation_profiles => {
+                let room_id = self.room(l)?;
+                let initiator = self.participant(l)?;
+                let profile = read_conversation_profile(self.byte()?)?;
+                let count = self.count(l.max_members_per_room)?;
+                let mut founding_members = Vec::new();
+                founding_members
+                    .try_reserve_exact(count)
+                    .map_err(|_| CheckpointError::Capacity)?;
+                for _ in 0..count {
+                    let participant = self.participant(l)?;
+                    if founding_members
+                        .last()
+                        .is_some_and(|old| old >= &participant)
+                    {
+                        return Err(CheckpointError::NonCanonical);
+                    }
+                    founding_members.push(participant);
+                }
+                DomainEventV2::PeerConversationCreated {
+                    room_id,
+                    initiator,
+                    profile,
+                    founding_members,
+                }
+            }
             _ => return Err(CheckpointError::Invalid),
         })
     }
@@ -873,6 +916,21 @@ fn read_admission(v: u8) -> Result<AdmissionPolicy, CheckpointError> {
     match v {
         0 => Ok(AdmissionPolicy::Open),
         1 => Ok(AdmissionPolicy::InviteOnly),
+        _ => Err(CheckpointError::Invalid),
+    }
+}
+fn conversation_profile_tag(value: ConversationProfileV1) -> u8 {
+    match value {
+        ConversationProfileV1::Ordinary => 0,
+        ConversationProfileV1::Direct => 1,
+        ConversationProfileV1::GroupDirect => 2,
+    }
+}
+fn read_conversation_profile(value: u8) -> Result<ConversationProfileV1, CheckpointError> {
+    match value {
+        0 => Ok(ConversationProfileV1::Ordinary),
+        1 => Ok(ConversationProfileV1::Direct),
+        2 => Ok(ConversationProfileV1::GroupDirect),
         _ => Err(CheckpointError::Invalid),
     }
 }
@@ -960,8 +1018,16 @@ impl Engine {
             max: max_snapshot_bytes,
         };
         let include_vellum_artifacts = engine_has_vellum_artifacts(self);
+        let include_conversation_profiles = engine_has_conversation_profiles(self);
         w.raw(b"AGORACP\0")?;
-        w.byte(if include_vellum_artifacts { 21 } else { 20 })?;
+        w.byte(
+            match (include_conversation_profiles, include_vellum_artifacts) {
+                (false, false) => 20,
+                (false, true) => 21,
+                (true, false) => 22,
+                (true, true) => 23,
+            },
+        )?;
         for n in limits_values(self.limits) {
             w.count(n)?
         }
@@ -981,6 +1047,13 @@ impl Engine {
             w.text(id.as_str())?;
             w.text(&room.name)?;
             w.byte(admission_tag(room.admission))?;
+            if include_conversation_profiles {
+                w.byte(conversation_profile_tag(room.profile))?;
+                w.count(room.founding_members.len())?;
+                for participant in &room.founding_members {
+                    w.text(participant.as_str())?;
+                }
+            }
             w.number(room.message_identity_incarnation)?;
             w.number(room.next_message_identity)?;
             w.number(room.next_message_sequence)?;
@@ -1105,10 +1178,11 @@ impl Engine {
             return Err(CheckpointError::Profile);
         }
         let profile = r.byte()?;
-        if !matches!(profile, 20 | 21) {
+        if !matches!(profile, 20..=23) {
             return Err(CheckpointError::Profile);
         }
-        let has_vellum_artifacts = profile >= 21;
+        let has_vellum_artifacts = matches!(profile, 21 | 23);
+        let has_conversation_profiles = profile >= 22;
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
         let mut e = Engine::with_limits(l);
         e.revision = Revision(r.number()?);
@@ -1131,6 +1205,24 @@ impl Engine {
             let id = r.room(l)?;
             let name = r.text(l.max_room_name_bytes)?;
             let admission = read_admission(r.byte()?)?;
+            let (profile, founding_members) = if has_conversation_profiles {
+                let profile = read_conversation_profile(r.byte()?)?;
+                let count = r.count(l.max_members_per_room)?;
+                let mut founding_members = BTreeSet::new();
+                for _ in 0..count {
+                    let participant = r.participant(l)?;
+                    if founding_members
+                        .last()
+                        .is_some_and(|old| old >= &participant)
+                    {
+                        return Err(CheckpointError::NonCanonical);
+                    }
+                    founding_members.insert(participant);
+                }
+                (profile, founding_members)
+            } else {
+                (ConversationProfileV1::Ordinary, BTreeSet::new())
+            };
             let message_identity_incarnation = r.number()?;
             let next_message_identity = r.number()?;
             let next_message_sequence = r.number()?;
@@ -1284,7 +1376,9 @@ impl Engine {
                 Room {
                     id,
                     name,
+                    profile,
                     admission,
+                    founding_members,
                     members,
                     invitations,
                     bans,
@@ -1362,7 +1456,7 @@ impl Engine {
             e.pending_events.push_back(EventEnvelopeV2 {
                 sequence: EventSequence(r.number()?),
                 revision: Revision(r.number()?),
-                event: r.event(l, has_vellum_artifacts)?,
+                event: r.event(l, has_vellum_artifacts, has_conversation_profiles)?,
             })
         }
         let n = r.count(l.max_retained_changes)?;
@@ -1373,7 +1467,7 @@ impl Engine {
             e.retained_changes.push_back(EventEnvelopeV2 {
                 sequence: EventSequence(r.number()?),
                 revision: Revision(r.number()?),
-                event: r.event(l, has_vellum_artifacts)?,
+                event: r.event(l, has_vellum_artifacts, has_conversation_profiles)?,
             })
         }
         if r.pos != bytes.len() {
@@ -1381,6 +1475,9 @@ impl Engine {
         }
         validate(&e)?;
         if has_vellum_artifacts && !engine_has_vellum_artifacts(&e) {
+            return Err(CheckpointError::NonCanonical);
+        }
+        if has_conversation_profiles && !engine_has_conversation_profiles(&e) {
             return Err(CheckpointError::NonCanonical);
         }
         Ok(e)
@@ -1404,6 +1501,13 @@ fn engine_has_vellum_artifacts(engine: &Engine) -> bool {
                         if !message.vellum_artifacts.is_empty()
                 )
             })
+}
+
+fn engine_has_conversation_profiles(engine: &Engine) -> bool {
+    engine
+        .rooms
+        .values()
+        .any(|room| room.profile != ConversationProfileV1::Ordinary)
 }
 
 const CURSOR_MAGIC: &[u8; 8] = b"AGORACUR";
@@ -2071,12 +2175,37 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
         }
         bounded(id.as_str(), l.max_room_id_bytes)?;
         bounded(&room.name, l.max_room_name_bytes)?;
-        owner(room)?;
+        match room.profile {
+            ConversationProfileV1::Ordinary => {
+                if !room.founding_members.is_empty() {
+                    return Err(CheckpointError::Invalid);
+                }
+                owner(room)?;
+            }
+            ConversationProfileV1::Direct | ConversationProfileV1::GroupDirect => {
+                let valid_cardinality = match room.profile {
+                    ConversationProfileV1::Direct => room.founding_members.len() == 2,
+                    ConversationProfileV1::GroupDirect => room.founding_members.len() >= 3,
+                    ConversationProfileV1::Ordinary => unreachable!(),
+                };
+                if !valid_cardinality
+                    || room.admission != AdmissionPolicy::InviteOnly
+                    || !room.invitations.is_empty()
+                    || !room.bans.is_empty()
+                    || room.members.iter().any(|(id, role)| {
+                        *role != Role::Member || !room.founding_members.contains(id)
+                    })
+                {
+                    return Err(CheckpointError::Invalid);
+                }
+            }
+        }
         if room
             .members
             .keys()
             .chain(room.invitations.iter())
             .chain(room.bans.keys())
+            .chain(room.founding_members.iter())
             .any(|id| !e.participants.contains_key(id))
             || room
                 .invitations
@@ -2208,9 +2337,13 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                 }
             }
         }
+        let joined_after_creation = match room.profile {
+            ConversationProfileV1::Ordinary => room.members.len().saturating_sub(1),
+            ConversationProfileV1::Direct | ConversationProfileV1::GroupDirect => 0,
+        };
         minimum = minimum
             .checked_add(room.next_message_sequence)
-            .and_then(|n| n.checked_add((room.members.len() - 1) as u64))
+            .and_then(|n| n.checked_add(joined_after_creation as u64))
             .and_then(|n| n.checked_add(room.invitations.len() as u64))
             .and_then(|n| n.checked_add(room.bans.len() as u64))
             .and_then(|n| n.checked_add(room.topics.len() as u64))
@@ -2527,7 +2660,30 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             admission: _,
         } => {
             let r = room(room_id)?;
-            if owner(r)? != id {
+            if r.profile != ConversationProfileV1::Ordinary
+                || !r.founding_members.is_empty()
+                || owner(r)? != id
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::PeerConversationCreated {
+            room_id,
+            initiator,
+            profile,
+            founding_members,
+        } => {
+            let r = room(room_id)?;
+            participant(initiator)?;
+            if r.profile != *profile
+                || *profile == ConversationProfileV1::Ordinary
+                || founding_members.windows(2).any(|pair| pair[0] >= pair[1])
+                || !founding_members.contains(initiator)
+                || r.founding_members.iter().ne(founding_members.iter())
+                || (*profile == ConversationProfileV1::Direct && founding_members.len() != 2)
+                || (*profile == ConversationProfileV1::GroupDirect
+                    && !(3..=e.limits.max_members_per_room).contains(&founding_members.len()))
+            {
                 return Err(CheckpointError::Invalid);
             }
         }
@@ -2625,18 +2781,31 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             room_id,
             participant: id,
         } => {
-            room(room_id)?;
+            if room(room_id)?.profile != ConversationProfileV1::Ordinary {
+                return Err(CheckpointError::Invalid);
+            }
             participant(id)?;
         }
         DomainEventV2::ParticipantJoined {
             room_id,
             participant: id,
+        } => {
+            if room(room_id)?.profile != ConversationProfileV1::Ordinary {
+                return Err(CheckpointError::Invalid);
+            }
+            participant(id)?;
         }
-        | DomainEventV2::ParticipantLeft {
+        DomainEventV2::ParticipantLeft {
             room_id,
             participant: id,
         } => {
-            if owner(room(room_id)?)? == id {
+            let room = room(room_id)?;
+            if room.profile == ConversationProfileV1::Ordinary && owner(room)? == id {
+                return Err(CheckpointError::Invalid);
+            }
+            if room.profile != ConversationProfileV1::Ordinary
+                && !room.founding_members.contains(id)
+            {
                 return Err(CheckpointError::Invalid);
             }
             participant(id)?;
@@ -2646,7 +2815,9 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             participant: id,
             role,
         } => {
-            room(room_id)?;
+            if room(room_id)?.profile != ConversationProfileV1::Ordinary {
+                return Err(CheckpointError::Invalid);
+            }
             participant(id)?;
             if *role == Role::Owner {
                 return Err(CheckpointError::Invalid);
@@ -2660,7 +2831,10 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
         } => {
             let r = room(room_id)?;
             participant(actor)?;
-            if owner(r)? != actor || previous == admission {
+            if r.profile != ConversationProfileV1::Ordinary
+                || owner(r)? != actor
+                || previous == admission
+            {
                 return Err(CheckpointError::Invalid);
             }
         }
@@ -2685,7 +2859,9 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             reason,
             ..
         } => {
-            room(room_id)?;
+            if room(room_id)?.profile != ConversationProfileV1::Ordinary {
+                return Err(CheckpointError::Invalid);
+            }
             participant(actor)?;
             participant(id)?;
             bounded(reason.as_str(), e.limits.max_moderation_reason_bytes)?;

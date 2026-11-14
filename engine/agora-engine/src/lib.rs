@@ -139,6 +139,17 @@ pub enum AdmissionPolicy {
     InviteOnly,
 }
 
+/// Authoritative local cardinality and membership law for one room.
+///
+/// A shared room is intentionally absent: it is a federation composition over
+/// an ordinary room, not local trust or membership evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConversationProfileV1 {
+    Ordinary,
+    Direct,
+    GroupDirect,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Role {
     Owner,
@@ -827,7 +838,9 @@ impl fmt::Debug for Message {
 pub struct RoomView {
     pub id: RoomId,
     pub name: String,
+    pub profile: ConversationProfileV1,
     pub admission: AdmissionPolicy,
+    pub founding_members: Vec<ParticipantId>,
     pub members: Vec<(ParticipantId, Role)>,
     pub pending_invitations: Vec<ParticipantId>,
     pub banned_participants: Vec<ParticipantId>,
@@ -840,11 +853,21 @@ pub struct RoomView {
 pub struct RoomSummary {
     pub id: RoomId,
     pub name: String,
+    pub profile: ConversationProfileV1,
     pub admission: AdmissionPolicy,
     pub observer_role: Role,
     pub member_count: usize,
     pub retained_message_count: usize,
     pub next_message_sequence: u64,
+}
+
+/// Current-member-only observation of one room's immutable conversation law.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConversationProfileStatusV1 {
+    pub revision: Revision,
+    pub room_id: RoomId,
+    pub profile: ConversationProfileV1,
+    pub founding_members: Vec<ParticipantId>,
 }
 
 impl fmt::Debug for RoomSummary {
@@ -853,6 +876,7 @@ impl fmt::Debug for RoomSummary {
             .debug_struct("RoomSummary")
             .field("room_id_bytes", &self.id.as_str().len())
             .field("room_name_bytes", &self.name.len())
+            .field("profile", &self.profile)
             .field("admission", &self.admission)
             .field("observer_role", &self.observer_role)
             .field("member_count", &self.member_count)
@@ -1570,7 +1594,9 @@ pub enum ObservationRefusal {
 struct Room {
     id: RoomId,
     name: String,
+    profile: ConversationProfileV1,
     admission: AdmissionPolicy,
+    founding_members: BTreeSet<ParticipantId>,
     members: BTreeMap<ParticipantId, Role>,
     invitations: BTreeSet<ParticipantId>,
     bans: BTreeMap<ParticipantId, Role>,
@@ -1592,7 +1618,9 @@ impl Room {
         RoomView {
             id: self.id.clone(),
             name: self.name.clone(),
+            profile: self.profile,
             admission: self.admission,
+            founding_members: self.founding_members.iter().cloned().collect(),
             members: self
                 .members
                 .iter()
@@ -1653,6 +1681,7 @@ impl fmt::Debug for ModerationReasonV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RoomActionV1 {
     CreateRoom,
+    CreatePeerConversation,
     Invite,
     Join,
     Leave,
@@ -1697,6 +1726,7 @@ impl CommandV2 {
         match self {
             Self::RegisterParticipant(_) => None,
             Self::CreateRoom { .. } => Some(RoomActionV1::CreateRoom),
+            Self::CreatePeerConversation { .. } => Some(RoomActionV1::CreatePeerConversation),
             Self::Invite { .. } => Some(RoomActionV1::Invite),
             Self::Join { .. } => Some(RoomActionV1::Join),
             Self::Leave { .. } => Some(RoomActionV1::Leave),
@@ -1745,6 +1775,13 @@ pub enum CommandV2 {
         name: String,
         owner: ParticipantId,
         admission: AdmissionPolicy,
+    },
+    CreatePeerConversation {
+        room_id: RoomId,
+        name: String,
+        initiator: ParticipantId,
+        profile: ConversationProfileV1,
+        founding_members: Vec<ParticipantId>,
     },
     Invite {
         room_id: RoomId,
@@ -1917,6 +1954,10 @@ pub enum CommandV2 {
 pub enum OutcomeV2 {
     ParticipantRegistered(ParticipantId),
     RoomCreated(RoomId),
+    PeerConversationCreated {
+        room_id: RoomId,
+        profile: ConversationProfileV1,
+    },
     InvitationRecorded {
         room_id: RoomId,
         participant: ParticipantId,
@@ -2075,6 +2116,8 @@ pub enum Refusal {
     InvalidRoomId,
     InvalidDisplayName,
     InvalidRoomName,
+    InvalidConversationProfile,
+    InvalidConversationCohort,
     InvalidMessageBody,
     InvalidAttachmentCount,
     InvalidAttachmentDeclaredLength,
@@ -2110,6 +2153,7 @@ pub enum Refusal {
     NotBanned(ParticipantId),
     NotAuthorized(ParticipantId),
     OwnerCannotLeave,
+    ImmutableConversationCohort,
     InvalidRoleChange,
     InvalidPolicyChange,
     UnknownMessage,
@@ -2254,6 +2298,12 @@ pub enum DomainEventV2 {
         owner: ParticipantId,
         admission: AdmissionPolicy,
     },
+    PeerConversationCreated {
+        room_id: RoomId,
+        initiator: ParticipantId,
+        profile: ConversationProfileV1,
+        founding_members: Vec<ParticipantId>,
+    },
     TopicCreated {
         room_id: RoomId,
         actor: ParticipantId,
@@ -2388,6 +2438,7 @@ impl DomainEventV2 {
         match self {
             Self::ParticipantRegistered { .. } => None,
             Self::RoomCreated { room_id, .. }
+            | Self::PeerConversationCreated { room_id, .. }
             | Self::TopicCreated { room_id, .. }
             | Self::TopicRenamed { room_id, .. }
             | Self::TopicLifecycleChanged { room_id, .. }
@@ -2512,6 +2563,40 @@ impl Engine {
 
     pub fn room(&self, id: &RoomId) -> Option<RoomView> {
         self.rooms.get(id).map(Room::view)
+    }
+
+    pub fn conversation_profile(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<ConversationProfileStatusV1, ObservationRefusal> {
+        if !self.participants.contains_key(observer) {
+            return Err(ObservationRefusal::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(ObservationRefusal::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(ObservationRefusal::NotMember);
+        }
+        let founding_members = match room.profile {
+            ConversationProfileV1::Ordinary => room
+                .members
+                .iter()
+                .filter(|(_, role)| **role == Role::Owner)
+                .map(|(id, _)| id.clone())
+                .collect(),
+            ConversationProfileV1::Direct | ConversationProfileV1::GroupDirect => {
+                room.founding_members.iter().cloned().collect()
+            }
+        };
+        Ok(ConversationProfileStatusV1 {
+            revision: self.revision,
+            room_id: room_id.clone(),
+            profile: room.profile,
+            founding_members,
+        })
     }
 
     /// Returns the current room role without creating a durable observation.
@@ -2704,6 +2789,7 @@ impl Engine {
             rooms.push(RoomSummary {
                 id: room.id.clone(),
                 name: room.name.clone(),
+                profile: room.profile,
                 admission: room.admission,
                 observer_role: role,
                 member_count: room.members.len(),
@@ -3822,6 +3908,13 @@ impl Engine {
                 owner,
                 admission,
             } => self.create_room(room_id, name, owner, admission),
+            CommandV2::CreatePeerConversation {
+                room_id,
+                name,
+                initiator,
+                profile,
+                founding_members,
+            } => self.create_peer_conversation(room_id, name, initiator, profile, founding_members),
             CommandV2::Invite {
                 room_id,
                 actor,
@@ -4081,6 +4174,19 @@ impl Engine {
                 room_id: room_id.clone(),
                 owner: owner.clone(),
                 admission: *admission,
+            },
+            (
+                CommandV2::CreatePeerConversation {
+                    initiator,
+                    founding_members,
+                    ..
+                },
+                OutcomeV2::PeerConversationCreated { room_id, profile },
+            ) => DomainEventV2::PeerConversationCreated {
+                room_id: room_id.clone(),
+                initiator: initiator.clone(),
+                profile: *profile,
+                founding_members: founding_members.clone(),
             },
             (
                 CommandV2::Invite { .. },
@@ -4489,7 +4595,9 @@ impl Engine {
             Room {
                 id: room_id.clone(),
                 name,
+                profile: ConversationProfileV1::Ordinary,
                 admission,
+                founding_members: BTreeSet::new(),
                 members,
                 invitations: BTreeSet::new(),
                 bans: BTreeMap::new(),
@@ -4509,6 +4617,81 @@ impl Engine {
         Ok(OutcomeV2::RoomCreated(room_id))
     }
 
+    fn create_peer_conversation(
+        &mut self,
+        room_id: RoomId,
+        name: String,
+        initiator: ParticipantId,
+        profile: ConversationProfileV1,
+        founding_members: Vec<ParticipantId>,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_nonempty_bounded(
+            room_id.as_str(),
+            self.limits.max_room_id_bytes,
+            Refusal::InvalidRoomId,
+        )?;
+        self.validate_nonempty_bounded(
+            &name,
+            self.limits.max_room_name_bytes,
+            Refusal::InvalidRoomName,
+        )?;
+        let valid_cardinality = match profile {
+            ConversationProfileV1::Ordinary => return Err(Refusal::InvalidConversationProfile),
+            ConversationProfileV1::Direct => founding_members.len() == 2,
+            ConversationProfileV1::GroupDirect => founding_members.len() >= 3,
+        };
+        if !valid_cardinality
+            || founding_members.len() > self.limits.max_members_per_room
+            || founding_members.windows(2).any(|pair| pair[0] >= pair[1])
+            || founding_members.binary_search(&initiator).is_err()
+        {
+            return Err(Refusal::InvalidConversationCohort);
+        }
+        for participant in &founding_members {
+            if !self.participants.contains_key(participant) {
+                return Err(Refusal::UnknownParticipant(participant.clone()));
+            }
+        }
+        if self.rooms.contains_key(&room_id) {
+            return Err(Refusal::DuplicateRoom(room_id));
+        }
+        if self.rooms.len() >= self.limits.max_rooms {
+            return Err(Refusal::RoomLimit);
+        }
+
+        let founding_members: BTreeSet<_> = founding_members.into_iter().collect();
+        let members = founding_members
+            .iter()
+            .cloned()
+            .map(|participant| (participant, Role::Member))
+            .collect();
+        self.rooms.insert(
+            room_id.clone(),
+            Room {
+                id: room_id.clone(),
+                name,
+                profile,
+                admission: AdmissionPolicy::InviteOnly,
+                founding_members,
+                members,
+                invitations: BTreeSet::new(),
+                bans: BTreeMap::new(),
+                messages: VecDeque::new(),
+                thread_roots: BTreeSet::new(),
+                archived_threads: BTreeSet::new(),
+                reactions: BTreeMap::new(),
+                topics: BTreeMap::new(),
+                topic_successors: BTreeMap::new(),
+                topic_identity_incarnation: self.next_event_sequence.0,
+                next_topic_identity: 0,
+                message_identity_incarnation: self.next_event_sequence.0,
+                next_message_identity: 0,
+                next_message_sequence: 0,
+            },
+        );
+        Ok(OutcomeV2::PeerConversationCreated { room_id, profile })
+    }
+
     fn invite(
         &mut self,
         room_id: RoomId,
@@ -4519,6 +4702,9 @@ impl Engine {
             return Err(Refusal::UnknownParticipant(participant));
         }
         let room = self.room_ref(&room_id)?;
+        if room.profile != ConversationProfileV1::Ordinary {
+            return Err(Refusal::ImmutableConversationCohort);
+        }
         if !matches!(
             room.members.get(&actor),
             Some(Role::Owner | Role::Moderator)
@@ -4552,6 +4738,9 @@ impl Engine {
             return Err(Refusal::UnknownParticipant(participant));
         }
         let room = self.room_ref(&room_id)?;
+        if room.profile != ConversationProfileV1::Ordinary {
+            return Err(Refusal::ImmutableConversationCohort);
+        }
         if room.members.contains_key(&participant) {
             return Err(Refusal::AlreadyMember(participant));
         }
@@ -4604,6 +4793,9 @@ impl Engine {
         role: Role,
     ) -> Result<OutcomeV2, Refusal> {
         let room = self.room_ref(&room_id)?;
+        if room.profile != ConversationProfileV1::Ordinary {
+            return Err(Refusal::ImmutableConversationCohort);
+        }
         if room.members.get(&actor) != Some(&Role::Owner) {
             return Err(Refusal::NotAuthorized(actor));
         }
@@ -4632,6 +4824,9 @@ impl Engine {
         admission: AdmissionPolicy,
     ) -> Result<OutcomeV2, Refusal> {
         let room = self.room_ref(&room_id)?;
+        if room.profile != ConversationProfileV1::Ordinary {
+            return Err(Refusal::ImmutableConversationCohort);
+        }
         if room.members.get(&actor) != Some(&Role::Owner) {
             return Err(Refusal::NotAuthorized(actor));
         }
@@ -4687,6 +4882,9 @@ impl Engine {
     ) -> Result<OutcomeV2, Refusal> {
         self.validate_moderation_reason(&reason)?;
         let room = self.room_ref(&room_id)?;
+        if room.profile != ConversationProfileV1::Ordinary {
+            return Err(Refusal::ImmutableConversationCohort);
+        }
         if !Self::moderation_authorized(room, &actor, &participant) {
             return Err(Refusal::NotAuthorized(actor));
         }
@@ -4721,6 +4919,9 @@ impl Engine {
             return Err(Refusal::UnknownParticipant(participant));
         }
         let room = self.room_ref(&room_id)?;
+        if room.profile != ConversationProfileV1::Ordinary {
+            return Err(Refusal::ImmutableConversationCohort);
+        }
         if !Self::moderation_authorized(room, &actor, &participant) {
             return Err(Refusal::NotAuthorized(actor));
         }
@@ -4761,6 +4962,9 @@ impl Engine {
     ) -> Result<OutcomeV2, Refusal> {
         self.validate_moderation_reason(&reason)?;
         let room = self.room_ref(&room_id)?;
+        if room.profile != ConversationProfileV1::Ordinary {
+            return Err(Refusal::ImmutableConversationCohort);
+        }
         let Some(prior_role) = room.bans.get(&participant).copied() else {
             return Err(Refusal::NotBanned(participant));
         };

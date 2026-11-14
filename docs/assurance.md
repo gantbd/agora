@@ -163,6 +163,19 @@ identities while accepting no witness or authority type at revision
 including release-mode tests, 10,000 soak cycles, and one million fixed-seed
 cases for each of three fuzz targets.
 
+The conversation-profile implementation covers exact direct/group cardinality,
+unknown/duplicate/capacity atomic refusal, ownerless kind-neutral cohorts,
+immutable governance, irreversible departure, immediate observation loss, and
+zero-member canonical recovery. An exhaustive bounded model enumerates all
+eight kind assignments, three initiators, and six departure orders for a
+three-peer cohort. Protocol and all four change projections are closed; service
+receipts and profile observation remain client-bound; Host and the private Unix
+route derive the initiator from authentication; client and both SDK facades
+construct the additive DTOs. Engine 22/23, service 26/27, and Host 25 recovery,
+two frozen frames, the 77-fixture compatibility inventory, and the refreshed
+wire/outer fuzz seed corpora provide the pre-release evidence. Commit-pinned
+release qualification is still required before R96 is marked satisfied.
+
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;
 human/agent symmetry; current membership and target authority; no conversation

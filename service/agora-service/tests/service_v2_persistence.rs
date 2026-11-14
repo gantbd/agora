@@ -3,9 +3,9 @@ use agora_engine::{
     ParticipantKind, ReadScopeV1 as EngineReadScopeV1, RoomId,
 };
 use agora_protocol::v2::{
-    ClientIdV2, CommandV2, IdentifiedRoomEventV1, MessageIdV1, MessageRevisionAvailabilityV1,
-    OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, ThreadLifecycleStateV1,
-    ThreadedRoomEventV1,
+    ClientIdV2, CommandV2, ConversationProfileV1, IdentifiedRoomEventV1, MessageIdV1,
+    MessageRevisionAvailabilityV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2,
+    RequestV2, ThreadLifecycleStateV1, ThreadedRoomEventV1,
 };
 use agora_service::v2::{
     ServiceLimitsV2, ServiceV2,
@@ -31,11 +31,107 @@ fn request(request_id: u64, command: CommandV2) -> RequestV2 {
     }
 }
 
+#[test]
+fn peer_conversation_profile_cohort_and_exact_receipts_survive_recovery() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let create = request(
+        1,
+        CommandV2::CreatePeerConversation {
+            room_id: "direct".to_owned(),
+            name: "Direct".to_owned(),
+            profile: ConversationProfileV1::Direct,
+            founding_participant_ids: vec!["alice".to_owned(), "bot".to_owned()],
+            expected_revision: 2,
+        },
+    );
+    let created = service.execute(alice, create.clone());
+    assert!(matches!(
+        created,
+        ReplyV2::Accepted(OutcomeV2::PeerConversationCreated {
+            revision: 3,
+            profile: ConversationProfileV1::Direct
+        })
+    ));
+    let profile = request(
+        1,
+        CommandV2::ConversationProfile {
+            room_id: "direct".to_owned(),
+        },
+    );
+    let observed = service.execute(bot, profile.clone());
+    service.execute(
+        alice,
+        request(
+            2,
+            CommandV2::Leave {
+                room_id: "direct".to_owned(),
+                expected_revision: 3,
+            },
+        ),
+    );
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    assert_eq!(checkpoint.bytes()[8], 26);
+    let mut disguised_as_legacy = checkpoint.bytes().to_vec();
+    disguised_as_legacy[8] = 24;
+    assert_eq!(
+        ServiceV2::recover_checkpoint(&disguised_as_legacy, SCOPE, bounds()).unwrap_err(),
+        ServiceCheckpointErrorV2::Profile
+    );
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.execute(alice, create), created);
+    assert_eq!(recovered.execute(bot, profile), observed);
+    assert_eq!(
+        recovered.execute(
+            alice,
+            request(
+                3,
+                CommandV2::Join {
+                    room_id: "direct".to_owned(),
+                    expected_revision: 4,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::ImmutableConversationCohort)
+    );
+}
+
 fn next_mutation_bit(state: &mut u64, byte_len: usize) -> usize {
     *state ^= *state << 13;
     *state ^= *state >> 7;
     *state ^= *state << 17;
     (*state as usize) % (byte_len * 8)
+}
+
+fn decode_hex(source: &str) -> Vec<u8> {
+    let compact = source.split_whitespace().collect::<String>();
+    (0..compact.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&compact[index..index + 2], 16).unwrap())
+        .collect()
+}
+
+#[test]
+fn legacy_service_checkpoint_migrates_to_the_current_canonical_envelope() {
+    let legacy = decode_hex(include_str!("fixtures/service-checkpoint-v24.hex"));
+    let recovered = ServiceV2::recover_checkpoint(&legacy, SCOPE, bounds()).unwrap();
+    let migrated = recovered.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    assert_eq!(migrated.bytes()[8], 26);
+    assert_ne!(migrated.bytes(), legacy);
+    assert!(ServiceV2::recover_checkpoint(migrated.bytes(), SCOPE, bounds()).is_ok());
 }
 
 fn populated() -> (
@@ -330,13 +426,9 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let fixture = include_str!("fixtures/service-checkpoint-v24.hex").trim();
-    let actual = checkpoint
-        .bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    assert_eq!(actual, fixture);
+    let mut fixture = decode_hex(include_str!("fixtures/service-checkpoint-v24.hex"));
+    fixture[8] = 26;
+    assert_eq!(checkpoint.bytes(), fixture);
     let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
 
     assert_eq!(recovered.engine().revision(), revision);
@@ -492,7 +584,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 26;
+    future[8] = 28;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile

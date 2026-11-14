@@ -229,6 +229,13 @@ pub enum AdmissionPolicyV2 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConversationProfileV1 {
+    Ordinary,
+    Direct,
+    GroupDirect,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ParticipantKindV2 {
     Human,
     Agent,
@@ -487,6 +494,16 @@ pub enum CommandV2 {
         name: String,
         admission: AdmissionPolicyV2,
         expected_revision: u64,
+    },
+    CreatePeerConversation {
+        room_id: String,
+        name: String,
+        profile: ConversationProfileV1,
+        founding_participant_ids: Vec<String>,
+        expected_revision: u64,
+    },
+    ConversationProfile {
+        room_id: String,
     },
     Invite {
         room_id: String,
@@ -779,6 +796,27 @@ impl fmt::Debug for CommandV2 {
                 .field("name_bytes", &name.len())
                 .field("admission", admission)
                 .field("expected_revision", expected_revision)
+                .finish(),
+            Self::CreatePeerConversation {
+                room_id,
+                name,
+                profile,
+                founding_participant_ids,
+                expected_revision,
+            } => formatter
+                .debug_struct("CreatePeerConversation")
+                .field("room_id_bytes", &room_id.len())
+                .field("name_bytes", &name.len())
+                .field("profile", profile)
+                .field(
+                    "founding_participant_count",
+                    &founding_participant_ids.len(),
+                )
+                .field("expected_revision", expected_revision)
+                .finish(),
+            Self::ConversationProfile { room_id } => formatter
+                .debug_struct("ConversationProfile")
+                .field("room_id_bytes", &room_id.len())
                 .finish(),
             Self::Invite {
                 room_id,
@@ -1236,6 +1274,7 @@ pub enum CapabilityV2 {
     TopicTagsV1,
     ImmutableAttachmentReferencesV1,
     VellumArtifactReferencesV1,
+    ConversationProfilesV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -1824,11 +1863,56 @@ impl fmt::Debug for ThreadStatusV1 {
 }
 
 #[derive(Clone, Eq, PartialEq)]
+pub struct PeerConversationCreatedV1 {
+    pub initiator_id: String,
+    pub profile: ConversationProfileV1,
+    pub founding_participant_ids: Vec<String>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ConversationProfileStatusV1 {
+    pub revision: u64,
+    pub room_id: String,
+    pub profile: ConversationProfileV1,
+    pub founding_participant_ids: Vec<String>,
+}
+
+impl fmt::Debug for ConversationProfileStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ConversationProfileStatusV1")
+            .field("revision", &self.revision)
+            .field("room_id_bytes", &self.room_id.len())
+            .field("profile", &self.profile)
+            .field(
+                "founding_participant_count",
+                &self.founding_participant_ids.len(),
+            )
+            .finish()
+    }
+}
+
+impl fmt::Debug for PeerConversationCreatedV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PeerConversationCreatedV1")
+            .field("initiator_id_bytes", &self.initiator_id.len())
+            .field("profile", &self.profile)
+            .field(
+                "founding_participant_count",
+                &self.founding_participant_ids.len(),
+            )
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub enum RoomEventV2 {
     RoomCreated {
         owner: String,
         admission: AdmissionPolicyV2,
     },
+    PeerConversationCreated(PeerConversationCreatedV1),
     TopicCreated {
         actor_id: String,
         topic_id: TopicIdV1,
@@ -1943,6 +2027,7 @@ impl fmt::Debug for RoomEventV2 {
                 .debug_struct("RoomCreated")
                 .field("admission", admission)
                 .finish_non_exhaustive(),
+            Self::PeerConversationCreated(event) => event.fmt(formatter),
             Self::TopicCreated { actor_id, name, .. } => formatter
                 .debug_struct("TopicCreated")
                 .field("actor_id_bytes", &actor_id.len())
@@ -2137,6 +2222,7 @@ pub enum IdentifiedRoomEventV1 {
         owner: String,
         admission: AdmissionPolicyV2,
     },
+    PeerConversationCreated(PeerConversationCreatedV1),
     TopicCreated {
         actor_id: String,
         topic_id: TopicIdV1,
@@ -2251,6 +2337,7 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .debug_struct("RoomCreated")
                 .field("admission", admission)
                 .finish_non_exhaustive(),
+            Self::PeerConversationCreated(event) => event.fmt(formatter),
             Self::TopicCreated { actor_id, name, .. } => formatter
                 .debug_struct("TopicCreated")
                 .field("actor_id_bytes", &actor_id.len())
@@ -2445,6 +2532,7 @@ pub enum ThreadedRoomEventV1 {
         owner: String,
         admission: AdmissionPolicyV2,
     },
+    PeerConversationCreated(PeerConversationCreatedV1),
     TopicCreated {
         actor_id: String,
         topic_id: TopicIdV1,
@@ -2559,6 +2647,7 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .debug_struct("RoomCreated")
                 .field("admission", admission)
                 .finish_non_exhaustive(),
+            Self::PeerConversationCreated(event) => event.fmt(formatter),
             Self::TopicCreated { actor_id, name, .. } => formatter
                 .debug_struct("TopicCreated")
                 .field("actor_id_bytes", &actor_id.len())
@@ -2753,6 +2842,7 @@ pub enum TopicRoomEventV1 {
         owner: String,
         admission: AdmissionPolicyV2,
     },
+    PeerConversationCreated(PeerConversationCreatedV1),
     TopicCreated {
         actor_id: String,
         topic_id: TopicIdV1,
@@ -2867,6 +2957,7 @@ impl fmt::Debug for TopicRoomEventV1 {
                 .debug_struct("RoomCreated")
                 .field("admission", admission)
                 .finish_non_exhaustive(),
+            Self::PeerConversationCreated(event) => event.fmt(formatter),
             Self::TopicCreated {
                 actor_id,
                 topic_id,
@@ -3267,6 +3358,11 @@ pub enum OutcomeV2 {
     RoomCreated {
         revision: u64,
     },
+    PeerConversationCreated {
+        revision: u64,
+        profile: ConversationProfileV1,
+    },
+    ConversationProfile(ConversationProfileStatusV1),
     InvitationRecorded {
         revision: u64,
     },
@@ -3444,6 +3540,7 @@ pub enum RefusalV2 {
     InvalidReadScope,
     InvalidReadTarget,
     ReadPositionRegression,
+    ImmutableConversationCohort,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

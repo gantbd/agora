@@ -10,6 +10,29 @@ struct TransientPort;
 struct SearchPort;
 
 #[test]
+fn facade_names_conversation_profile_protocol_and_wire_values() {
+    let request = wire::v2::WireRequestV2::Execute {
+        client: protocol::v2::ClientIdV2(1),
+        request: protocol::v2::RequestV2 {
+            request_id: protocol::v2::RequestIdV2(1),
+            command: protocol::v2::CommandV2::CreatePeerConversation {
+                room_id: "direct".to_owned(),
+                name: "Direct".to_owned(),
+                profile: protocol::v2::ConversationProfileV1::Direct,
+                founding_participant_ids: vec!["alice".to_owned(), "bot".to_owned()],
+                expected_revision: 2,
+            },
+        },
+    };
+    let limits = wire::WireLimits::reference();
+    let encoded = wire::v2::encode_request_v2(&request, limits).unwrap();
+    assert_eq!(
+        wire::v2::decode_request_v2(&encoded, limits).unwrap(),
+        request
+    );
+}
+
+#[test]
 fn facade_names_attachment_protocol_and_wire_values() {
     let descriptor = protocol::v2::AttachmentDescriptorV1 {
         attachment_id: protocol::v2::AttachmentIdV1::new([1; 16]),

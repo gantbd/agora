@@ -6,11 +6,12 @@ use agora_engine::{
     AttachmentMessageTargetV1 as EngineAttachmentMessageTargetV1,
     AttachmentObjectKeyV1 as EngineAttachmentObjectKeyV1,
     AttachmentStoreIdV1 as EngineAttachmentStoreIdV1, BanPageCursor, CommandV2 as EngineCommand,
-    Engine, MAX_REACTION_KEY_BYTES_V1, MemberPageCursor, MessageId, MessagePageCursor,
-    MessageRevisionPageCursorV1, ModerationCausationV1, ModerationReasonV1, ObservationRefusal,
-    OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind, ReadPositionRefusalV1,
-    ReadScopeV1 as EngineReadScopeV1, Refusal as EngineRefusal, Revision, RevisionedCommandV2,
-    Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
+    ConversationProfileV1 as EngineConversationProfileV1, Engine, MAX_REACTION_KEY_BYTES_V1,
+    MemberPageCursor, MessageId, MessagePageCursor, MessageRevisionPageCursorV1,
+    ModerationCausationV1, ModerationReasonV1, ObservationRefusal, OutcomeV2 as EngineOutcome,
+    ParticipantId, ParticipantKind, ReadPositionRefusalV1, ReadScopeV1 as EngineReadScopeV1,
+    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomChangeGap,
+    RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
     Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicId,
     TopicMessagePageCursorV1, TopicPageCursorV1,
     VellumArtifactMessageTargetV1 as EngineVellumArtifactMessageTargetV1,
@@ -22,11 +23,12 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessagePageV1, AttachmentMessageTargetV1, AttachmentMessageV1, AttachmentObjectKeyV1,
     AttachmentRoomChangePageV1, AttachmentStoreIdV1, BanPageV2, BannedParticipantV2, CapabilityV2,
-    ChangeGapV2, ClientIdV2, CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1,
-    IdentifiedRoomChangePageV1, IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2,
-    MemberV2, MessageAttachmentV1, MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1,
-    MessageRevisionPageV1, MessageRevisionV1, MessageV2, MessageVellumArtifactReferenceV1,
-    OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
+    ChangeGapV2, ClientIdV2, CommandV2, ConversationProfileStatusV1, ConversationProfileV1,
+    IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
+    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageAttachmentV1,
+    MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1,
+    MessageRevisionV1, MessageV2, MessageVellumArtifactReferenceV1, OutcomeV2, PageCursorV2,
+    ParticipantKindV2, PeerConversationCreatedV1, ReactionStatusV1, ReactionSummaryV1,
     ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
     RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, Sha256DigestV1,
     ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
@@ -343,8 +345,27 @@ impl ServiceV2 {
                 CapabilityV2::TopicTagsV1,
                 CapabilityV2::ImmutableAttachmentReferencesV1,
                 CapabilityV2::VellumArtifactReferencesV1,
+                CapabilityV2::ConversationProfilesV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
+            CommandV2::ConversationProfile { room_id } => {
+                let status = self
+                    .engine
+                    .conversation_profile(participant, &RoomId::new(room_id))
+                    .map_err(map_observation_refusal)?;
+                Ok(OutcomeV2::ConversationProfile(
+                    ConversationProfileStatusV1 {
+                        revision: status.revision.0,
+                        room_id: status.room_id.as_str().to_owned(),
+                        profile: map_conversation_profile_from_engine(status.profile),
+                        founding_participant_ids: status
+                            .founding_members
+                            .into_iter()
+                            .map(|participant| participant.as_str().to_owned())
+                            .collect(),
+                    },
+                ))
+            }
             CommandV2::Members {
                 room_id,
                 cursor,
@@ -633,6 +654,25 @@ impl ServiceV2 {
                     name: name.clone(),
                     owner: participant.clone(),
                     admission: map_admission_to_engine(*admission),
+                },
+            ),
+            CommandV2::CreatePeerConversation {
+                room_id,
+                name,
+                profile,
+                founding_participant_ids,
+                expected_revision,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::CreatePeerConversation {
+                    room_id: RoomId::new(room_id),
+                    name: name.clone(),
+                    initiator: participant.clone(),
+                    profile: map_conversation_profile_to_engine(*profile),
+                    founding_members: founding_participant_ids
+                        .iter()
+                        .map(ParticipantId::new)
+                        .collect(),
                 },
             ),
             CommandV2::EditMessage {
@@ -1082,6 +1122,12 @@ impl ServiceV2 {
         let revision = transition.revision.0;
         match transition.outcome {
             EngineOutcome::RoomCreated(_) => Ok(OutcomeV2::RoomCreated { revision }),
+            EngineOutcome::PeerConversationCreated { profile, .. } => {
+                Ok(OutcomeV2::PeerConversationCreated {
+                    revision,
+                    profile: map_conversation_profile_from_engine(profile),
+                })
+            }
             EngineOutcome::InvitationRecorded { .. } => {
                 Ok(OutcomeV2::InvitationRecorded { revision })
             }
@@ -2087,6 +2133,16 @@ impl ServiceV2 {
                                 owner: owner.as_str().to_owned(),
                                 admission: map_admission_from_engine(admission),
                             },
+                            agora_engine::DomainEventV2::PeerConversationCreated {
+                                initiator,
+                                profile,
+                                founding_members,
+                                ..
+                            } => RoomEventV2::PeerConversationCreated(map_peer_conversation_event(
+                                initiator,
+                                profile,
+                                founding_members,
+                            )),
                             agora_engine::DomainEventV2::TopicCreated {
                                 actor,
                                 topic_id,
@@ -2765,6 +2821,7 @@ impl ServiceV2 {
             |participant: &str| valid_text(participant, self.limits.max_participant_id_bytes);
         match command {
             CommandV2::Capabilities => true,
+            CommandV2::ConversationProfile { room_id } => valid_room(room_id),
             CommandV2::Rooms { limit, .. } => valid_page(*limit),
             CommandV2::Members { room_id, limit, .. }
             | CommandV2::Bans { room_id, limit, .. }
@@ -2797,6 +2854,28 @@ impl ServiceV2 {
             }
             CommandV2::CreateRoom { room_id, name, .. } => {
                 valid_room(room_id) && valid_text(name, self.limits.max_room_name_bytes)
+            }
+            CommandV2::CreatePeerConversation {
+                room_id,
+                name,
+                profile,
+                founding_participant_ids,
+                ..
+            } => {
+                let valid_cardinality = match profile {
+                    ConversationProfileV1::Ordinary => false,
+                    ConversationProfileV1::Direct => founding_participant_ids.len() == 2,
+                    ConversationProfileV1::GroupDirect => founding_participant_ids.len() >= 3,
+                };
+                valid_room(room_id)
+                    && valid_text(name, self.limits.max_room_name_bytes)
+                    && valid_cardinality
+                    && founding_participant_ids
+                        .windows(2)
+                        .all(|pair| pair[0] < pair[1])
+                    && founding_participant_ids
+                        .iter()
+                        .all(|participant| valid_participant(participant))
             }
             CommandV2::CreateTopic { room_id, name, .. }
             | CommandV2::RenameTopic { room_id, name, .. } => {
@@ -3235,6 +3314,16 @@ fn map_identified_room_event(
             owner: owner.as_str().to_owned(),
             admission: map_admission_from_engine(admission),
         },
+        agora_engine::DomainEventV2::PeerConversationCreated {
+            initiator,
+            profile,
+            founding_members,
+            ..
+        } => IdentifiedRoomEventV1::PeerConversationCreated(map_peer_conversation_event(
+            initiator,
+            profile,
+            founding_members,
+        )),
         agora_engine::DomainEventV2::TopicCreated {
             actor,
             topic_id,
@@ -3458,6 +3547,16 @@ fn map_threaded_room_event(
             owner: owner.as_str().to_owned(),
             admission: map_admission_from_engine(admission),
         },
+        agora_engine::DomainEventV2::PeerConversationCreated {
+            initiator,
+            profile,
+            founding_members,
+            ..
+        } => ThreadedRoomEventV1::PeerConversationCreated(map_peer_conversation_event(
+            initiator,
+            profile,
+            founding_members,
+        )),
         agora_engine::DomainEventV2::TopicCreated {
             actor,
             topic_id,
@@ -3678,6 +3777,9 @@ fn map_topic_room_event(event: agora_engine::DomainEventV2) -> Result<TopicRoomE
         ThreadedRoomEventV1::RoomCreated { owner, admission } => {
             TopicRoomEventV1::RoomCreated { owner, admission }
         }
+        ThreadedRoomEventV1::PeerConversationCreated(event) => {
+            TopicRoomEventV1::PeerConversationCreated(event)
+        }
         ThreadedRoomEventV1::TopicCreated {
             actor_id,
             topic_id,
@@ -3890,6 +3992,39 @@ fn map_admission_from_engine(value: AdmissionPolicy) -> AdmissionPolicyV2 {
     }
 }
 
+fn map_conversation_profile_to_engine(value: ConversationProfileV1) -> EngineConversationProfileV1 {
+    match value {
+        ConversationProfileV1::Ordinary => EngineConversationProfileV1::Ordinary,
+        ConversationProfileV1::Direct => EngineConversationProfileV1::Direct,
+        ConversationProfileV1::GroupDirect => EngineConversationProfileV1::GroupDirect,
+    }
+}
+
+fn map_conversation_profile_from_engine(
+    value: EngineConversationProfileV1,
+) -> ConversationProfileV1 {
+    match value {
+        EngineConversationProfileV1::Ordinary => ConversationProfileV1::Ordinary,
+        EngineConversationProfileV1::Direct => ConversationProfileV1::Direct,
+        EngineConversationProfileV1::GroupDirect => ConversationProfileV1::GroupDirect,
+    }
+}
+
+fn map_peer_conversation_event(
+    initiator: ParticipantId,
+    profile: EngineConversationProfileV1,
+    founding_members: Vec<ParticipantId>,
+) -> PeerConversationCreatedV1 {
+    PeerConversationCreatedV1 {
+        initiator_id: initiator.as_str().to_owned(),
+        profile: map_conversation_profile_from_engine(profile),
+        founding_participant_ids: founding_members
+            .into_iter()
+            .map(|participant| participant.as_str().to_owned())
+            .collect(),
+    }
+}
+
 fn map_role_to_engine(value: RoleV2) -> Role {
     match value {
         RoleV2::Owner => Role::Owner,
@@ -3945,6 +4080,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         EngineRefusal::DuplicateTopicTag => RefusalV2::DuplicateTopicTag,
         EngineRefusal::TopicTagLimit => RefusalV2::TopicTagLimit,
         EngineRefusal::UnknownTopicTag => RefusalV2::UnknownTopicTag,
+        EngineRefusal::ImmutableConversationCohort => RefusalV2::ImmutableConversationCohort,
         EngineRefusal::ParticipantLimit
         | EngineRefusal::RoomLimit
         | EngineRefusal::MemberLimit
@@ -3962,6 +4098,8 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::EventSequenceExhausted => RefusalV2::Exhausted,
         EngineRefusal::TopicIdentityExhausted => RefusalV2::Exhausted,
         EngineRefusal::InvalidParticipantId
+        | EngineRefusal::InvalidConversationProfile
+        | EngineRefusal::InvalidConversationCohort
         | EngineRefusal::InvalidRoomId
         | EngineRefusal::InvalidDisplayName
         | EngineRefusal::InvalidRoomName

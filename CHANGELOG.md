@@ -8,11 +8,13 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
-- Adopted the R96 conversation-profile contract: ordinary rooms remain
+- Implemented the R96 conversation-profile contract: ordinary rooms remain
   owner-led, while direct and group-direct rooms are ownerless immutable
   founding cohorts with membership-only discovery and irreversible departure.
   Shared room is reserved for a later ordinary-room-plus-federation composition;
-  this decision is not yet an implementation claim.
+  the additive profile spans engine, protocol, wire, service, Host, client, both
+  SDK facades, canonical recovery, private Unix transport, model schedules,
+  frozen fixtures, and fuzz seeds. Commit-pinned release qualification remains.
 
 - Added a normative aggregate model, exact machine-checked package taxonomy,
   category-aligned workspace layout, and a dedicated authority-free local Unix

@@ -8,11 +8,12 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessagePageV1, AttachmentMessageTargetV1, AttachmentMessageV1, AttachmentObjectKeyV1,
     AttachmentRoomChangePageV1, AttachmentStoreIdV1, BanPageV2, BannedParticipantV2, CapabilityV2,
-    ChangeGapV2, ClientIdV2, CommandV2, IdentifiedMessagePageV1, IdentifiedMessageV1,
-    IdentifiedRoomChangePageV1, IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2,
-    MemberV2, MessageAttachmentV1, MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1,
-    MessageRevisionPageV1, MessageRevisionV1, MessageV2, MessageVellumArtifactReferenceV1,
-    OutcomeV2, PageCursorV2, ParticipantKindV2, ReactionStatusV1, ReactionSummaryV1,
+    ChangeGapV2, ClientIdV2, CommandV2, ConversationProfileStatusV1, ConversationProfileV1,
+    IdentifiedMessagePageV1, IdentifiedMessageV1, IdentifiedRoomChangePageV1,
+    IdentifiedRoomChangeV1, IdentifiedRoomEventV1, MemberPageV2, MemberV2, MessageAttachmentV1,
+    MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1,
+    MessageRevisionV1, MessageV2, MessageVellumArtifactReferenceV1, OutcomeV2, PageCursorV2,
+    ParticipantKindV2, PeerConversationCreatedV1, ReactionStatusV1, ReactionSummaryV1,
     ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
     RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, Sha256DigestV1,
     ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
@@ -664,6 +665,35 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             sink.text(name)?;
             sink.u8(encode_admission(*admission))?;
             sink.u64(*expected_revision)
+        }
+        CommandV2::CreatePeerConversation {
+            room_id,
+            name,
+            profile,
+            founding_participant_ids,
+            expected_revision,
+        } => {
+            if *profile == ConversationProfileV1::Ordinary
+                || founding_participant_ids.is_empty()
+                || founding_participant_ids
+                    .windows(2)
+                    .any(|pair| pair[0] >= pair[1])
+            {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(64)?;
+            sink.text(room_id)?;
+            sink.text(name)?;
+            sink.u8(encode_conversation_profile(*profile))?;
+            sink.list(founding_participant_ids.len())?;
+            for participant_id in founding_participant_ids {
+                sink.text(participant_id)?;
+            }
+            sink.u64(*expected_revision)
+        }
+        CommandV2::ConversationProfile { room_id } => {
+            sink.u8(65)?;
+            sink.text(room_id)
         }
         CommandV2::Invite {
             room_id,
@@ -1359,6 +1389,36 @@ fn decode_command(
                 references,
             })
         }
+        64 => {
+            let room_id = read_text(decoder)?;
+            let name = read_text(decoder)?;
+            let profile = decode_conversation_profile(decoder)?;
+            if profile == ConversationProfileV1::Ordinary {
+                return Err(WireDecodeError::Malformed);
+            }
+            let count = read_list(decoder, limits)?;
+            let mut founding_participant_ids = try_vec(count)?;
+            for _ in 0..count {
+                let participant_id = read_text(decoder)?;
+                if founding_participant_ids
+                    .last()
+                    .is_some_and(|previous| previous >= &participant_id)
+                {
+                    return Err(WireDecodeError::Malformed);
+                }
+                founding_participant_ids.push(participant_id);
+            }
+            Ok(CommandV2::CreatePeerConversation {
+                room_id,
+                name,
+                profile,
+                founding_participant_ids,
+                expected_revision: read_u64(decoder)?,
+            })
+        }
+        65 => Ok(CommandV2::ConversationProfile {
+            room_id: read_text(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1479,6 +1539,7 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::TopicTagsV1 => 22,
                     CapabilityV2::ImmutableAttachmentReferencesV1 => 23,
                     CapabilityV2::VellumArtifactReferencesV1 => 24,
+                    CapabilityV2::ConversationProfilesV1 => 25,
                 })?;
             }
             Ok(())
@@ -1943,6 +2004,30 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
         OutcomeV2::Banned { revision } => encode_revision_outcome(sink, 14, *revision),
         OutcomeV2::Unbanned { revision } => encode_revision_outcome(sink, 15, *revision),
         OutcomeV2::RoomPolicyChanged { revision } => encode_revision_outcome(sink, 16, *revision),
+        OutcomeV2::PeerConversationCreated { revision, profile } => {
+            sink.u8(61)?;
+            sink.u64(*revision)?;
+            sink.u8(encode_conversation_profile(*profile))
+        }
+        OutcomeV2::ConversationProfile(status) => {
+            if status.founding_participant_ids.is_empty()
+                || status
+                    .founding_participant_ids
+                    .windows(2)
+                    .any(|pair| pair[0] >= pair[1])
+            {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(62)?;
+            sink.u64(status.revision)?;
+            sink.text(&status.room_id)?;
+            sink.u8(encode_conversation_profile(status.profile))?;
+            sink.list(status.founding_participant_ids.len())?;
+            for participant_id in &status.founding_participant_ids {
+                sink.text(participant_id)?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -2046,6 +2131,7 @@ fn decode_outcome(
                     22 => CapabilityV2::TopicTagsV1,
                     23 => CapabilityV2::ImmutableAttachmentReferencesV1,
                     24 => CapabilityV2::VellumArtifactReferencesV1,
+                    25 => CapabilityV2::ConversationProfilesV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -2414,6 +2500,38 @@ fn decode_outcome(
                 sequence,
                 reference_count,
             })
+        }
+        61 => Ok(OutcomeV2::PeerConversationCreated {
+            revision: read_u64(decoder)?,
+            profile: decode_conversation_profile(decoder)?,
+        }),
+        62 => {
+            let revision = read_u64(decoder)?;
+            let room_id = read_text(decoder)?;
+            let profile = decode_conversation_profile(decoder)?;
+            let count = read_list(decoder, limits)?;
+            let mut founding_participant_ids = try_vec(count)?;
+            for _ in 0..count {
+                let participant_id = read_text(decoder)?;
+                if founding_participant_ids
+                    .last()
+                    .is_some_and(|previous| previous >= &participant_id)
+                {
+                    return Err(WireDecodeError::Malformed);
+                }
+                founding_participant_ids.push(participant_id);
+            }
+            if founding_participant_ids.is_empty() {
+                return Err(WireDecodeError::Malformed);
+            }
+            Ok(OutcomeV2::ConversationProfile(
+                ConversationProfileStatusV1 {
+                    revision,
+                    room_id,
+                    profile,
+                    founding_participant_ids,
+                },
+            ))
         }
         _ => Err(WireDecodeError::UnknownTag),
     }
@@ -3571,6 +3689,67 @@ fn decode_topic_message_page(
     })
 }
 
+fn encode_peer_conversation_event(
+    sink: &mut dyn Sink,
+    event: &PeerConversationCreatedV1,
+) -> Result<(), WireEncodeError> {
+    if event.profile == ConversationProfileV1::Ordinary
+        || event.founding_participant_ids.is_empty()
+        || event
+            .founding_participant_ids
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
+        || event
+            .founding_participant_ids
+            .binary_search(&event.initiator_id)
+            .is_err()
+    {
+        return Err(WireEncodeError::Invalid);
+    }
+    sink.u8(23)?;
+    sink.text(&event.initiator_id)?;
+    sink.u8(encode_conversation_profile(event.profile))?;
+    sink.list(event.founding_participant_ids.len())?;
+    for participant_id in &event.founding_participant_ids {
+        sink.text(participant_id)?;
+    }
+    Ok(())
+}
+
+fn decode_peer_conversation_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<PeerConversationCreatedV1, WireDecodeError> {
+    let initiator_id = read_text(decoder)?;
+    let profile = decode_conversation_profile(decoder)?;
+    if profile == ConversationProfileV1::Ordinary {
+        return Err(WireDecodeError::Malformed);
+    }
+    let count = read_list(decoder, limits)?;
+    let mut founding_participant_ids = try_vec(count)?;
+    for _ in 0..count {
+        let participant_id = read_text(decoder)?;
+        if founding_participant_ids
+            .last()
+            .is_some_and(|previous| previous >= &participant_id)
+        {
+            return Err(WireDecodeError::Malformed);
+        }
+        founding_participant_ids.push(participant_id);
+    }
+    if founding_participant_ids
+        .binary_search(&initiator_id)
+        .is_err()
+    {
+        return Err(WireDecodeError::Malformed);
+    }
+    Ok(PeerConversationCreatedV1 {
+        initiator_id,
+        profile,
+        founding_participant_ids,
+    })
+}
+
 fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<(), WireEncodeError> {
     sink.u64(page.revision)?;
     sink.list(page.changes.len())?;
@@ -3582,6 +3761,9 @@ fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<()
                 sink.u8(1)?;
                 sink.text(owner)?;
                 sink.u8(encode_admission(*admission))?;
+            }
+            RoomEventV2::PeerConversationCreated(event) => {
+                encode_peer_conversation_event(sink, event)?
             }
             RoomEventV2::InvitationRecorded { participant_id } => {
                 sink.u8(2)?;
@@ -3887,6 +4069,9 @@ fn decode_change_page(
                     added,
                 }
             }
+            23 => RoomEventV2::PeerConversationCreated(decode_peer_conversation_event(
+                decoder, limits,
+            )?),
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(RoomChangeV2 {
@@ -3923,6 +4108,9 @@ fn encode_identified_change_page(
                 sink.u8(1)?;
                 sink.text(owner)?;
                 sink.u8(encode_admission(*admission))?;
+            }
+            IdentifiedRoomEventV1::PeerConversationCreated(event) => {
+                encode_peer_conversation_event(sink, event)?
             }
             IdentifiedRoomEventV1::InvitationRecorded { participant_id } => {
                 sink.u8(2)?;
@@ -4235,6 +4423,9 @@ fn decode_identified_change_page(
                     added,
                 }
             }
+            23 => IdentifiedRoomEventV1::PeerConversationCreated(decode_peer_conversation_event(
+                decoder, limits,
+            )?),
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(IdentifiedRoomChangeV1 {
@@ -4271,6 +4462,9 @@ fn encode_threaded_change_page(
                 sink.u8(1)?;
                 sink.text(owner)?;
                 sink.u8(encode_admission(*admission))?;
+            }
+            ThreadedRoomEventV1::PeerConversationCreated(event) => {
+                encode_peer_conversation_event(sink, event)?
             }
             ThreadedRoomEventV1::InvitationRecorded { participant_id } => {
                 sink.u8(2)?;
@@ -4581,6 +4775,9 @@ fn decode_threaded_change_page(
                     added,
                 }
             }
+            23 => ThreadedRoomEventV1::PeerConversationCreated(decode_peer_conversation_event(
+                decoder, limits,
+            )?),
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(ThreadedRoomChangeV1 {
@@ -4617,6 +4814,9 @@ fn encode_topic_change_page(
                 sink.u8(1)?;
                 sink.text(owner)?;
                 sink.u8(encode_admission(*admission))?;
+            }
+            TopicRoomEventV1::PeerConversationCreated(event) => {
+                encode_peer_conversation_event(sink, event)?
             }
             TopicRoomEventV1::InvitationRecorded { participant_id } => {
                 sink.u8(2)?;
@@ -4969,6 +5169,9 @@ fn decode_topic_change_page(
                     added,
                 }
             }
+            23 => TopicRoomEventV1::PeerConversationCreated(decode_peer_conversation_event(
+                decoder, limits,
+            )?),
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(TopicRoomChangeV1 {
@@ -5449,6 +5652,7 @@ fn encode_refusal(sink: &mut dyn Sink, refusal: RefusalV2) -> Result<(), WireEnc
         RefusalV2::DuplicateTopicTag => 28,
         RefusalV2::TopicTagLimit => 29,
         RefusalV2::UnknownTopicTag => 30,
+        RefusalV2::ImmutableConversationCohort => 31,
     };
     sink.u8(tag)?;
     if let RefusalV2::Stale { actual_revision } = refusal {
@@ -5491,6 +5695,7 @@ fn decode_refusal(decoder: &mut keystone_codec::Decoder<'_>) -> Result<RefusalV2
         28 => Ok(RefusalV2::DuplicateTopicTag),
         29 => Ok(RefusalV2::TopicTagLimit),
         30 => Ok(RefusalV2::UnknownTopicTag),
+        31 => Ok(RefusalV2::ImmutableConversationCohort),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -5499,6 +5704,25 @@ fn encode_admission(value: AdmissionPolicyV2) -> u8 {
     match value {
         AdmissionPolicyV2::Open => 1,
         AdmissionPolicyV2::InviteOnly => 2,
+    }
+}
+
+fn encode_conversation_profile(value: ConversationProfileV1) -> u8 {
+    match value {
+        ConversationProfileV1::Ordinary => 1,
+        ConversationProfileV1::Direct => 2,
+        ConversationProfileV1::GroupDirect => 3,
+    }
+}
+
+fn decode_conversation_profile(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<ConversationProfileV1, WireDecodeError> {
+    match read_u8(decoder)? {
+        1 => Ok(ConversationProfileV1::Ordinary),
+        2 => Ok(ConversationProfileV1::Direct),
+        3 => Ok(ConversationProfileV1::GroupDirect),
+        _ => Err(WireDecodeError::UnknownTag),
     }
 }
 

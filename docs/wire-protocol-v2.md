@@ -81,6 +81,14 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `37` | AddTopicTag | room, expected revision, topic ID, bounded tag |
 | `38` | RemoveTopicTag | room, expected revision, topic ID, bounded tag |
 | `39` | TopicTagStatus | room, topic ID |
+| `3a` | AttachmentMessages | room, optional cursor, limit |
+| `3b` | SpeakWithAttachments | room, expected revision, target, logical time, body, addressed list, descriptor list |
+| `3c` | OpenAttachmentChanges | room, exact completed snapshot revision |
+| `3d` | AttachmentChanges | room, required opaque cursor, limit |
+| `3e` | VellumArtifactMessages | room, optional cursor, limit |
+| `3f` | SpeakWithVellumArtifacts | room, expected revision, target, logical time, body, addressed list, reference list |
+| `40` | CreatePeerConversation | room, name, profile, canonical founding-participant list, expected revision |
+| `41` | ConversationProfile | room |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -104,7 +112,10 @@ TopicReopened `2d`, TopicStatus `2e`, TopicSuperseded `2f`,
 TopicSupersessionCleared `30`, and TopicSupersessionStatus `31`.
 TopicAliasAdded is `32`, TopicAliasRemoved is `33`, and TopicAliasStatus is
 `34`. TopicTagAdded is `35`, TopicTagRemoved is `36`, and TopicTagStatus is
-`37`.
+`37`. AttachmentMessages, AttachmentMessageAccepted, and AttachmentChanges are
+`38`, `39`, and `3a`; VellumArtifactMessages and
+VellumArtifactMessageAccepted are `3b` and `3c`. PeerConversationCreated and
+ConversationProfile are `3d` and `3e`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -275,6 +286,7 @@ is derived from the client binding and is never present on the wire.
 | `1c` | DuplicateTopicTag | — |
 | `1d` | TopicTagLimit | — |
 | `1e` | UnknownTopicTag | — |
+| `1f` | ImmutableConversationCohort | — |
 
 ## Closure and evidence
 
@@ -317,6 +329,16 @@ outcomes `32` through `34`, event `15`, and refusals `19` and `1a`.
 Capability tag `16` advertises `TopicTagsV1`; frozen add request, added receipt,
 and topic-aware change fixtures pin commands `37` through `39`, outcomes `35`
 through `37`, event `16`, and refusals `1b` through `1e`.
+Capability tags `17` and `18` advertise immutable attachment and typed Vellum
+artifact references; commands `3a` through `3f` and outcomes `38` through `3c`
+are their separate history, admission, and attachment-change projections.
+Capability tag `19` advertises `ConversationProfilesV1`. Profile scalars are
+Ordinary `01`, Direct `02`, and GroupDirect `03`. Command tags `40`/`41`,
+outcomes `3d`/`3e`, refusal `1f`, and room-event tag `17` close peer creation
+and member-only profile observation. The peer event carries initiator,
+nonordinary profile, and a strictly increasing founding cohort containing the
+initiator in all four change projections. Frozen creation and status frames pin
+the additive grammar without changing the legacy room-summary shape.
 Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push

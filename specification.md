@@ -1011,3 +1011,12 @@ name denotes a later composition of an ordinary invite-only room and the R106
 Agora-to-Agora federation binding. No local field may assert remote identity,
 tenant trust, replication, or federation readiness. The detailed decision and
 required implementation evidence are in `docs/adr-conversation-profiles.md`.
+
+The additive `CreatePeerConversation` transition retains the canonical original
+cohort and publishes one peer-creation event; `ConversationProfile` is a
+current-member-only observation. Protocol/Wire V2 advertise
+`ConversationProfilesV1` and preserve the frozen legacy room-summary grammar.
+Engine checkpoint profiles 22/23 add peer state without/with Vellum relations;
+service profiles 26/27 and Host profile 25 close the nested durable shape while
+recovering and canonically migrating valid legacy records. Unknown, malformed,
+cross-profile, and old-envelope/new-payload combinations refuse before exposure.
