@@ -173,8 +173,12 @@ receipts and profile observation remain client-bound; Host and the private Unix
 route derive the initiator from authentication; client and both SDK facades
 construct the additive DTOs. Engine 22/23, service 26/27, and Host 25 recovery,
 two frozen frames, the 77-fixture compatibility inventory, and the refreshed
-wire/outer fuzz seed corpora provide the pre-release evidence. Commit-pinned
-release qualification is still required before R96 is marked satisfied.
+wire/outer fuzz seed corpora provide the feature evidence. Revision
+`272913ec8561581c7afc62c87bbcfc7b2bbac514` passed the ordinary gate, all
+release-mode targets, 10,000 deterministic soak cycles, and 1,000,000
+fixed-seed cases for each of the three fuzz targets on Darwin 25.6.0 arm64 /
+macOS 26.6.2, with unchanged tracked bytes afterward. R96 is satisfied for the
+claimed private-local profile boundary.
 
 The separate typing owner has six integration scenarios and two
 saturation units covering room, retained-root, and stable-topic targets;

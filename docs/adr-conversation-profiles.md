@@ -1,6 +1,6 @@
 # ADR: conversation profiles
 
-Status: implemented; release qualification pending
+Status: accepted and release-qualified
 
 Date: 2026-11-14
 
@@ -101,7 +101,10 @@ or federation claim without evidence.
 The engine-through-SDK implementation, authenticated Host binding, private
 Unix transport route, bounded permutation/schedule model, canonical recovery,
 two frozen wire frames, compatibility inventory, and fuzz seeds are present.
-Commit-pinned release qualification remains the final acceptance gate.
+Revision `272913ec8561581c7afc62c87bbcfc7b2bbac514` passed the ordinary gate,
+all release-mode targets, 10,000 deterministic soak cycles, and 1,000,000
+fixed-seed cases for each of the three fuzz targets on Darwin 25.6.0 arm64 /
+macOS 26.6.2, with unchanged tracked bytes afterward.
 
 ## Nonclaims
 

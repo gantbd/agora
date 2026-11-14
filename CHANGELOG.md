@@ -14,7 +14,9 @@ follow Semantic Versioning once a public release contract is selected.
   Shared room is reserved for a later ordinary-room-plus-federation composition;
   the additive profile spans engine, protocol, wire, service, Host, client, both
   SDK facades, canonical recovery, private Unix transport, model schedules,
-  frozen fixtures, and fuzz seeds. Commit-pinned release qualification remains.
+  frozen fixtures, and fuzz seeds. Revision
+  `272913ec8561581c7afc62c87bbcfc7b2bbac514` passed the integrated release
+  profile with 10,000 soak cycles and 1,000,000 cases on each fuzz target.
 
 - Added a normative aggregate model, exact machine-checked package taxonomy,
   category-aligned workspace layout, and a dedicated authority-free local Unix

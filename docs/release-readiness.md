@@ -117,11 +117,14 @@ not ready for a network service or crates.io release.
   gate, all release-mode targets, 10,000 deterministic soak cycles, and
   1,000,000 fixed-seed cases on each of the three fuzz targets, with unchanged
   tracked bytes afterward;
-- implemented R96 conversation profiles across engine, protocol/wire, service,
+- release-qualified R96 conversation profiles across engine, protocol/wire, service,
   authenticated Host, client, both SDK facades, and the private Unix route,
   with bounded schedule/adversarial evidence, profile-22/23 engine, 26/27
-  service, and 25 Host recovery, and 77 canonical fixtures; commit-pinned R96
-  qualification remains pending;
+  service, and 25 Host recovery, and 77 canonical fixtures; revision
+  `272913ec8561581c7afc62c87bbcfc7b2bbac514` passed the ordinary gate, all
+  release-mode targets, 10,000 deterministic soak cycles, and 1,000,000
+  fixed-seed cases on each of the three fuzz targets on Darwin 25.6.0 arm64 /
+  macOS 26.6.2, with unchanged tracked bytes afterward;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound
