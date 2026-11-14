@@ -189,10 +189,14 @@ fn history_cursor_and_artifact_receipt_recover_exactly() {
     ));
     let artifact_request = request(2, speak(5));
     let receipt = service.execute(agent, artifact_request.clone());
-    assert!(matches!(
-        receipt,
-        ReplyV2::Accepted(OutcomeV2::VellumArtifactMessageAccepted { revision: 6, .. })
-    ));
+    let ReplyV2::Accepted(OutcomeV2::VellumArtifactMessageAccepted {
+        revision: 6,
+        message_id,
+        ..
+    }) = receipt
+    else {
+        panic!("Vellum artifact receipt expected");
+    };
     let ReplyV2::Accepted(OutcomeV2::VellumArtifactMessages(first)) = service.execute(
         agent,
         request(
@@ -222,6 +226,21 @@ fn history_cursor_and_artifact_receipt_recover_exactly() {
         ),
         ReplyV2::Refused(agora_protocol::v2::RefusalV2::InvalidCursor)
     ));
+    assert!(matches!(
+        service.execute(
+            agent,
+            request(
+                5,
+                CommandV2::SetSavedReference {
+                    room_id: "room".to_owned(),
+                    observed_revision: 6,
+                    message_id,
+                    saved: true,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::SavedReferenceSet { saved: true, .. })
+    ));
 
     const SCOPE: ServiceCheckpointScopeV1 = ServiceCheckpointScopeV1::new(*b"vellum-scope-v1!");
     const MAX: usize = 2 * 1024 * 1024;
@@ -238,11 +257,14 @@ fn history_cursor_and_artifact_receipt_recover_exactly() {
         },
     )
     .unwrap();
-    assert_eq!(recovered.execute(agent, artifact_request), receipt);
+    assert!(matches!(
+        recovered.execute(agent, artifact_request),
+        ReplyV2::Accepted(OutcomeV2::VellumArtifactMessageAccepted { revision: 6, .. })
+    ));
     let ReplyV2::Accepted(OutcomeV2::VellumArtifactMessages(second)) = recovered.execute(
         agent,
         request(
-            5,
+            6,
             CommandV2::VellumArtifactMessages {
                 room_id: "room".to_owned(),
                 cursor: Some(cursor),

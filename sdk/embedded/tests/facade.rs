@@ -130,6 +130,25 @@ fn facade_names_private_attention_engine_values() {
 }
 
 #[test]
+fn facade_names_shared_pin_and_private_save_engine_values() {
+    let message_id = engine::MessageId::from_bytes([9; 16]);
+    let command = engine::CommandV2::SetPin {
+        room_id: "room".into(),
+        actor: "alice".into(),
+        message_id,
+        pinned: true,
+    };
+    assert!(matches!(
+        command,
+        engine::CommandV2::SetPin { pinned: true, .. }
+    ));
+    assert_eq!(engine::MAX_ROOM_PINS_V1, 256);
+    assert_eq!(engine::MAX_PRIVATE_SAVES_V1, 4_096);
+    let _: Option<engine::SavedReferenceV1> = None;
+    let _: Option<engine::PinnedReferenceV1> = None;
+}
+
+#[test]
 fn facade_constructs_the_additive_transient_host_profile() {
     let engine = engine::Engine::new();
     let service = service::v2::ServiceV2::new(engine, service::v2::ServiceLimitsV2::default());

@@ -277,6 +277,19 @@ capability frame advances intentionally, while every other older wire fixture
 is unchanged. Two frozen attention frames raise compatibility closure to 79
 fixtures and seed both canonical wire fuzz profiles.
 
+Shared pins and private saves are additive. `Pins`, `SetPin`,
+`SavedReference`, `SetSavedReference`, and `SavedReferences` use command tags
+68–72 (`44`–`48` hex); their five outcomes use 65–69 (`41`–`45`). Shared pin
+events use tag 24 (`18`) in all four change projections, capability tags 27/28
+advertise the profiles independently, and refusal tags 33/34 preserve
+invalid-change specificity. Availability is a closed `00` available, `01`
+tombstoned, or `02` evicted scalar. Engine profile 20 uses independent feature
+bits 8 and 16 for saves and pins, making 20–51 the closed exact feature range;
+legacy profile bytes remain unchanged. Existing Service 26/27 and Host 25
+length-delimited envelopes carry the new engine state and exact receipts without
+outer reinterpretation. Two frozen frames raise compatibility closure to 81
+fixtures and seed both canonical wire fuzz profiles.
+
 Transient collaboration Wire V1 is a new, separately invoked grammar. Its
 profile byte `01`, presence command/outcome tags `01` through `03`, typing
 command/outcome tags `04` through `06`, reply tags `81` and `82`, and refusal

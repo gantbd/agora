@@ -89,6 +89,13 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `3f` | SpeakWithVellumArtifacts | room, expected revision, target, logical time, body, addressed list, reference list |
 | `40` | CreatePeerConversation | room, name, profile, canonical founding-participant list, expected revision |
 | `41` | ConversationProfile | room |
+| `42` | AttentionPreference | room, closed room/thread/topic scope |
+| `43` | SetAttentionPreference | room, observed revision, scope, preference |
+| `44` | Pins | room |
+| `45` | SetPin | room, expected revision, message ID, pinned Boolean |
+| `46` | SavedReference | room, message ID |
+| `47` | SetSavedReference | room, observed revision, message ID, saved Boolean |
+| `48` | SavedReferences | room |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -115,7 +122,9 @@ TopicAliasAdded is `32`, TopicAliasRemoved is `33`, and TopicAliasStatus is
 `37`. AttachmentMessages, AttachmentMessageAccepted, and AttachmentChanges are
 `38`, `39`, and `3a`; VellumArtifactMessages and
 VellumArtifactMessageAccepted are `3b` and `3c`. PeerConversationCreated and
-ConversationProfile are `3d` and `3e`.
+ConversationProfile are `3d` and `3e`. AttentionPreference and
+AttentionPreferenceSet are `3f` and `40`. Pins, PinChanged, SavedReference,
+SavedReferenceSet, and SavedReferences are `41` through `45`.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -287,6 +296,9 @@ is derived from the client binding and is never present on the wire.
 | `1d` | TopicTagLimit | — |
 | `1e` | UnknownTopicTag | — |
 | `1f` | ImmutableConversationCohort | — |
+| `20` | InvalidAttentionScope | — |
+| `21` | InvalidPinChange | — |
+| `22` | InvalidSaveChange | — |
 
 ## Closure and evidence
 
@@ -339,7 +351,14 @@ and member-only profile observation. The peer event carries initiator,
 nonordinary profile, and a strictly increasing founding cohort containing the
 initiator in all four change projections. Frozen creation and status frames pin
 the additive grammar without changing the legacy room-summary shape.
-Truncation, trailing data,
+Capability tag `1a` advertises `PrivateAttentionPreferencesV1`. Capability tags
+`1b` and `1c` independently advertise `SharedPinsV1` and
+`PrivateSavedReferencesV1`. Stable-reference availability is Available `00`,
+Tombstoned `01`, or Evicted `02`. Pin event tag `18` carries actor, message ID,
+original sequence, and resulting Boolean in all four change projections. Pin
+lists are capped at 256 and private save lists at 4,096 before allocation. The
+frozen set-pin and saved-reference-list frames pin the additive grammar without
+changing older frames. Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push
 delivery, or an authenticated host.

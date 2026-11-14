@@ -59,7 +59,11 @@ search DTOs, canonical codec, and session-epoch-bound uncertainty client. The
 embedded facade constructs the authenticated search Host over a caller-selected
 port implementation reexported through the service boundary. Neither facade
 selects an index, duplicates conversation ownership, or claims transport or
-recovery policy.
+recovery policy. Shared pins and private saved references follow the same rule:
+the remote facade names their protocol values, canonical codec, and
+exact-request client; the embedded facade names the authoritative
+engine/service/Host composition. Neither facade merges private saves into
+room-visible pins, adds synchronization policy, or copies referenced payload.
 
 ## Laws and evidence
 

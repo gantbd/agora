@@ -12,9 +12,10 @@ use agora_engine::{
     MemberPageCursor, MessageId, MessagePageCursor, MessageRevisionPageCursorV1,
     ModerationCausationV1, ModerationReasonV1, NotificationIntentV1 as EngineNotificationIntentV1,
     ObservationRefusal, OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind,
-    ReadPositionRefusalV1, ReadScopeV1 as EngineReadScopeV1, Refusal as EngineRefusal, Revision,
-    RevisionedCommandV2, Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId,
-    RoomPageCursor, Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicId,
+    PrivateSaveRefusalV1, ReadPositionRefusalV1, ReadScopeV1 as EngineReadScopeV1,
+    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomChangeGap,
+    RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
+    Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicId,
     TopicMessagePageCursorV1, TopicPageCursorV1,
     VellumArtifactMessageTargetV1 as EngineVellumArtifactMessageTargetV1,
     VellumArtifactReferenceIdV1 as EngineVellumArtifactReferenceIdV1,
@@ -31,16 +32,16 @@ use agora_protocol::v2::{
     MemberPageV2, MemberV2, MessageAttachmentV1, MessageIdV1, MessagePageV2,
     MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1, MessageV2,
     MessageVellumArtifactReferenceV1, NotificationIntentV1, OutcomeV2, PageCursorV2,
-    ParticipantKindV2, PeerConversationCreatedV1, ReactionStatusV1, ReactionSummaryV1,
-    ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
-    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, Sha256DigestV1,
-    ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
-    ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
-    TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1, TopicRoomChangePageV1,
-    TopicRoomChangeV1, TopicRoomEventV1, TopicStatusV1, TopicSupersessionStatusV1,
-    TopicTagStatusV1, TopicV1, VellumArtifactMessagePageV1, VellumArtifactMessageTargetV1,
-    VellumArtifactMessageV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
-    VellumDocumentTargetV1,
+    ParticipantKindV2, PeerConversationCreatedV1, PinnedReferenceV1, ReactionStatusV1,
+    ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
+    RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2,
+    SavedReferenceV1, Sha256DigestV1, StableReferenceAvailabilityV1, ThreadLifecycleStateV1,
+    ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1, ThreadedRoomChangePageV1,
+    ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1, TopicIdV1, TopicMessagePageV1,
+    TopicMessageV1, TopicPageV1, TopicRoomChangePageV1, TopicRoomChangeV1, TopicRoomEventV1,
+    TopicStatusV1, TopicSupersessionStatusV1, TopicTagStatusV1, TopicV1,
+    VellumArtifactMessagePageV1, VellumArtifactMessageTargetV1, VellumArtifactMessageV1,
+    VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -350,6 +351,8 @@ impl ServiceV2 {
                 CapabilityV2::VellumArtifactReferencesV1,
                 CapabilityV2::ConversationProfilesV1,
                 CapabilityV2::PrivateAttentionPreferencesV1,
+                CapabilityV2::SharedPinsV1,
+                CapabilityV2::PrivateSavedReferencesV1,
             ])),
             CommandV2::Rooms { cursor, limit } => self.rooms(client, participant, *cursor, *limit),
             CommandV2::ConversationProfile { room_id } => {
@@ -529,6 +532,38 @@ impl ServiceV2 {
                 *observed_revision,
                 *scope,
                 *preference,
+            ),
+            CommandV2::Pins { room_id } => self.pins(participant, room_id),
+            CommandV2::SetPin {
+                room_id,
+                expected_revision,
+                message_id,
+                pinned,
+            } => self.mutate(
+                *expected_revision,
+                EngineCommand::SetPin {
+                    room_id: RoomId::new(room_id),
+                    actor: participant.clone(),
+                    message_id: MessageId::from_bytes(message_id.into_bytes()),
+                    pinned: *pinned,
+                },
+            ),
+            CommandV2::SavedReference {
+                room_id,
+                message_id,
+            } => self.saved_reference(participant, room_id, *message_id),
+            CommandV2::SavedReferences { room_id } => self.saved_references(participant, room_id),
+            CommandV2::SetSavedReference {
+                room_id,
+                observed_revision,
+                message_id,
+                saved,
+            } => self.set_saved_reference(
+                participant,
+                room_id,
+                *observed_revision,
+                *message_id,
+                *saved,
             ),
             CommandV2::CreateTopic {
                 room_id,
@@ -1301,6 +1336,17 @@ impl ServiceV2 {
                     message_id: MessageIdV1::new(message_id.into_bytes()),
                 }
             }),
+            EngineOutcome::PinChanged {
+                message_id,
+                original_sequence,
+                pinned,
+                ..
+            } => Ok(OutcomeV2::PinChanged {
+                revision,
+                message_id: MessageIdV1::new(message_id.into_bytes()),
+                original_sequence,
+                pinned,
+            }),
             EngineOutcome::MessageEdited {
                 message_id,
                 message_revision,
@@ -1311,7 +1357,6 @@ impl ServiceV2 {
                 message_revision,
             }),
             EngineOutcome::ParticipantRegistered(_)
-            | EngineOutcome::PinChanged { .. }
             | EngineOutcome::VellumArtifactMessageAccepted { .. } => Err(RefusalV2::Unavailable),
         }
     }
@@ -1988,6 +2033,79 @@ impl ServiceV2 {
         ))
     }
 
+    fn pins(&self, participant: &ParticipantId, room_id: &str) -> Result<OutcomeV2, RefusalV2> {
+        let pins = self
+            .engine
+            .pinned_references(participant, &RoomId::new(room_id))
+            .map_err(map_observation_refusal)?
+            .into_iter()
+            .map(|pin| PinnedReferenceV1 {
+                message_id: MessageIdV1::new(pin.message_id().into_bytes()),
+                original_sequence: pin.original_sequence(),
+                pinned_by: pin.pinned_by().as_str().to_owned(),
+                availability: map_stable_reference_availability(pin.availability()),
+            })
+            .collect();
+        Ok(OutcomeV2::Pins(pins))
+    }
+
+    fn saved_reference(
+        &self,
+        participant: &ParticipantId,
+        room_id: &str,
+        message_id: MessageIdV1,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let reference = self
+            .engine
+            .saved_reference(
+                participant,
+                &RoomId::new(room_id),
+                MessageId::from_bytes(message_id.into_bytes()),
+            )
+            .map_err(map_private_save_refusal)?
+            .map(map_saved_reference_from_engine);
+        Ok(OutcomeV2::SavedReference(reference))
+    }
+
+    fn saved_references(
+        &self,
+        participant: &ParticipantId,
+        room_id: &str,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let references = self
+            .engine
+            .saved_references(participant, &RoomId::new(room_id))
+            .map_err(map_private_save_refusal)?
+            .into_iter()
+            .map(map_saved_reference_from_engine)
+            .collect();
+        Ok(OutcomeV2::SavedReferences(references))
+    }
+
+    fn set_saved_reference(
+        &mut self,
+        participant: &ParticipantId,
+        room_id: &str,
+        observed_revision: u64,
+        message_id: MessageIdV1,
+        saved: bool,
+    ) -> Result<OutcomeV2, RefusalV2> {
+        let reference = self
+            .engine
+            .set_saved_reference(
+                participant,
+                &RoomId::new(room_id),
+                MessageId::from_bytes(message_id.into_bytes()),
+                Revision(observed_revision),
+                saved,
+            )
+            .map_err(map_private_save_refusal)?;
+        Ok(OutcomeV2::SavedReferenceSet {
+            reference: map_saved_reference_from_engine(reference),
+            saved,
+        })
+    }
+
     fn thread_roots(
         &mut self,
         client: ClientIdV2,
@@ -2189,9 +2307,18 @@ impl ServiceV2 {
                             agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
                                 return Err(RefusalV2::Unavailable);
                             }
-                            agora_engine::DomainEventV2::PinChanged { .. } => {
-                                return Err(RefusalV2::Unavailable);
-                            }
+                            agora_engine::DomainEventV2::PinChanged {
+                                actor,
+                                message_id,
+                                original_sequence,
+                                pinned,
+                                ..
+                            } => RoomEventV2::PinChanged {
+                                actor_id: actor.as_str().to_owned(),
+                                message_id: MessageIdV1::new(message_id.into_bytes()),
+                                original_sequence,
+                                pinned,
+                            },
                             agora_engine::DomainEventV2::RoomCreated {
                                 owner, admission, ..
                             } => RoomEventV2::RoomCreated {
@@ -2911,7 +3038,12 @@ impl ServiceV2 {
             | CommandV2::ReadPosition { room_id, .. }
             | CommandV2::AdvanceReadPosition { room_id, .. }
             | CommandV2::AttentionPreference { room_id, .. }
-            | CommandV2::SetAttentionPreference { room_id, .. } => valid_room(room_id),
+            | CommandV2::SetAttentionPreference { room_id, .. }
+            | CommandV2::Pins { room_id }
+            | CommandV2::SetPin { room_id, .. }
+            | CommandV2::SavedReference { room_id, .. }
+            | CommandV2::SavedReferences { room_id }
+            | CommandV2::SetSavedReference { room_id, .. } => valid_room(room_id),
             CommandV2::Changes { room_id, limit, .. }
             | CommandV2::IdentifiedChanges { room_id, limit, .. }
             | CommandV2::AttachmentChanges { room_id, limit, .. }
@@ -3186,6 +3318,44 @@ fn map_attention_refusal(refusal: AttentionPreferenceRefusalV1) -> RefusalV2 {
     }
 }
 
+fn map_stable_reference_availability(
+    availability: agora_engine::StableReferenceAvailabilityV1,
+) -> StableReferenceAvailabilityV1 {
+    match availability {
+        agora_engine::StableReferenceAvailabilityV1::Available => {
+            StableReferenceAvailabilityV1::Available
+        }
+        agora_engine::StableReferenceAvailabilityV1::Tombstoned => {
+            StableReferenceAvailabilityV1::Tombstoned
+        }
+        agora_engine::StableReferenceAvailabilityV1::Evicted => {
+            StableReferenceAvailabilityV1::Evicted
+        }
+    }
+}
+
+fn map_saved_reference_from_engine(reference: agora_engine::SavedReferenceV1) -> SavedReferenceV1 {
+    SavedReferenceV1 {
+        message_id: MessageIdV1::new(reference.message_id().into_bytes()),
+        original_sequence: reference.original_sequence(),
+        availability: map_stable_reference_availability(reference.availability()),
+    }
+}
+
+fn map_private_save_refusal(refusal: PrivateSaveRefusalV1) -> RefusalV2 {
+    match refusal {
+        PrivateSaveRefusalV1::UnknownParticipant => RefusalV2::UnknownParticipant,
+        PrivateSaveRefusalV1::UnknownRoom => RefusalV2::UnknownRoom,
+        PrivateSaveRefusalV1::NotMember => RefusalV2::NotMember,
+        PrivateSaveRefusalV1::Stale { actual_revision } => RefusalV2::Stale {
+            actual_revision: actual_revision.0,
+        },
+        PrivateSaveRefusalV1::UnknownMessage => RefusalV2::InvalidInput,
+        PrivateSaveRefusalV1::InvalidChange => RefusalV2::InvalidSaveChange,
+        PrivateSaveRefusalV1::Capacity => RefusalV2::Capacity,
+    }
+}
+
 fn map_message_from_engine(message: agora_engine::Message) -> MessageV2 {
     MessageV2 {
         sequence: message.sequence(),
@@ -3430,9 +3600,18 @@ fn map_identified_room_event(
         agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
             return Err(RefusalV2::Unavailable);
         }
-        agora_engine::DomainEventV2::PinChanged { .. } => {
-            return Err(RefusalV2::Unavailable);
-        }
+        agora_engine::DomainEventV2::PinChanged {
+            actor,
+            message_id,
+            original_sequence,
+            pinned,
+            ..
+        } => IdentifiedRoomEventV1::PinChanged {
+            actor_id: actor.as_str().to_owned(),
+            message_id: MessageIdV1::new(message_id.into_bytes()),
+            original_sequence,
+            pinned,
+        },
         agora_engine::DomainEventV2::RoomCreated {
             owner, admission, ..
         } => IdentifiedRoomEventV1::RoomCreated {
@@ -3666,9 +3845,18 @@ fn map_threaded_room_event(
         agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
             return Err(RefusalV2::Unavailable);
         }
-        agora_engine::DomainEventV2::PinChanged { .. } => {
-            return Err(RefusalV2::Unavailable);
-        }
+        agora_engine::DomainEventV2::PinChanged {
+            actor,
+            message_id,
+            original_sequence,
+            pinned,
+            ..
+        } => ThreadedRoomEventV1::PinChanged {
+            actor_id: actor.as_str().to_owned(),
+            message_id: MessageIdV1::new(message_id.into_bytes()),
+            original_sequence,
+            pinned,
+        },
         agora_engine::DomainEventV2::RoomCreated {
             owner, admission, ..
         } => ThreadedRoomEventV1::RoomCreated {
@@ -4090,6 +4278,17 @@ fn map_topic_room_event(event: agora_engine::DomainEventV2) -> Result<TopicRoomE
             key,
             reacted,
         },
+        ThreadedRoomEventV1::PinChanged {
+            actor_id,
+            message_id,
+            original_sequence,
+            pinned,
+        } => TopicRoomEventV1::PinChanged {
+            actor_id,
+            message_id,
+            original_sequence,
+            pinned,
+        },
         ThreadedRoomEventV1::MessageEdited {
             actor_id,
             message_id,
@@ -4188,6 +4387,7 @@ fn map_observation_refusal(refusal: ObservationRefusal) -> RefusalV2 {
 
 fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
     match refusal {
+        EngineRefusal::InvalidPinChange => RefusalV2::InvalidPinChange,
         EngineRefusal::RevisionConflict { actual, .. } => RefusalV2::Stale {
             actual_revision: actual.0,
         },
@@ -4251,7 +4451,6 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidThreadLifecycleChange
         | EngineRefusal::InvalidReaction
         | EngineRefusal::InvalidReactionChange
-        | EngineRefusal::InvalidPinChange
         | EngineRefusal::InvalidMessageEdit
         | EngineRefusal::InvalidTopicName
         | EngineRefusal::InvalidTopicLifecycleChange

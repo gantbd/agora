@@ -885,6 +885,23 @@ but gates the private relation. Removal remains valid after history eviction.
 Pins and saves never extend message, attachment, or Vellum artifact payload
 retention and never authorize access to referenced external bytes.
 
+Protocol V2 advertises `SharedPinsV1` and `PrivateSavedReferencesV1`. Commands
+`Pins`, `SetPin`, `SavedReference`, `SetSavedReference`, and `SavedReferences`
+use canonical wire tags 68 through 72. Outcomes `Pins`, `PinChanged`,
+`SavedReference`, `SavedReferenceSet`, and `SavedReferences` use tags 65 through
+69; capability tags are 27/28, refusal tags are 33/34, and pin events use tag
+24 in every change projection. Pin lists refuse above 256 and save lists refuse
+above 4,096.
+
+Engine checkpoint profile 20 is extended by independent feature bits 8 for
+private saves and 16 for shared pins; profiles 20 through 51 therefore retain
+the exact presence set of Vellum, conversation-profile, attention, save, and
+pin state, and legacy profiles retain their bytes. Existing length-delimited
+Service 26/27 and Host 25 envelopes carry the additive engine record and exact
+wire receipts without changing their outer version. Recovery validates owner,
+room, message identity, ordering, capacities, event correspondence, and the
+canonical feature-bit set before publication.
+
 ## Immutable attachment-reference core profile V1
 
 An additive engine command admits one message body, canonical addressing, one

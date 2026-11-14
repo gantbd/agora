@@ -8,6 +8,17 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Implemented the R98 shared-pin/private-save release candidate. Pins are
+  bounded revisioned room facts visible to current members; saves are bounded
+  actor-owned relations with no domain revision or room event. Both retain only
+  stable message identity and original sequence, classify available,
+  tombstoned, and evicted targets, preserve canonical recovery, and copy no
+  message, attachment, or Vellum artifact payload. The additive slice spans
+  protocol/wire, service, durable owner, authenticated Host, client, both SDK
+  facades, private Unix transport, saturation and exhaustive schedule evidence,
+  two frozen frames, 81 compatibility fixtures, and refreshed fuzz seeds.
+  Commit-pinned release qualification remains pending.
+
 - Implemented the R97 private-attention contract: each current member owns a
   bounded room/thread/topic preference with independent follow, mute, and
   delivery-neutral notification intent. All-default removes state; writes are

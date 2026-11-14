@@ -22,48 +22,77 @@ const VERSION_V25: u8 = 25;
 const VERSION_V26: u8 = 26;
 const VERSION_V27: u8 = 27;
 
-fn command_uses_conversation_profiles(command: &CommandV2) -> bool {
+fn command_uses_v26_vocabulary(command: &CommandV2) -> bool {
     matches!(
         command,
-        CommandV2::CreatePeerConversation { .. } | CommandV2::ConversationProfile { .. }
+        CommandV2::CreatePeerConversation { .. }
+            | CommandV2::ConversationProfile { .. }
+            | CommandV2::AttentionPreference { .. }
+            | CommandV2::SetAttentionPreference { .. }
+            | CommandV2::Pins { .. }
+            | CommandV2::SetPin { .. }
+            | CommandV2::SavedReference { .. }
+            | CommandV2::SavedReferences { .. }
+            | CommandV2::SetSavedReference { .. }
     )
 }
 
-fn reply_uses_conversation_profiles(reply: &ReplyV2) -> bool {
+fn reply_uses_v26_vocabulary(reply: &ReplyV2) -> bool {
     let ReplyV2::Accepted(outcome) = reply else {
         return false;
     };
     match outcome {
-        OutcomeV2::PeerConversationCreated { .. } | OutcomeV2::ConversationProfile(_) => true,
-        OutcomeV2::Capabilities(capabilities) => {
-            capabilities.contains(&CapabilityV2::ConversationProfilesV1)
-        }
-        OutcomeV2::Changes(page) => page
-            .changes
-            .iter()
-            .any(|change| matches!(change.event, RoomEventV2::PeerConversationCreated(_))),
+        OutcomeV2::PeerConversationCreated { .. }
+        | OutcomeV2::ConversationProfile(_)
+        | OutcomeV2::AttentionPreference(_)
+        | OutcomeV2::AttentionPreferenceSet(_)
+        | OutcomeV2::Pins(_)
+        | OutcomeV2::PinChanged { .. }
+        | OutcomeV2::SavedReference(_)
+        | OutcomeV2::SavedReferences(_)
+        | OutcomeV2::SavedReferenceSet { .. } => true,
+        OutcomeV2::Capabilities(capabilities) => capabilities.iter().any(|capability| {
+            matches!(
+                capability,
+                CapabilityV2::ConversationProfilesV1
+                    | CapabilityV2::PrivateAttentionPreferencesV1
+                    | CapabilityV2::SharedPinsV1
+                    | CapabilityV2::PrivateSavedReferencesV1
+            )
+        }),
+        OutcomeV2::Changes(page) => page.changes.iter().any(|change| {
+            matches!(
+                change.event,
+                RoomEventV2::PeerConversationCreated(_) | RoomEventV2::PinChanged { .. }
+            )
+        }),
         OutcomeV2::IdentifiedChanges(page) => page.changes.iter().any(|change| {
             matches!(
                 change.event,
                 IdentifiedRoomEventV1::PeerConversationCreated(_)
+                    | IdentifiedRoomEventV1::PinChanged { .. }
             )
         }),
         OutcomeV2::AttachmentChanges(page) => page.identified.changes.iter().any(|change| {
             matches!(
                 change.event,
                 IdentifiedRoomEventV1::PeerConversationCreated(_)
+                    | IdentifiedRoomEventV1::PinChanged { .. }
             )
         }),
         OutcomeV2::ThreadedChanges(page) => page.changes.iter().any(|change| {
             matches!(
                 change.event,
                 ThreadedRoomEventV1::PeerConversationCreated(_)
+                    | ThreadedRoomEventV1::PinChanged { .. }
             )
         }),
-        OutcomeV2::TopicChanges(page) => page
-            .changes
-            .iter()
-            .any(|change| matches!(change.event, TopicRoomEventV1::PeerConversationCreated(_))),
+        OutcomeV2::TopicChanges(page) => page.changes.iter().any(|change| {
+            matches!(
+                change.event,
+                TopicRoomEventV1::PeerConversationCreated(_) | TopicRoomEventV1::PinChanged { .. }
+            )
+        }),
         _ => false,
     }
 }
@@ -349,7 +378,10 @@ impl ServiceV2 {
             bytes: Vec::new(),
             max: max_snapshot_bytes,
         };
-        let includes_vellum = matches!(engine.bytes().get(8), Some(21 | 23))
+        let includes_vellum = engine
+            .bytes()
+            .get(8)
+            .is_some_and(|profile| (20..=51).contains(profile) && (profile - 20) & 1 != 0)
             || self
                 .cursors
                 .values()
@@ -658,8 +690,8 @@ impl ServiceV2 {
                 _ => return Err(ServiceCheckpointErrorV2::Invalid),
             };
             if matches!(version, VERSION_V24 | VERSION_V25)
-                && (command_uses_conversation_profiles(&request.command)
-                    || reply_uses_conversation_profiles(&reply))
+                && (command_uses_v26_vocabulary(&request.command)
+                    || reply_uses_v26_vocabulary(&reply))
             {
                 return Err(ServiceCheckpointErrorV2::Profile);
             }

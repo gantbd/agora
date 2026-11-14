@@ -352,6 +352,164 @@ fn v2_attention_preferences_bind_the_authenticated_participant() {
 }
 
 #[test]
+fn v2_pins_and_saves_bind_authenticated_participants_without_merging_visibility() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let EngineOutcome::MessageAccepted { sequence, .. } = engine
+        .apply(EngineCommand::Speak {
+            room_id: "room".into(),
+            author: "alice".into(),
+            at: LogicalTime(1),
+            body: "body".to_owned(),
+        })
+        .unwrap()
+    else {
+        panic!("message accepted expected");
+    };
+    let message_id = agora_protocol::v2::MessageIdV1::new(
+        engine
+            .message(&RoomId::new("room"), sequence)
+            .unwrap()
+            .id()
+            .into_bytes(),
+    );
+    let revision = engine.revision().0;
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(2),
+    );
+    let (alice_session, alice_client, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, bot_client, bot_context) = open(&mut host, "bot", 2);
+
+    let save = encode_request_v2(
+        &WireRequestV2::Execute {
+            client: alice_client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::SetSavedReference {
+                    room_id: "room".to_owned(),
+                    observed_revision: revision,
+                    message_id,
+                    saved: true,
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host
+                .handle(alice_session, &save, &alice_context, HostTimeV1(3))
+                .unwrap(),
+            limits(2).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::SavedReferenceSet {
+            saved: true,
+            ..
+        }))
+    ));
+
+    let bot_saves = encode_request_v2(
+        &WireRequestV2::Execute {
+            client: bot_client,
+            request: RequestV2 {
+                request_id: RequestIdV2(1),
+                command: CommandV2::SavedReferences {
+                    room_id: "room".to_owned(),
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    assert_eq!(
+        decode_reply_v2(
+            &host
+                .handle(bot_session, &bot_saves, &bot_context, HostTimeV1(3))
+                .unwrap(),
+            limits(2).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::SavedReferences(vec![])))
+    );
+
+    let pin = encode_request_v2(
+        &WireRequestV2::Execute {
+            client: bot_client,
+            request: RequestV2 {
+                request_id: RequestIdV2(2),
+                command: CommandV2::SetPin {
+                    room_id: "room".to_owned(),
+                    expected_revision: revision,
+                    message_id,
+                    pinned: true,
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host
+                .handle(bot_session, &pin, &bot_context, HostTimeV1(4))
+                .unwrap(),
+            limits(2).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::PinChanged {
+            pinned: true,
+            ..
+        }))
+    ));
+
+    let pins = encode_request_v2(
+        &WireRequestV2::Execute {
+            client: alice_client,
+            request: RequestV2 {
+                request_id: RequestIdV2(2),
+                command: CommandV2::Pins {
+                    room_id: "room".to_owned(),
+                },
+            },
+        },
+        limits(2).wire,
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_reply_v2(
+            &host
+                .handle(alice_session, &pins, &alice_context, HostTimeV1(4))
+                .unwrap(),
+            limits(2).wire,
+        )
+        .unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::Pins(pins)))
+            if pins.len() == 1 && pins[0].pinned_by == "bot"
+    ));
+    assert!(calls.get() >= 6);
+}
+
+#[test]
 fn v2_attention_receipt_and_private_state_recover_through_host_checkpoint() {
     let mut engine = engine();
     engine

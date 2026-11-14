@@ -3045,6 +3045,26 @@ impl Engine {
         }))
     }
 
+    /// Observes the caller's bounded private saved set in one room.
+    pub fn saved_references(
+        &self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<Vec<SavedReferenceV1>, PrivateSaveRefusalV1> {
+        let room = self.validate_private_save_actor(actor, room_id)?;
+        Ok(self
+            .private_saves
+            .iter()
+            .filter_map(|((owner, saved_room_id, message_id), original_sequence)| {
+                (owner == actor && saved_room_id == room_id).then_some(SavedReferenceV1 {
+                    message_id: *message_id,
+                    original_sequence: *original_sequence,
+                    availability: stable_reference_availability(room, *message_id),
+                })
+            })
+            .collect())
+    }
+
     /// Returns the bounded shared pin set to one current room member.
     pub fn pinned_references(
         &self,

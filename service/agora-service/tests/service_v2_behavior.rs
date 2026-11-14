@@ -5,7 +5,8 @@ use agora_protocol::v2::{
     AdmissionPolicyV2, AttentionPreferenceV1, AttentionScopeV1, CapabilityV2, ChangeGapV2,
     ClientIdV2, CommandV2, ConversationProfileV1, IdentifiedRoomEventV1, MessageIdV1,
     NotificationIntentV1, OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
-    RoleV2, RoomEventV2, ThreadLifecycleStateV1, ThreadedRoomEventV1, TopicIdV1, TopicRoomEventV1,
+    RoleV2, RoomEventV2, StableReferenceAvailabilityV1, ThreadLifecycleStateV1,
+    ThreadedRoomEventV1, TopicIdV1, TopicRoomEventV1,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -95,6 +96,133 @@ fn v2_attention_preferences_are_actor_bound_replayable_and_nonpublishing() {
             AttentionPreferenceV1::default()
         ))
     );
+}
+
+#[test]
+fn v2_pins_are_shared_while_saved_references_are_private_and_nonpublishing() {
+    let mut engine = Engine::new();
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        revision,
+        message_id,
+        sequence,
+    }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: 4,
+                logical_time: 1,
+                body: "payload stays in message retention".to_owned(),
+                addressed_to: vec![],
+            },
+        ),
+    )
+    else {
+        panic!("identified message expected");
+    };
+    let event_count = service.engine().pending_events().count();
+    let save = request(
+        2,
+        CommandV2::SetSavedReference {
+            room_id: "room".to_owned(),
+            observed_revision: revision,
+            message_id,
+            saved: true,
+        },
+    );
+    let saved = service.execute(alice, save.clone());
+    assert_eq!(service.execute(alice, save), saved);
+    assert!(matches!(
+        saved,
+        ReplyV2::Accepted(OutcomeV2::SavedReferenceSet {
+            reference,
+            saved: true,
+        }) if reference.message_id == message_id
+            && reference.original_sequence == sequence
+            && reference.availability == StableReferenceAvailabilityV1::Available
+    ));
+    assert_eq!(service.engine().revision().0, revision);
+    assert_eq!(service.engine().pending_events().count(), event_count);
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(3, CommandV2::SavedReferences { room_id: "room".to_owned() }),
+        ),
+        ReplyV2::Accepted(OutcomeV2::SavedReferences(references))
+            if references.len() == 1 && references[0].message_id == message_id
+    ));
+    assert_eq!(
+        service.execute(
+            bot,
+            request(
+                1,
+                CommandV2::SavedReferences {
+                    room_id: "room".to_owned()
+                }
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::SavedReferences(vec![]))
+    );
+
+    assert!(matches!(
+        service.execute(
+            bot,
+            request(
+                2,
+                CommandV2::SetPin {
+                    room_id: "room".to_owned(),
+                    expected_revision: revision,
+                    message_id,
+                    pinned: true,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::PinChanged {
+            revision: pin_revision,
+            message_id: pinned_message_id,
+            original_sequence,
+            pinned: true,
+        }) if pin_revision == revision + 1
+            && pinned_message_id == message_id
+            && original_sequence == sequence
+    ));
+    assert!(matches!(
+        service.execute(
+            alice,
+            request(4, CommandV2::Pins { room_id: "room".to_owned() }),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Pins(pins))
+            if pins.len() == 1 && pins[0].message_id == message_id && pins[0].pinned_by == "bot"
+    ));
 }
 
 #[test]
@@ -3753,11 +3881,12 @@ fn v2_capability_discovery_is_closed_replayable_and_non_authorizing() {
     let ReplyV2::Accepted(OutcomeV2::Capabilities(capabilities)) = &first else {
         panic!("capabilities expected");
     };
-    assert_eq!(capabilities.len(), 26);
+    assert_eq!(capabilities.len(), 28);
     assert_eq!(
         capabilities.last(),
-        Some(&CapabilityV2::PrivateAttentionPreferencesV1)
+        Some(&CapabilityV2::PrivateSavedReferencesV1)
     );
+    assert!(capabilities.contains(&CapabilityV2::SharedPinsV1));
     assert_eq!(service.execute(alice, request), first);
     assert_eq!(service.engine().revision().0, 1);
 }

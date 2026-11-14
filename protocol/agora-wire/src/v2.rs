@@ -11,12 +11,13 @@ use agora_protocol::v2::{
     BanPageV2, BannedParticipantV2, CapabilityV2, ChangeGapV2, ClientIdV2, CommandV2,
     ConversationProfileStatusV1, ConversationProfileV1, IdentifiedMessagePageV1,
     IdentifiedMessageV1, IdentifiedRoomChangePageV1, IdentifiedRoomChangeV1, IdentifiedRoomEventV1,
-    MemberPageV2, MemberV2, MessageAttachmentV1, MessageIdV1, MessagePageV2,
-    MessageRevisionAvailabilityV1, MessageRevisionPageV1, MessageRevisionV1, MessageV2,
-    MessageVellumArtifactReferenceV1, NotificationIntentV1, OutcomeV2, PageCursorV2,
-    ParticipantKindV2, PeerConversationCreatedV1, ReactionStatusV1, ReactionSummaryV1,
-    ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, RoleV2,
-    RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2, RoomSummaryV2, Sha256DigestV1,
+    MAX_PINNED_REFERENCES_V1, MAX_SAVED_REFERENCES_V1, MemberPageV2, MemberV2, MessageAttachmentV1,
+    MessageIdV1, MessagePageV2, MessageRevisionAvailabilityV1, MessageRevisionPageV1,
+    MessageRevisionV1, MessageV2, MessageVellumArtifactReferenceV1, NotificationIntentV1,
+    OutcomeV2, PageCursorV2, ParticipantKindV2, PeerConversationCreatedV1, PinnedReferenceV1,
+    ReactionStatusV1, ReactionSummaryV1, ReadPositionV1, ReadScopeV1, RefusalV2, ReplyV2,
+    RequestIdV2, RequestV2, RoleV2, RoomChangePageV2, RoomChangeV2, RoomEventV2, RoomPageV2,
+    RoomSummaryV2, SavedReferenceV1, Sha256DigestV1, StableReferenceAvailabilityV1,
     ThreadLifecycleStateV1, ThreadMessagePageV1, ThreadStatusV1, ThreadedMessageV1,
     ThreadedRoomChangePageV1, ThreadedRoomChangeV1, ThreadedRoomEventV1, TopicAliasStatusV1,
     TopicIdV1, TopicMessagePageV1, TopicMessageV1, TopicPageV1, TopicRoomChangePageV1,
@@ -413,6 +414,46 @@ fn encode_command(sink: &mut dyn Sink, command: &CommandV2) -> Result<(), WireEn
             sink.u64(*observed_revision)?;
             encode_attention_scope(sink, *scope)?;
             encode_attention_preference(sink, *preference)
+        }
+        CommandV2::Pins { room_id } => {
+            sink.u8(68)?;
+            sink.text(room_id)
+        }
+        CommandV2::SetPin {
+            room_id,
+            expected_revision,
+            message_id,
+            pinned,
+        } => {
+            sink.u8(69)?;
+            sink.text(room_id)?;
+            sink.u64(*expected_revision)?;
+            encode_message_id(sink, *message_id)?;
+            sink.u8(u8::from(*pinned))
+        }
+        CommandV2::SavedReference {
+            room_id,
+            message_id,
+        } => {
+            sink.u8(70)?;
+            sink.text(room_id)?;
+            encode_message_id(sink, *message_id)
+        }
+        CommandV2::SavedReferences { room_id } => {
+            sink.u8(72)?;
+            sink.text(room_id)
+        }
+        CommandV2::SetSavedReference {
+            room_id,
+            observed_revision,
+            message_id,
+            saved,
+        } => {
+            sink.u8(71)?;
+            sink.text(room_id)?;
+            sink.u64(*observed_revision)?;
+            encode_message_id(sink, *message_id)?;
+            sink.u8(u8::from(*saved))
         }
         CommandV2::ArchiveThread {
             room_id,
@@ -1447,6 +1488,28 @@ fn decode_command(
             scope: decode_attention_scope(decoder)?,
             preference: decode_attention_preference(decoder)?,
         }),
+        68 => Ok(CommandV2::Pins {
+            room_id: read_text(decoder)?,
+        }),
+        69 => Ok(CommandV2::SetPin {
+            room_id: read_text(decoder)?,
+            expected_revision: read_u64(decoder)?,
+            message_id: decode_message_id(decoder)?,
+            pinned: decode_bool(decoder)?,
+        }),
+        70 => Ok(CommandV2::SavedReference {
+            room_id: read_text(decoder)?,
+            message_id: decode_message_id(decoder)?,
+        }),
+        71 => Ok(CommandV2::SetSavedReference {
+            room_id: read_text(decoder)?,
+            observed_revision: read_u64(decoder)?,
+            message_id: decode_message_id(decoder)?,
+            saved: decode_bool(decoder)?,
+        }),
+        72 => Ok(CommandV2::SavedReferences {
+            room_id: read_text(decoder)?,
+        }),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -1569,6 +1632,8 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
                     CapabilityV2::VellumArtifactReferencesV1 => 24,
                     CapabilityV2::ConversationProfilesV1 => 25,
                     CapabilityV2::PrivateAttentionPreferencesV1 => 26,
+                    CapabilityV2::SharedPinsV1 => 27,
+                    CapabilityV2::PrivateSavedReferencesV1 => 28,
                 })?;
             }
             Ok(())
@@ -2037,6 +2102,49 @@ fn encode_outcome(sink: &mut dyn Sink, outcome: &OutcomeV2) -> Result<(), WireEn
             sink.u8(64)?;
             encode_attention_preference(sink, *preference)
         }
+        OutcomeV2::Pins(references) => {
+            if references.len() > MAX_PINNED_REFERENCES_V1 {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(65)?;
+            sink.list(references.len())?;
+            for reference in references {
+                encode_pinned_reference(sink, reference)?;
+            }
+            Ok(())
+        }
+        OutcomeV2::PinChanged {
+            revision,
+            message_id,
+            original_sequence,
+            pinned,
+        } => {
+            sink.u8(66)?;
+            sink.u64(*revision)?;
+            encode_message_id(sink, *message_id)?;
+            sink.u64(*original_sequence)?;
+            sink.u8(u8::from(*pinned))
+        }
+        OutcomeV2::SavedReference(reference) => {
+            sink.u8(67)?;
+            encode_optional_saved_reference(sink, reference.as_ref())
+        }
+        OutcomeV2::SavedReferenceSet { reference, saved } => {
+            sink.u8(68)?;
+            encode_saved_reference(sink, reference)?;
+            sink.u8(u8::from(*saved))
+        }
+        OutcomeV2::SavedReferences(references) => {
+            if references.len() > MAX_SAVED_REFERENCES_V1 {
+                return Err(WireEncodeError::Invalid);
+            }
+            sink.u8(69)?;
+            sink.list(references.len())?;
+            for reference in references {
+                encode_saved_reference(sink, reference)?;
+            }
+            Ok(())
+        }
         OutcomeV2::Kicked { revision } => encode_revision_outcome(sink, 13, *revision),
         OutcomeV2::Banned { revision } => encode_revision_outcome(sink, 14, *revision),
         OutcomeV2::Unbanned { revision } => encode_revision_outcome(sink, 15, *revision),
@@ -2170,6 +2278,8 @@ fn decode_outcome(
                     24 => CapabilityV2::VellumArtifactReferencesV1,
                     25 => CapabilityV2::ConversationProfilesV1,
                     26 => CapabilityV2::PrivateAttentionPreferencesV1,
+                    27 => CapabilityV2::SharedPinsV1,
+                    28 => CapabilityV2::PrivateSavedReferencesV1,
                     _ => return Err(WireDecodeError::UnknownTag),
                 });
             }
@@ -2577,6 +2687,41 @@ fn decode_outcome(
         64 => Ok(OutcomeV2::AttentionPreferenceSet(
             decode_attention_preference(decoder)?,
         )),
+        65 => {
+            let count = read_list(decoder, limits)?;
+            if count > MAX_PINNED_REFERENCES_V1 {
+                return Err(WireDecodeError::Malformed);
+            }
+            let mut references = try_vec(count)?;
+            for _ in 0..count {
+                references.push(decode_pinned_reference(decoder)?);
+            }
+            Ok(OutcomeV2::Pins(references))
+        }
+        66 => Ok(OutcomeV2::PinChanged {
+            revision: read_u64(decoder)?,
+            message_id: decode_message_id(decoder)?,
+            original_sequence: read_u64(decoder)?,
+            pinned: decode_bool(decoder)?,
+        }),
+        67 => Ok(OutcomeV2::SavedReference(decode_optional_saved_reference(
+            decoder,
+        )?)),
+        68 => Ok(OutcomeV2::SavedReferenceSet {
+            reference: decode_saved_reference(decoder)?,
+            saved: decode_bool(decoder)?,
+        }),
+        69 => {
+            let count = read_list(decoder, limits)?;
+            if count > MAX_SAVED_REFERENCES_V1 {
+                return Err(WireDecodeError::Malformed);
+            }
+            let mut references = try_vec(count)?;
+            for _ in 0..count {
+                references.push(decode_saved_reference(decoder)?);
+            }
+            Ok(OutcomeV2::SavedReferences(references))
+        }
         _ => Err(WireDecodeError::UnknownTag),
     }
 }
@@ -3007,6 +3152,99 @@ fn decode_attention_preference(
         muted,
         notification_intent,
     })
+}
+
+fn decode_bool(decoder: &mut keystone_codec::Decoder<'_>) -> Result<bool, WireDecodeError> {
+    match read_u8(decoder)? {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(WireDecodeError::Malformed),
+    }
+}
+
+fn encode_reference_availability(
+    sink: &mut dyn Sink,
+    availability: StableReferenceAvailabilityV1,
+) -> Result<(), WireEncodeError> {
+    sink.u8(match availability {
+        StableReferenceAvailabilityV1::Available => 0,
+        StableReferenceAvailabilityV1::Tombstoned => 1,
+        StableReferenceAvailabilityV1::Evicted => 2,
+    })
+}
+
+fn decode_reference_availability(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<StableReferenceAvailabilityV1, WireDecodeError> {
+    match read_u8(decoder)? {
+        0 => Ok(StableReferenceAvailabilityV1::Available),
+        1 => Ok(StableReferenceAvailabilityV1::Tombstoned),
+        2 => Ok(StableReferenceAvailabilityV1::Evicted),
+        _ => Err(WireDecodeError::UnknownTag),
+    }
+}
+
+fn encode_pinned_reference(
+    sink: &mut dyn Sink,
+    reference: &PinnedReferenceV1,
+) -> Result<(), WireEncodeError> {
+    encode_message_id(sink, reference.message_id)?;
+    sink.u64(reference.original_sequence)?;
+    sink.text(&reference.pinned_by)?;
+    encode_reference_availability(sink, reference.availability)
+}
+
+fn decode_pinned_reference(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<PinnedReferenceV1, WireDecodeError> {
+    Ok(PinnedReferenceV1 {
+        message_id: decode_message_id(decoder)?,
+        original_sequence: read_u64(decoder)?,
+        pinned_by: read_text(decoder)?,
+        availability: decode_reference_availability(decoder)?,
+    })
+}
+
+fn encode_saved_reference(
+    sink: &mut dyn Sink,
+    reference: &SavedReferenceV1,
+) -> Result<(), WireEncodeError> {
+    encode_message_id(sink, reference.message_id)?;
+    sink.u64(reference.original_sequence)?;
+    encode_reference_availability(sink, reference.availability)
+}
+
+fn decode_saved_reference(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<SavedReferenceV1, WireDecodeError> {
+    Ok(SavedReferenceV1 {
+        message_id: decode_message_id(decoder)?,
+        original_sequence: read_u64(decoder)?,
+        availability: decode_reference_availability(decoder)?,
+    })
+}
+
+fn encode_optional_saved_reference(
+    sink: &mut dyn Sink,
+    reference: Option<&SavedReferenceV1>,
+) -> Result<(), WireEncodeError> {
+    match reference {
+        None => sink.u8(0),
+        Some(reference) => {
+            sink.u8(1)?;
+            encode_saved_reference(sink, reference)
+        }
+    }
+}
+
+fn decode_optional_saved_reference(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<Option<SavedReferenceV1>, WireDecodeError> {
+    match read_u8(decoder)? {
+        0 => Ok(None),
+        1 => Ok(Some(decode_saved_reference(decoder)?)),
+        _ => Err(WireDecodeError::Malformed),
+    }
 }
 
 fn encode_read_position(
@@ -3860,6 +4098,31 @@ fn decode_peer_conversation_event(
     })
 }
 
+fn encode_pin_changed_event(
+    sink: &mut dyn Sink,
+    actor_id: &str,
+    message_id: MessageIdV1,
+    original_sequence: u64,
+    pinned: bool,
+) -> Result<(), WireEncodeError> {
+    sink.u8(24)?;
+    sink.text(actor_id)?;
+    encode_message_id(sink, message_id)?;
+    sink.u64(original_sequence)?;
+    sink.u8(u8::from(pinned))
+}
+
+fn decode_pin_changed_event(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<(String, MessageIdV1, u64, bool), WireDecodeError> {
+    Ok((
+        read_text(decoder)?,
+        decode_message_id(decoder)?,
+        read_u64(decoder)?,
+        decode_bool(decoder)?,
+    ))
+}
+
 fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<(), WireEncodeError> {
     sink.u64(page.revision)?;
     sink.list(page.changes.len())?;
@@ -3975,6 +4238,14 @@ fn encode_change_page(sink: &mut dyn Sink, page: &RoomChangePageV2) -> Result<()
                 key,
                 reacted,
             } => encode_reaction_event(sink, actor_id, *message_id, key, *reacted)?,
+            RoomEventV2::PinChanged {
+                actor_id,
+                message_id,
+                original_sequence,
+                pinned,
+            } => {
+                encode_pin_changed_event(sink, actor_id, *message_id, *original_sequence, *pinned)?
+            }
             RoomEventV2::MessageEdited {
                 actor_id,
                 message_id,
@@ -4182,6 +4453,16 @@ fn decode_change_page(
             23 => RoomEventV2::PeerConversationCreated(decode_peer_conversation_event(
                 decoder, limits,
             )?),
+            24 => {
+                let (actor_id, message_id, original_sequence, pinned) =
+                    decode_pin_changed_event(decoder)?;
+                RoomEventV2::PinChanged {
+                    actor_id,
+                    message_id,
+                    original_sequence,
+                    pinned,
+                }
+            }
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(RoomChangeV2 {
@@ -4320,6 +4601,14 @@ fn encode_identified_change_page(
                 key,
                 reacted,
             } => encode_reaction_event(sink, actor_id, *message_id, key, *reacted)?,
+            IdentifiedRoomEventV1::PinChanged {
+                actor_id,
+                message_id,
+                original_sequence,
+                pinned,
+            } => {
+                encode_pin_changed_event(sink, actor_id, *message_id, *original_sequence, *pinned)?
+            }
             IdentifiedRoomEventV1::MessageEdited {
                 actor_id,
                 message_id,
@@ -4536,6 +4825,16 @@ fn decode_identified_change_page(
             23 => IdentifiedRoomEventV1::PeerConversationCreated(decode_peer_conversation_event(
                 decoder, limits,
             )?),
+            24 => {
+                let (actor_id, message_id, original_sequence, pinned) =
+                    decode_pin_changed_event(decoder)?;
+                IdentifiedRoomEventV1::PinChanged {
+                    actor_id,
+                    message_id,
+                    original_sequence,
+                    pinned,
+                }
+            }
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(IdentifiedRoomChangeV1 {
@@ -4674,6 +4973,14 @@ fn encode_threaded_change_page(
                 key,
                 reacted,
             } => encode_reaction_event(sink, actor_id, *message_id, key, *reacted)?,
+            ThreadedRoomEventV1::PinChanged {
+                actor_id,
+                message_id,
+                original_sequence,
+                pinned,
+            } => {
+                encode_pin_changed_event(sink, actor_id, *message_id, *original_sequence, *pinned)?
+            }
             ThreadedRoomEventV1::MessageEdited {
                 actor_id,
                 message_id,
@@ -4888,6 +5195,16 @@ fn decode_threaded_change_page(
             23 => ThreadedRoomEventV1::PeerConversationCreated(decode_peer_conversation_event(
                 decoder, limits,
             )?),
+            24 => {
+                let (actor_id, message_id, original_sequence, pinned) =
+                    decode_pin_changed_event(decoder)?;
+                ThreadedRoomEventV1::PinChanged {
+                    actor_id,
+                    message_id,
+                    original_sequence,
+                    pinned,
+                }
+            }
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(ThreadedRoomChangeV1 {
@@ -5026,6 +5343,14 @@ fn encode_topic_change_page(
                 key,
                 reacted,
             } => encode_reaction_event(sink, actor_id, *message_id, key, *reacted)?,
+            TopicRoomEventV1::PinChanged {
+                actor_id,
+                message_id,
+                original_sequence,
+                pinned,
+            } => {
+                encode_pin_changed_event(sink, actor_id, *message_id, *original_sequence, *pinned)?
+            }
             TopicRoomEventV1::MessageEdited {
                 actor_id,
                 message_id,
@@ -5282,6 +5607,16 @@ fn decode_topic_change_page(
             23 => TopicRoomEventV1::PeerConversationCreated(decode_peer_conversation_event(
                 decoder, limits,
             )?),
+            24 => {
+                let (actor_id, message_id, original_sequence, pinned) =
+                    decode_pin_changed_event(decoder)?;
+                TopicRoomEventV1::PinChanged {
+                    actor_id,
+                    message_id,
+                    original_sequence,
+                    pinned,
+                }
+            }
             _ => return Err(WireDecodeError::UnknownTag),
         };
         changes.push(TopicRoomChangeV1 {
@@ -5764,6 +6099,8 @@ fn encode_refusal(sink: &mut dyn Sink, refusal: RefusalV2) -> Result<(), WireEnc
         RefusalV2::UnknownTopicTag => 30,
         RefusalV2::ImmutableConversationCohort => 31,
         RefusalV2::InvalidAttentionScope => 32,
+        RefusalV2::InvalidPinChange => 33,
+        RefusalV2::InvalidSaveChange => 34,
     };
     sink.u8(tag)?;
     if let RefusalV2::Stale { actual_revision } = refusal {
@@ -5808,6 +6145,8 @@ fn decode_refusal(decoder: &mut keystone_codec::Decoder<'_>) -> Result<RefusalV2
         30 => Ok(RefusalV2::UnknownTopicTag),
         31 => Ok(RefusalV2::ImmutableConversationCohort),
         32 => Ok(RefusalV2::InvalidAttentionScope),
+        33 => Ok(RefusalV2::InvalidPinChange),
+        34 => Ok(RefusalV2::InvalidSaveChange),
         _ => Err(WireDecodeError::UnknownTag),
     }
 }

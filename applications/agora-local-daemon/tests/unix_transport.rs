@@ -283,7 +283,7 @@ fn search_host(
 fn daemon_limits() -> DaemonLimitsV1 {
     DaemonLimitsV1 {
         max_frame_bytes: 8_192,
-        max_frames_after_connect: 10,
+        max_frames_after_connect: 12,
         io_timeout: Duration::from_secs(2),
     }
 }
@@ -707,7 +707,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     let mut stream = UnixStream::connect(&path).unwrap();
     let hello = handshake(&mut stream);
     assert_eq!(hello.max_frame_bytes(), 8_192);
-    assert_eq!(hello.max_frames_after_connect(), 10);
+    assert_eq!(hello.max_frames_after_connect(), 12);
     assert_eq!(hello.server_incarnation(), incarnation());
     assert!(hello.supports_capability_discovery());
     assert!(!format!("{hello:?}").contains("a5"));
@@ -775,13 +775,14 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     )
     .unwrap();
     write_frame(&mut stream, &attachment);
-    assert!(matches!(
-        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
-        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::AttachmentMessageAccepted {
-            revision: 4,
-            ..
-        }))
-    ));
+    let WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::AttachmentMessageAccepted {
+        revision: 4,
+        message_id,
+        ..
+    })) = decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap()
+    else {
+        panic!("attachment message expected");
+    };
     let artifact = encode_request_v2(
         &WireRequestV2::Execute {
             client,
@@ -909,6 +910,55 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
             preference
         )))
     );
+    let save = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(7),
+                command: ProtocolCommand::SetSavedReference {
+                    room_id: "room".to_owned(),
+                    observed_revision: 6,
+                    message_id,
+                    saved: true,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &save);
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::SavedReferenceSet {
+            saved: true,
+            ..
+        }))
+    ));
+    let pin = encode_request_v2(
+        &WireRequestV2::Execute {
+            client,
+            request: RequestV2 {
+                request_id: RequestIdV2(8),
+                command: ProtocolCommand::SetPin {
+                    room_id: "room".to_owned(),
+                    expected_revision: 6,
+                    message_id,
+                    pinned: true,
+                },
+            },
+        },
+        wire_limits(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &pin);
+    assert!(matches!(
+        decode_reply_v2(&read_frame(&mut stream), wire_limits()).unwrap(),
+        WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::PinChanged {
+            revision: 7,
+            pinned: true,
+            ..
+        }))
+    ));
     drop(stream);
 
     let (result, daemon) = server.join().unwrap();
@@ -928,12 +978,12 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert_eq!(observation.transport, daemon.health());
     assert_eq!(observation.host.open_offers, 1);
     assert_eq!(observation.host.authenticated, 1);
-    assert_eq!(observation.host.frame_offers, 8);
-    assert_eq!(observation.host.executed, 8);
+    assert_eq!(observation.host.frame_offers, 10);
+    assert_eq!(observation.host.executed, 10);
     assert_eq!(observation.service.connect_offers, 1);
     assert_eq!(observation.service.connected, 1);
-    assert_eq!(observation.service.request_offers, 8);
-    assert_eq!(observation.service.accepted, 7);
+    assert_eq!(observation.service.request_offers, 10);
+    assert_eq!(observation.service.accepted, 9);
     assert_eq!(observation.service.replayed, 1);
     assert_eq!(observation.service.disconnected, 1);
     assert!(!observation.fidelity_lost);
@@ -941,7 +991,7 @@ fn private_socket_runs_aegis_authorized_frames_and_cleans_up_on_eof() {
     assert!(!diagnostic.contains("alice"));
     assert!(!diagnostic.contains("room"));
     assert!(!diagnostic.contains("Room"));
-    assert_eq!(calls.lock().unwrap().len(), 9);
+    assert_eq!(calls.lock().unwrap().len(), 11);
     drop(daemon);
     assert!(!path.exists());
     remove_parent(&path);
@@ -977,7 +1027,7 @@ fn collaboration_profile_multiplexes_transient_frames_and_rotates_connection_epo
     let hello = collaboration_handshake(&mut first);
     assert_eq!(hello.server_incarnation(), incarnation());
     assert_eq!(hello.max_frame_bytes(), 8_192);
-    assert_eq!(hello.max_frames_after_connect(), 10);
+    assert_eq!(hello.max_frames_after_connect(), 12);
     assert!(hello.supports_capability_discovery());
     assert!(hello.supports_transient_collaboration());
     assert!(!format!("{hello:?}").contains("a5"));

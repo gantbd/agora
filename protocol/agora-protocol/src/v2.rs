@@ -238,6 +238,43 @@ impl fmt::Debug for AttentionPreferenceV1 {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StableReferenceAvailabilityV1 {
+    Available,
+    Tombstoned,
+    Evicted,
+}
+
+pub const MAX_PINNED_REFERENCES_V1: usize = 256;
+pub const MAX_SAVED_REFERENCES_V1: usize = 4_096;
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct PinnedReferenceV1 {
+    pub message_id: MessageIdV1,
+    pub original_sequence: u64,
+    pub pinned_by: String,
+    pub availability: StableReferenceAvailabilityV1,
+}
+
+impl fmt::Debug for PinnedReferenceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PinnedReferenceV1")
+            .field("message_id", &self.message_id)
+            .field("original_sequence", &self.original_sequence)
+            .field("pinned_by_id_bytes", &self.pinned_by.len())
+            .field("availability", &self.availability)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SavedReferenceV1 {
+    pub message_id: MessageIdV1,
+    pub original_sequence: u64,
+    pub availability: StableReferenceAvailabilityV1,
+}
+
 impl fmt::Debug for ReadPositionV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -527,6 +564,28 @@ pub enum CommandV2 {
         observed_revision: u64,
         scope: AttentionScopeV1,
         preference: AttentionPreferenceV1,
+    },
+    Pins {
+        room_id: String,
+    },
+    SetPin {
+        room_id: String,
+        expected_revision: u64,
+        message_id: MessageIdV1,
+        pinned: bool,
+    },
+    SavedReference {
+        room_id: String,
+        message_id: MessageIdV1,
+    },
+    SavedReferences {
+        room_id: String,
+    },
+    SetSavedReference {
+        room_id: String,
+        observed_revision: u64,
+        message_id: MessageIdV1,
+        saved: bool,
     },
     CreateRoom {
         room_id: String,
@@ -1298,6 +1357,46 @@ impl fmt::Debug for CommandV2 {
                 .field("scope", scope)
                 .field("preference", &"<redacted>")
                 .finish(),
+            Self::Pins { room_id } => formatter
+                .debug_struct("Pins")
+                .field("room_id_bytes", &room_id.len())
+                .finish(),
+            Self::SetPin {
+                room_id,
+                expected_revision,
+                message_id,
+                pinned,
+            } => formatter
+                .debug_struct("SetPin")
+                .field("room_id_bytes", &room_id.len())
+                .field("expected_revision", expected_revision)
+                .field("message_id", message_id)
+                .field("pinned", pinned)
+                .finish(),
+            Self::SavedReference {
+                room_id,
+                message_id,
+            } => formatter
+                .debug_struct("SavedReference")
+                .field("room_id_bytes", &room_id.len())
+                .field("message_id", message_id)
+                .finish(),
+            Self::SavedReferences { room_id } => formatter
+                .debug_struct("SavedReferences")
+                .field("room_id_bytes", &room_id.len())
+                .finish(),
+            Self::SetSavedReference {
+                room_id,
+                observed_revision,
+                message_id,
+                saved,
+            } => formatter
+                .debug_struct("SetSavedReference")
+                .field("room_id_bytes", &room_id.len())
+                .field("observed_revision", observed_revision)
+                .field("message_id", message_id)
+                .field("saved", saved)
+                .finish(),
         }
     }
 }
@@ -1332,6 +1431,8 @@ pub enum CapabilityV2 {
     VellumArtifactReferencesV1,
     ConversationProfilesV1,
     PrivateAttentionPreferencesV1,
+    SharedPinsV1,
+    PrivateSavedReferencesV1,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -2068,6 +2169,12 @@ pub enum RoomEventV2 {
         key: String,
         reacted: bool,
     },
+    PinChanged {
+        actor_id: String,
+        message_id: MessageIdV1,
+        original_sequence: u64,
+        pinned: bool,
+    },
     MessageEdited {
         actor_id: String,
         message_id: MessageIdV1,
@@ -2253,6 +2360,18 @@ impl fmt::Debug for RoomEventV2 {
                 .field("key_bytes", &key.len())
                 .field("reacted", reacted)
                 .finish(),
+            Self::PinChanged {
+                actor_id,
+                message_id,
+                original_sequence,
+                pinned,
+            } => formatter
+                .debug_struct("PinChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("original_sequence", original_sequence)
+                .field("pinned", pinned)
+                .finish(),
             Self::MessageEdited {
                 actor_id,
                 message_id,
@@ -2377,6 +2496,12 @@ pub enum IdentifiedRoomEventV1 {
         message_id: MessageIdV1,
         key: String,
         reacted: bool,
+    },
+    PinChanged {
+        actor_id: String,
+        message_id: MessageIdV1,
+        original_sequence: u64,
+        pinned: bool,
     },
     MessageEdited {
         actor_id: String,
@@ -2563,6 +2688,18 @@ impl fmt::Debug for IdentifiedRoomEventV1 {
                 .field("key_bytes", &key.len())
                 .field("reacted", reacted)
                 .finish(),
+            Self::PinChanged {
+                actor_id,
+                message_id,
+                original_sequence,
+                pinned,
+            } => formatter
+                .debug_struct("PinChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("original_sequence", original_sequence)
+                .field("pinned", pinned)
+                .finish(),
             Self::MessageEdited {
                 actor_id,
                 message_id,
@@ -2687,6 +2824,12 @@ pub enum ThreadedRoomEventV1 {
         message_id: MessageIdV1,
         key: String,
         reacted: bool,
+    },
+    PinChanged {
+        actor_id: String,
+        message_id: MessageIdV1,
+        original_sequence: u64,
+        pinned: bool,
     },
     MessageEdited {
         actor_id: String,
@@ -2873,6 +3016,18 @@ impl fmt::Debug for ThreadedRoomEventV1 {
                 .field("key_bytes", &key.len())
                 .field("reacted", reacted)
                 .finish(),
+            Self::PinChanged {
+                actor_id,
+                message_id,
+                original_sequence,
+                pinned,
+            } => formatter
+                .debug_struct("PinChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("original_sequence", original_sequence)
+                .field("pinned", pinned)
+                .finish(),
             Self::MessageEdited {
                 actor_id,
                 message_id,
@@ -2997,6 +3152,12 @@ pub enum TopicRoomEventV1 {
         message_id: MessageIdV1,
         key: String,
         reacted: bool,
+    },
+    PinChanged {
+        actor_id: String,
+        message_id: MessageIdV1,
+        original_sequence: u64,
+        pinned: bool,
     },
     MessageEdited {
         actor_id: String,
@@ -3188,6 +3349,18 @@ impl fmt::Debug for TopicRoomEventV1 {
                 .field("message_id", message_id)
                 .field("key_bytes", &key.len())
                 .field("reacted", reacted)
+                .finish(),
+            Self::PinChanged {
+                actor_id,
+                message_id,
+                original_sequence,
+                pinned,
+            } => formatter
+                .debug_struct("PinChanged")
+                .field("actor_id_bytes", &actor_id.len())
+                .field("message_id", message_id)
+                .field("original_sequence", original_sequence)
+                .field("pinned", pinned)
                 .finish(),
             Self::MessageEdited {
                 actor_id,
@@ -3401,6 +3574,19 @@ pub enum OutcomeV2 {
     ReadPositionAdvanced(ReadPositionV1),
     AttentionPreference(AttentionPreferenceV1),
     AttentionPreferenceSet(AttentionPreferenceV1),
+    Pins(Vec<PinnedReferenceV1>),
+    PinChanged {
+        revision: u64,
+        message_id: MessageIdV1,
+        original_sequence: u64,
+        pinned: bool,
+    },
+    SavedReference(Option<SavedReferenceV1>),
+    SavedReferences(Vec<SavedReferenceV1>),
+    SavedReferenceSet {
+        reference: SavedReferenceV1,
+        saved: bool,
+    },
     ChangesOpened {
         revision: u64,
         cursor: PageCursorV2,
@@ -3601,6 +3787,8 @@ pub enum RefusalV2 {
     ReadPositionRegression,
     ImmutableConversationCohort,
     InvalidAttentionScope,
+    InvalidPinChange,
+    InvalidSaveChange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

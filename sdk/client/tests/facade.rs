@@ -10,6 +10,45 @@ struct TransientPort;
 struct SearchPort;
 
 #[test]
+fn facade_names_shared_pin_and_private_save_protocol_and_wire_values() {
+    let message_id = protocol::v2::MessageIdV1::new([9; 16]);
+    for (index, command) in [
+        protocol::v2::CommandV2::SetPin {
+            room_id: "room".to_owned(),
+            expected_revision: 2,
+            message_id,
+            pinned: true,
+        },
+        protocol::v2::CommandV2::SetSavedReference {
+            room_id: "room".to_owned(),
+            observed_revision: 2,
+            message_id,
+            saved: true,
+        },
+        protocol::v2::CommandV2::SavedReferences {
+            room_id: "room".to_owned(),
+        },
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let request = wire::v2::WireRequestV2::Execute {
+            client: protocol::v2::ClientIdV2(1),
+            request: protocol::v2::RequestV2 {
+                request_id: protocol::v2::RequestIdV2(index as u64 + 1),
+                command,
+            },
+        };
+        let limits = wire::WireLimits::reference();
+        let encoded = wire::v2::encode_request_v2(&request, limits).unwrap();
+        assert_eq!(
+            wire::v2::decode_request_v2(&encoded, limits).unwrap(),
+            request
+        );
+    }
+}
+
+#[test]
 fn facade_names_private_attention_protocol_and_wire_values() {
     let request = wire::v2::WireRequestV2::Execute {
         client: protocol::v2::ClientIdV2(1),

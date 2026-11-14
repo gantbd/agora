@@ -1,7 +1,8 @@
 use agora_engine::persistence::RecoveryLimits;
 use agora_engine::{
-    AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, OutcomeV2, Participant, ParticipantId,
-    ParticipantKind, PrivateSaveRefusalV1, RoomId, StableReferenceAvailabilityV1,
+    AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, MAX_PRIVATE_SAVES_V1, OutcomeV2,
+    Participant, ParticipantId, ParticipantKind, PrivateSaveRefusalV1, RoomId,
+    StableReferenceAvailabilityV1,
 };
 
 fn setup(kind: ParticipantKind, max_messages: usize) -> Engine {
@@ -76,6 +77,18 @@ fn saves_are_private_kind_neutral_and_domain_neutral() {
         );
         assert_eq!(engine.revision(), revision);
         assert_eq!(engine.pending_events().len(), pending);
+        assert_eq!(
+            engine
+                .saved_references(&ParticipantId::new("owner"), &RoomId::new("room"))
+                .unwrap(),
+            vec![saved]
+        );
+        assert!(
+            engine
+                .saved_references(&ParticipantId::new("other"), &RoomId::new("room"))
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(
             engine
                 .saved_reference(
@@ -251,4 +264,63 @@ fn private_save_checkpoint_is_canonical_and_preserves_evicted_identity() {
         recovered.prepare_checkpoint(1 << 20).unwrap().bytes(),
         checkpoint.bytes()
     );
+}
+
+#[test]
+fn private_save_global_capacity_refuses_before_mutation() {
+    let mut engine = Engine::with_limits(Limits {
+        max_messages_per_room: MAX_PRIVATE_SAVES_V1 + 1,
+        max_pending_events: MAX_PRIVATE_SAVES_V1 + 8,
+        max_retained_changes: MAX_PRIVATE_SAVES_V1 + 8,
+        ..Limits::default()
+    });
+    engine
+        .apply(CommandV2::RegisterParticipant(Participant::new(
+            "owner",
+            "Owner",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(CommandV2::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "owner".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let mut message_ids = Vec::with_capacity(MAX_PRIVATE_SAVES_V1 + 1);
+    for at in 0..=MAX_PRIVATE_SAVES_V1 {
+        message_ids.push(speak(&mut engine, at as u64 + 1));
+    }
+    let revision = engine.revision();
+    for message_id in &message_ids[..MAX_PRIVATE_SAVES_V1] {
+        engine
+            .set_saved_reference(
+                &ParticipantId::new("owner"),
+                &RoomId::new("room"),
+                *message_id,
+                revision,
+                true,
+            )
+            .unwrap();
+    }
+    assert_eq!(
+        engine.set_saved_reference(
+            &ParticipantId::new("owner"),
+            &RoomId::new("room"),
+            message_ids[MAX_PRIVATE_SAVES_V1],
+            revision,
+            true,
+        ),
+        Err(PrivateSaveRefusalV1::Capacity)
+    );
+    assert_eq!(
+        engine
+            .saved_references(&ParticipantId::new("owner"), &RoomId::new("room"))
+            .unwrap()
+            .len(),
+        MAX_PRIVATE_SAVES_V1
+    );
+    assert_eq!(engine.revision(), revision);
 }

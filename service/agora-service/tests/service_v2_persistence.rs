@@ -5,8 +5,8 @@ use agora_engine::{
 use agora_protocol::v2::{
     AttentionPreferenceV1, AttentionScopeV1, ClientIdV2, CommandV2, ConversationProfileV1,
     IdentifiedRoomEventV1, MessageIdV1, MessageRevisionAvailabilityV1, NotificationIntentV1,
-    OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2, ThreadLifecycleStateV1,
-    ThreadedRoomEventV1,
+    OutcomeV2, ReadScopeV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
+    StableReferenceAvailabilityV1, ThreadLifecycleStateV1, ThreadedRoomEventV1,
 };
 use agora_service::v2::{
     ServiceLimitsV2, ServiceV2,
@@ -2068,4 +2068,100 @@ fn private_attention_preference_and_exact_receipt_survive_recovery() {
         ),
         ReplyV2::Accepted(OutcomeV2::AttentionPreference(preference))
     );
+}
+
+#[test]
+fn shared_pin_private_save_and_exact_receipts_survive_recovery() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let ReplyV2::Accepted(OutcomeV2::IdentifiedMessageAccepted {
+        revision,
+        message_id,
+        sequence,
+    }) = service.execute(
+        alice,
+        request(
+            1,
+            CommandV2::SpeakIdentified {
+                room_id: "room".to_owned(),
+                expected_revision: 2,
+                logical_time: 1,
+                body: "body".to_owned(),
+                addressed_to: vec![],
+            },
+        ),
+    )
+    else {
+        panic!("identified message expected");
+    };
+    let save_request = request(
+        2,
+        CommandV2::SetSavedReference {
+            room_id: "room".to_owned(),
+            observed_revision: revision,
+            message_id,
+            saved: true,
+        },
+    );
+    let save_reply = service.execute(alice, save_request.clone());
+    let pin_request = request(
+        3,
+        CommandV2::SetPin {
+            room_id: "room".to_owned(),
+            expected_revision: revision,
+            message_id,
+            pinned: true,
+        },
+    );
+    let pin_reply = service.execute(alice, pin_request.clone());
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(
+        recovered
+            .prepare_checkpoint(SCOPE, MAX_CHECKPOINT)
+            .unwrap()
+            .bytes(),
+        checkpoint.bytes()
+    );
+    assert_eq!(recovered.execute(alice, save_request), save_reply);
+    assert_eq!(recovered.execute(alice, pin_request), pin_reply);
+    assert!(matches!(
+        recovered.execute(
+            alice,
+            request(4, CommandV2::SavedReferences { room_id: "room".to_owned() }),
+        ),
+        ReplyV2::Accepted(OutcomeV2::SavedReferences(references))
+            if references.len() == 1
+                && references[0].message_id == message_id
+                && references[0].original_sequence == sequence
+                && references[0].availability == StableReferenceAvailabilityV1::Available
+    ));
+    assert!(matches!(
+        recovered.execute(
+            alice,
+            request(5, CommandV2::Pins { room_id: "room".to_owned() }),
+        ),
+        ReplyV2::Accepted(OutcomeV2::Pins(pins))
+            if pins.len() == 1
+                && pins[0].message_id == message_id
+                && pins[0].original_sequence == sequence
+                && pins[0].pinned_by == "alice"
+    ));
 }

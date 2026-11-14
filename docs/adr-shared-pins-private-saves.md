@@ -1,6 +1,6 @@
 # ADR: shared pins and private saves
 
-Status: adopted; implementation pending
+Status: implementation candidate; release qualification pending
 
 Date: 2026-11-14
 

@@ -4,8 +4,8 @@ use agora_client::v2::{
 use agora_protocol::v2::{
     AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1, AttachmentMessageTargetV1,
     AttachmentObjectKeyV1, AttachmentStoreIdV1, AttentionPreferenceV1, AttentionScopeV1,
-    ClientIdV2, CommandV2, NotificationIntentV1, RefusalV2, ReplyV2, RequestIdV2, RequestV2,
-    Sha256DigestV1, VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1,
+    ClientIdV2, CommandV2, MessageIdV1, NotificationIntentV1, RefusalV2, ReplyV2, RequestIdV2,
+    RequestV2, Sha256DigestV1, VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1,
     VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use std::collections::VecDeque;
@@ -90,6 +90,15 @@ fn attention_command(following: bool) -> CommandV2 {
     }
 }
 
+fn save_command(saved: bool) -> CommandV2 {
+    CommandV2::SetSavedReference {
+        room_id: "room".to_owned(),
+        observed_revision: 4,
+        message_id: MessageIdV1::new([8; 16]),
+        saved,
+    }
+}
+
 #[test]
 fn attention_uncertainty_replays_only_the_exact_private_preference() {
     let port = RecordingPortV2 {
@@ -111,6 +120,34 @@ fn attention_uncertainty_replays_only_the_exact_private_preference() {
     );
     assert_eq!(
         client.execute(attention_command(true)),
+        Ok(ReplyV2::Refused(RefusalV2::Unavailable))
+    );
+    let (port, pending) = client.into_parts();
+    assert!(pending.is_none());
+    assert_eq!(port.requests[0], port.requests[1]);
+}
+
+#[test]
+fn private_save_uncertainty_replays_only_the_exact_relation_change() {
+    let port = RecordingPortV2 {
+        replies: [
+            Err(PortFailureV2::OutcomeUnknown("lost")),
+            Ok(ReplyV2::Refused(RefusalV2::Unavailable)),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let mut client = ClientV2::new(ClientIdV2(7), port);
+    assert_eq!(
+        client.execute(save_command(true)),
+        Err(ClientErrorV2::OutcomeUnknown("lost"))
+    );
+    assert_eq!(
+        client.execute(save_command(false)),
+        Err(ClientErrorV2::UnresolvedOutcome)
+    );
+    assert_eq!(
+        client.execute(save_command(true)),
         Ok(ReplyV2::Refused(RefusalV2::Unavailable))
     );
     let (port, pending) = client.into_parts();

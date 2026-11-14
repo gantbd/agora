@@ -606,6 +606,127 @@ fn private_attention_commits_before_reply_and_recovers_as_exact_replay() {
 }
 
 #[test]
+fn shared_pin_and_private_save_commit_before_reply_and_recover_as_exact_replay() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let agora_engine::OutcomeV2::MessageAccepted { sequence, .. } = engine
+        .apply(EngineCommand::Speak {
+            room_id: "room".into(),
+            author: "alice".into(),
+            at: agora_engine::LogicalTime(1),
+            body: "body".to_owned(),
+        })
+        .unwrap()
+    else {
+        panic!("message accepted expected");
+    };
+    let message_id = engine.message(&RoomId::new("room"), sequence).unwrap().id();
+    let revision = engine.revision().0;
+    let store = TestStore::default();
+    let service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let mut durable = DurableServiceV2::initialize(service, store.clone(), config()).unwrap();
+    let DurablePublicationV2::Published {
+        value: Ok(client), ..
+    } = durable.connect("alice")
+    else {
+        panic!("connect must commit");
+    };
+    let save = RequestV2 {
+        request_id: RequestIdV2(51),
+        command: CommandV2::SetSavedReference {
+            room_id: "room".to_owned(),
+            observed_revision: revision,
+            message_id: MessageIdV1::new(message_id.into_bytes()),
+            saved: true,
+        },
+    };
+    let DurablePublicationV2::Published {
+        value: save_reply @ ReplyV2::Accepted(OutcomeV2::SavedReferenceSet { .. }),
+        evidence:
+            DurableEvidenceV2::Committed {
+                revision: save_store_revision,
+            },
+    } = durable.execute(client, save.clone())
+    else {
+        panic!("private save must commit before publication");
+    };
+    let pin = RequestV2 {
+        request_id: RequestIdV2(52),
+        command: CommandV2::SetPin {
+            room_id: "room".to_owned(),
+            expected_revision: revision,
+            message_id: MessageIdV1::new(message_id.into_bytes()),
+            pinned: true,
+        },
+    };
+    let DurablePublicationV2::Published {
+        value: pin_reply @ ReplyV2::Accepted(OutcomeV2::PinChanged { .. }),
+        evidence: DurableEvidenceV2::Committed {
+            revision: pin_store_revision,
+        },
+    } = durable.execute(client, pin.clone())
+    else {
+        panic!("shared pin must commit before publication");
+    };
+    assert!(pin_store_revision > save_store_revision);
+    assert_eq!(store.commit_calls(), 4);
+    drop(durable.into_store());
+
+    let mut recovered = DurableServiceV2::recover(store.clone(), config()).unwrap();
+    let engine = recovered.service().unwrap().engine();
+    assert!(
+        engine
+            .saved_reference(
+                &ParticipantId::new("alice"),
+                &RoomId::new("room"),
+                message_id,
+            )
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        engine
+            .pinned_references(&ParticipantId::new("alice"), &RoomId::new("room"))
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        recovered.execute(client, save),
+        DurablePublicationV2::Published {
+            value: save_reply,
+            evidence: DurableEvidenceV2::PreviouslyCommitted {
+                revision: pin_store_revision,
+            },
+        }
+    );
+    assert_eq!(
+        recovered.execute(client, pin),
+        DurablePublicationV2::Published {
+            value: pin_reply,
+            evidence: DurableEvidenceV2::PreviouslyCommitted {
+                revision: pin_store_revision,
+            },
+        }
+    );
+    assert_eq!(store.commit_calls(), 4, "exact replay must not recommit");
+}
+
+#[test]
 fn known_store_refusal_rolls_back_and_same_request_can_commit_later() {
     let (mut durable, store, client) = initialized();
     store.next(NextCommit::Refuse);
