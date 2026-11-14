@@ -73,10 +73,17 @@ fuzz_target!(|input: &[u8]| {
         let encoded = service
             .prepare_checkpoint(SERVICE_SCOPE, MAX_CHECKPOINT)
             .expect("recovered service must encode");
+        let current =
+            ServiceV2::recover_checkpoint(encoded.bytes(), SERVICE_SCOPE, service_bounds()).expect(
+                "accepted service checkpoint must migrate to a recoverable canonical record",
+            );
+        let stable = current
+            .prepare_checkpoint(SERVICE_SCOPE, MAX_CHECKPOINT)
+            .expect("migrated service checkpoint must encode");
         assert_eq!(
+            stable.bytes(),
             encoded.bytes(),
-            input,
-            "accepted service checkpoint was not canonical"
+            "accepted service checkpoint did not stabilize after migration"
         );
     }
 
@@ -90,10 +97,16 @@ fuzz_target!(|input: &[u8]| {
         let encoded = host
             .prepare_checkpoint(HOST_SCOPE, MAX_CHECKPOINT)
             .expect("recovered host must encode");
+        let current =
+            HostV2::recover_checkpoint(encoded.bytes(), HOST_SCOPE, host_bounds, InertVerifier)
+                .expect("accepted host checkpoint must migrate to a recoverable canonical record");
+        let stable = current
+            .prepare_checkpoint(HOST_SCOPE, MAX_CHECKPOINT)
+            .expect("migrated host checkpoint must encode");
         assert_eq!(
+            stable.bytes(),
             encoded.bytes(),
-            input,
-            "accepted host checkpoint was not canonical"
+            "accepted host checkpoint did not stabilize after migration"
         );
     }
 });
