@@ -290,6 +290,18 @@ length-delimited envelopes carry the new engine state and exact receipts without
 outer reinterpretation. Two frozen frames raise compatibility closure to 81
 fixtures and seed both canonical wire fuzz profiles.
 
+Room-local topic collections are additive derived observation only. Command tag
+79 (`4f` hex), outcome tag 76 (`4c`), and capability tag 30 (`1e`) encode one
+closed lifecycle/conjunctive-tag filter and a stable-ID-ordered complete current
+metadata page. No established topic page, message relation, event, refusal, or
+checkpoint byte is reinterpreted. Service profiles 28/29 are emitted only when
+a collection request/reply or kind-18 collection cursor is retained; otherwise
+profiles 26/27 remain byte-identical. Host profile 26 encloses service 28/29,
+while established state remains Host profile 25. Engine cursor kind 10 is a
+private checkpoint grammar and adds no engine-state profile. Two frozen wire
+frames raise compatibility closure to 83 fixtures and seed both canonical wire
+fuzz profiles.
+
 Transient collaboration Wire V1 is a new, separately invoked grammar. Its
 profile byte `01`, presence command/outcome tags `01` through `03`, typing
 command/outcome tags `04` through `06`, reply tags `81` and `82`, and refusal

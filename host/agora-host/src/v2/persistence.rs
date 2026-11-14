@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 const MAGIC: &[u8; 8] = b"AGORAHST";
 const VERSION_V24: u8 = 24;
 const VERSION_V25: u8 = 25;
+const VERSION_V26: u8 = 26;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct HostCheckpointScopeV1([u8; 16]);
@@ -271,7 +272,16 @@ fn encode_state(
         max: max_snapshot_bytes,
     };
     writer.raw(MAGIC)?;
-    writer.byte(VERSION_V25)?;
+    let service_version = service
+        .bytes()
+        .get(b"AGORASV\0".len())
+        .copied()
+        .ok_or(HostCheckpointErrorV2::Service)?;
+    writer.byte(if matches!(service_version, 28 | 29) {
+        VERSION_V26
+    } else {
+        VERSION_V25
+    })?;
     writer.raw(&scope.0)?;
     write_limits(&mut writer, limits)?;
     writer.number(next_session)?;
@@ -304,7 +314,7 @@ fn decode_state(
         return Err(HostCheckpointErrorV2::Profile);
     }
     let version = reader.byte()?;
-    if !matches!(version, VERSION_V24 | VERSION_V25) {
+    if !matches!(version, VERSION_V24 | VERSION_V25 | VERSION_V26) {
         return Err(HostCheckpointErrorV2::Profile);
     }
     if reader.fixed::<16>()? != expected_scope.0 {
@@ -319,6 +329,7 @@ fn decode_state(
         .ok_or(HostCheckpointErrorV2::Service)?;
     if (version == VERSION_V24 && !matches!(service_version, 24 | 25))
         || (version == VERSION_V25 && !matches!(service_version, 26 | 27))
+        || (version == VERSION_V26 && !matches!(service_version, 28 | 29))
     {
         return Err(HostCheckpointErrorV2::Profile);
     }

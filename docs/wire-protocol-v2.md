@@ -102,6 +102,7 @@ DisconnectRefused), but all nested Execute values are V2 types.
 | `4c` | CreatePoll | room, expected revision, prompt, ordered option list, canonical eligible-participant list, maximum choices `u8` |
 | `4d` | SetPollBallot | room, expected revision, poll ID, strictly increasing option-index list |
 | `4e` | SetPollOpen | room, expected revision, poll ID, open Boolean |
+| `4f` | TopicCollection | room, lifecycle/tag filter, optional cursor, limit |
 
 Admissions are Open `01` and InviteOnly `02`. Roles are Owner `01`, Moderator
 `02`, and Member `03`. Participant kinds are Human `01` and Agent `02`.
@@ -136,6 +137,12 @@ PollLifecycleChanged are `46` through `4b`. Poll definitions carry bounded
 immutable options and a canonical eligible cohort; public status and mutation
 outcomes carry only aggregate totals. The private PollBallot outcome is
 caller-bound and never names another participant.
+TopicCollection is `4c`. It carries revision, room, the exact closed filter,
+stable-ID-ordered complete current metadata entries, and an optional opaque
+continuation. Lifecycle filter tags are Any `01`, Active `02`, and Resolved
+`03`; the canonical tag list has at most eight strictly increasing nonempty
+values. Each entry carries topic ID, current name, creator, resolved Boolean,
+canonical aliases and tags, and an optional depth-one successor topic ID.
 The capability outcome is a canonical strictly increasing
 list of closed feature tags; it describes supported semantics and grants no
 participant authority.
@@ -380,7 +387,12 @@ Commands `49` through `4e`, outcomes `46` through `4b`, refusals `23` through
 `28`, and room-event tags `19` through `1b` close public definitions and
 aggregates, caller-private ballots, and explicit lifecycle in every feed
 profile. Poll creation and aggregate-reply fixtures freeze both definition and
-aggregate grammar. Truncation, trailing data,
+aggregate grammar.
+Capability tag `1e` advertises `TopicCollectionsV1`. Command `4f` and outcome
+`4c` are additive and their frozen request/reply frames pin the filter and full
+metadata grammar. They add no mutation, refusal, event, or message-relation
+encoding.
+Truncation, trailing data,
 version mismatch, unknown nested tags, and resource ceilings are adversarially
 exercised. These tests establish a frame codec, not transport security, push
 delivery, or an authenticated host.

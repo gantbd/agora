@@ -77,6 +77,8 @@ fixture|protocol/agora-wire/tests/fixtures/threaded-changes-reply-v2.hex|135|a32
 fixture|protocol/agora-wire/tests/fixtures/topic-alias-add-request-v2.hex|64|02a9d91674d9376ec8edef9892dd3b06553db932d480cf342a4037b548390821
 fixture|protocol/agora-wire/tests/fixtures/topic-alias-added-reply-v2.hex|41|ee0980ac0d5b669f1a476d457bd0a129ce52e90a051cb61f93d3577f95c305f9
 fixture|protocol/agora-wire/tests/fixtures/topic-alias-change-reply-v2.hex|85|2007d884ea56df426f1271e39af2d35e9d61a6edf4c917d2ed32d442c0c1d39b
+fixture|protocol/agora-wire/tests/fixtures/topic-collection-reply-v2.hex|162|6f2094bcb37b27064fd998d3d7d84e22cecb56cb7d2e03d3812cef96b0358349
+fixture|protocol/agora-wire/tests/fixtures/topic-collection-request-v2.hex|71|57674dbce0a783466e9af59e2589f2ecd3b45a1b71dbd8455a99a288eb080a2c
 fixture|protocol/agora-wire/tests/fixtures/topic-rename-request-v2.hex|65|29f574cfac20068f8499d55488167c9599a12857a978dbd7bd3f67d6311552e8
 fixture|protocol/agora-wire/tests/fixtures/topic-renamed-change-reply-v2.hex|98|a79b8b45271121165d51842b82922670d2ad27fc497e62606ca4d552eaf625ed
 fixture|protocol/agora-wire/tests/fixtures/topic-renamed-reply-v2.hex|28|883e3573db77520aa86a2c190ac2fca93f566829b2ff81a983359f38120f4679

@@ -683,17 +683,35 @@ fn v2_topic_collections_bind_the_authenticated_observer_and_exact_filter() {
         limits(1).wire,
     )
     .unwrap();
+    let reply = host
+        .handle(session, &frame, &context, HostTimeV1(3))
+        .unwrap();
     assert!(matches!(
-        decode_reply_v2(
-            &host.handle(session, &frame, &context, HostTimeV1(3)).unwrap(),
-            limits(1).wire,
-        )
-        .unwrap(),
+        decode_reply_v2(&reply, limits(1).wire).unwrap(),
         WireReplyV2::Executed(ReplyV2::Accepted(OutcomeV2::TopicCollection(page)))
             if page.topics.len() == 1
                 && page.topics[0].topic_id.into_bytes() == topic_id.into_bytes()
                 && page.filter.tags == vec!["urgent"]
     ));
+    let checkpoint = host
+        .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+        .unwrap();
+    assert_eq!(checkpoint.bytes()[8], 26);
+    let mut recovered = HostV2::recover_checkpoint(
+        checkpoint.bytes(),
+        CHECKPOINT_SCOPE,
+        recovery_limits(),
+        Verifier {
+            calls: calls.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        recovered
+            .handle(session, &frame, &context, HostTimeV1(4))
+            .unwrap(),
+        reply
+    );
     assert!(calls.get() >= 2);
 }
 

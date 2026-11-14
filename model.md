@@ -1,7 +1,7 @@
 # Agora domain model
 
-Status: normative model through the release-qualified R99 profile, with the
-R100 room-local topic-collection boundary adopted but not yet implemented. The
+Status: normative model through the release-qualified R99 profile and the
+implemented R100 room-local topic-collection release candidate. The
 requirements and specification remain authoritative for individual command and
 wire details; this document states the aggregate ownership and laws that those
 details refine.
@@ -23,6 +23,9 @@ details refine.
   artifact references.
 - **Topic:** a stable room-local identity with bounded current display state,
   lifecycle, aliases, tags, and optional depth-one supersession relation.
+- **Topic collection view:** a derived, participant-bound, revision-bound
+  stable-ID ordering over current topic metadata under one closed lifecycle and
+  conjunctive-tag filter. It owns no domain state or authority.
 - **Room event:** an attributable accepted conversation fact with a monotone
   room position. Event identity and message identity are not ordering aliases.
 - **Delivery outbox:** the lossless bounded suffix of accepted events awaiting
@@ -117,6 +120,12 @@ revision or continuation. A short page does not prove completion when a
 continuation exists. Cursors are opaque, client-bound, profile-bound, and where
 applicable observer/room/topic/root/revision-bound.
 
+The topic-collection projection is exactly the subset of the room topic
+registry whose lifecycle matches and whose tag set contains every canonical
+filter tag, ordered by `TopicId`. Projection changes no topic, message relation,
+read position, revision, or event. Its continuation additionally binds the
+exact filter, so selector changes cannot consume an existing cursor.
+
 Observation can return explicit malformed, foreign, stale, expired, retention
 gap, membership-epoch gap, incomplete, unavailable, or fidelity-loss outcomes.
 No such outcome is silently promoted to an empty complete result. Outbox
@@ -179,6 +188,9 @@ models and behavioral suites refine parts of this document:
 - `engine/agora-engine/tests/conversation_profile_behavior.rs` — exhaustive
   three-peer kind/initiator/departure-order schedules, immutable-cohort laws,
   atomic cardinality refusal, privacy loss, and canonical zero-member recovery.
+- `engine/agora-engine/tests/topic_collection_model.rs` — every three-step
+  lifecycle/tag schedule over the bounded action vocabulary under both
+  participant kinds, checked against an independent derived-filter model.
 - `service/agora-service/tests/service_v2_schedule_model.rs` — multi-client
   serialized service schedules, replay, and kind symmetry.
 - Engine, protocol, wire, service, Host, durable, adapter, SDK, compatibility,

@@ -157,6 +157,14 @@ not ready for a network service or crates.io release.
   every release-mode target, 10,000 deterministic soak cycles, and 1,000,000
   fixed-seed cases on each fuzz target on Darwin 25.6.0 arm64 / macOS 26.6.2
   with unchanged tracked bytes afterward;
+- implemented the R100 room-local topic-collection release candidate as a
+  derived stable-ID index with closed lifecycle and conjunctive-tag filters,
+  complete current metadata, immutable message/topic provenance, and no
+  move/copy/read migration or hierarchy. Engine behavior and independent
+  schedule-model evidence, closed protocol/wire values, profiles 28/29 service
+  and 26 Host recovery, durable/Host/client/SDK/private-Unix coverage, two
+  frozen frames, 83-fixture compatibility, and refreshed fuzz seeds are
+  present; ordinary and release-profile qualification remain open;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound

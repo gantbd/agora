@@ -1134,5 +1134,12 @@ selector, revision, and profile. It adds no domain state or event.
 Message/topic relations remain immutable admission provenance. No move or copy
 command exists. Merge and redirect mean only the existing explicit depth-one
 supersession relation; neither writes nor read positions follow it implicitly.
-Wire tags, service cursor/receipt recovery, and implementation evidence remain
-unassigned until the observation and model surfaces are closed.
+`TopicCollectionsV1` uses command tag `4f`, outcome tag `4c`, and capability
+tag `1e`. The command carries the room, exact filter, optional opaque cursor,
+and bounded limit. Service profiles 28/29 retain exact request/reply receipts
+and kind-18 collection cursors without changing profile-26/27 bytes; Host
+profile 26 encloses those service profiles without changing profile-25 bytes.
+Engine cursor kind 10 retains observer, room, exact filter, revision, and last
+stable topic identity. Two frozen wire frames, independent schedule-model
+evidence, authenticated Host, durable owner, client uncertainty, both SDK
+facades, and the private Unix route close the implementation candidate.

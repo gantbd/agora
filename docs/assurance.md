@@ -23,7 +23,7 @@ The release-contract gate requires every current package to deny registry
 publication, pins Rust 1.95.0 with Clippy and rustfmt, and preserves the current
 explicit sibling-Aegis/Keystone source-layout assumption. The compatibility gate
 closes over the sixteen-package stable workspace, the standalone fuzz package,
-and seventy-five canonical fixtures.
+and eighty-three canonical fixtures.
 These are source-drift controls: they do not establish artifact provenance, registry
 readiness, semantic compatibility, or a self-contained source archive.
 The release-contract adversarial fixture separately proves that enabling root
@@ -803,6 +803,22 @@ close the private-local profile. Revision
 release target, 10,000 soak cycles, and 1,000,000 fixed-seed cases on each fuzz
 target. No approval, winner, quorum, finality, timing, workflow, or agent
 activation claim is made.
+
+Topic-collection scenarios prove that lifecycle and conjunctive-tag filtering
+is a derived, side-effect-free projection of existing room-local topics. Core
+behavior covers complete metadata, canonical bounds, stable-ID order,
+observer/room/filter/revision cursor binding, and unchanged revision/event
+frontiers. The independent model executes every three-step schedule over six
+lifecycle/tag operations for both participant kinds and checks all lifecycle
+and tag-filter combinations after every step. Closed protocol/wire values,
+malformed-shape refusal, two frozen frames, profile-28/29 service cursor and
+receipt recovery, profile-26 Host recovery, durable exact replay,
+uncertainty-safe client behavior, both SDK facades, authenticated Host, and a
+real private Unix exchange close the implementation candidate. The 83-fixture
+compatibility inventory and refreshed canonical fuzz seeds preserve every older
+byte. Move/copy, read migration, implicit routing, hierarchy, search authority,
+cross-room inheritance, federation, and workflow meaning remain explicit
+nonclaims. Commit-pinned release qualification remains open.
 
 The gate does not establish a credential adapter, transport security,
 multi-host serialization, physical-device power-loss behavior, event delivery,
