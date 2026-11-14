@@ -553,6 +553,10 @@ pub struct MessageId([u8; 16]);
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TopicId([u8; 16]);
 
+/// Stable room-local poll reference. Its bytes are opaque and grant no authority.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PollId([u8; 16]);
+
 pub const MAX_REACTION_KEY_BYTES_V1: usize = 64;
 pub const MAX_REACTION_KEYS_PER_MESSAGE_V1: usize = 64;
 pub const MAX_MESSAGE_REVISIONS_V1: usize = 64;
@@ -560,6 +564,107 @@ pub const MAX_READ_POSITIONS_V1: usize = 4_096;
 pub const MAX_ATTENTION_PREFERENCES_V1: usize = 4_096;
 pub const MAX_PRIVATE_SAVES_V1: usize = 4_096;
 pub const MAX_ROOM_PINS_V1: usize = 256;
+pub const MAX_POLLS_PER_ROOM_V1: usize = 256;
+pub const MAX_POLL_OPTIONS_V1: usize = 32;
+pub const MAX_POLL_ELIGIBLE_PARTICIPANTS_V1: usize = 256;
+pub const MAX_POLL_PROMPT_BYTES_V1: usize = 1_024;
+pub const MAX_POLL_OPTION_BYTES_V1: usize = 256;
+
+/// Public poll definition and aggregate. Individual ballots are excluded.
+#[derive(Clone, Eq, PartialEq)]
+pub struct PollStatusV1 {
+    poll_id: PollId,
+    creator: ParticipantId,
+    prompt: String,
+    options: Vec<String>,
+    eligible_participants: Vec<ParticipantId>,
+    max_choices: u8,
+    open: bool,
+    totals: Vec<u16>,
+    total_ballots: u16,
+}
+
+impl PollStatusV1 {
+    pub const fn poll_id(&self) -> PollId {
+        self.poll_id
+    }
+    pub fn creator(&self) -> &ParticipantId {
+        &self.creator
+    }
+    pub fn prompt(&self) -> &str {
+        &self.prompt
+    }
+    pub fn options(&self) -> &[String] {
+        &self.options
+    }
+    pub fn eligible_participants(&self) -> &[ParticipantId] {
+        &self.eligible_participants
+    }
+    pub const fn max_choices(&self) -> u8 {
+        self.max_choices
+    }
+    pub const fn is_open(&self) -> bool {
+        self.open
+    }
+    pub fn totals(&self) -> &[u16] {
+        &self.totals
+    }
+    pub const fn total_ballots(&self) -> u16 {
+        self.total_ballots
+    }
+}
+
+impl fmt::Debug for PollStatusV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PollStatusV1")
+            .field("poll_id", &self.poll_id)
+            .field("creator_id_bytes", &self.creator.as_str().len())
+            .field("prompt_bytes", &self.prompt.len())
+            .field("option_count", &self.options.len())
+            .field("eligible_count", &self.eligible_participants.len())
+            .field("max_choices", &self.max_choices)
+            .field("open", &self.open)
+            .field("totals", &self.totals)
+            .field("total_ballots", &self.total_ballots)
+            .finish()
+    }
+}
+
+/// One caller-owned private ballot. Debug output never exposes selections.
+#[derive(Clone, Eq, PartialEq)]
+pub struct PollBallotV1 {
+    poll_id: PollId,
+    selections: Vec<u8>,
+}
+
+impl PollBallotV1 {
+    pub const fn poll_id(&self) -> PollId {
+        self.poll_id
+    }
+    pub fn selections(&self) -> &[u8] {
+        &self.selections
+    }
+}
+
+impl fmt::Debug for PollBallotV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PollBallotV1")
+            .field("poll_id", &self.poll_id)
+            .field("selection_count", &self.selections.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PollObservationRefusalV1 {
+    UnknownParticipant,
+    UnknownRoom,
+    NotMember,
+    UnknownPoll,
+    NotEligible,
+}
 
 /// Closed selector for one participant's private read position.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -844,6 +949,29 @@ impl TopicId {
         bytes[..8].copy_from_slice(&room_incarnation.to_be_bytes());
         bytes[8..].copy_from_slice(&room_counter.to_be_bytes());
         Self(bytes)
+    }
+}
+
+impl PollId {
+    pub const fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn into_bytes(self) -> [u8; 16] {
+        self.0
+    }
+
+    fn allocated(room_incarnation: u64, room_counter: u64) -> Self {
+        let mut bytes = [0; 16];
+        bytes[..8].copy_from_slice(&room_incarnation.to_be_bytes());
+        bytes[8..].copy_from_slice(&room_counter.to_be_bytes());
+        Self(bytes)
+    }
+}
+
+impl fmt::Debug for PollId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("PollId(<opaque>)")
     }
 }
 
@@ -1757,6 +1885,44 @@ pub enum ObservationRefusal {
 }
 
 #[derive(Debug)]
+struct PollV1 {
+    id: PollId,
+    creator: ParticipantId,
+    prompt: String,
+    options: Vec<String>,
+    eligible_participants: BTreeSet<ParticipantId>,
+    max_choices: u8,
+    open: bool,
+    ballots: BTreeMap<ParticipantId, BTreeSet<u8>>,
+}
+
+impl PollV1 {
+    fn status(&self) -> PollStatusV1 {
+        let mut totals = vec![0_u16; self.options.len()];
+        for selections in self.ballots.values() {
+            for selection in selections {
+                totals[usize::from(*selection)] += 1;
+            }
+        }
+        PollStatusV1 {
+            poll_id: self.id,
+            creator: self.creator.clone(),
+            prompt: self.prompt.clone(),
+            options: self.options.clone(),
+            eligible_participants: self.eligible_participants.iter().cloned().collect(),
+            max_choices: self.max_choices,
+            open: self.open,
+            totals,
+            total_ballots: self
+                .ballots
+                .len()
+                .try_into()
+                .expect("poll cohort bound fits u16"),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct Room {
     id: RoomId,
     name: String,
@@ -1771,10 +1937,14 @@ struct Room {
     archived_threads: BTreeSet<MessageId>,
     reactions: BTreeMap<MessageId, BTreeMap<String, BTreeSet<ParticipantId>>>,
     pins: BTreeMap<MessageId, (u64, ParticipantId)>,
+    polls: BTreeMap<PollId, PollV1>,
+    poll_creation_order: VecDeque<PollId>,
     topics: BTreeMap<TopicId, TopicV1>,
     topic_successors: BTreeMap<TopicId, TopicId>,
     topic_identity_incarnation: u64,
     next_topic_identity: u64,
+    poll_identity_incarnation: u64,
+    next_poll_identity: u64,
     message_identity_incarnation: u64,
     next_message_identity: u64,
     next_message_sequence: u64,
@@ -1856,6 +2026,9 @@ pub enum RoomActionV1 {
     Reply,
     React,
     Pin,
+    CreatePoll,
+    VotePoll,
+    ManagePoll,
     EditOwn,
     ManageThread,
     WithdrawOwn,
@@ -1921,6 +2094,9 @@ impl CommandV2 {
             }),
             Self::SetReaction { .. } => Some(RoomActionV1::React),
             Self::SetPin { .. } => Some(RoomActionV1::Pin),
+            Self::CreatePoll { .. } => Some(RoomActionV1::CreatePoll),
+            Self::SetPollBallot { .. } => Some(RoomActionV1::VotePoll),
+            Self::SetPollOpen { .. } => Some(RoomActionV1::ManagePoll),
             Self::EditMessage { .. } => Some(RoomActionV1::EditOwn),
             Self::SetThreadArchived { .. } => Some(RoomActionV1::ManageThread),
             Self::WithdrawMessage { .. } => Some(RoomActionV1::WithdrawOwn),
@@ -2116,6 +2292,26 @@ pub enum CommandV2 {
         message_id: MessageId,
         pinned: bool,
     },
+    CreatePoll {
+        room_id: RoomId,
+        actor: ParticipantId,
+        prompt: String,
+        options: Vec<String>,
+        eligible_participants: Vec<ParticipantId>,
+        max_choices: u8,
+    },
+    SetPollBallot {
+        room_id: RoomId,
+        actor: ParticipantId,
+        poll_id: PollId,
+        selections: Vec<u8>,
+    },
+    SetPollOpen {
+        room_id: RoomId,
+        actor: ParticipantId,
+        poll_id: PollId,
+        open: bool,
+    },
     EditMessage {
         room_id: RoomId,
         actor: ParticipantId,
@@ -2281,6 +2477,22 @@ pub enum OutcomeV2 {
         original_sequence: u64,
         pinned: bool,
     },
+    PollCreated {
+        room_id: RoomId,
+        poll_id: PollId,
+    },
+    PollBallotChanged {
+        room_id: RoomId,
+        poll_id: PollId,
+        totals: Vec<u16>,
+        total_ballots: u16,
+    },
+    PollLifecycleChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        poll_id: PollId,
+        open: bool,
+    },
     MessageEdited {
         room_id: RoomId,
         actor: ParticipantId,
@@ -2347,6 +2559,18 @@ pub enum Refusal {
     InvalidReactionChange,
     PinLimit,
     InvalidPinChange,
+    InvalidPollPrompt,
+    InvalidPollOptions,
+    InvalidPollEligibility,
+    InvalidPollChoiceLimit,
+    PollLimit,
+    PollIdentityExhausted,
+    UnknownPoll,
+    NotPollEligible,
+    PollClosed,
+    InvalidPollBallot,
+    InvalidPollBallotChange,
+    InvalidPollLifecycleChange,
     MessageRevisionLimit,
     InvalidMessageEdit,
     InvalidTopicName,
@@ -2614,6 +2838,27 @@ pub enum DomainEventV2 {
         original_sequence: u64,
         pinned: bool,
     },
+    PollCreated {
+        room_id: RoomId,
+        actor: ParticipantId,
+        poll_id: PollId,
+        prompt: String,
+        options: Vec<String>,
+        eligible_participants: Vec<ParticipantId>,
+        max_choices: u8,
+    },
+    PollBallotChanged {
+        room_id: RoomId,
+        poll_id: PollId,
+        totals: Vec<u16>,
+        total_ballots: u16,
+    },
+    PollLifecycleChanged {
+        room_id: RoomId,
+        actor: ParticipantId,
+        poll_id: PollId,
+        open: bool,
+    },
     MessageEdited {
         room_id: RoomId,
         actor: ParticipantId,
@@ -2650,6 +2895,9 @@ impl DomainEventV2 {
             | Self::ThreadLifecycleChanged { room_id, .. }
             | Self::ReactionChanged { room_id, .. }
             | Self::PinChanged { room_id, .. }
+            | Self::PollCreated { room_id, .. }
+            | Self::PollBallotChanged { room_id, .. }
+            | Self::PollLifecycleChanged { room_id, .. }
             | Self::MessageEdited { room_id, .. } => Some(room_id),
         }
     }
@@ -3093,6 +3341,82 @@ impl Engine {
                 },
             )
             .collect())
+    }
+
+    /// Returns one public poll definition and aggregate to a current member.
+    pub fn poll(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+        poll_id: PollId,
+    ) -> Result<PollStatusV1, PollObservationRefusalV1> {
+        let room = self.validate_poll_observer(observer, room_id)?;
+        room.polls
+            .get(&poll_id)
+            .map(PollV1::status)
+            .ok_or(PollObservationRefusalV1::UnknownPoll)
+    }
+
+    /// Returns retained polls in creation order without private ballots.
+    pub fn polls(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<Vec<PollStatusV1>, PollObservationRefusalV1> {
+        let room = self.validate_poll_observer(observer, room_id)?;
+        Ok(room
+            .poll_creation_order
+            .iter()
+            .map(|poll_id| {
+                room.polls
+                    .get(poll_id)
+                    .expect("poll order and map remain equal")
+                    .status()
+            })
+            .collect())
+    }
+
+    /// Returns only the caller's current private ballot.
+    pub fn poll_ballot(
+        &self,
+        actor: &ParticipantId,
+        room_id: &RoomId,
+        poll_id: PollId,
+    ) -> Result<PollBallotV1, PollObservationRefusalV1> {
+        let room = self.validate_poll_observer(actor, room_id)?;
+        let poll = room
+            .polls
+            .get(&poll_id)
+            .ok_or(PollObservationRefusalV1::UnknownPoll)?;
+        if !poll.eligible_participants.contains(actor) {
+            return Err(PollObservationRefusalV1::NotEligible);
+        }
+        Ok(PollBallotV1 {
+            poll_id,
+            selections: poll
+                .ballots
+                .get(actor)
+                .map(|selections| selections.iter().copied().collect())
+                .unwrap_or_default(),
+        })
+    }
+
+    fn validate_poll_observer(
+        &self,
+        observer: &ParticipantId,
+        room_id: &RoomId,
+    ) -> Result<&Room, PollObservationRefusalV1> {
+        if !self.participants.contains_key(observer) {
+            return Err(PollObservationRefusalV1::UnknownParticipant);
+        }
+        let room = self
+            .rooms
+            .get(room_id)
+            .ok_or(PollObservationRefusalV1::UnknownRoom)?;
+        if !room.members.contains_key(observer) {
+            return Err(PollObservationRefusalV1::NotMember);
+        }
+        Ok(room)
     }
 
     /// Changes one caller-owned saved relation without a revision or room event.
@@ -4581,6 +4905,33 @@ impl Engine {
                 message_id,
                 pinned,
             } => self.set_pin(room_id, actor, message_id, pinned),
+            CommandV2::CreatePoll {
+                room_id,
+                actor,
+                prompt,
+                options,
+                eligible_participants,
+                max_choices,
+            } => self.create_poll(
+                room_id,
+                actor,
+                prompt,
+                options,
+                eligible_participants,
+                max_choices,
+            ),
+            CommandV2::SetPollBallot {
+                room_id,
+                actor,
+                poll_id,
+                selections,
+            } => self.set_poll_ballot(room_id, actor, poll_id, selections),
+            CommandV2::SetPollOpen {
+                room_id,
+                actor,
+                poll_id,
+                open,
+            } => self.set_poll_open(room_id, actor, poll_id, open),
             CommandV2::EditMessage {
                 room_id,
                 actor,
@@ -4967,6 +5318,53 @@ impl Engine {
                 pinned: *pinned,
             },
             (
+                CommandV2::CreatePoll {
+                    actor,
+                    prompt,
+                    options,
+                    eligible_participants,
+                    max_choices,
+                    ..
+                },
+                OutcomeV2::PollCreated { room_id, poll_id },
+            ) => DomainEventV2::PollCreated {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                poll_id: *poll_id,
+                prompt: prompt.clone(),
+                options: options.clone(),
+                eligible_participants: eligible_participants.clone(),
+                max_choices: *max_choices,
+            },
+            (
+                CommandV2::SetPollBallot { .. },
+                OutcomeV2::PollBallotChanged {
+                    room_id,
+                    poll_id,
+                    totals,
+                    total_ballots,
+                },
+            ) => DomainEventV2::PollBallotChanged {
+                room_id: room_id.clone(),
+                poll_id: *poll_id,
+                totals: totals.clone(),
+                total_ballots: *total_ballots,
+            },
+            (
+                CommandV2::SetPollOpen { .. },
+                OutcomeV2::PollLifecycleChanged {
+                    room_id,
+                    actor,
+                    poll_id,
+                    open,
+                },
+            ) => DomainEventV2::PollLifecycleChanged {
+                room_id: room_id.clone(),
+                actor: actor.clone(),
+                poll_id: *poll_id,
+                open: *open,
+            },
+            (
                 CommandV2::EditMessage { .. },
                 OutcomeV2::MessageEdited {
                     room_id,
@@ -5057,10 +5455,14 @@ impl Engine {
                 archived_threads: BTreeSet::new(),
                 reactions: BTreeMap::new(),
                 pins: BTreeMap::new(),
+                polls: BTreeMap::new(),
+                poll_creation_order: VecDeque::new(),
                 topics: BTreeMap::new(),
                 topic_successors: BTreeMap::new(),
                 topic_identity_incarnation: self.next_event_sequence.0,
                 next_topic_identity: 0,
+                poll_identity_incarnation: self.next_event_sequence.0,
+                next_poll_identity: 0,
                 message_identity_incarnation: self.next_event_sequence.0,
                 next_message_identity: 0,
                 next_message_sequence: 0,
@@ -5133,10 +5535,14 @@ impl Engine {
                 archived_threads: BTreeSet::new(),
                 reactions: BTreeMap::new(),
                 pins: BTreeMap::new(),
+                polls: BTreeMap::new(),
+                poll_creation_order: VecDeque::new(),
                 topics: BTreeMap::new(),
                 topic_successors: BTreeMap::new(),
                 topic_identity_incarnation: self.next_event_sequence.0,
                 next_topic_identity: 0,
+                poll_identity_incarnation: self.next_event_sequence.0,
+                next_poll_identity: 0,
                 message_identity_incarnation: self.next_event_sequence.0,
                 next_message_identity: 0,
                 next_message_sequence: 0,
@@ -6144,6 +6550,187 @@ impl Engine {
             message_id,
             original_sequence,
             pinned,
+        })
+    }
+
+    fn create_poll(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        prompt: String,
+        options: Vec<String>,
+        eligible_participants: Vec<ParticipantId>,
+        max_choices: u8,
+    ) -> Result<OutcomeV2, Refusal> {
+        self.validate_nonempty_bounded(
+            &prompt,
+            MAX_POLL_PROMPT_BYTES_V1,
+            Refusal::InvalidPollPrompt,
+        )?;
+        if !(2..=MAX_POLL_OPTIONS_V1).contains(&options.len())
+            || options
+                .iter()
+                .any(|option| option.is_empty() || option.len() > MAX_POLL_OPTION_BYTES_V1)
+            || options.iter().collect::<BTreeSet<_>>().len() != options.len()
+        {
+            return Err(Refusal::InvalidPollOptions);
+        }
+        if max_choices == 0 || usize::from(max_choices) > options.len() {
+            return Err(Refusal::InvalidPollChoiceLimit);
+        }
+        if eligible_participants.is_empty()
+            || eligible_participants.len() > MAX_POLL_ELIGIBLE_PARTICIPANTS_V1
+            || eligible_participants
+                .windows(2)
+                .any(|pair| pair[0] >= pair[1])
+        {
+            return Err(Refusal::InvalidPollEligibility);
+        }
+
+        let room = self.room_ref(&room_id)?;
+        if !room.members.contains_key(&actor) {
+            return Err(Refusal::NotMember(actor));
+        }
+        for participant in &eligible_participants {
+            if !self.participants.contains_key(participant) {
+                return Err(Refusal::UnknownParticipant(participant.clone()));
+            }
+            if !room.members.contains_key(participant) {
+                return Err(Refusal::InvalidPollEligibility);
+            }
+        }
+        let evicted = if room.polls.len() == MAX_POLLS_PER_ROOM_V1 {
+            Some(
+                room.poll_creation_order
+                    .iter()
+                    .copied()
+                    .find(|poll_id| room.polls.get(poll_id).is_some_and(|poll| !poll.open))
+                    .ok_or(Refusal::PollLimit)?,
+            )
+        } else {
+            None
+        };
+        let poll_id = PollId::allocated(room.poll_identity_incarnation, room.next_poll_identity);
+        let next_poll_identity = room
+            .next_poll_identity
+            .checked_add(1)
+            .ok_or(Refusal::PollIdentityExhausted)?;
+
+        let room = self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation");
+        if let Some(evicted) = evicted {
+            room.polls.remove(&evicted);
+            let index = room
+                .poll_creation_order
+                .iter()
+                .position(|poll_id| *poll_id == evicted)
+                .expect("poll order and map remain equal");
+            room.poll_creation_order.remove(index);
+        }
+        room.polls.insert(
+            poll_id,
+            PollV1 {
+                id: poll_id,
+                creator: actor,
+                prompt,
+                options,
+                eligible_participants: eligible_participants.into_iter().collect(),
+                max_choices,
+                open: true,
+                ballots: BTreeMap::new(),
+            },
+        );
+        room.poll_creation_order.push_back(poll_id);
+        room.next_poll_identity = next_poll_identity;
+        Ok(OutcomeV2::PollCreated { room_id, poll_id })
+    }
+
+    fn set_poll_ballot(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        poll_id: PollId,
+        selections: Vec<u8>,
+    ) -> Result<OutcomeV2, Refusal> {
+        let room = self.room_ref(&room_id)?;
+        if !room.members.contains_key(&actor) {
+            return Err(Refusal::NotMember(actor));
+        }
+        let poll = room.polls.get(&poll_id).ok_or(Refusal::UnknownPoll)?;
+        if !poll.open {
+            return Err(Refusal::PollClosed);
+        }
+        if !poll.eligible_participants.contains(&actor) {
+            return Err(Refusal::NotPollEligible);
+        }
+        if selections.len() > usize::from(poll.max_choices)
+            || selections.windows(2).any(|pair| pair[0] >= pair[1])
+            || selections
+                .iter()
+                .any(|selection| usize::from(*selection) >= poll.options.len())
+        {
+            return Err(Refusal::InvalidPollBallot);
+        }
+        let replacement: BTreeSet<_> = selections.into_iter().collect();
+        if poll.ballots.get(&actor).cloned().unwrap_or_default() == replacement {
+            return Err(Refusal::InvalidPollBallotChange);
+        }
+
+        let room = self
+            .rooms
+            .get_mut(&room_id)
+            .expect("room established by validation");
+        let poll = room
+            .polls
+            .get_mut(&poll_id)
+            .expect("poll established by validation");
+        if replacement.is_empty() {
+            poll.ballots.remove(&actor);
+        } else {
+            poll.ballots.insert(actor, replacement);
+        }
+        let status = poll.status();
+        Ok(OutcomeV2::PollBallotChanged {
+            room_id,
+            poll_id,
+            totals: status.totals,
+            total_ballots: status.total_ballots,
+        })
+    }
+
+    fn set_poll_open(
+        &mut self,
+        room_id: RoomId,
+        actor: ParticipantId,
+        poll_id: PollId,
+        open: bool,
+    ) -> Result<OutcomeV2, Refusal> {
+        let room = self.room_ref(&room_id)?;
+        let role = room
+            .members
+            .get(&actor)
+            .ok_or_else(|| Refusal::NotMember(actor.clone()))?;
+        let poll = room.polls.get(&poll_id).ok_or(Refusal::UnknownPoll)?;
+        if poll.creator != actor && !matches!(role, Role::Owner | Role::Moderator) {
+            return Err(Refusal::NotAuthorized(actor));
+        }
+        if poll.open == open {
+            return Err(Refusal::InvalidPollLifecycleChange);
+        }
+        self.rooms
+            .get_mut(&room_id)
+            .expect("room established by validation")
+            .polls
+            .get_mut(&poll_id)
+            .expect("poll established by validation")
+            .open = open;
+        Ok(OutcomeV2::PollLifecycleChanged {
+            room_id,
+            actor,
+            poll_id,
+            open,
         })
     }
 

@@ -386,6 +386,7 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::TopicAliasLimit
         | EngineRefusal::TopicTagLimit
         | EngineRefusal::PinLimit
+        | EngineRefusal::PollLimit
         | EngineRefusal::MessageRetentionDisabled
         | EngineRefusal::AddressedParticipantLimit
         | EngineRefusal::EventOutboxFull => RefusalV1::Capacity,
@@ -393,7 +394,9 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::MessageSequenceExhausted
         | EngineRefusal::RevisionExhausted
         | EngineRefusal::EventSequenceExhausted => RefusalV1::Exhausted,
-        EngineRefusal::TopicIdentityExhausted => RefusalV1::Exhausted,
+        EngineRefusal::TopicIdentityExhausted | EngineRefusal::PollIdentityExhausted => {
+            RefusalV1::Exhausted
+        }
         EngineRefusal::InvalidParticipantId
         | EngineRefusal::InvalidConversationProfile
         | EngineRefusal::InvalidConversationCohort
@@ -423,6 +426,16 @@ fn map_refusal(refusal: EngineRefusal) -> RefusalV1 {
         | EngineRefusal::ReactionLimit
         | EngineRefusal::InvalidReactionChange
         | EngineRefusal::InvalidPinChange
+        | EngineRefusal::InvalidPollPrompt
+        | EngineRefusal::InvalidPollOptions
+        | EngineRefusal::InvalidPollEligibility
+        | EngineRefusal::InvalidPollChoiceLimit
+        | EngineRefusal::UnknownPoll
+        | EngineRefusal::NotPollEligible
+        | EngineRefusal::PollClosed
+        | EngineRefusal::InvalidPollBallot
+        | EngineRefusal::InvalidPollBallotChange
+        | EngineRefusal::InvalidPollLifecycleChange
         | EngineRefusal::MessageRevisionLimit
         | EngineRefusal::InvalidMessageEdit
         | EngineRefusal::InvalidTopicName

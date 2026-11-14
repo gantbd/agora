@@ -1357,7 +1357,10 @@ impl ServiceV2 {
                 message_revision,
             }),
             EngineOutcome::ParticipantRegistered(_)
-            | EngineOutcome::VellumArtifactMessageAccepted { .. } => Err(RefusalV2::Unavailable),
+            | EngineOutcome::VellumArtifactMessageAccepted { .. }
+            | EngineOutcome::PollCreated { .. }
+            | EngineOutcome::PollBallotChanged { .. }
+            | EngineOutcome::PollLifecycleChanged { .. } => Err(RefusalV2::Unavailable),
         }
     }
 
@@ -2305,6 +2308,11 @@ impl ServiceV2 {
                     .map(|change| {
                         let event = match change.event {
                             agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
+                                return Err(RefusalV2::Unavailable);
+                            }
+                            agora_engine::DomainEventV2::PollCreated { .. }
+                            | agora_engine::DomainEventV2::PollBallotChanged { .. }
+                            | agora_engine::DomainEventV2::PollLifecycleChanged { .. } => {
                                 return Err(RefusalV2::Unavailable);
                             }
                             agora_engine::DomainEventV2::PinChanged {
@@ -3600,6 +3608,11 @@ fn map_identified_room_event(
         agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
             return Err(RefusalV2::Unavailable);
         }
+        agora_engine::DomainEventV2::PollCreated { .. }
+        | agora_engine::DomainEventV2::PollBallotChanged { .. }
+        | agora_engine::DomainEventV2::PollLifecycleChanged { .. } => {
+            return Err(RefusalV2::Unavailable);
+        }
         agora_engine::DomainEventV2::PinChanged {
             actor,
             message_id,
@@ -3843,6 +3856,11 @@ fn map_threaded_room_event(
 ) -> Result<ThreadedRoomEventV1, RefusalV2> {
     Ok(match event {
         agora_engine::DomainEventV2::ParticipantRegistered { .. } => {
+            return Err(RefusalV2::Unavailable);
+        }
+        agora_engine::DomainEventV2::PollCreated { .. }
+        | agora_engine::DomainEventV2::PollBallotChanged { .. }
+        | agora_engine::DomainEventV2::PollLifecycleChanged { .. } => {
             return Err(RefusalV2::Unavailable);
         }
         agora_engine::DomainEventV2::PinChanged {
@@ -4416,6 +4434,7 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::BanLimit
         | EngineRefusal::ReactionLimit
         | EngineRefusal::PinLimit
+        | EngineRefusal::PollLimit
         | EngineRefusal::MessageRevisionLimit
         | EngineRefusal::TopicLimit
         | EngineRefusal::MessageRetentionDisabled
@@ -4425,7 +4444,9 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::MessageSequenceExhausted
         | EngineRefusal::RevisionExhausted
         | EngineRefusal::EventSequenceExhausted => RefusalV2::Exhausted,
-        EngineRefusal::TopicIdentityExhausted => RefusalV2::Exhausted,
+        EngineRefusal::TopicIdentityExhausted | EngineRefusal::PollIdentityExhausted => {
+            RefusalV2::Exhausted
+        }
         EngineRefusal::InvalidParticipantId
         | EngineRefusal::InvalidConversationProfile
         | EngineRefusal::InvalidConversationCohort
@@ -4451,6 +4472,16 @@ fn map_engine_refusal(refusal: EngineRefusal) -> RefusalV2 {
         | EngineRefusal::InvalidThreadLifecycleChange
         | EngineRefusal::InvalidReaction
         | EngineRefusal::InvalidReactionChange
+        | EngineRefusal::InvalidPollPrompt
+        | EngineRefusal::InvalidPollOptions
+        | EngineRefusal::InvalidPollEligibility
+        | EngineRefusal::InvalidPollChoiceLimit
+        | EngineRefusal::UnknownPoll
+        | EngineRefusal::NotPollEligible
+        | EngineRefusal::PollClosed
+        | EngineRefusal::InvalidPollBallot
+        | EngineRefusal::InvalidPollBallotChange
+        | EngineRefusal::InvalidPollLifecycleChange
         | EngineRefusal::InvalidMessageEdit
         | EngineRefusal::InvalidTopicName
         | EngineRefusal::InvalidTopicLifecycleChange

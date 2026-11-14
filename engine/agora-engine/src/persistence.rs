@@ -472,6 +472,57 @@ impl Writer {
                 self.number(*original_sequence)?;
                 self.byte(u8::from(*pinned))
             }
+            DomainEventV2::PollCreated {
+                room_id,
+                actor,
+                poll_id,
+                prompt,
+                options,
+                eligible_participants,
+                max_choices,
+            } => {
+                self.byte(24)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&poll_id.into_bytes())?;
+                self.text(prompt)?;
+                self.count(options.len())?;
+                for option in options {
+                    self.text(option)?;
+                }
+                self.count(eligible_participants.len())?;
+                for participant in eligible_participants {
+                    self.text(participant.as_str())?;
+                }
+                self.byte(*max_choices)
+            }
+            DomainEventV2::PollBallotChanged {
+                room_id,
+                poll_id,
+                totals,
+                total_ballots,
+            } => {
+                self.byte(25)?;
+                self.text(room_id.as_str())?;
+                self.raw(&poll_id.into_bytes())?;
+                self.count(totals.len())?;
+                for total in totals {
+                    self.number(u64::from(*total))?;
+                }
+                self.number(u64::from(*total_ballots))
+            }
+            DomainEventV2::PollLifecycleChanged {
+                room_id,
+                actor,
+                poll_id,
+                open,
+            } => {
+                self.byte(26)?;
+                self.text(room_id.as_str())?;
+                self.text(actor.as_str())?;
+                self.raw(&poll_id.into_bytes())?;
+                self.byte(u8::from(*open))
+            }
             DomainEventV2::MessageEdited {
                 room_id,
                 actor,
@@ -1056,6 +1107,9 @@ impl Engine {
         max_snapshot_bytes: usize,
     ) -> Result<CheckpointV2, CheckpointError> {
         validate(self)?;
+        if engine_has_polls(self) {
+            return Err(CheckpointError::Profile);
+        }
         let mut w = Writer {
             bytes: Vec::new(),
             max: max_snapshot_bytes,
@@ -1484,10 +1538,14 @@ impl Engine {
                     archived_threads,
                     reactions,
                     pins,
+                    polls: BTreeMap::new(),
+                    poll_creation_order: VecDeque::new(),
                     topics,
                     topic_successors,
                     topic_identity_incarnation,
                     next_topic_identity,
+                    poll_identity_incarnation: topic_identity_incarnation,
+                    next_poll_identity: 0,
                     message_identity_incarnation,
                     next_message_identity,
                     next_message_sequence,
@@ -1682,6 +1740,22 @@ fn engine_has_shared_pins(engine: &Engine) -> bool {
             .iter()
             .chain(&engine.retained_changes)
             .any(|envelope| matches!(envelope.event, DomainEventV2::PinChanged { .. }))
+}
+
+fn engine_has_polls(engine: &Engine) -> bool {
+    engine.rooms.values().any(|room| !room.polls.is_empty())
+        || engine
+            .pending_events
+            .iter()
+            .chain(&engine.retained_changes)
+            .any(|envelope| {
+                matches!(
+                    envelope.event,
+                    DomainEventV2::PollCreated { .. }
+                        | DomainEventV2::PollBallotChanged { .. }
+                        | DomainEventV2::PollLifecycleChanged { .. }
+                )
+            })
 }
 
 const CURSOR_MAGIC: &[u8; 8] = b"AGORACUR";
@@ -2347,6 +2421,8 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             || room.thread_roots.len() > room.messages.len()
             || room.archived_threads.len() > room.messages.len()
             || room.pins.len() > MAX_ROOM_PINS_V1
+            || room.polls.len() > MAX_POLLS_PER_ROOM_V1
+            || room.poll_creation_order.len() != room.polls.len()
         {
             return Err(CheckpointError::Invalid);
         }
@@ -2405,6 +2481,54 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             || room.next_topic_identity != room.topics.len() as u64
         {
             return Err(CheckpointError::Invalid);
+        }
+        if room.poll_identity_incarnation >= e.revision.0 {
+            return Err(CheckpointError::Invalid);
+        }
+        let mut ordered_polls = BTreeSet::new();
+        for poll_id in &room.poll_creation_order {
+            if !ordered_polls.insert(*poll_id) || !room.polls.contains_key(poll_id) {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        if ordered_polls.len() != room.polls.len() {
+            return Err(CheckpointError::Invalid);
+        }
+        for (poll_id, poll) in &room.polls {
+            let mut counter = [0_u8; 8];
+            counter.copy_from_slice(&poll_id.0[8..]);
+            let counter = u64::from_be_bytes(counter);
+            if poll.id != *poll_id
+                || *poll_id != PollId::allocated(room.poll_identity_incarnation, counter)
+                || counter >= room.next_poll_identity
+                || !e.participants.contains_key(&poll.creator)
+                || poll.prompt.is_empty()
+                || poll.prompt.len() > MAX_POLL_PROMPT_BYTES_V1
+                || !(2..=MAX_POLL_OPTIONS_V1).contains(&poll.options.len())
+                || poll
+                    .options
+                    .iter()
+                    .any(|option| option.is_empty() || option.len() > MAX_POLL_OPTION_BYTES_V1)
+                || poll.options.iter().collect::<BTreeSet<_>>().len() != poll.options.len()
+                || poll.eligible_participants.is_empty()
+                || poll.eligible_participants.len() > MAX_POLL_ELIGIBLE_PARTICIPANTS_V1
+                || usize::from(poll.max_choices) > poll.options.len()
+                || poll.max_choices == 0
+                || poll
+                    .eligible_participants
+                    .iter()
+                    .any(|participant| !e.participants.contains_key(participant))
+                || poll.ballots.iter().any(|(participant, selections)| {
+                    !poll.eligible_participants.contains(participant)
+                        || selections.is_empty()
+                        || selections.len() > usize::from(poll.max_choices)
+                        || selections
+                            .iter()
+                            .any(|selection| usize::from(*selection) >= poll.options.len())
+                })
+            {
+                return Err(CheckpointError::Invalid);
+            }
         }
         let mut names = BTreeSet::new();
         for (topic_id, topic) in &room.topics {
@@ -3224,6 +3348,79 @@ fn validate_event(e: &Engine, event: &DomainEventV2) -> Result<(), CheckpointErr
             if *original_sequence >= r.next_message_sequence
                 || *message_id
                     != MessageId::allocated(r.message_identity_incarnation, *original_sequence)
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::PollCreated {
+            room_id,
+            actor,
+            poll_id,
+            prompt,
+            options,
+            eligible_participants,
+            max_choices,
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            let mut counter = [0_u8; 8];
+            counter.copy_from_slice(&poll_id.0[8..]);
+            let counter = u64::from_be_bytes(counter);
+            if *poll_id != PollId::allocated(r.poll_identity_incarnation, counter)
+                || counter >= r.next_poll_identity
+                || prompt.is_empty()
+                || prompt.len() > MAX_POLL_PROMPT_BYTES_V1
+                || !(2..=MAX_POLL_OPTIONS_V1).contains(&options.len())
+                || options
+                    .iter()
+                    .any(|option| option.is_empty() || option.len() > MAX_POLL_OPTION_BYTES_V1)
+                || options.iter().collect::<BTreeSet<_>>().len() != options.len()
+                || eligible_participants.is_empty()
+                || eligible_participants.len() > MAX_POLL_ELIGIBLE_PARTICIPANTS_V1
+                || eligible_participants
+                    .windows(2)
+                    .any(|pair| pair[0] >= pair[1])
+                || eligible_participants
+                    .iter()
+                    .any(|eligible| !e.participants.contains_key(eligible))
+                || *max_choices == 0
+                || usize::from(*max_choices) > options.len()
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::PollBallotChanged {
+            room_id,
+            poll_id,
+            totals,
+            total_ballots,
+        } => {
+            let r = room(room_id)?;
+            let mut counter = [0_u8; 8];
+            counter.copy_from_slice(&poll_id.0[8..]);
+            let counter = u64::from_be_bytes(counter);
+            if *poll_id != PollId::allocated(r.poll_identity_incarnation, counter)
+                || counter >= r.next_poll_identity
+                || !(2..=MAX_POLL_OPTIONS_V1).contains(&totals.len())
+                || usize::from(*total_ballots) > MAX_POLL_ELIGIBLE_PARTICIPANTS_V1
+                || totals.iter().any(|total| total > total_ballots)
+            {
+                return Err(CheckpointError::Invalid);
+            }
+        }
+        DomainEventV2::PollLifecycleChanged {
+            room_id,
+            actor,
+            poll_id,
+            ..
+        } => {
+            let r = room(room_id)?;
+            participant(actor)?;
+            let mut counter = [0_u8; 8];
+            counter.copy_from_slice(&poll_id.0[8..]);
+            let counter = u64::from_be_bytes(counter);
+            if *poll_id != PollId::allocated(r.poll_identity_incarnation, counter)
+                || counter >= r.next_poll_identity
             {
                 return Err(CheckpointError::Invalid);
             }
