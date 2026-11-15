@@ -5,6 +5,7 @@ component|agora-aegis-verifier|0.1.0
 component|agora-client|0.1.0
 component|agora-durable|0.1.0
 component|agora-delivery-projection-port|0.1.0
+component|agora-export-custody-port|0.1.0
 component|agora-engine|0.3.0
 component|agora-export-service|0.1.0
 component|agora-export-durable|0.1.0

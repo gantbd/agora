@@ -7,6 +7,10 @@
 use agora_engine::retention::{
     ContentDigestV1, ExportMaterializationApplyV1, ExportMaterializationV1,
 };
+use agora_export_custody_port::{
+    ExportCustodyAcceptedV1, ExportCustodyApplyV1, ExportCustodyDurabilityV1, ExportCustodyPortV1,
+    ExportCustodyRefusalV1, ExportCustodyRequestV1,
+};
 use agora_export_service::{
     ExportAdmissionV1, ExportCheckpointErrorV1, ExportCheckpointScopeV1, ExportRecoveryLimitsV1,
     ExportServiceRefusalV1, ExportServiceV1,
@@ -333,5 +337,72 @@ fn start_revision(outcome: CommitOutcome) -> Result<Revision, DurableExportStart
         CommitOutcome::Committed(_) => Err(DurableExportStartErrorV1::InvalidReceipt),
         CommitOutcome::Refused(refusal) => Err(DurableExportStartErrorV1::StoreRefused(refusal)),
         CommitOutcome::Indeterminate => Err(DurableExportStartErrorV1::OutcomeUnknown),
+    }
+}
+
+impl<S, D> ExportCustodyPortV1 for DurableExportServiceV1<S, D>
+where
+    S: CheckpointStore,
+    D: FnMut(&[u8]) -> ContentDigestV1,
+{
+    fn admit(
+        &mut self,
+        request: ExportCustodyRequestV1,
+    ) -> Result<ExportCustodyAcceptedV1, ExportCustodyRefusalV1> {
+        let admission = ExportAdmissionV1 {
+            current_engine_revision: request.current_engine_revision,
+            current_policy_revision: request.current_policy_revision,
+        };
+        match DurableExportServiceV1::admit(self, admission, request.into_materialization()) {
+            DurableExportPublicationV1::Published { value, evidence } => {
+                let apply = match value.map_err(map_service_refusal)? {
+                    ExportMaterializationApplyV1::Materialized => {
+                        ExportCustodyApplyV1::Materialized
+                    }
+                    ExportMaterializationApplyV1::Replay => ExportCustodyApplyV1::Replay,
+                };
+                let durability = match evidence {
+                    DurableExportEvidenceV1::PreviouslyCommitted { revision } => {
+                        ExportCustodyDurabilityV1::PreviouslyCommitted {
+                            store_revision: revision.0,
+                        }
+                    }
+                    DurableExportEvidenceV1::Committed { revision } => {
+                        ExportCustodyDurabilityV1::Committed {
+                            store_revision: revision.0,
+                        }
+                    }
+                };
+                Ok(ExportCustodyAcceptedV1 { apply, durability })
+            }
+            DurableExportPublicationV1::Suppressed(suppression) => Err(match suppression {
+                DurableExportSuppressionV1::Fenced => ExportCustodyRefusalV1::Fenced,
+                DurableExportSuppressionV1::StoreRefused(_) => {
+                    ExportCustodyRefusalV1::DefinitelyNotCommitted
+                }
+                DurableExportSuppressionV1::OutcomeUnknown
+                | DurableExportSuppressionV1::NotDurable
+                | DurableExportSuppressionV1::InvalidReceipt => {
+                    ExportCustodyRefusalV1::OutcomeUnknown
+                }
+                DurableExportSuppressionV1::Checkpoint(_) => ExportCustodyRefusalV1::Unavailable,
+            }),
+        }
+    }
+}
+
+fn map_service_refusal(refusal: ExportServiceRefusalV1) -> ExportCustodyRefusalV1 {
+    match refusal {
+        ExportServiceRefusalV1::StaleSource { .. }
+        | ExportServiceRefusalV1::PolicyMismatch { .. } => ExportCustodyRefusalV1::Stale,
+        ExportServiceRefusalV1::Registry(
+            agora_engine::retention::ExportRegistryRefusalV1::Conflict,
+        ) => ExportCustodyRefusalV1::Conflict,
+        ExportServiceRefusalV1::Registry(
+            agora_engine::retention::ExportRegistryRefusalV1::Capacity,
+        ) => ExportCustodyRefusalV1::Capacity,
+        ExportServiceRefusalV1::InvalidLimits
+        | ExportServiceRefusalV1::MaterializationLimit
+        | ExportServiceRefusalV1::Registry(_) => ExportCustodyRefusalV1::Invalid,
     }
 }

@@ -3,6 +3,10 @@ use agora_engine::retention::{
     ExportRecordV1, ExportRequestIdV1, ExportScopeBindingV1, RECORD_CLASSES_V1, RecordClassV1,
     RetentionFrontierV1, RetentionPolicyRevisionV1, RetentionRecordIdV1, materialize_export_v1,
 };
+use agora_export_custody_port::{
+    ExportCustodyAcceptedV1, ExportCustodyApplyV1, ExportCustodyDurabilityV1, ExportCustodyPortV1,
+    ExportCustodyRefusalV1, ExportCustodyRequestV1,
+};
 use agora_export_durable::{
     DurableExportConfigV1, DurableExportEvidenceV1, DurableExportPublicationV1,
     DurableExportServiceV1, DurableExportStateV1, DurableExportSuppressionV1,
@@ -305,4 +309,39 @@ fn weak_and_invalid_receipts_never_publish_custody() {
         assert_eq!(durable.state(), DurableExportStateV1::Fenced);
         assert!(durable.service().is_none());
     }
+}
+
+#[test]
+fn custody_port_preserves_exact_commit_replay_and_known_refusal_meaning() {
+    let store = SharedStore::default();
+    let mut durable = DurableExportServiceV1::initialize(
+        ExportServiceV1::new(limits()).unwrap(),
+        store.clone(),
+        digest,
+        config(),
+    )
+    .unwrap();
+    let request = ExportCustodyRequestV1::new(8, policy_revision(), materialization(1, b"one"));
+    assert_eq!(
+        ExportCustodyPortV1::admit(&mut durable, request.clone()),
+        Ok(ExportCustodyAcceptedV1 {
+            apply: ExportCustodyApplyV1::Materialized,
+            durability: ExportCustodyDurabilityV1::Committed { store_revision: 1 },
+        })
+    );
+    assert_eq!(
+        ExportCustodyPortV1::admit(&mut durable, request),
+        Ok(ExportCustodyAcceptedV1 {
+            apply: ExportCustodyApplyV1::Replay,
+            durability: ExportCustodyDurabilityV1::PreviouslyCommitted { store_revision: 1 },
+        })
+    );
+    store.set_next(NextOutcome::Refuse);
+    assert_eq!(
+        ExportCustodyPortV1::admit(
+            &mut durable,
+            ExportCustodyRequestV1::new(8, policy_revision(), materialization(2, b"two")),
+        ),
+        Err(ExportCustodyRefusalV1::DefinitelyNotCommitted)
+    );
 }

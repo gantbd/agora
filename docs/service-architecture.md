@@ -24,8 +24,9 @@ agora-service --> agora-interaction-port
 agora-service --> agora-scheduled-publication-port
 agora-service --> agora-federated-publication-port
 agora-retention-authority-port --> agora-engine closed retention values
+agora-export-custody-port --> agora-engine closed export values
 agora-export-service --> agora-engine closed export values
-agora-export-durable --> agora-export-service + agora-engine + keystone-storage port
+agora-export-durable --> export-custody port + agora-export-service + agora-engine + keystone-storage port
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-observation --> keystone-storage port
 agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem
@@ -249,6 +250,14 @@ known refusal restores the prior checkpoint, and store error, indeterminate
 outcome, weak acknowledgement, or invalid receipt fences the live owner until
 fresh recovery. Concrete physical composition and digest qualification remain
 enclosing trusted-host obligations.
+`agora-export-custody-port` erases storage vocabulary while preserving exact
+materialized/replay success, committed/previously-committed evidence, stale or
+conflicting admission, capacity, definite noncommit, unknown outcome, fencing,
+and unavailability. `HostV2` revalidates the administrative session, rejects a
+noncurrent source or policy before authority I/O, obtains a fresh decision over
+the exact manifest identity/profile/scope/revisions, and only then calls this
+port. Humans and agents follow the same administrative path. Prepared source
+truth and digest qualification remain prerequisites outside Host.
 The existing directory adapter also cannot support R107 physical
 reclamation: its v1 atomic replacement unlinks the prior head before a separate
 reopen-validation step. A generational storage profile is required rather than

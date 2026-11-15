@@ -12,6 +12,7 @@ members = [
     "host/agora-host",
     "ports/agora-search-port",
     "ports/agora-delivery-projection-port",
+    "ports/agora-export-custody-port",
     "ports/agora-federated-publication-port",
     "ports/agora-interaction-port",
     "ports/agora-retention-authority-port",

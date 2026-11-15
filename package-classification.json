@@ -57,6 +57,14 @@
       "audiences": ["application", "trusted-host"],
       "publish": false
     },
+    "agora-export-custody-port": {
+      "path": "ports/agora-export-custody-port",
+      "category": "port",
+      "maturity": "adopted",
+      "effect_class": "pure",
+      "audiences": ["service", "trusted-host"],
+      "publish": false
+    },
     "agora-federated-publication-port": {
       "path": "ports/agora-federated-publication-port",
       "category": "port",

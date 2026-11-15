@@ -121,6 +121,16 @@ authority decision carrying the current policy revision, proposed closed policy,
 and observed engine revision. Its canonical durable envelope is Service profile
 31 nested in Host profile 28. Installing policy metadata does not apply bounds.
 
+Exact export admission is also outside participant Wire V2. `HostV2` first
+revalidates the session and requires the prepared manifest's source and policy
+revisions to equal the current conversation owner. It then asks the injected
+retention authority about that exact request identity, profile, scope, source,
+policy, and redacted administrative principal. Only an authorized decision is
+passed to `agora-export-custody-port`; denied or stale authority and stale local
+bindings never touch custody. The port preserves durable commit/replay versus
+definite noncommit, unknown outcome, or fencing without exposing storage
+mechanisms. Host neither prepares source records nor certifies SHA-256.
+
 The separate `agora-storage-directory` package can supply that receipt for the
 qualified single-owner local Unix profile. End-to-end restart evidence closes
 and reopens its real filesystem record, recovers this combined host checkpoint,

@@ -81,8 +81,9 @@ if [[ $(printf '%s\n' "$export_service_tree" | wc -l | tr -d ' ') != 2 ]] \
 fi
 
 export_durable_tree=$(cargo tree -p agora-export-durable --edges normal --depth 1 --locked --offline)
-if [[ $(printf '%s\n' "$export_durable_tree" | wc -l | tr -d ' ') != 4 ]] \
+if [[ $(printf '%s\n' "$export_durable_tree" | wc -l | tr -d ' ') != 5 ]] \
   || ! printf '%s\n' "$export_durable_tree" | rg -q 'agora-engine' \
+  || ! printf '%s\n' "$export_durable_tree" | rg -q 'agora-export-custody-port' \
   || ! printf '%s\n' "$export_durable_tree" | rg -q 'agora-export-service' \
   || ! printf '%s\n' "$export_durable_tree" | rg -q 'keystone-storage' \
   || printf '%s\n' "$export_durable_tree" | rg -q 'agora-(service|host|protocol|wire|client|durable)'; then
@@ -190,6 +191,15 @@ delivery_projection_port_tree=$(cargo tree -p agora-delivery-projection-port --e
 if [[ $(printf '%s\n' "$delivery_projection_port_tree" | wc -l | tr -d ' ') != 1 ]]; then
   printf '%s\n' "$delivery_projection_port_tree" >&2
   echo 'Agora delivery-projection port gained a normal dependency' >&2
+  exit 1
+fi
+
+export_custody_port_tree=$(cargo tree -p agora-export-custody-port --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$export_custody_port_tree" | wc -l | tr -d ' ') != 2 ]] \
+  || ! printf '%s\n' "$export_custody_port_tree" | rg -q 'agora-engine' \
+  || printf '%s\n' "$export_custody_port_tree" | rg -q 'agora-(service|host|protocol|wire|client|durable)'; then
+  printf '%s\n' "$export_custody_port_tree" >&2
+  echo 'Agora export-custody port escaped its effect-free engine-value closure' >&2
   exit 1
 fi
 

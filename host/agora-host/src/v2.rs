@@ -7,6 +7,10 @@ use super::{
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
 };
+use agora_export_custody_port::{
+    ExportCustodyAcceptedV1, ExportCustodyPortV1, ExportCustodyRefusalV1, ExportCustodyRequestV1,
+    ExportMaterializationV1,
+};
 use agora_federated_publication_port::{
     FederatedPublicationAcceptedV1, FederatedPublicationRefusalV1, FederatedPublicationRequestV1,
 };
@@ -16,8 +20,9 @@ use agora_interaction_port::{
 };
 use agora_protocol::v2::{ClientIdV2, RefusalV2};
 use agora_retention_authority_port::{
-    AuthorityDecisionV1, PolicyAuthorityRequestV1, ReceiptRetirementAuthorityRequestV1,
-    ReceiptRetirementKeyV1, RetentionAuthorityPortV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
+    AuthorityDecisionV1, ExportAuthorityRequestV1, PolicyAuthorityRequestV1,
+    ReceiptRetirementAuthorityRequestV1, ReceiptRetirementKeyV1, RetentionAuthorityPortV1,
+    RetentionPolicyRevisionV1, RetentionPolicyV1,
 };
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
@@ -68,6 +73,18 @@ pub enum RetentionPolicyHostRefusalV1 {
     AuthorityStale,
     AuthorityUnavailable,
     Service(RetentionPolicyInstallRefusalV1),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExportHostRefusalV1 {
+    NotAuthorized,
+    NoCurrentPolicy,
+    StaleSource,
+    StalePolicy,
+    AuthorityDenied,
+    AuthorityStale,
+    AuthorityUnavailable,
+    Custody(ExportCustodyRefusalV1),
 }
 
 impl OpenReplyV2 {
@@ -346,6 +363,54 @@ impl<V: PrincipalVerifier> HostV2<V> {
             AuthorityDecisionV1::Unavailable => {
                 Err(RetentionPolicyHostRefusalV1::AuthorityUnavailable)
             }
+        }
+    }
+
+    /// Revalidates the administrative session and exact current source/policy
+    /// bindings, obtains a fresh authority decision over the complete manifest
+    /// identity, and only then admits the prepared export to separate custody.
+    /// Source projection and digest qualification occur before this boundary.
+    pub fn admit_export<A: RetentionAuthorityPortV1, C: ExportCustodyPortV1>(
+        &mut self,
+        session_id: HostSessionIdV2,
+        materialization: ExportMaterializationV1,
+        authority: &mut A,
+        custody: &mut C,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<ExportCustodyAcceptedV1, ExportHostRefusalV1> {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| ExportHostRefusalV1::NotAuthorized)?;
+        let current_engine_revision = self.service.engine().revision().0;
+        if materialization.manifest.source_engine_revision != current_engine_revision {
+            return Err(ExportHostRefusalV1::StaleSource);
+        }
+        let Some(policy) = self.service.retention_policy() else {
+            return Err(ExportHostRefusalV1::NoCurrentPolicy);
+        };
+        if materialization.manifest.policy_revision != policy.revision {
+            return Err(ExportHostRefusalV1::StalePolicy);
+        }
+        let authority_request = ExportAuthorityRequestV1 {
+            principal: session.subject.administrative_principal_binding(),
+            request: materialization.manifest.request,
+            profile: materialization.manifest.profile,
+            scope: materialization.manifest.scope,
+            source_engine_revision: current_engine_revision,
+            policy_revision: policy.revision,
+        };
+        match authority.authorize_export(authority_request) {
+            AuthorityDecisionV1::Authorized => custody
+                .admit(ExportCustodyRequestV1::new(
+                    current_engine_revision,
+                    policy.revision,
+                    materialization,
+                ))
+                .map_err(ExportHostRefusalV1::Custody),
+            AuthorityDecisionV1::Denied => Err(ExportHostRefusalV1::AuthorityDenied),
+            AuthorityDecisionV1::Stale => Err(ExportHostRefusalV1::AuthorityStale),
+            AuthorityDecisionV1::Unavailable => Err(ExportHostRefusalV1::AuthorityUnavailable),
         }
     }
 

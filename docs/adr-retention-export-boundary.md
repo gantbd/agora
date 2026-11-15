@@ -223,6 +223,14 @@ suppresses another offer, known refusal rolls back, and unknown or weak outcomes
 fence until fresh recovery. A concrete store composition, source projection,
 authorization, qualified SHA-256 composition, and export retirement remain
 open. The participant protocol remains free of administrative export commands.
+The effect-free `agora-export-custody-port` now separates Host from that durable
+implementation. `HostV2` revalidates the administrative session, checks the
+prepared manifest against the current engine and installed-policy revisions,
+and obtains a fresh authority decision over the exact manifest identity before
+admission. Stale local bindings stop before authority; denied authority stops
+before custody. The durable owner implements the port without exporting
+Keystone vocabulary, preserving exact commit/replay, definite noncommit,
+unknown outcome, and fence meaning.
 
 The current `agora-storage-directory` adapter is not a reclamation
 implementation. Its v1 compare-exchange renames a new record over the sole

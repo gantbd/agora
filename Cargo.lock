@@ -62,10 +62,18 @@ name = "agora-engine"
 version = "0.3.0"
 
 [[package]]
+name = "agora-export-custody-port"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+]
+
+[[package]]
 name = "agora-export-durable"
 version = "0.1.0"
 dependencies = [
  "agora-engine",
+ "agora-export-custody-port",
  "agora-export-service",
  "keystone-storage",
 ]
@@ -87,6 +95,7 @@ version = "0.1.0"
 dependencies = [
  "agora-delivery-projection-port",
  "agora-engine",
+ "agora-export-custody-port",
  "agora-federated-publication-port",
  "agora-interaction-port",
  "agora-protocol",

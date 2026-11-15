@@ -1,10 +1,18 @@
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
 };
-use agora_engine::retention::{RetentionBoundV1, RetentionPolicyV1};
+use agora_engine::retention::{
+    ContentDigestProfileV1, ContentDigestV1, ExportProfileV1, ExportRecordV1, ExportRequestIdV1,
+    ExportScopeBindingV1, RECORD_CLASSES_V1, RecordClassV1, RetentionBoundV1, RetentionFrontierV1,
+    RetentionPolicyV1, RetentionRecordIdV1, materialize_export_v1,
+};
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, LogicalTime, OutcomeV2 as EngineOutcome,
     Participant, ParticipantId, ParticipantKind, ReadScopeV1, Revision, RoomId, TopicId,
+};
+use agora_export_custody_port::{
+    ExportCustodyAcceptedV1, ExportCustodyApplyV1, ExportCustodyDurabilityV1, ExportCustodyPortV1,
+    ExportCustodyRefusalV1, ExportCustodyRequestV1,
 };
 use agora_federated_publication_port::{
     FederatedPublicationIdV1, FederatedPublicationIntentV1, FederatedPublicationRefusalV1,
@@ -13,7 +21,9 @@ use agora_federated_publication_port::{
 use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
 };
-use agora_host::v2::{HostV2, ReceiptRetirementHostRefusalV1, RetentionPolicyHostRefusalV1};
+use agora_host::v2::{
+    ExportHostRefusalV1, HostV2, ReceiptRetirementHostRefusalV1, RetentionPolicyHostRefusalV1,
+};
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_interaction_port::{
     InteractionContextRefusalV1, InteractionContextV1, InteractionInvocationIdV1,
@@ -56,6 +66,8 @@ struct Verifier {
 struct RetentionAuthority {
     decision: AuthorityDecisionV1,
     policy_calls: usize,
+    export_calls: usize,
+    last_export: Option<ExportAuthorityRequestV1>,
     retirement_calls: usize,
 }
 
@@ -65,8 +77,10 @@ impl RetentionAuthorityPortV1 for RetentionAuthority {
         self.decision
     }
 
-    fn authorize_export(&mut self, _request: ExportAuthorityRequestV1) -> AuthorityDecisionV1 {
-        panic!("export authority is outside this test")
+    fn authorize_export(&mut self, request: ExportAuthorityRequestV1) -> AuthorityDecisionV1 {
+        self.export_calls += 1;
+        self.last_export = Some(request);
+        self.decision
     }
 
     fn authorize_receipt_retirement(
@@ -76,6 +90,21 @@ impl RetentionAuthorityPortV1 for RetentionAuthority {
         self.retirement_calls += 1;
         assert!(!request.selection().is_empty());
         self.decision
+    }
+}
+
+struct Custody {
+    requests: Vec<ExportCustodyRequestV1>,
+    result: Result<ExportCustodyAcceptedV1, ExportCustodyRefusalV1>,
+}
+
+impl ExportCustodyPortV1 for Custody {
+    fn admit(
+        &mut self,
+        request: ExportCustodyRequestV1,
+    ) -> Result<ExportCustodyAcceptedV1, ExportCustodyRefusalV1> {
+        self.requests.push(request);
+        self.result
     }
 }
 
@@ -129,6 +158,52 @@ fn engine() -> Engine {
             .unwrap();
     }
     engine
+}
+
+fn export_digest(bytes: &[u8]) -> ContentDigestV1 {
+    let mut digest = [0_u8; 32];
+    for (index, byte) in bytes.iter().enumerate() {
+        digest[index % 32] = digest[index % 32].wrapping_add(*byte);
+    }
+    ContentDigestV1::new(digest)
+}
+
+fn prepared_export(
+    request: u8,
+    source_engine_revision: u64,
+    policy_revision: RetentionPolicyRevisionV1,
+) -> agora_export_custody_port::ExportMaterializationV1 {
+    let record = ExportRecordV1::new(
+        RetentionRecordIdV1::new(RecordClassV1::RoomProjection, 1).unwrap(),
+        vec![request],
+        1,
+    )
+    .unwrap();
+    let frontiers = RECORD_CLASSES_V1.map(|class| {
+        RetentionFrontierV1::new(
+            class,
+            0,
+            (class == RecordClassV1::RoomProjection).then_some(1),
+        )
+        .unwrap()
+    });
+    materialize_export_v1(
+        ExportRequestIdV1::new([request; 16]).unwrap(),
+        ExportProfileV1::RoomVisible,
+        ExportScopeBindingV1::new([8; 32]).unwrap(),
+        ContentDigestProfileV1::Sha256,
+        source_engine_revision,
+        policy_revision,
+        [true, false, false, false, false, false],
+        frontiers,
+        &[record],
+        1,
+        1,
+        1,
+        32,
+        export_digest,
+    )
+    .unwrap()
 }
 
 fn limits(max_sessions: usize) -> HostLimits {
@@ -618,6 +693,8 @@ fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric
     let mut authority = RetentionAuthority {
         decision: AuthorityDecisionV1::Denied,
         policy_calls: 0,
+        export_calls: 0,
+        last_export: None,
         retirement_calls: 0,
     };
     let policy = RetentionPolicyV1::new(
@@ -723,6 +800,111 @@ fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric
     .unwrap();
     assert_eq!(recovered.service().retention_policy(), Some(policy));
     assert_eq!(recovered.service().retired_receipt_count(), 2);
+}
+
+#[test]
+fn v2_export_admission_revalidates_exact_authority_before_separate_custody() {
+    let (mut host, _) = make_host(2);
+    let (alice_session, _, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, _, bot_context) = open(&mut host, "bot", 2);
+    let engine_revision = host.service().engine().revision().0;
+    let policy_revision = RetentionPolicyRevisionV1::new(1).unwrap();
+    let policy = RetentionPolicyV1::new(
+        policy_revision,
+        engine_revision,
+        [RetentionBoundV1::entries(4_096).unwrap(); 6],
+    );
+    let mut authority = RetentionAuthority {
+        decision: AuthorityDecisionV1::Authorized,
+        policy_calls: 0,
+        export_calls: 0,
+        last_export: None,
+        retirement_calls: 0,
+    };
+    host.install_retention_policy(
+        alice_session,
+        policy,
+        &mut authority,
+        &alice_context,
+        HostTimeV1(3),
+    )
+    .unwrap();
+    let accepted = ExportCustodyAcceptedV1 {
+        apply: ExportCustodyApplyV1::Materialized,
+        durability: ExportCustodyDurabilityV1::Committed { store_revision: 4 },
+    };
+    let mut custody = Custody {
+        requests: Vec::new(),
+        result: Ok(accepted),
+    };
+
+    assert_eq!(
+        host.admit_export(
+            alice_session,
+            prepared_export(1, engine_revision - 1, policy_revision),
+            &mut authority,
+            &mut custody,
+            &alice_context,
+            HostTimeV1(4),
+        ),
+        Err(ExportHostRefusalV1::StaleSource)
+    );
+    assert_eq!(authority.export_calls, 0);
+    assert!(custody.requests.is_empty());
+
+    authority.decision = AuthorityDecisionV1::Denied;
+    assert_eq!(
+        host.admit_export(
+            alice_session,
+            prepared_export(1, engine_revision, policy_revision),
+            &mut authority,
+            &mut custody,
+            &alice_context,
+            HostTimeV1(5),
+        ),
+        Err(ExportHostRefusalV1::AuthorityDenied)
+    );
+    assert_eq!(authority.export_calls, 1);
+    assert!(custody.requests.is_empty());
+
+    authority.decision = AuthorityDecisionV1::Authorized;
+    assert_eq!(
+        host.admit_export(
+            alice_session,
+            prepared_export(1, engine_revision, policy_revision),
+            &mut authority,
+            &mut custody,
+            &alice_context,
+            HostTimeV1(6),
+        ),
+        Ok(accepted)
+    );
+    let alice_principal = authority.last_export.unwrap().principal;
+    assert_eq!(
+        host.admit_export(
+            bot_session,
+            prepared_export(2, engine_revision, policy_revision),
+            &mut authority,
+            &mut custody,
+            &bot_context,
+            HostTimeV1(6),
+        ),
+        Ok(accepted)
+    );
+    let bot_request = authority.last_export.unwrap();
+    assert_ne!(alice_principal, bot_request.principal);
+    assert_eq!(
+        bot_request.request,
+        ExportRequestIdV1::new([2; 16]).unwrap()
+    );
+    assert_eq!(bot_request.source_engine_revision, engine_revision);
+    assert_eq!(bot_request.policy_revision, policy_revision);
+    assert_eq!(authority.export_calls, 3);
+    assert_eq!(custody.requests.len(), 2);
+    assert!(custody.requests.iter().all(|request| {
+        request.current_engine_revision == engine_revision
+            && request.current_policy_revision == policy_revision
+    }));
 }
 
 #[test]
