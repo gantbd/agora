@@ -84,15 +84,17 @@ incarnation rotation, and refusal of unsupported intersections.
 
 Agora Wire now provides the canonical closed-range post-TLS client/server hello,
 two frozen fixtures, fail-closed negotiation tests, and client-SDK reachability.
-The separate `agora-remote-transport` source revision `9923688` provides a
+The separate `agora-remote-transport` source revision `b9367fa` provides a
 TLS-1.3-only rustls profile with exact ALPN, disabled tickets/resumption/early
 data, configured server roots, optional required client certificates, exporter
 agreement, bounded framing, actual concurrent listener ownership, request
 permits, clean and deadline-forced drain, graceful close notification, real-
 loopback positive and negative tests, pre-application overload refusal, distinct
 reconnect exporter bindings, compatible/disjoint real-TLS upgrade cuts, and a
-blocked bounded-writer drain cut with exact pending-reply accounting. Exact
-compatibility/supply/package gates pass; revision `f7080d5` pins the source.
+blocked bounded-writer drain cut with exact pending-reply accounting. Its fixed
+256-cycle TLS/mTLS reconnect and clean-drain soak requires distinct exporter
+bindings and zero refusal, force, or fidelity-loss counts. Exact compatibility,
+supply, package, ordinary, and soak gates pass; revision `8b511d4` pins them.
 
 The separately owned `agora-remote-daemon` source revision `5b32b4b` composes
 negotiated connections with bounded opaque credential frames, TLS exporters and
@@ -103,7 +105,7 @@ exit and forces overlapping human and agent participants through the identical
 path. Revision `b91d23e` pins the passing real TLS/mTLS gate.
 
 A concrete credential authenticator, broader disconnect uncertainty and multi-
-writer schedules, platform soak, produced artifacts, and commit-pinned full-
+writer schedules, platform matrix, produced artifacts, and commit-pinned full-
 profile qualification remain open.
 
 ## Nonclaims
