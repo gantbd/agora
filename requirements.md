@@ -889,7 +889,7 @@ source-scopes legacy, scheduled, interaction, and federation publication
 receipts, canonically recovers profile 149, and passed the complete gate.
 The additive federated-publication port plus Service, Host, and Durable Host
 composition implement current policy, authenticated actor/time binding, commit
-gating, and later-time replay; commit-pinned qualification is pending.
+gating, and later-time replay; revision `2fe8bb0` passed the complete gate.
 Trust-provider and identity-mapping composition, physical storage, transport
 composition, adversarial campaigns, and integrated qualification remain open.
 Additional physical durable storage adapters,
