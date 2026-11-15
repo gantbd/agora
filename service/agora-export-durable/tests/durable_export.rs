@@ -1,19 +1,21 @@
 use agora_engine::retention::{
     ContentDigestProfileV1, ContentDigestV1, ExportMaterializationApplyV1, ExportProfileV1,
-    ExportRecordV1, ExportRequestIdV1, ExportScopeBindingV1, RECORD_CLASSES_V1, RecordClassV1,
-    RetentionFrontierV1, RetentionPolicyRevisionV1, RetentionRecordIdV1, materialize_export_v1,
+    ExportRecordV1, ExportRequestIdV1, ExportRetirementV1, ExportScopeBindingV1, RECORD_CLASSES_V1,
+    RecordClassV1, RetentionFrontierV1, RetentionPolicyRevisionV1, RetentionRecordIdV1,
+    materialize_export_v1,
 };
 use agora_export_custody_port::{
     ExportCustodyAcceptedV1, ExportCustodyApplyV1, ExportCustodyDurabilityV1, ExportCustodyPortV1,
-    ExportCustodyRefusalV1, ExportCustodyRequestV1,
+    ExportCustodyRefusalV1, ExportCustodyRequestV1, ExportCustodyRetirementAcceptedV1,
+    ExportCustodyRetirementApplyV1, ExportCustodyRetirementRequestV1,
 };
 use agora_export_durable::{
     DurableExportConfigV1, DurableExportEvidenceV1, DurableExportPublicationV1,
     DurableExportServiceV1, DurableExportStateV1, DurableExportSuppressionV1,
 };
 use agora_export_service::{
-    ExportAdmissionV1, ExportCheckpointScopeV1, ExportRecoveryLimitsV1, ExportServiceLimitsV1,
-    ExportServiceV1,
+    ExportAdmissionV1, ExportCheckpointScopeV1, ExportRecoveryLimitsV1, ExportRetirementApplyV1,
+    ExportServiceLimitsV1, ExportServiceV1,
 };
 use keystone_storage::{
     AcknowledgementStrength, Checkpoint, CheckpointStore, CommitOutcome, CommitReceipt, Revision,
@@ -82,6 +84,7 @@ fn admission() -> ExportAdmissionV1 {
 fn limits() -> ExportServiceLimitsV1 {
     ExportServiceLimitsV1 {
         max_exports: 4,
+        max_retired_exports: 4,
         max_chunks_per_export: 2,
         max_chunk_bytes: 64,
     }
@@ -343,5 +346,93 @@ fn custody_port_preserves_exact_commit_replay_and_known_refusal_meaning() {
             ExportCustodyRequestV1::new(8, policy_revision(), materialization(2, b"two")),
         ),
         Err(ExportCustodyRefusalV1::DefinitelyNotCommitted)
+    );
+}
+
+#[test]
+fn retirement_commits_replays_and_survives_recovery() {
+    let store = SharedStore::default();
+    let mut durable = DurableExportServiceV1::initialize(
+        ExportServiceV1::new(limits()).unwrap(),
+        store.clone(),
+        digest,
+        config(),
+    )
+    .unwrap();
+    let export = materialization(1, b"one");
+    durable.admit(admission(), export.clone());
+    let tombstone = ExportRetirementV1::from_manifest(&export.manifest);
+
+    assert_eq!(
+        durable.retire(admission(), tombstone),
+        DurableExportPublicationV1::Published {
+            value: Ok(ExportRetirementApplyV1::Retired),
+            evidence: DurableExportEvidenceV1::Committed {
+                revision: Revision(2)
+            },
+        }
+    );
+    let offers = store.offers();
+    assert_eq!(
+        durable.retire(admission(), tombstone),
+        DurableExportPublicationV1::Published {
+            value: Ok(ExportRetirementApplyV1::Replay),
+            evidence: DurableExportEvidenceV1::PreviouslyCommitted {
+                revision: Revision(2)
+            },
+        }
+    );
+    assert_eq!(store.offers(), offers);
+
+    let mut recovered = DurableExportServiceV1::recover(store, digest, config()).unwrap();
+    assert_eq!(recovered.service().unwrap().len(), 0);
+    assert_eq!(recovered.service().unwrap().retired_count(), 1);
+    assert_eq!(
+        ExportCustodyPortV1::retire(
+            &mut recovered,
+            ExportCustodyRetirementRequestV1 {
+                current_engine_revision: 8,
+                current_policy_revision: policy_revision(),
+                retirement: tombstone,
+            },
+        ),
+        Ok(ExportCustodyRetirementAcceptedV1 {
+            apply: ExportCustodyRetirementApplyV1::Replay,
+            durability: ExportCustodyDurabilityV1::PreviouslyCommitted { store_revision: 2 },
+        })
+    );
+}
+
+#[test]
+fn retirement_known_store_refusal_restores_live_export() {
+    let store = SharedStore::default();
+    let mut durable = DurableExportServiceV1::initialize(
+        ExportServiceV1::new(limits()).unwrap(),
+        store.clone(),
+        digest,
+        config(),
+    )
+    .unwrap();
+    let export = materialization(1, b"one");
+    durable.admit(admission(), export.clone());
+    store.set_next(NextOutcome::Refuse);
+
+    assert_eq!(
+        durable.retire(
+            admission(),
+            ExportRetirementV1::from_manifest(&export.manifest)
+        ),
+        DurableExportPublicationV1::Suppressed(DurableExportSuppressionV1::StoreRefused(
+            StoreRefusal::ValueLimit
+        ))
+    );
+    assert_eq!(durable.service().unwrap().len(), 1);
+    assert_eq!(durable.service().unwrap().retired_count(), 0);
+    assert_eq!(
+        durable
+            .service()
+            .unwrap()
+            .materialization(export.manifest.request),
+        Some(&export)
     );
 }

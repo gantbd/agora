@@ -3,9 +3,11 @@
 //! This application binds the qualified pure SHA-256 provider and the separate
 //! durable export owner to one exclusive private-directory checkpoint store.
 //! It does not prepare source records, decide authority, expose participant
-//! protocol, retire exports, or provide physical reclamation. In particular,
-//! the v1 directory store remains a single-head register and is not
-//! checkpoint-before-reclaim evidence.
+//! protocol, or provide physical reclamation. It can durably replace one live
+//! export with the custody service's bounded non-reuse tombstone. That logical
+//! retirement is not proof that prior filesystem bytes were reclaimed. In
+//! particular, the v1 directory store remains a single-head register and is
+//! not checkpoint-before-reclaim evidence.
 
 use agora_engine::retention::ContentDigestV1;
 use agora_export_durable::{

@@ -9,7 +9,8 @@ use agora_delivery_projection_port::{
 };
 use agora_export_custody_port::{
     ExportCustodyAcceptedV1, ExportCustodyPortV1, ExportCustodyRefusalV1, ExportCustodyRequestV1,
-    ExportMaterializationV1,
+    ExportCustodyRetirementAcceptedV1, ExportCustodyRetirementRefusalV1,
+    ExportCustodyRetirementRequestV1, ExportMaterializationV1, ExportRetirementV1,
 };
 use agora_federated_publication_port::{
     FederatedPublicationAcceptedV1, FederatedPublicationRefusalV1, FederatedPublicationRequestV1,
@@ -20,9 +21,9 @@ use agora_interaction_port::{
 };
 use agora_protocol::v2::{ClientIdV2, RefusalV2};
 use agora_retention_authority_port::{
-    AuthorityDecisionV1, ExportAuthorityRequestV1, PolicyAuthorityRequestV1,
-    ReceiptRetirementAuthorityRequestV1, ReceiptRetirementKeyV1, RetentionAuthorityPortV1,
-    RetentionPolicyRevisionV1, RetentionPolicyV1,
+    AuthorityDecisionV1, ExportAuthorityRequestV1, ExportRetirementAuthorityRequestV1,
+    PolicyAuthorityRequestV1, ReceiptRetirementAuthorityRequestV1, ReceiptRetirementKeyV1,
+    RetentionAuthorityPortV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
 };
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
@@ -85,6 +86,18 @@ pub enum ExportHostRefusalV1 {
     AuthorityStale,
     AuthorityUnavailable,
     Custody(ExportCustodyRefusalV1),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExportRetirementHostRefusalV1 {
+    NotAuthorized,
+    NoCurrentPolicy,
+    StaleSource,
+    StalePolicy,
+    AuthorityDenied,
+    AuthorityStale,
+    AuthorityUnavailable,
+    Custody(ExportCustodyRetirementRefusalV1),
 }
 
 impl OpenReplyV2 {
@@ -411,6 +424,52 @@ impl<V: PrincipalVerifier> HostV2<V> {
             AuthorityDecisionV1::Denied => Err(ExportHostRefusalV1::AuthorityDenied),
             AuthorityDecisionV1::Stale => Err(ExportHostRefusalV1::AuthorityStale),
             AuthorityDecisionV1::Unavailable => Err(ExportHostRefusalV1::AuthorityUnavailable),
+        }
+    }
+
+    /// Revalidates the administrative session and exact current source/policy
+    /// bindings, obtains fresh authority over the full retirement identity,
+    /// and only then asks separate custody to install its non-reuse tombstone.
+    /// This method makes no physical-reclamation or erasure claim.
+    pub fn retire_export<A: RetentionAuthorityPortV1, C: ExportCustodyPortV1>(
+        &mut self,
+        session_id: HostSessionIdV2,
+        retirement: ExportRetirementV1,
+        authority: &mut A,
+        custody: &mut C,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<ExportCustodyRetirementAcceptedV1, ExportRetirementHostRefusalV1> {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| ExportRetirementHostRefusalV1::NotAuthorized)?;
+        let current_engine_revision = self.service.engine().revision().0;
+        if retirement.source_engine_revision != current_engine_revision {
+            return Err(ExportRetirementHostRefusalV1::StaleSource);
+        }
+        let Some(policy) = self.service.retention_policy() else {
+            return Err(ExportRetirementHostRefusalV1::NoCurrentPolicy);
+        };
+        if retirement.policy_revision != policy.revision {
+            return Err(ExportRetirementHostRefusalV1::StalePolicy);
+        }
+        let request = ExportRetirementAuthorityRequestV1 {
+            principal: session.subject.administrative_principal_binding(),
+            retirement,
+        };
+        match authority.authorize_export_retirement(request) {
+            AuthorityDecisionV1::Authorized => custody
+                .retire(ExportCustodyRetirementRequestV1 {
+                    current_engine_revision,
+                    current_policy_revision: policy.revision,
+                    retirement,
+                })
+                .map_err(ExportRetirementHostRefusalV1::Custody),
+            AuthorityDecisionV1::Denied => Err(ExportRetirementHostRefusalV1::AuthorityDenied),
+            AuthorityDecisionV1::Stale => Err(ExportRetirementHostRefusalV1::AuthorityStale),
+            AuthorityDecisionV1::Unavailable => {
+                Err(ExportRetirementHostRefusalV1::AuthorityUnavailable)
+            }
         }
     }
 

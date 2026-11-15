@@ -3,7 +3,9 @@
 //! The port decides current authority only. It performs no retention transition,
 //! export materialization, store publication, reclamation, or compliance policy.
 
-use agora_engine::retention::{ExportProfileV1, ExportRequestIdV1, ExportScopeBindingV1};
+use agora_engine::retention::{
+    ExportProfileV1, ExportRequestIdV1, ExportRetirementV1, ExportScopeBindingV1,
+};
 pub use agora_engine::retention::{RetentionPolicyRevisionV1, RetentionPolicyV1};
 use std::fmt;
 
@@ -42,6 +44,12 @@ pub struct ExportAuthorityRequestV1 {
     pub scope: ExportScopeBindingV1,
     pub source_engine_revision: u64,
     pub policy_revision: RetentionPolicyRevisionV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExportRetirementAuthorityRequestV1 {
+    pub principal: AdministrativePrincipalBindingV1,
+    pub retirement: ExportRetirementV1,
 }
 
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -122,6 +130,15 @@ pub trait RetentionAuthorityPortV1 {
 
     fn authorize_export(&mut self, request: ExportAuthorityRequestV1) -> AuthorityDecisionV1;
 
+    /// Authorizes removal of one exact custody copy. The default keeps
+    /// admission-only authorities closed until retirement is configured.
+    fn authorize_export_retirement(
+        &mut self,
+        _request: ExportRetirementAuthorityRequestV1,
+    ) -> AuthorityDecisionV1 {
+        AuthorityDecisionV1::Unavailable
+    }
+
     fn authorize_receipt_retirement(
         &mut self,
         request: &ReceiptRetirementAuthorityRequestV1,
@@ -156,6 +173,18 @@ mod tests {
         let diagnostic = format!("{policy_request:?} {export_request:?}");
         assert!(!diagnostic.contains("[1, 1"));
         assert!(AdministrativePrincipalBindingV1::new([0; 32]).is_none());
+        let export_retirement = ExportRetirementAuthorityRequestV1 {
+            principal,
+            retirement: ExportRetirementV1 {
+                request: export_request.request,
+                profile: export_request.profile,
+                scope: export_request.scope,
+                source_engine_revision: export_request.source_engine_revision,
+                policy_revision: export_request.policy_revision,
+                manifest_digest: agora_engine::retention::ContentDigestV1::new([4; 32]),
+            },
+        };
+        assert!(!format!("{export_retirement:?}").contains("[1, 1"));
         let retirement = ReceiptRetirementAuthorityRequestV1::new(
             principal,
             revision,

@@ -133,6 +133,12 @@ mechanisms. Host neither prepares source records nor certifies SHA-256.
 The service layer can now prepare one administrative operational-copy source
 from its exact canonical checkpoint, but Host still receives only the resulting
 materialization and does not reinterpret or widen that source profile.
+Export retirement follows a distinct administrative call. Host again
+revalidates the session, rejects a noncurrent source or policy before authority
+or custody I/O, and asks authority about the full manifest-derived retirement
+identity including its digest. Only then may custody atomically replace the live
+copy with its non-reuse tombstone. Human and agent sessions use the same path;
+the result certifies neither filesystem reclamation nor erasure.
 
 The separate `agora-storage-directory` package can supply that receipt for the
 qualified single-owner local Unix profile. End-to-end restart evidence closes

@@ -5,15 +5,17 @@
 //! authorize export, implement SHA-256, or expose participant protocol.
 
 use agora_engine::retention::{
-    ContentDigestV1, ExportMaterializationApplyV1, ExportMaterializationV1,
+    ContentDigestV1, ExportMaterializationApplyV1, ExportMaterializationV1, ExportRetirementV1,
 };
 use agora_export_custody_port::{
     ExportCustodyAcceptedV1, ExportCustodyApplyV1, ExportCustodyDurabilityV1, ExportCustodyPortV1,
-    ExportCustodyRefusalV1, ExportCustodyRequestV1,
+    ExportCustodyRefusalV1, ExportCustodyRequestV1, ExportCustodyRetirementAcceptedV1,
+    ExportCustodyRetirementApplyV1, ExportCustodyRetirementRefusalV1,
+    ExportCustodyRetirementRequestV1,
 };
 use agora_export_service::{
     ExportAdmissionV1, ExportCheckpointErrorV1, ExportCheckpointScopeV1, ExportRecoveryLimitsV1,
-    ExportServiceRefusalV1, ExportServiceV1,
+    ExportRetirementApplyV1, ExportRetirementRefusalV1, ExportServiceRefusalV1, ExportServiceV1,
 };
 use keystone_storage::{
     AcknowledgementStrength, CheckpointStore, CommitOutcome, Revision, StoreRefusal,
@@ -207,6 +209,15 @@ where
         self.publish(|service| service.admit(admission, materialization))
     }
 
+    pub fn retire(
+        &mut self,
+        admission: ExportAdmissionV1,
+        retirement: ExportRetirementV1,
+    ) -> DurableExportPublicationV1<Result<ExportRetirementApplyV1, ExportRetirementRefusalV1>>
+    {
+        self.publish(|service| service.retire(admission, retirement))
+    }
+
     fn publish<T>(
         &mut self,
         operation: impl FnOnce(&mut ExportServiceV1) -> T,
@@ -389,6 +400,72 @@ where
             }),
         }
     }
+
+    fn retire(
+        &mut self,
+        request: ExportCustodyRetirementRequestV1,
+    ) -> Result<ExportCustodyRetirementAcceptedV1, ExportCustodyRetirementRefusalV1> {
+        let admission = ExportAdmissionV1 {
+            current_engine_revision: request.current_engine_revision,
+            current_policy_revision: request.current_policy_revision,
+        };
+        match DurableExportServiceV1::retire(self, admission, request.retirement) {
+            DurableExportPublicationV1::Published { value, evidence } => {
+                let apply = match value.map_err(map_retirement_refusal)? {
+                    ExportRetirementApplyV1::Retired => ExportCustodyRetirementApplyV1::Retired,
+                    ExportRetirementApplyV1::Replay => ExportCustodyRetirementApplyV1::Replay,
+                };
+                Ok(ExportCustodyRetirementAcceptedV1 {
+                    apply,
+                    durability: map_durability(evidence),
+                })
+            }
+            DurableExportPublicationV1::Suppressed(suppression) => {
+                Err(map_retirement_suppression(suppression))
+            }
+        }
+    }
+}
+
+fn map_durability(evidence: DurableExportEvidenceV1) -> ExportCustodyDurabilityV1 {
+    match evidence {
+        DurableExportEvidenceV1::PreviouslyCommitted { revision } => {
+            ExportCustodyDurabilityV1::PreviouslyCommitted {
+                store_revision: revision.0,
+            }
+        }
+        DurableExportEvidenceV1::Committed { revision } => ExportCustodyDurabilityV1::Committed {
+            store_revision: revision.0,
+        },
+    }
+}
+
+fn map_retirement_refusal(refusal: ExportRetirementRefusalV1) -> ExportCustodyRetirementRefusalV1 {
+    match refusal {
+        ExportRetirementRefusalV1::StaleSource | ExportRetirementRefusalV1::PolicyMismatch => {
+            ExportCustodyRetirementRefusalV1::Stale
+        }
+        ExportRetirementRefusalV1::Missing => ExportCustodyRetirementRefusalV1::Missing,
+        ExportRetirementRefusalV1::Conflict => ExportCustodyRetirementRefusalV1::Conflict,
+        ExportRetirementRefusalV1::Capacity => ExportCustodyRetirementRefusalV1::Capacity,
+    }
+}
+
+fn map_retirement_suppression(
+    suppression: DurableExportSuppressionV1,
+) -> ExportCustodyRetirementRefusalV1 {
+    match suppression {
+        DurableExportSuppressionV1::Fenced => ExportCustodyRetirementRefusalV1::Fenced,
+        DurableExportSuppressionV1::StoreRefused(_) => {
+            ExportCustodyRetirementRefusalV1::DefinitelyNotCommitted
+        }
+        DurableExportSuppressionV1::OutcomeUnknown
+        | DurableExportSuppressionV1::NotDurable
+        | DurableExportSuppressionV1::InvalidReceipt => {
+            ExportCustodyRetirementRefusalV1::OutcomeUnknown
+        }
+        DurableExportSuppressionV1::Checkpoint(_) => ExportCustodyRetirementRefusalV1::Unavailable,
+    }
 }
 
 fn map_service_refusal(refusal: ExportServiceRefusalV1) -> ExportCustodyRefusalV1 {
@@ -401,6 +478,7 @@ fn map_service_refusal(refusal: ExportServiceRefusalV1) -> ExportCustodyRefusalV
         ExportServiceRefusalV1::Registry(
             agora_engine::retention::ExportRegistryRefusalV1::Capacity,
         ) => ExportCustodyRefusalV1::Capacity,
+        ExportServiceRefusalV1::Retired => ExportCustodyRefusalV1::Conflict,
         ExportServiceRefusalV1::InvalidLimits
         | ExportServiceRefusalV1::MaterializationLimit
         | ExportServiceRefusalV1::Registry(_) => ExportCustodyRefusalV1::Invalid,

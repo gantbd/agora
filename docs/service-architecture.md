@@ -260,25 +260,37 @@ under its own configured store key and revision line. Only an exact strong
 receipt publishes a new custody result; equal replay does not re-offer storage,
 known refusal restores the prior checkpoint, and store error, indeterminate
 outcome, weak acknowledgement, or invalid receipt fences the live owner until
-fresh recovery. Concrete physical composition and selection of the qualified
-digest provider remain enclosing trusted-host obligations.
+fresh recovery. Custody retirement has its own live and tombstone capacities.
+It accepts only the exact manifest-derived retirement identity, removes the
+live copy and installs its non-reuse tombstone in one candidate checkpoint,
+replays equal retirement, conflicts on changed identity, and refuses missing or
+saturated offers without mutation. Checkpoint V2 adds the retirement limit and
+canonical request-ordered tombstones; empty compatible configurations continue
+to emit V1 bytes, and recovery accepts both versions. Concrete physical
+composition and selection of the qualified digest provider remain enclosing
+trusted-host obligations.
 The qualified `agora-export-local` application closes one such private-local
 composition. It binds `agora-sha256`, the durable export owner, and an exclusive
 `agora-storage-directory` under independent export store key, revision, scope,
 and limits. Real filesystem evidence commits one administrative operational-copy
 materialization, drops every live owner, reopens and digest-verifies custody, and
-returns exact replay without another retained copy. Startup limit mismatch
+returns exact replay without another retained copy. It then commits exact
+retirement, drops every live owner again, reopens the tombstone-bearing
+checkpoint, replays retirement without another store offer, and refuses request
+reuse. Startup limit mismatch
 refuses before directory creation; later failure leaves inspectable residue.
 This uses the directory as a custody register only and makes no reclamation
 claim.
 `agora-export-custody-port` erases storage vocabulary while preserving exact
-materialized/replay success, committed/previously-committed evidence, stale or
-conflicting admission, capacity, definite noncommit, unknown outcome, fencing,
-and unavailability. `HostV2` revalidates the administrative session, rejects a
+materialized/retired/replay success, committed/previously-committed evidence,
+stale, missing or conflicting offers, capacity, definite noncommit, unknown
+outcome, fencing, and unavailability. `HostV2` revalidates the administrative session, rejects a
 noncurrent source or policy before authority I/O, obtains a fresh decision over
-the exact manifest identity/profile/scope/revisions, and only then calls this
-port. Humans and agents follow the same administrative path. Prepared source
-truth and digest-provider composition remain prerequisites outside Host.
+the exact manifest identity/profile/scope/revisions for admission, and only then
+calls this port. Retirement is separately authorized over the complete
+manifest-derived tombstone identity before the same port can remove custody.
+Humans and agents follow the same administrative paths. Prepared source truth
+and digest-provider composition remain prerequisites outside Host.
 The existing directory adapter also cannot support R107 physical
 reclamation: its v1 atomic replacement unlinks the prior head before a separate
 reopen-validation step. A generational storage profile is required rather than

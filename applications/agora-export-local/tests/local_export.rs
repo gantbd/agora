@@ -1,10 +1,11 @@
 use agora_engine::Engine;
 use agora_engine::retention::{
-    ExportRequestIdV1, ExportScopeBindingV1, RecordClassV1, RetentionBoundV1,
+    ExportRequestIdV1, ExportRetirementV1, ExportScopeBindingV1, RecordClassV1, RetentionBoundV1,
     RetentionPolicyRevisionV1, RetentionPolicyV1,
 };
 use agora_export_custody_port::{
     ExportCustodyApplyV1, ExportCustodyDurabilityV1, ExportCustodyPortV1, ExportCustodyRequestV1,
+    ExportCustodyRetirementApplyV1, ExportCustodyRetirementRequestV1,
 };
 use agora_export_durable::DurableExportConfigV1;
 use agora_export_local::{initialize_new_v1, recover_existing_v1};
@@ -39,6 +40,7 @@ fn durable_config() -> DurableExportConfigV1 {
             max_snapshot_bytes: MAX_BYTES,
             maximum_service_limits: ExportServiceLimitsV1 {
                 max_exports: 4,
+                max_retired_exports: 4,
                 max_chunks_per_export: 4,
                 max_chunk_bytes: MAX_BYTES,
             },
@@ -87,7 +89,7 @@ fn materialization() -> (
 }
 
 #[test]
-fn physical_custody_commits_recovers_and_replays_without_a_second_copy() {
+fn physical_custody_commits_recovers_and_durably_retires_one_copy() {
     let path = temporary_path();
     let directory_limits = DirectoryLimitsV1 {
         max_key_bytes: 128,
@@ -95,6 +97,7 @@ fn physical_custody_commits_recovers_and_replays_without_a_second_copy() {
     };
     let service_limits = ExportServiceLimitsV1 {
         max_exports: 4,
+        max_retired_exports: 4,
         max_chunks_per_export: 4,
         max_chunk_bytes: MAX_BYTES,
     };
@@ -114,12 +117,48 @@ fn physical_custody_commits_recovers_and_replays_without_a_second_copy() {
 
     let mut recovered = recover_existing_v1(&path, directory_limits, durable_config()).unwrap();
     assert_eq!(recovered.service().unwrap().len(), 1);
-    let replay = ExportCustodyPortV1::admit(&mut recovered, request).unwrap();
+    let replay = ExportCustodyPortV1::admit(&mut recovered, request.clone()).unwrap();
     assert_eq!(replay.apply, ExportCustodyApplyV1::Replay);
     assert_eq!(
         replay.durability,
         ExportCustodyDurabilityV1::PreviouslyCommitted { store_revision: 1 }
     );
+    let retirement = ExportRetirementV1::from_manifest(&materialization.manifest);
+    let retired = ExportCustodyPortV1::retire(
+        &mut recovered,
+        ExportCustodyRetirementRequestV1 {
+            current_engine_revision: engine_revision,
+            current_policy_revision: policy_revision,
+            retirement,
+        },
+    )
+    .unwrap();
+    assert_eq!(retired.apply, ExportCustodyRetirementApplyV1::Retired);
+    assert_eq!(
+        retired.durability,
+        ExportCustodyDurabilityV1::Committed { store_revision: 2 }
+    );
+    let (_, store, _) = recovered.into_parts();
+    drop(store);
+
+    let mut recovered = recover_existing_v1(&path, directory_limits, durable_config()).unwrap();
+    assert_eq!(recovered.service().unwrap().len(), 0);
+    assert_eq!(recovered.service().unwrap().retired_count(), 1);
+    let replay = ExportCustodyPortV1::retire(
+        &mut recovered,
+        ExportCustodyRetirementRequestV1 {
+            current_engine_revision: engine_revision,
+            current_policy_revision: policy_revision,
+            retirement,
+        },
+    )
+    .unwrap();
+    assert_eq!(replay.apply, ExportCustodyRetirementApplyV1::Replay);
+    assert_eq!(
+        replay.durability,
+        ExportCustodyDurabilityV1::PreviouslyCommitted { store_revision: 2 }
+    );
+    assert!(ExportCustodyPortV1::admit(&mut recovered, request).is_err());
     let (_, store, _) = recovered.into_parts();
     drop(store);
     fs::remove_dir_all(&path).unwrap();
@@ -155,6 +194,7 @@ fn diagnostics_hide_directory_store_and_digest_state() {
         },
         ExportServiceLimitsV1 {
             max_exports: 4,
+            max_retired_exports: 4,
             max_chunks_per_export: 4,
             max_chunk_bytes: MAX_BYTES,
         },

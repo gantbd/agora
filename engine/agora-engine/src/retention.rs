@@ -526,6 +526,48 @@ impl ExportManifestV1 {
     }
 }
 
+/// Minimal exact identity retained after an export copy leaves custody.
+///
+/// This value carries no authority and makes no physical-reclamation or
+/// erasure claim. A custody owner may retain it as a bounded non-reuse
+/// tombstone after removing the corresponding materialization.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct ExportRetirementV1 {
+    pub request: ExportRequestIdV1,
+    pub profile: ExportProfileV1,
+    pub scope: ExportScopeBindingV1,
+    pub source_engine_revision: u64,
+    pub policy_revision: RetentionPolicyRevisionV1,
+    pub manifest_digest: ContentDigestV1,
+}
+
+impl ExportRetirementV1 {
+    pub const fn from_manifest(manifest: &ExportManifestV1) -> Self {
+        Self {
+            request: manifest.request,
+            profile: manifest.profile,
+            scope: manifest.scope,
+            source_engine_revision: manifest.source_engine_revision,
+            policy_revision: manifest.policy_revision,
+            manifest_digest: manifest.manifest_digest,
+        }
+    }
+}
+
+impl fmt::Debug for ExportRetirementV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExportRetirementV1")
+            .field("request", &self.request)
+            .field("profile", &self.profile)
+            .field("scope", &self.scope)
+            .field("source_engine_revision", &self.source_engine_revision)
+            .field("policy_revision", &self.policy_revision)
+            .field("manifest_digest", &self.manifest_digest)
+            .finish()
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct ExportRecordV1 {
     pub id: RetentionRecordIdV1,
@@ -714,6 +756,13 @@ impl ExportRegistryV1 {
 
     pub fn materialization(&self, request: ExportRequestIdV1) -> Option<&ExportMaterializationV1> {
         self.materializations.get(&request)
+    }
+
+    /// Removes one retained materialization for a higher-level owner that also
+    /// installs a non-reuse tombstone atomically. The registry alone does not
+    /// provide retirement semantics.
+    pub fn remove(&mut self, request: ExportRequestIdV1) -> Option<ExportMaterializationV1> {
+        self.materializations.remove(&request)
     }
 
     pub fn checkpoint(&self) -> Vec<ExportMaterializationV1> {

@@ -227,16 +227,25 @@ digest, and recovers only after revalidating nested chunk and manifest digests.
 The separate `agora-export-durable` owner gives that checkpoint its own store
 key and revision line. Exact durable receipts commit custody, equal replay
 suppresses another offer, known refusal rolls back, and unknown or weak outcomes
-fence until fresh recovery. A concrete store composition, other class-specific
-source projections, authorization, digest-provider composition, and export
-retirement remain open.
+fence until fresh recovery. The service also owns bounded export retirement
+independently from live custody capacity. One exact manifest-derived identity
+atomically replaces its live materialization with a request non-reuse
+tombstone; equal retry replays, changed identity conflicts, missing live custody
+refuses, and saturation leaves the live copy intact. Additive checkpoint V2
+persists the retirement limit and canonical tombstones while V1 recovery and
+unchanged empty V1 emission remain compatible. Other class-specific source
+projections, authorization, and digest-provider composition remain enclosing
+obligations.
 The participant protocol remains free of administrative export commands.
 The separate `agora-export-local` application now closes the bounded private
 local digest/custody/store composition: it selects `agora-sha256`, gives export
 custody its own private-directory register and revision line, verifies recovery
 after dropping every live owner, and proves exact retry is replay rather than a
-second copy. This qualifies custody persistence only. The single-head directory
-mechanism remains ineligible for physical reclamation evidence.
+second copy. It additionally commits retirement, drops every live owner,
+reopens the tombstone, replays without another store offer, and refuses request
+reuse. This qualifies custody persistence and logical retirement only. The
+single-head directory mechanism remains ineligible for physical reclamation
+evidence.
 The effect-free `agora-export-custody-port` now separates Host from that durable
 implementation. `HostV2` revalidates the administrative session, checks the
 prepared manifest against the current engine and installed-policy revisions,
@@ -245,6 +254,12 @@ admission. Stale local bindings stop before authority; denied authority stops
 before custody. The durable owner implements the port without exporting
 Keystone vocabulary, preserving exact commit/replay, definite noncommit,
 unknown outcome, and fence meaning.
+The port exposes retirement separately from admission, including missing and
+retirement-capacity refusals. `HostV2` revalidates the administrative session,
+requires the retirement source and policy to remain current, obtains a fresh
+authority decision over the complete digest-bound retirement identity, and only
+then calls custody. Humans and agents remain symmetric. No layer translates
+this logical transition into reclamation or erasure evidence.
 
 The current `agora-storage-directory` adapter is not a reclamation
 implementation. Its v1 compare-exchange renames a new record over the sole

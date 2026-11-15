@@ -369,6 +369,15 @@ frozen `checkpoint-v22.hex` fixture pins the grammar; unknown identity tags and
 scoped identities under other domains fail closed. Profile 149 bytes remain
 unchanged and provide the bounded exact-content migration alias.
 
+The independent `agora-export-service` checkpoint remains outside conversation
+Engine, Service, Host, Protocol, and Wire profiles. Its additive checkpoint V2
+adds an independently bounded retirement-tombstone capacity and a canonical
+request-ordered list of exact manifest-derived retirement identities. V1
+recovery remains supported. A service with no tombstones and equal live/retired
+capacities continues to emit byte-identical V1, so enabling retirement does not
+rewrite existing empty or live-only compatible custody checkpoints. Frozen V1
+empty-custody and V2 retired-custody fixtures pin both representations.
+
 ## Conservative baseline gate
 
 `docs/compatibility-baseline.txt` records the exact sorted Cargo package

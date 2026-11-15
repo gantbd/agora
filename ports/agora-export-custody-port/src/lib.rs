@@ -5,8 +5,8 @@
 //! materialization. It does not authorize, project source records, implement a
 //! digest, select storage, or define participant protocol.
 
-pub use agora_engine::retention::ExportMaterializationV1;
 use agora_engine::retention::RetentionPolicyRevisionV1;
+pub use agora_engine::retention::{ExportMaterializationV1, ExportRetirementV1};
 use std::fmt;
 
 #[derive(Clone, Eq, PartialEq)]
@@ -52,6 +52,24 @@ impl fmt::Debug for ExportCustodyRequestV1 {
     }
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct ExportCustodyRetirementRequestV1 {
+    pub current_engine_revision: u64,
+    pub current_policy_revision: RetentionPolicyRevisionV1,
+    pub retirement: ExportRetirementV1,
+}
+
+impl fmt::Debug for ExportCustodyRetirementRequestV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExportCustodyRetirementRequestV1")
+            .field("current_engine_revision", &self.current_engine_revision)
+            .field("current_policy_revision", &self.current_policy_revision)
+            .field("retirement", &self.retirement)
+            .finish()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExportCustodyApplyV1 {
     Materialized,
@@ -71,9 +89,34 @@ pub struct ExportCustodyAcceptedV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExportCustodyRetirementApplyV1 {
+    Retired,
+    Replay,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExportCustodyRetirementAcceptedV1 {
+    pub apply: ExportCustodyRetirementApplyV1,
+    pub durability: ExportCustodyDurabilityV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExportCustodyRefusalV1 {
     Invalid,
     Stale,
+    Conflict,
+    Capacity,
+    DefinitelyNotCommitted,
+    OutcomeUnknown,
+    Fenced,
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExportCustodyRetirementRefusalV1 {
+    Invalid,
+    Stale,
+    Missing,
     Conflict,
     Capacity,
     DefinitelyNotCommitted,
@@ -87,4 +130,14 @@ pub trait ExportCustodyPortV1 {
         &mut self,
         request: ExportCustodyRequestV1,
     ) -> Result<ExportCustodyAcceptedV1, ExportCustodyRefusalV1>;
+
+    /// Replaces one exact live custody copy with its bounded non-reuse
+    /// tombstone. The default keeps existing admission-only implementations
+    /// closed until they deliberately implement retirement.
+    fn retire(
+        &mut self,
+        _request: ExportCustodyRetirementRequestV1,
+    ) -> Result<ExportCustodyRetirementAcceptedV1, ExportCustodyRetirementRefusalV1> {
+        Err(ExportCustodyRetirementRefusalV1::Unavailable)
+    }
 }

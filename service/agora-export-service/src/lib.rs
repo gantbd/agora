@@ -11,16 +11,20 @@ use agora_engine::retention::{
     ContentDigestProfileV1, ContentDigestV1, ExportChunkPayloadV1, ExportChunkV1, ExportManifestV1,
     ExportMaterializationApplyV1, ExportMaterializationRefusalV1, ExportMaterializationV1,
     ExportProfileV1, ExportRegistryRefusalV1, ExportRegistryV1, ExportRequestIdV1,
-    ExportScopeBindingV1, RECORD_CLASSES_V1, RetentionFrontierV1, RetentionPolicyRevisionV1,
+    ExportRetirementV1, ExportScopeBindingV1, RECORD_CLASSES_V1, RetentionFrontierV1,
+    RetentionPolicyRevisionV1,
 };
+use std::collections::BTreeMap;
 use std::fmt;
 
 const MAGIC: &[u8; 8] = b"AGEXPSV\0";
 const VERSION_V1: u8 = 1;
+const VERSION_V2: u8 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExportServiceLimitsV1 {
     pub max_exports: usize,
+    pub max_retired_exports: usize,
     pub max_chunks_per_export: usize,
     pub max_chunk_bytes: usize,
 }
@@ -29,6 +33,7 @@ impl Default for ExportServiceLimitsV1 {
     fn default() -> Self {
         Self {
             max_exports: 64,
+            max_retired_exports: 64,
             max_chunks_per_export: 256,
             max_chunk_bytes: 64 * 1_024,
         }
@@ -38,6 +43,7 @@ impl Default for ExportServiceLimitsV1 {
 impl ExportServiceLimitsV1 {
     fn valid(self) -> bool {
         self.max_exports != 0
+            && self.max_retired_exports != 0
             && self.max_chunks_per_export != 0
             && self.max_chunk_bytes >= 8
             && self.max_chunk_bytes <= u32::MAX as usize
@@ -45,6 +51,7 @@ impl ExportServiceLimitsV1 {
 
     fn within(self, maximum: Self) -> bool {
         self.max_exports <= maximum.max_exports
+            && self.max_retired_exports <= maximum.max_retired_exports
             && self.max_chunks_per_export <= maximum.max_chunks_per_export
             && self.max_chunk_bytes <= maximum.max_chunk_bytes
     }
@@ -88,6 +95,22 @@ pub enum ExportServiceRefusalV1 {
         actual: RetentionPolicyRevisionV1,
     },
     Registry(ExportRegistryRefusalV1),
+    Retired,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExportRetirementApplyV1 {
+    Retired,
+    Replay,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExportRetirementRefusalV1 {
+    StaleSource,
+    PolicyMismatch,
+    Missing,
+    Conflict,
+    Capacity,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -136,6 +159,7 @@ impl fmt::Debug for ExportCheckpointV1 {
 pub struct ExportServiceV1 {
     limits: ExportServiceLimitsV1,
     registry: ExportRegistryV1,
+    retired: BTreeMap<ExportRequestIdV1, ExportRetirementV1>,
 }
 
 impl ExportServiceV1 {
@@ -147,6 +171,7 @@ impl ExportServiceV1 {
             limits,
             registry: ExportRegistryV1::new(limits.max_exports)
                 .map_err(ExportServiceRefusalV1::Registry)?,
+            retired: BTreeMap::new(),
         })
     }
 
@@ -159,11 +184,19 @@ impl ExportServiceV1 {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.registry.is_empty()
+        self.registry.is_empty() && self.retired.is_empty()
     }
 
     pub fn materialization(&self, request: ExportRequestIdV1) -> Option<&ExportMaterializationV1> {
         self.registry.materialization(request)
+    }
+
+    pub fn retired_count(&self) -> usize {
+        self.retired.len()
+    }
+
+    pub fn retirement(&self, request: ExportRequestIdV1) -> Option<&ExportRetirementV1> {
+        self.retired.get(&request)
     }
 
     /// Admits a result already produced by a separately qualified source
@@ -173,6 +206,9 @@ impl ExportServiceV1 {
         admission: ExportAdmissionV1,
         materialization: ExportMaterializationV1,
     ) -> Result<ExportMaterializationApplyV1, ExportServiceRefusalV1> {
+        if self.retired.contains_key(&materialization.manifest.request) {
+            return Err(ExportServiceRefusalV1::Retired);
+        }
         if materialization.chunks().len() > self.limits.max_chunks_per_export
             || materialization
                 .chunks()
@@ -198,6 +234,49 @@ impl ExportServiceV1 {
             .map_err(ExportServiceRefusalV1::Registry)
     }
 
+    /// Atomically replaces one exact retained export copy with a bounded
+    /// non-reuse tombstone. This is logical custody retirement, not proof of
+    /// physical reclamation or erasure from other copies.
+    pub fn retire(
+        &mut self,
+        admission: ExportAdmissionV1,
+        retirement: ExportRetirementV1,
+    ) -> Result<ExportRetirementApplyV1, ExportRetirementRefusalV1> {
+        if retirement.source_engine_revision != admission.current_engine_revision {
+            return Err(ExportRetirementRefusalV1::StaleSource);
+        }
+        if retirement.policy_revision != admission.current_policy_revision {
+            return Err(ExportRetirementRefusalV1::PolicyMismatch);
+        }
+        if let Some(retained) = self.retired.get(&retirement.request) {
+            return if retained == &retirement {
+                Ok(ExportRetirementApplyV1::Replay)
+            } else {
+                Err(ExportRetirementRefusalV1::Conflict)
+            };
+        }
+        let materialization = self
+            .registry
+            .materialization(retirement.request)
+            .ok_or(ExportRetirementRefusalV1::Missing)?;
+        if ExportRetirementV1::from_manifest(&materialization.manifest) != retirement {
+            return Err(ExportRetirementRefusalV1::Conflict);
+        }
+        if self.retired.len() == self.limits.max_retired_exports {
+            return Err(ExportRetirementRefusalV1::Capacity);
+        }
+        let removed = self
+            .registry
+            .remove(retirement.request)
+            .expect("preflighted export remains present");
+        debug_assert_eq!(
+            ExportRetirementV1::from_manifest(&removed.manifest),
+            retirement
+        );
+        self.retired.insert(retirement.request, retirement);
+        Ok(ExportRetirementApplyV1::Retired)
+    }
+
     pub fn prepare_checkpoint<D>(
         &self,
         scope: ExportCheckpointScopeV1,
@@ -212,15 +291,31 @@ impl ExportServiceV1 {
         }
         let mut writer = Writer::new(max_snapshot_bytes);
         writer.raw(MAGIC)?;
-        writer.byte(VERSION_V1)?;
+        let version = if self.retired.is_empty()
+            && self.limits.max_retired_exports == self.limits.max_exports
+        {
+            VERSION_V1
+        } else {
+            VERSION_V2
+        };
+        writer.byte(version)?;
         writer.raw(&scope.as_bytes())?;
         writer.size(self.limits.max_exports)?;
+        if version == VERSION_V2 {
+            writer.size(self.limits.max_retired_exports)?;
+        }
         writer.size(self.limits.max_chunks_per_export)?;
         writer.size(self.limits.max_chunk_bytes)?;
         let materializations = self.registry.checkpoint();
         writer.size(materializations.len())?;
         for materialization in materializations {
             write_materialization(&mut writer, &materialization)?;
+        }
+        if version == VERSION_V2 {
+            writer.size(self.retired.len())?;
+            for retirement in self.retired.values() {
+                write_retirement(&mut writer, *retirement)?;
+            }
         }
         let checkpoint_digest = digest(&writer.bytes).as_bytes();
         writer.raw(&checkpoint_digest)?;
@@ -259,14 +354,21 @@ impl ExportServiceV1 {
         if reader.fixed::<8>()? != *MAGIC {
             return Err(ExportCheckpointErrorV1::Magic);
         }
-        if reader.byte()? != VERSION_V1 {
+        let version = reader.byte()?;
+        if !matches!(version, VERSION_V1 | VERSION_V2) {
             return Err(ExportCheckpointErrorV1::Version);
         }
         if reader.fixed::<16>()? != expected_scope.as_bytes() {
             return Err(ExportCheckpointErrorV1::Scope);
         }
+        let max_exports = reader.size(recovery.maximum_service_limits.max_exports)?;
         let limits = ExportServiceLimitsV1 {
-            max_exports: reader.size(recovery.maximum_service_limits.max_exports)?,
+            max_exports,
+            max_retired_exports: if version == VERSION_V2 {
+                reader.size(recovery.maximum_service_limits.max_retired_exports)?
+            } else {
+                max_exports
+            },
             max_chunks_per_export: reader
                 .size(recovery.maximum_service_limits.max_chunks_per_export)?,
             max_chunk_bytes: reader.size(recovery.maximum_service_limits.max_chunk_bytes)?,
@@ -282,13 +384,74 @@ impl ExportServiceV1 {
         for _ in 0..count {
             materializations.push(read_materialization(&mut reader, limits, &mut digest)?);
         }
+        let mut retired = BTreeMap::new();
+        if version == VERSION_V2 {
+            let retired_count = reader.size(limits.max_retired_exports)?;
+            for _ in 0..retired_count {
+                let retirement = read_retirement(&mut reader)?;
+                if retired
+                    .last_key_value()
+                    .is_some_and(|(prior, _)| prior >= &retirement.request)
+                    || retired.insert(retirement.request, retirement).is_some()
+                {
+                    return Err(ExportCheckpointErrorV1::NonCanonical);
+                }
+            }
+        }
         if !reader.is_complete() {
             return Err(ExportCheckpointErrorV1::Trailing);
         }
         let registry = ExportRegistryV1::recover(limits.max_exports, materializations)
             .map_err(|_| ExportCheckpointErrorV1::NonCanonical)?;
-        Ok(Self { limits, registry })
+        if retired
+            .keys()
+            .any(|request| registry.materialization(*request).is_some())
+        {
+            return Err(ExportCheckpointErrorV1::NonCanonical);
+        }
+        Ok(Self {
+            limits,
+            registry,
+            retired,
+        })
     }
+}
+
+fn write_retirement(
+    writer: &mut Writer,
+    retirement: ExportRetirementV1,
+) -> Result<(), ExportCheckpointErrorV1> {
+    writer.raw(&retirement.request.as_bytes())?;
+    writer.u16(retirement.profile as u16)?;
+    writer.raw(&retirement.scope.as_bytes())?;
+    writer.u64(retirement.source_engine_revision)?;
+    writer.u64(retirement.policy_revision.get())?;
+    writer.raw(&retirement.manifest_digest.as_bytes())
+}
+
+fn read_retirement(reader: &mut Reader<'_>) -> Result<ExportRetirementV1, ExportCheckpointErrorV1> {
+    let request =
+        ExportRequestIdV1::new(reader.fixed::<16>()?).ok_or(ExportCheckpointErrorV1::Invalid)?;
+    let profile = match reader.u16()? {
+        1 => ExportProfileV1::RoomVisible,
+        2 => ExportProfileV1::ParticipantPrivate,
+        3 => ExportProfileV1::Administrative,
+        _ => return Err(ExportCheckpointErrorV1::Invalid),
+    };
+    let scope =
+        ExportScopeBindingV1::new(reader.fixed::<32>()?).ok_or(ExportCheckpointErrorV1::Invalid)?;
+    let source_engine_revision = reader.u64()?;
+    let policy_revision =
+        RetentionPolicyRevisionV1::new(reader.u64()?).ok_or(ExportCheckpointErrorV1::Invalid)?;
+    let manifest_digest = ContentDigestV1::new(reader.fixed::<32>()?);
+    Ok(ExportRetirementV1 {
+        request,
+        profile,
+        scope,
+        source_engine_revision,
+        policy_revision,
+        manifest_digest,
+    })
 }
 
 fn write_materialization(

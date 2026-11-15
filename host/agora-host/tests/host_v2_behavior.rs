@@ -3,8 +3,8 @@ use agora_delivery_projection_port::{
 };
 use agora_engine::retention::{
     ContentDigestProfileV1, ContentDigestV1, ExportProfileV1, ExportRecordV1, ExportRequestIdV1,
-    ExportScopeBindingV1, RECORD_CLASSES_V1, RecordClassV1, RetentionBoundV1, RetentionFrontierV1,
-    RetentionPolicyV1, RetentionRecordIdV1, materialize_export_v1,
+    ExportRetirementV1, ExportScopeBindingV1, RECORD_CLASSES_V1, RecordClassV1, RetentionBoundV1,
+    RetentionFrontierV1, RetentionPolicyV1, RetentionRecordIdV1, materialize_export_v1,
 };
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, LogicalTime, OutcomeV2 as EngineOutcome,
@@ -12,7 +12,9 @@ use agora_engine::{
 };
 use agora_export_custody_port::{
     ExportCustodyAcceptedV1, ExportCustodyApplyV1, ExportCustodyDurabilityV1, ExportCustodyPortV1,
-    ExportCustodyRefusalV1, ExportCustodyRequestV1,
+    ExportCustodyRefusalV1, ExportCustodyRequestV1, ExportCustodyRetirementAcceptedV1,
+    ExportCustodyRetirementApplyV1, ExportCustodyRetirementRefusalV1,
+    ExportCustodyRetirementRequestV1,
 };
 use agora_federated_publication_port::{
     FederatedPublicationIdV1, FederatedPublicationIntentV1, FederatedPublicationRefusalV1,
@@ -22,7 +24,8 @@ use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
 };
 use agora_host::v2::{
-    ExportHostRefusalV1, HostV2, ReceiptRetirementHostRefusalV1, RetentionPolicyHostRefusalV1,
+    ExportHostRefusalV1, ExportRetirementHostRefusalV1, HostV2, ReceiptRetirementHostRefusalV1,
+    RetentionPolicyHostRefusalV1,
 };
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_interaction_port::{
@@ -38,8 +41,9 @@ use agora_protocol::v2::{
     VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use agora_retention_authority_port::{
-    AuthorityDecisionV1, ExportAuthorityRequestV1, PolicyAuthorityRequestV1,
-    ReceiptRetirementAuthorityRequestV1, RetentionAuthorityPortV1, RetentionPolicyRevisionV1,
+    AuthorityDecisionV1, ExportAuthorityRequestV1, ExportRetirementAuthorityRequestV1,
+    PolicyAuthorityRequestV1, ReceiptRetirementAuthorityRequestV1, RetentionAuthorityPortV1,
+    RetentionPolicyRevisionV1,
 };
 use agora_scheduled_publication_port::{
     ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationRefusalV1,
@@ -68,6 +72,8 @@ struct RetentionAuthority {
     policy_calls: usize,
     export_calls: usize,
     last_export: Option<ExportAuthorityRequestV1>,
+    export_retirement_calls: usize,
+    last_export_retirement: Option<ExportRetirementAuthorityRequestV1>,
     retirement_calls: usize,
 }
 
@@ -80,6 +86,15 @@ impl RetentionAuthorityPortV1 for RetentionAuthority {
     fn authorize_export(&mut self, request: ExportAuthorityRequestV1) -> AuthorityDecisionV1 {
         self.export_calls += 1;
         self.last_export = Some(request);
+        self.decision
+    }
+
+    fn authorize_export_retirement(
+        &mut self,
+        request: ExportRetirementAuthorityRequestV1,
+    ) -> AuthorityDecisionV1 {
+        self.export_retirement_calls += 1;
+        self.last_export_retirement = Some(request);
         self.decision
     }
 
@@ -96,6 +111,8 @@ impl RetentionAuthorityPortV1 for RetentionAuthority {
 struct Custody {
     requests: Vec<ExportCustodyRequestV1>,
     result: Result<ExportCustodyAcceptedV1, ExportCustodyRefusalV1>,
+    retirement_requests: Vec<ExportCustodyRetirementRequestV1>,
+    retirement_result: Result<ExportCustodyRetirementAcceptedV1, ExportCustodyRetirementRefusalV1>,
 }
 
 impl ExportCustodyPortV1 for Custody {
@@ -105,6 +122,14 @@ impl ExportCustodyPortV1 for Custody {
     ) -> Result<ExportCustodyAcceptedV1, ExportCustodyRefusalV1> {
         self.requests.push(request);
         self.result
+    }
+
+    fn retire(
+        &mut self,
+        request: ExportCustodyRetirementRequestV1,
+    ) -> Result<ExportCustodyRetirementAcceptedV1, ExportCustodyRetirementRefusalV1> {
+        self.retirement_requests.push(request);
+        self.retirement_result
     }
 }
 
@@ -695,6 +720,8 @@ fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric
         policy_calls: 0,
         export_calls: 0,
         last_export: None,
+        export_retirement_calls: 0,
+        last_export_retirement: None,
         retirement_calls: 0,
     };
     let policy = RetentionPolicyV1::new(
@@ -819,6 +846,8 @@ fn v2_export_admission_revalidates_exact_authority_before_separate_custody() {
         policy_calls: 0,
         export_calls: 0,
         last_export: None,
+        export_retirement_calls: 0,
+        last_export_retirement: None,
         retirement_calls: 0,
     };
     host.install_retention_policy(
@@ -836,6 +865,11 @@ fn v2_export_admission_revalidates_exact_authority_before_separate_custody() {
     let mut custody = Custody {
         requests: Vec::new(),
         result: Ok(accepted),
+        retirement_requests: Vec::new(),
+        retirement_result: Ok(ExportCustodyRetirementAcceptedV1 {
+            apply: ExportCustodyRetirementApplyV1::Retired,
+            durability: ExportCustodyDurabilityV1::Committed { store_revision: 5 },
+        }),
     };
 
     assert_eq!(
@@ -904,6 +938,116 @@ fn v2_export_admission_revalidates_exact_authority_before_separate_custody() {
     assert!(custody.requests.iter().all(|request| {
         request.current_engine_revision == engine_revision
             && request.current_policy_revision == policy_revision
+    }));
+}
+
+#[test]
+fn v2_export_retirement_revalidates_exact_authority_before_custody() {
+    let (mut host, _) = make_host(2);
+    let (alice_session, _, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, _, bot_context) = open(&mut host, "bot", 2);
+    let engine_revision = host.service().engine().revision().0;
+    let policy_revision = RetentionPolicyRevisionV1::new(1).unwrap();
+    let policy = RetentionPolicyV1::new(
+        policy_revision,
+        engine_revision,
+        [RetentionBoundV1::entries(4_096).unwrap(); 6],
+    );
+    let mut authority = RetentionAuthority {
+        decision: AuthorityDecisionV1::Authorized,
+        policy_calls: 0,
+        export_calls: 0,
+        last_export: None,
+        export_retirement_calls: 0,
+        last_export_retirement: None,
+        retirement_calls: 0,
+    };
+    host.install_retention_policy(
+        alice_session,
+        policy,
+        &mut authority,
+        &alice_context,
+        HostTimeV1(3),
+    )
+    .unwrap();
+    let export = prepared_export(1, engine_revision, policy_revision);
+    let retirement = ExportRetirementV1::from_manifest(&export.manifest);
+    let accepted = ExportCustodyRetirementAcceptedV1 {
+        apply: ExportCustodyRetirementApplyV1::Retired,
+        durability: ExportCustodyDurabilityV1::Committed { store_revision: 5 },
+    };
+    let mut custody = Custody {
+        requests: Vec::new(),
+        result: Err(ExportCustodyRefusalV1::Unavailable),
+        retirement_requests: Vec::new(),
+        retirement_result: Ok(accepted),
+    };
+
+    assert_eq!(
+        host.retire_export(
+            alice_session,
+            ExportRetirementV1 {
+                source_engine_revision: engine_revision - 1,
+                ..retirement
+            },
+            &mut authority,
+            &mut custody,
+            &alice_context,
+            HostTimeV1(4),
+        ),
+        Err(ExportRetirementHostRefusalV1::StaleSource)
+    );
+    assert_eq!(authority.export_retirement_calls, 0);
+    assert!(custody.retirement_requests.is_empty());
+
+    authority.decision = AuthorityDecisionV1::Denied;
+    assert_eq!(
+        host.retire_export(
+            alice_session,
+            retirement,
+            &mut authority,
+            &mut custody,
+            &alice_context,
+            HostTimeV1(5),
+        ),
+        Err(ExportRetirementHostRefusalV1::AuthorityDenied)
+    );
+    assert_eq!(authority.export_retirement_calls, 1);
+    assert!(custody.retirement_requests.is_empty());
+
+    authority.decision = AuthorityDecisionV1::Authorized;
+    assert_eq!(
+        host.retire_export(
+            alice_session,
+            retirement,
+            &mut authority,
+            &mut custody,
+            &alice_context,
+            HostTimeV1(6),
+        ),
+        Ok(accepted)
+    );
+    let alice_principal = authority.last_export_retirement.unwrap().principal;
+    assert_eq!(
+        host.retire_export(
+            bot_session,
+            retirement,
+            &mut authority,
+            &mut custody,
+            &bot_context,
+            HostTimeV1(6),
+        ),
+        Ok(accepted)
+    );
+    let bot_request = authority.last_export_retirement.unwrap();
+    assert_ne!(alice_principal, bot_request.principal);
+    assert_eq!(bot_request.retirement, retirement);
+    assert_eq!(authority.export_retirement_calls, 3);
+    assert_eq!(custody.retirement_requests.len(), 2);
+    assert!(custody.retirement_requests.iter().all(|request| {
+        request.current_engine_revision == engine_revision
+            && request.current_policy_revision == policy_revision
+            && request.retirement == retirement
     }));
 }
 

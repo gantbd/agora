@@ -870,7 +870,12 @@
   retention-policy revision, profile, ordered chunks, digests, frontiers, and
   explicit gaps into canonical replayable manifests; it MUST NOT widen
   visibility, mutate read or delivery state, or reconstruct absent records from
-  an unauthorized copy. Physical reclamation MUST name bounded old generations
+  an unauthorized copy. Export retirement MUST revalidate the current source
+  and policy plus fresh administrative authority, atomically replace one exact
+  live custody copy with a separately bounded non-reuse tombstone, replay an
+  identical request, conflict on changed identity, and survive custody restart;
+  it MUST NOT claim physical reclamation or erasure. Physical reclamation MUST
+  name bounded old generations
   only after a complete successor checkpoint is durably published, reopened,
   and validated; unknown publication or validation MUST fence reclamation.
   Storage unlink, replacement, or provider attestation MUST NOT be represented
