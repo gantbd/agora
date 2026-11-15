@@ -883,11 +883,15 @@
   treated as a retained historical copy: a positive class bound MUST identify
   only its current generation, a larger bound MUST NOT reconstruct superseded
   generations, and a disabled class MUST NOT silently delete rooms,
-  memberships, or current messages. An installed policy MUST remain
-  established after its effective engine revision; every later successful
-  owner-local domain publication MUST continuously enforce enabled
-  authoritative-change bounds
-  without acknowledging or pruning independent delivery work. The installed
+  memberships, or current messages. The live participant-private projection
+  MUST follow the same one-current-generation rule; disabled, legacy, or
+  exhausted source identity MUST NOT silently clear private state or alter
+  public aggregates derived from private ballots. Participant-scoped retirement
+  MUST be a separate dependency-aware authorized transition. An installed
+  policy MUST remain established after its effective engine revision; every
+  later successful owner-local domain publication MUST continuously enforce
+  enabled authoritative-change bounds without acknowledging or pruning
+  independent delivery work. The installed
   request-receipt bound MUST limit new live replay payloads before execution,
   MUST resolve an already retained exact replay before applying that limit, and
   MUST NOT evict a non-reexecution tombstone to admit work. Export retirement

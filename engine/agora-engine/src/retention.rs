@@ -190,6 +190,28 @@ pub enum RoomProjectionRetentionRefusalV1 {
     IdentityExhausted,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PrivateParticipantStateRetentionRefusalV1 {
+    StalePolicy,
+    ClassDisabled,
+    LegacyIdentityUnavailable,
+    IdentityExhausted,
+}
+
+/// Exact owner-native application evidence for the live participant-private
+/// projection. The engine owns one current generation and no superseded
+/// private generations for this policy to prune.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PrivateParticipantStateRetentionApplicationV1 {
+    pub policy_revision: RetentionPolicyRevisionV1,
+    pub source_engine_revision: u64,
+    pub configured_bound: RetentionBoundV1,
+    pub retained_records: u64,
+    pub discarded_records: u64,
+    pub current_generation: RetentionRecordIdV1,
+    pub frontier: RetentionFrontierV1,
+}
+
 /// Exact owner-native application evidence for the live public-room
 /// projection. The engine owns exactly one current authoritative generation;
 /// it does not retain superseded projection generations for this policy to
@@ -234,6 +256,50 @@ pub fn apply_room_projection_retention_v1(
     )
     .ok_or(RoomProjectionRetentionRefusalV1::IdentityExhausted)?;
     Ok(RoomProjectionRetentionApplicationV1 {
+        policy_revision: policy.revision,
+        source_engine_revision,
+        configured_bound,
+        retained_records: 1,
+        discarded_records: 0,
+        current_generation,
+        frontier,
+    })
+}
+
+/// Applies the `PrivateParticipantState` class semantics without mutating live
+/// private behavior or public aggregates derived from private ballots. A
+/// positive bound retains the sole current generation; wider bounds cannot
+/// reconstruct superseded generations. Participant-scoped retirement requires
+/// a separate dependency-aware authority profile.
+pub fn apply_private_participant_state_retention_v1(
+    engine: &Engine,
+    policy: RetentionPolicyV1,
+) -> Result<PrivateParticipantStateRetentionApplicationV1, PrivateParticipantStateRetentionRefusalV1>
+{
+    let source_engine_revision = engine.revision().0;
+    if policy.effective_engine_revision > source_engine_revision {
+        return Err(PrivateParticipantStateRetentionRefusalV1::StalePolicy);
+    }
+    let configured_bound = policy.bound(RecordClassV1::PrivateParticipantState);
+    if !configured_bound.retains_records() {
+        return Err(PrivateParticipantStateRetentionRefusalV1::ClassDisabled);
+    }
+    let ordinal = engine
+        .private_state_source_revision()
+        .ok_or(PrivateParticipantStateRetentionRefusalV1::LegacyIdentityUnavailable)?;
+    if engine.private_state_source_exhausted() {
+        return Err(PrivateParticipantStateRetentionRefusalV1::IdentityExhausted);
+    }
+    let current_generation =
+        RetentionRecordIdV1::new(RecordClassV1::PrivateParticipantState, ordinal)
+            .ok_or(PrivateParticipantStateRetentionRefusalV1::IdentityExhausted)?;
+    let frontier = RetentionFrontierV1::new(
+        RecordClassV1::PrivateParticipantState,
+        ordinal - 1,
+        Some(ordinal),
+    )
+    .ok_or(PrivateParticipantStateRetentionRefusalV1::IdentityExhausted)?;
+    Ok(PrivateParticipantStateRetentionApplicationV1 {
         policy_revision: policy.revision,
         source_engine_revision,
         configured_bound,

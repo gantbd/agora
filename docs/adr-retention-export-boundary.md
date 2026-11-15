@@ -1,6 +1,6 @@
 # ADR: logical retention, exact export, and store reclamation
 
-Status: accepted architecture; closed values, receipt retirement, current-room classification, and continuous authoritative-change retention implemented
+Status: accepted architecture; closed values, receipt retirement, live-generation classification, and continuous authoritative-change retention implemented
 
 Date: 2026-11-14
 
@@ -265,6 +265,17 @@ limits refuse before a fragment escapes. The source is administrative-only:
 participant-private export still requires that exact participant or a
 separately defined administrative authority, and custody and physical
 reclamation remain enclosing obligations.
+
+`apply_private_participant_state_retention_v1` closes this generation's
+application semantics without bulk-erasing live behavioral state. A positive
+bound identifies the sole current `AGAPRV1` record and exact frontier; wider
+bounds cannot recover superseded private generations. Disabled, future,
+legacy-unidentified, and exhausted policies refuse byte-inertly. This is also a
+cross-class safety rule: private ballot ownership contributes to public poll
+aggregates, so clearing the private map would silently rewrite the current room
+projection. Any later participant-scoped retirement must have distinct current
+authority, explicit dependency handling, and durable evidence; it cannot be
+smuggled through a class bound or represented as compliance erasure.
 
 Service V2 also owns the current installed policy metadata. Installation is
 engine-revision-bound, monotonically policy-revisioned, exact-replay-safe, and
