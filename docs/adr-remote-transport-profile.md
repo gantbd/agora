@@ -104,16 +104,19 @@ Exact compatibility, supply, package, ordinary, soak, and source-candidate gates
 pass on Darwin/aarch64; revision `b271dfb` pins all qualification metadata to
 source `14a92cc`.
 
-The separately owned `agora-remote-daemon` source revision `5b32b4b` composes
+The separately owned `agora-remote-daemon` source revision `577f83a` composes
 negotiated connections with bounded opaque credential frames, TLS exporters and
 certificate provenance, an injected authenticator, Aegis contexts, and a shared
 Host V2 owner. Every Host open/request and reply write holds one transport
 permit, while network I/O never holds the Host lock. It closes sessions on every
 exit and forces overlapping human and agent participants through the identical
-path. Revision `b91d23e` pins the passing real TLS/mTLS gate.
+path. A real TLS cut commits a room mutation and discards its unread reply;
+reconnection creates a distinct client identity and bounded room observation
+reconciles the formerly unknown outcome without replaying the mutation.
+Revision `bdc6806` pins the passing real TLS/mTLS gate.
 
-A concrete credential authenticator, broader disconnect uncertainty, additional
-platforms, binary artifacts, signatures/installers, and
+A concrete credential authenticator, remaining process/network disconnect cuts,
+additional platforms, binary artifacts, signatures/installers, and
 commit-pinned full-profile qualification remain open.
 
 ## Nonclaims
