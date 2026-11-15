@@ -903,7 +903,7 @@ Revision `eaa22b1` commit-pins the passing full home-scoped receipt identity,
 profile-150 recovery, and three-way port certainty result.
 The concrete durable endpoint captures local session, verifier, and clock
 authority and conservatively maps commit-gate evidence without exposing those
-facts to a peer; its source qualification is pending a commit pin.
+facts to a peer; revision `bbdf9d7` passed the complete gate.
 Trust-provider and identity-mapping composition, physical storage, transport
 composition, adversarial campaigns, and integrated qualification remain open.
 Additional physical durable storage adapters,

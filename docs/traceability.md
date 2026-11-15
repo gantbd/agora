@@ -116,8 +116,8 @@ R106 endpoint evidence note: `DurableFederatedPublicationEndpointV1` captures
 the local durable Host, authenticated session, verifier context, and trusted
 clock. Its focused cases cover stable reply, rollback-proven non-execution,
 indeterminate-after-commit uncertainty and fencing, and redacted diagnostics.
-The endpoint remains pending its complete-gate qualification pin; the separate
-home-identity adapter remains pending a reproducible federation commit.
+Revision `bbdf9d7` passed the complete Agora gate; the separate home-identity
+adapter remains pending a reproducible federation commit.
 
 ## Verification gates
 
