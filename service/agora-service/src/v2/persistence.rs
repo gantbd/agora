@@ -23,6 +23,7 @@ const VERSION_V26: u8 = 26;
 const VERSION_V27: u8 = 27;
 const VERSION_V28: u8 = 28;
 const VERSION_V29: u8 = 29;
+const VERSION_V30: u8 = 30;
 
 fn command_uses_v26_vocabulary(command: &CommandV2) -> bool {
     matches!(
@@ -413,11 +414,15 @@ impl ServiceV2 {
             .any(|record| matches!(record.page, CursorPage::TopicCollection { .. }))
             || self.retained.values().any(retained_uses_topic_collections);
         writer.raw(MAGIC)?;
-        writer.byte(match (includes_topic_collections, includes_vellum) {
-            (false, false) => VERSION_V26,
-            (false, true) => VERSION_V27,
-            (true, false) => VERSION_V28,
-            (true, true) => VERSION_V29,
+        writer.byte(if self.retired_receipts.is_empty() {
+            match (includes_topic_collections, includes_vellum) {
+                (false, false) => VERSION_V26,
+                (false, true) => VERSION_V27,
+                (true, false) => VERSION_V28,
+                (true, true) => VERSION_V29,
+            }
+        } else {
+            VERSION_V30
         })?;
         writer.raw(&scope.0)?;
         write_limits(&mut writer, self.limits)?;
@@ -453,6 +458,17 @@ impl ServiceV2 {
                     .map_err(|_| ServiceCheckpointErrorV2::Wire)?;
             writer.blob(&request)?;
             writer.blob(&reply)?;
+        }
+
+        if !self.retired_receipts.is_empty() {
+            let tombstones = self.retired_receipts.checkpoint();
+            writer.size(tombstones.len())?;
+            for tombstone in tombstones {
+                writer.number(tombstone.policy_revision.get())?;
+                writer.number(tombstone.transition_engine_revision)?;
+                writer.raw(&tombstone.identity_binding().as_bytes())?;
+                writer.raw(&tombstone.scope_binding().as_bytes())?;
+            }
         }
 
         writer.size(self.cursors.len())?;
@@ -638,7 +654,13 @@ impl ServiceV2 {
         let version = reader.byte()?;
         if !matches!(
             version,
-            VERSION_V24 | VERSION_V25 | VERSION_V26 | VERSION_V27 | VERSION_V28 | VERSION_V29
+            VERSION_V24
+                | VERSION_V25
+                | VERSION_V26
+                | VERSION_V27
+                | VERSION_V28
+                | VERSION_V29
+                | VERSION_V30
         ) {
             return Err(ServiceCheckpointErrorV2::Profile);
         }
@@ -745,6 +767,47 @@ impl ServiceV2 {
                 return Err(ServiceCheckpointErrorV2::NonCanonical);
             }
             retained.insert(key, RetainedRequestV2 { request, reply });
+        }
+
+        let retired_receipts = if version == VERSION_V30 {
+            let count = reader.size(limits.max_retained_requests)?;
+            let mut tombstones = Vec::new();
+            tombstones
+                .try_reserve(count)
+                .map_err(|_| ServiceCheckpointErrorV2::Capacity)?;
+            for _ in 0..count {
+                let policy_revision = RetentionPolicyRevisionV1::new(reader.number()?)
+                    .ok_or(ServiceCheckpointErrorV2::Invalid)?;
+                let transition_engine_revision = reader.number()?;
+                let identity = RetentionIdentityBindingV1::new(reader.fixed::<32>()?)
+                    .ok_or(ServiceCheckpointErrorV2::Invalid)?;
+                let scope = RetentionScopeBindingV1::new(reader.fixed::<32>()?)
+                    .ok_or(ServiceCheckpointErrorV2::Invalid)?;
+                let (client, _) = receipt_retirement_key(identity, scope)
+                    .ok_or(ServiceCheckpointErrorV2::Invalid)?;
+                if client.0 >= next_client || transition_engine_revision > engine.revision().0 {
+                    return Err(ServiceCheckpointErrorV2::Invalid);
+                }
+                tombstones.push(RetentionTombstoneV1::new(
+                    RecordClassV1::RequestReceipts,
+                    RetentionTombstoneReasonV1::ReceiptRetired,
+                    policy_revision,
+                    transition_engine_revision,
+                    identity,
+                    scope,
+                ));
+            }
+            ReceiptRetirementRegistryV1::recover(limits.max_retained_requests.max(1), tombstones)
+                .map_err(|_| ServiceCheckpointErrorV2::NonCanonical)?
+        } else {
+            ReceiptRetirementRegistryV1::new(limits.max_retained_requests.max(1))
+                .map_err(|_| ServiceCheckpointErrorV2::Invalid)?
+        };
+        if retained.keys().any(|&(client, request)| {
+            let (identity, scope) = receipt_retirement_bindings(client, request);
+            retired_receipts.is_retired(identity, scope)
+        }) {
+            return Err(ServiceCheckpointErrorV2::Invalid);
         }
 
         let cursor_count = reader.size(limits.max_retained_cursors)?;
@@ -991,7 +1054,11 @@ impl ServiceV2 {
                     }
                     CursorPage::AttachmentChanges { room_id, position }
                 }
-                17 if matches!(version, VERSION_V25 | VERSION_V27 | VERSION_V29) => {
+                17 if matches!(
+                    version,
+                    VERSION_V25 | VERSION_V27 | VERSION_V29 | VERSION_V30
+                ) =>
+                {
                     let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
                     let cursor = MessagePageCursor::recover_checkpoint(
                         reader.blob(bounds.max_snapshot_bytes)?,
@@ -1003,7 +1070,7 @@ impl ServiceV2 {
                     }
                     CursorPage::VellumArtifactMessages { room_id, cursor }
                 }
-                18 if matches!(version, VERSION_V28 | VERSION_V29) => {
+                18 if matches!(version, VERSION_V28 | VERSION_V29 | VERSION_V30) => {
                     let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
                     let cursor = TopicCollectionCursorV1::recover_checkpoint(
                         reader.blob(bounds.max_snapshot_bytes)?,
@@ -1038,6 +1105,7 @@ impl ServiceV2 {
             clients,
             retired_clients,
             retained,
+            retired_receipts,
             cursors,
             next_client,
             next_cursor,

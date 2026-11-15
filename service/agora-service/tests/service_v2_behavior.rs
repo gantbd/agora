@@ -1,3 +1,4 @@
+use agora_engine::retention::RetentionPolicyRevisionV1;
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind,
 };
@@ -8,13 +9,56 @@ use agora_protocol::v2::{
     RoleV2, RoomEventV2, StableReferenceAvailabilityV1, ThreadLifecycleStateV1,
     ThreadedRoomEventV1, TopicIdV1, TopicRoomEventV1,
 };
-use agora_service::v2::{ServiceLimitsV2, ServiceV2};
+use agora_service::v2::{ReceiptRetentionRefusalV1, ServiceLimitsV2, ServiceV2};
 
 fn request(id: u64, command: CommandV2) -> RequestV2 {
     RequestV2 {
         request_id: RequestIdV2(id),
         command,
     }
+}
+
+#[test]
+fn policy_pruned_receipt_is_atomically_fenced_from_reexecution() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let offered = request(77, CommandV2::Capabilities);
+    assert!(matches!(
+        service.execute(alice, offered.clone()),
+        ReplyV2::Accepted(OutcomeV2::Capabilities(_))
+    ));
+    assert!(matches!(
+        service.execute(bot, offered.clone()),
+        ReplyV2::Accepted(OutcomeV2::Capabilities(_))
+    ));
+    let revision = service.engine().revision();
+    assert_eq!(
+        service.retire_request_receipts(
+            RetentionPolicyRevisionV1::new(1).unwrap(),
+            revision,
+            &[(alice, RequestIdV2(77)), (bot, RequestIdV2(77))],
+        ),
+        Ok(2)
+    );
+    assert_eq!(service.retired_receipt_count(), 2);
+    assert_eq!(
+        service.execute(alice, offered.clone()),
+        ReplyV2::Refused(RefusalV2::RequestConflict)
+    );
+    assert_eq!(
+        service.execute(bot, offered),
+        ReplyV2::Refused(RefusalV2::RequestConflict)
+    );
+    assert_eq!(
+        service.retire_request_receipts(
+            RetentionPolicyRevisionV1::new(2).unwrap(),
+            revision,
+            &[(alice, RequestIdV2(88))],
+        ),
+        Err(ReceiptRetentionRefusalV1::UnknownReceipt)
+    );
+    assert_eq!(service.retired_receipt_count(), 2);
 }
 
 #[test]

@@ -15,10 +15,14 @@ use agora_interaction_port::{
     InteractionPromotionRefusalV1, InteractionPromotionRequestV1, InteractionSourceV1,
 };
 use agora_protocol::v2::{ClientIdV2, RefusalV2};
+use agora_retention_authority_port::{
+    AuthorityDecisionV1, ReceiptRetirementAuthorityRequestV1, ReceiptRetirementKeyV1,
+    RetentionAuthorityPortV1, RetentionPolicyRevisionV1,
+};
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
 };
-use agora_service::v2::ServiceV2;
+use agora_service::v2::{ReceiptRetentionRefusalV1, ServiceV2};
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_request_v2, encode_reply_v2};
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
@@ -43,6 +47,16 @@ impl HostSessionIdV2 {
 pub struct OpenReplyV2 {
     session: Option<HostSessionIdV2>,
     frame: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiptRetirementHostRefusalV1 {
+    NotAuthorized,
+    InvalidSelection,
+    AuthorityDenied,
+    AuthorityStale,
+    AuthorityUnavailable,
+    Service(ReceiptRetentionRefusalV1),
 }
 
 impl OpenReplyV2 {
@@ -287,6 +301,52 @@ impl<V: PrincipalVerifier> HostV2<V> {
             .map_err(|_| InteractionPromotionRefusalV1::NotAuthorized)?;
         self.service
             .promote_interaction_at(session.client, request, now.0)
+    }
+
+    /// Revalidates the administrative session, obtains a fresh decision from
+    /// the configured retention authority, and only then atomically replaces
+    /// exact replay receipts with durable non-reexecution tombstones.
+    pub fn retire_request_receipts<A: RetentionAuthorityPortV1>(
+        &mut self,
+        session_id: HostSessionIdV2,
+        policy_revision: RetentionPolicyRevisionV1,
+        selection: &[(ClientIdV2, agora_protocol::v2::RequestIdV2)],
+        authority: &mut A,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<usize, ReceiptRetirementHostRefusalV1> {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| ReceiptRetirementHostRefusalV1::NotAuthorized)?;
+        let authority_selection = selection
+            .iter()
+            .map(|(client, request)| {
+                let mut key = [0_u8; 16];
+                key[..8].copy_from_slice(&client.0.to_be_bytes());
+                key[8..].copy_from_slice(&request.0.to_be_bytes());
+                ReceiptRetirementKeyV1::new(key)
+            })
+            .collect();
+        let engine_revision = self.service.engine().revision();
+        let request = ReceiptRetirementAuthorityRequestV1::new(
+            session.subject.administrative_principal_binding(),
+            policy_revision,
+            engine_revision.0,
+            authority_selection,
+            self.service.limits().max_retained_requests,
+        )
+        .ok_or(ReceiptRetirementHostRefusalV1::InvalidSelection)?;
+        match authority.authorize_receipt_retirement(&request) {
+            AuthorityDecisionV1::Authorized => self
+                .service
+                .retire_request_receipts(policy_revision, engine_revision, selection)
+                .map_err(ReceiptRetirementHostRefusalV1::Service),
+            AuthorityDecisionV1::Denied => Err(ReceiptRetirementHostRefusalV1::AuthorityDenied),
+            AuthorityDecisionV1::Stale => Err(ReceiptRetirementHostRefusalV1::AuthorityStale),
+            AuthorityDecisionV1::Unavailable => {
+                Err(ReceiptRetirementHostRefusalV1::AuthorityUnavailable)
+            }
+        }
     }
 
     pub fn close(&mut self, session: HostSessionIdV2) -> bool {

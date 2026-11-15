@@ -1,6 +1,6 @@
 # ADR: logical retention, exact export, and store reclamation
 
-Status: accepted architecture; closed-value foundation implemented
+Status: accepted architecture; closed values and receipt-retirement slice implemented
 
 Date: 2026-11-14
 
@@ -157,6 +157,19 @@ It accepts only request-receipt retirement tombstones, treats an identical
 retry as replay, rejects changed evidence for the same identity/scope, refuses
 capacity atomically, and recovers only canonical sorted checkpoints. Membership
 is a non-reexecution fence, not an erasure claim.
+
+`ServiceV2` now performs atomic administrative receipt retirement: it validates
+one canonical complete selection against the current engine revision, installs
+every tombstone in a cloned bounded registry, and only then removes the exact
+receipts. Canonical Service profile 30 and Host profile 27 recover that fence.
+`HostV2` revalidates an authenticated session and obtains a fresh decision from
+the injected retention-authority port before invoking the transition;
+`DurableHostV2` withholds success until the complete tombstone-bearing Host
+checkpoint is durably committed, restores the prior receipt state on a known
+store refusal, and preserves the non-reexecution fence across restart. Human and
+agent receipt identities follow the same path. This implements receipt
+retirement only; general policy application, exact export, and store reclamation
+remain open.
 
 ## Nonclaims
 

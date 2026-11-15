@@ -34,6 +34,16 @@ impl VerifiedSubjectV1 {
     pub const fn from_verifier(value: [u8; 16]) -> Self {
         Self(value)
     }
+
+    pub(crate) fn administrative_principal_binding(
+        self,
+    ) -> agora_retention_authority_port::AdministrativePrincipalBindingV1 {
+        let mut binding = [0_u8; 32];
+        binding[..8].copy_from_slice(b"AGHOSTA1");
+        binding[16..].copy_from_slice(&self.0);
+        agora_retention_authority_port::AdministrativePrincipalBindingV1::new(binding)
+            .expect("administrative principal domain is nonzero")
+    }
 }
 
 impl fmt::Debug for VerifiedSubjectV1 {

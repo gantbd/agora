@@ -106,6 +106,14 @@ the retained session cannot act until current context is revalidated again.
 `DurableHostV2` publishes any changed host result only after a durable-strength
 receipt for that combined record.
 
+Receipt retirement is a trusted administrative Host operation, not a Wire V2
+participant command. The Host revalidates the session, derives a redacted
+principal binding from verifier evidence, and requests a current decision from
+the retention-authority port over the exact ordered receipt selection and
+engine/policy revisions. Denied, stale, unavailable, malformed, or service-
+refused offers are inert. Durable composition publishes an authorized result
+only after Host profile 27, including Service profile 30 tombstones, is committed.
+
 The separate `agora-storage-directory` package can supply that receipt for the
 qualified single-owner local Unix profile. End-to-end restart evidence closes
 and reopens its real filesystem record, recovers this combined host checkpoint,

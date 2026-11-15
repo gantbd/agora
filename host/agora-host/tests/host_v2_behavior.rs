@@ -9,10 +9,10 @@ use agora_federated_publication_port::{
     FederatedPublicationIdV1, FederatedPublicationIntentV1, FederatedPublicationRefusalV1,
     FederatedPublicationRequestV1, FederatedPublicationScopeV1,
 };
-use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
 };
+use agora_host::v2::{HostV2, ReceiptRetirementHostRefusalV1};
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_interaction_port::{
     InteractionContextRefusalV1, InteractionContextV1, InteractionInvocationIdV1,
@@ -25,6 +25,10 @@ use agora_protocol::v2::{
     OutcomeV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2, Sha256DigestV1, TopicCollectionFilterV1,
     TopicCollectionLifecycleV1, VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1,
     VellumArtifactReferenceV1, VellumDocumentTargetV1,
+};
+use agora_retention_authority_port::{
+    AuthorityDecisionV1, ExportAuthorityRequestV1, PolicyAuthorityRequestV1,
+    ReceiptRetirementAuthorityRequestV1, RetentionAuthorityPortV1, RetentionPolicyRevisionV1,
 };
 use agora_scheduled_publication_port::{
     ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationRefusalV1,
@@ -46,6 +50,30 @@ struct Context {
 
 struct Verifier {
     calls: Rc<Cell<u64>>,
+}
+
+struct RetentionAuthority {
+    decision: AuthorityDecisionV1,
+    retirement_calls: usize,
+}
+
+impl RetentionAuthorityPortV1 for RetentionAuthority {
+    fn authorize_policy(&mut self, _request: PolicyAuthorityRequestV1) -> AuthorityDecisionV1 {
+        panic!("policy authority is outside this test")
+    }
+
+    fn authorize_export(&mut self, _request: ExportAuthorityRequestV1) -> AuthorityDecisionV1 {
+        panic!("export authority is outside this test")
+    }
+
+    fn authorize_receipt_retirement(
+        &mut self,
+        request: &ReceiptRetirementAuthorityRequestV1,
+    ) -> AuthorityDecisionV1 {
+        self.retirement_calls += 1;
+        assert!(!request.selection().is_empty());
+        self.decision
+    }
 }
 
 impl PrincipalVerifier for Verifier {
@@ -551,6 +579,92 @@ fn v2_verified_connection_binds_actor_and_exact_replay() {
     assert_eq!(room.members[0].0.as_str(), "alice");
     assert_eq!(host.usage().executed, 2);
     assert!(!format!("{host:?}").contains("alice"));
+}
+
+#[test]
+fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric() {
+    let (mut host, _) = make_host(4);
+    let (alice_session, alice_client, alice_context) = open(&mut host, "alice", 1);
+    let (bot_session, bot_client, bot_context) = open(&mut host, "bot", 2);
+    let create = |client, request_id, room_id: &str, expected_revision| {
+        encode_request_v2(
+            &WireRequestV2::Execute {
+                client,
+                request: RequestV2 {
+                    request_id,
+                    command: CommandV2::CreateRoom {
+                        room_id: room_id.to_owned(),
+                        name: room_id.to_owned(),
+                        admission: AdmissionPolicyV2::Open,
+                        expected_revision,
+                    },
+                },
+            },
+            limits(4).wire,
+        )
+        .unwrap()
+    };
+    let alice_frame = create(alice_client, RequestIdV2(1), "alice-room", 2);
+    let bot_frame = create(bot_client, RequestIdV2(1), "bot-room", 3);
+    host.handle(alice_session, &alice_frame, &alice_context, HostTimeV1(2))
+        .unwrap();
+    host.handle(bot_session, &bot_frame, &bot_context, HostTimeV1(2))
+        .unwrap();
+    let selection = [(alice_client, RequestIdV2(1)), (bot_client, RequestIdV2(1))];
+    let policy_revision = RetentionPolicyRevisionV1::new(1).unwrap();
+    let mut authority = RetentionAuthority {
+        decision: AuthorityDecisionV1::Denied,
+        retirement_calls: 0,
+    };
+    assert_eq!(
+        host.retire_request_receipts(
+            alice_session,
+            policy_revision,
+            &selection,
+            &mut authority,
+            &alice_context,
+            HostTimeV1(3),
+        ),
+        Err(ReceiptRetirementHostRefusalV1::AuthorityDenied)
+    );
+    assert_eq!(host.service().retired_receipt_count(), 0);
+    authority.decision = AuthorityDecisionV1::Stale;
+    assert_eq!(
+        host.retire_request_receipts(
+            alice_session,
+            policy_revision,
+            &selection,
+            &mut authority,
+            &alice_context,
+            HostTimeV1(4),
+        ),
+        Err(ReceiptRetirementHostRefusalV1::AuthorityStale)
+    );
+    assert_eq!(host.service().retired_receipt_count(), 0);
+    authority.decision = AuthorityDecisionV1::Authorized;
+    assert_eq!(
+        host.retire_request_receipts(
+            alice_session,
+            policy_revision,
+            &selection,
+            &mut authority,
+            &alice_context,
+            HostTimeV1(5),
+        ),
+        Ok(2)
+    );
+    assert_eq!(authority.retirement_calls, 3);
+    assert_eq!(host.service().retired_receipt_count(), 2);
+    for (session, frame, context) in [
+        (alice_session, &alice_frame, &alice_context),
+        (bot_session, &bot_frame, &bot_context),
+    ] {
+        let reply = host.handle(session, frame, context, HostTimeV1(6)).unwrap();
+        assert_eq!(
+            decode_reply_v2(&reply, limits(4).wire).unwrap(),
+            WireReplyV2::Executed(ReplyV2::Refused(RefusalV2::RequestConflict))
+        );
+    }
 }
 
 #[test]

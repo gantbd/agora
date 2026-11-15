@@ -219,6 +219,32 @@ impl fmt::Debug for ContentDigestV1 {
     }
 }
 
+macro_rules! redacted_binding {
+    ($name:ident) => {
+        #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub struct $name([u8; 32]);
+
+        impl $name {
+            pub fn new(bytes: [u8; 32]) -> Option<Self> {
+                (bytes != [0; 32]).then_some(Self(bytes))
+            }
+
+            pub fn as_bytes(self) -> [u8; 32] {
+                self.0
+            }
+        }
+
+        impl fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(concat!(stringify!($name), "(<redacted>)"))
+            }
+        }
+    };
+}
+
+redacted_binding!(RetentionIdentityBindingV1);
+redacted_binding!(RetentionScopeBindingV1);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExportChunkV1 {
     pub index: u32,
@@ -306,8 +332,8 @@ pub struct RetentionTombstoneV1 {
     pub reason: RetentionTombstoneReasonV1,
     pub policy_revision: RetentionPolicyRevisionV1,
     pub transition_engine_revision: u64,
-    identity_binding: ContentDigestV1,
-    scope_binding: ContentDigestV1,
+    identity_binding: RetentionIdentityBindingV1,
+    scope_binding: RetentionScopeBindingV1,
 }
 
 impl RetentionTombstoneV1 {
@@ -316,24 +342,24 @@ impl RetentionTombstoneV1 {
         reason: RetentionTombstoneReasonV1,
         policy_revision: RetentionPolicyRevisionV1,
         transition_engine_revision: u64,
-        identity_binding: ContentDigestV1,
-        scope_binding: ContentDigestV1,
-    ) -> Option<Self> {
-        (transition_engine_revision != 0).then_some(Self {
+        identity_binding: RetentionIdentityBindingV1,
+        scope_binding: RetentionScopeBindingV1,
+    ) -> Self {
+        Self {
             class,
             reason,
             policy_revision,
             transition_engine_revision,
             identity_binding,
             scope_binding,
-        })
+        }
     }
 
-    pub fn identity_binding(self) -> ContentDigestV1 {
+    pub fn identity_binding(self) -> RetentionIdentityBindingV1 {
         self.identity_binding
     }
 
-    pub fn scope_binding(self) -> ContentDigestV1 {
+    pub fn scope_binding(self) -> RetentionScopeBindingV1 {
         self.scope_binding
     }
 }
@@ -378,7 +404,7 @@ pub enum ReceiptRetirementRefusalV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReceiptRetirementRegistryV1 {
     maximum: usize,
-    retired: BTreeMap<(ContentDigestV1, ContentDigestV1), RetentionTombstoneV1>,
+    retired: BTreeMap<(RetentionIdentityBindingV1, RetentionScopeBindingV1), RetentionTombstoneV1>,
 }
 
 impl ReceiptRetirementRegistryV1 {
@@ -438,7 +464,11 @@ impl ReceiptRetirementRegistryV1 {
         Ok(ReceiptRetirementApplyV1::Retired)
     }
 
-    pub fn is_retired(&self, identity: ContentDigestV1, scope: ContentDigestV1) -> bool {
+    pub fn is_retired(
+        &self,
+        identity: RetentionIdentityBindingV1,
+        scope: RetentionScopeBindingV1,
+    ) -> bool {
         self.retired.contains_key(&(identity, scope))
     }
 

@@ -72,7 +72,9 @@ if ! printf '%s\n' "$service_tree" | rg -q 'agora-search-port' \
 fi
 
 host_tree=$(cargo tree -p agora-host --edges normal --depth 1 --locked --offline)
-if printf '%s\n' "$host_tree" | rg 'agora-client|aegis|chronos|moira|daimon|hermes'; then
+if ! printf '%s\n' "$host_tree" | rg -q 'agora-retention-authority-port' \
+  || printf '%s\n' "$host_tree" | rg 'agora-client|aegis|chronos|moira|daimon|hermes'; then
+  printf '%s\n' "$host_tree" >&2
   echo 'Agora host imported a client, authority, or peer-engine implementation' >&2
   exit 1
 fi
@@ -81,6 +83,7 @@ durable_tree=$(cargo tree -p agora-durable --edges normal --depth 1 --locked --o
 if ! printf '%s\n' "$durable_tree" | rg -q 'agora-service' \
   || ! printf '%s\n' "$durable_tree" | rg -q 'agora-protocol' \
   || ! printf '%s\n' "$durable_tree" | rg -q 'agora-host' \
+  || ! printf '%s\n' "$durable_tree" | rg -q 'agora-retention-authority-port' \
   || ! printf '%s\n' "$durable_tree" | rg -q 'agora-storage-observation' \
   || ! printf '%s\n' "$durable_tree" | rg -q 'keystone-storage' \
   || printf '%s\n' "$durable_tree" | rg -q 'agora-(client|wire)'; then

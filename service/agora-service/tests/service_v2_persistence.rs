@@ -1,3 +1,4 @@
+use agora_engine::retention::RetentionPolicyRevisionV1;
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantId,
     ParticipantKind, ReadScopeV1 as EngineReadScopeV1, RoomId,
@@ -30,6 +31,66 @@ fn request(request_id: u64, command: CommandV2) -> RequestV2 {
         request_id: RequestIdV2(request_id),
         command,
     }
+}
+
+#[test]
+fn retired_receipt_fence_is_canonical_and_survives_recovery() {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    let offered = request(91, CommandV2::Capabilities);
+    assert!(matches!(
+        service.execute(alice, offered.clone()),
+        ReplyV2::Accepted(OutcomeV2::Capabilities(_))
+    ));
+    let revision = service.engine().revision();
+    service
+        .retire_request_receipts(
+            RetentionPolicyRevisionV1::new(1).unwrap(),
+            revision,
+            &[(alice, RequestIdV2(91))],
+        )
+        .unwrap();
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    assert_eq!(checkpoint.bytes()[8], 30);
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.retired_receipt_count(), 1);
+    assert_eq!(
+        recovered.execute(alice, offered),
+        ReplyV2::Refused(RefusalV2::RequestConflict)
+    );
+    assert_eq!(
+        recovered
+            .prepare_checkpoint(SCOPE, MAX_CHECKPOINT)
+            .unwrap()
+            .bytes(),
+        checkpoint.bytes()
+    );
+    let identity_offset = checkpoint
+        .bytes()
+        .windows(8)
+        .position(|window| window == b"AGSVREQ1")
+        .unwrap();
+    let mut wrong_domain = checkpoint.bytes().to_vec();
+    wrong_domain[identity_offset] ^= 1;
+    assert_eq!(
+        ServiceV2::recover_checkpoint(&wrong_domain, SCOPE, bounds()).unwrap_err(),
+        ServiceCheckpointErrorV2::Invalid
+    );
+    let mut future_transition = checkpoint.bytes().to_vec();
+    future_transition[identity_offset - 8..identity_offset]
+        .copy_from_slice(&u64::MAX.to_be_bytes());
+    assert_eq!(
+        ServiceV2::recover_checkpoint(&future_transition, SCOPE, bounds()).unwrap_err(),
+        ServiceCheckpointErrorV2::Invalid
+    );
 }
 
 #[test]
@@ -585,7 +646,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 30;
+    future[8] = 31;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile

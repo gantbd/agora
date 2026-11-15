@@ -4,6 +4,11 @@ use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1, WakeClassV1,
     WakeProjectionV1,
 };
+use agora_engine::retention::{
+    ReceiptRetirementApplyV1, ReceiptRetirementRefusalV1, ReceiptRetirementRegistryV1,
+    RecordClassV1, RetentionIdentityBindingV1, RetentionPolicyRevisionV1, RetentionScopeBindingV1,
+    RetentionTombstoneReasonV1, RetentionTombstoneV1,
+};
 use agora_engine::{
     AdmissionPolicy, AdmissionTimeRefusalV1, AdmissionTimeV1,
     AttachmentDescriptorV1 as EngineAttachmentDescriptorV1, AttachmentIdV1 as EngineAttachmentIdV1,
@@ -128,6 +133,53 @@ struct RetainedRequestV2 {
     reply: ReplyV2,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiptRetentionRefusalV1 {
+    EmptySelection,
+    NonCanonicalSelection,
+    StaleEngineRevision {
+        expected: Revision,
+        actual: Revision,
+    },
+    UnknownReceipt,
+    Registry(ReceiptRetirementRefusalV1),
+}
+
+fn receipt_retirement_bindings(
+    client: ClientIdV2,
+    request: RequestIdV2,
+) -> (RetentionIdentityBindingV1, RetentionScopeBindingV1) {
+    let mut identity = [0_u8; 32];
+    identity[..8].copy_from_slice(b"AGSVREQ1");
+    identity[16..24].copy_from_slice(&client.0.to_be_bytes());
+    identity[24..].copy_from_slice(&request.0.to_be_bytes());
+    let mut scope = [0_u8; 32];
+    scope[..8].copy_from_slice(b"AGORASV\0");
+    (
+        RetentionIdentityBindingV1::new(identity).expect("receipt domain is nonzero"),
+        RetentionScopeBindingV1::new(scope).expect("service scope domain is nonzero"),
+    )
+}
+
+fn receipt_retirement_key(
+    identity: RetentionIdentityBindingV1,
+    scope: RetentionScopeBindingV1,
+) -> Option<(ClientIdV2, RequestIdV2)> {
+    let identity = identity.as_bytes();
+    let scope = scope.as_bytes();
+    if &identity[..8] != b"AGSVREQ1"
+        || identity[8..16] != [0; 8]
+        || &scope[..8] != b"AGORASV\0"
+        || scope[8..] != [0; 24]
+    {
+        return None;
+    }
+    Some((
+        ClientIdV2(u64::from_be_bytes(identity[16..24].try_into().ok()?)),
+        RequestIdV2(u64::from_be_bytes(identity[24..].try_into().ok()?)),
+    ))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum CursorPage {
     Rooms(RoomPageCursor),
@@ -218,6 +270,7 @@ pub struct ServiceV2 {
     clients: BTreeMap<ClientIdV2, ParticipantId>,
     retired_clients: VecDeque<ClientIdV2>,
     retained: BTreeMap<(ClientIdV2, RequestIdV2), RetainedRequestV2>,
+    retired_receipts: ReceiptRetirementRegistryV1,
     cursors: BTreeMap<PageCursorV2, CursorRecord>,
     next_client: u64,
     next_cursor: u64,
@@ -232,6 +285,8 @@ impl ServiceV2 {
             clients: BTreeMap::new(),
             retired_clients: VecDeque::new(),
             retained: BTreeMap::new(),
+            retired_receipts: ReceiptRetirementRegistryV1::new(limits.max_retained_requests.max(1))
+                .expect("positive receipt-retirement capacity"),
             cursors: BTreeMap::new(),
             next_client: 0,
             next_cursor: 0,
@@ -259,6 +314,63 @@ impl ServiceV2 {
 
     pub fn usage(&self) -> UsageV2 {
         self.usage
+    }
+
+    pub fn retired_receipt_count(&self) -> usize {
+        self.retired_receipts.len()
+    }
+
+    /// Trusted administrative receipt pruning. This path is absent from the
+    /// participant protocol. The complete selection is preflighted and its
+    /// non-reexecution tombstones are installed atomically before receipts are
+    /// removed.
+    pub fn retire_request_receipts(
+        &mut self,
+        policy_revision: RetentionPolicyRevisionV1,
+        observed_engine_revision: Revision,
+        selection: &[(ClientIdV2, RequestIdV2)],
+    ) -> Result<usize, ReceiptRetentionRefusalV1> {
+        if selection.is_empty() {
+            return Err(ReceiptRetentionRefusalV1::EmptySelection);
+        }
+        if observed_engine_revision != self.engine.revision() {
+            return Err(ReceiptRetentionRefusalV1::StaleEngineRevision {
+                expected: observed_engine_revision,
+                actual: self.engine.revision(),
+            });
+        }
+        if selection.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(ReceiptRetentionRefusalV1::NonCanonicalSelection);
+        }
+        if selection.iter().any(|key| !self.retained.contains_key(key)) {
+            return Err(ReceiptRetentionRefusalV1::UnknownReceipt);
+        }
+        let mut candidate = self.retired_receipts.clone();
+        for &(client, request) in selection {
+            let (identity, scope) = receipt_retirement_bindings(client, request);
+            let tombstone = RetentionTombstoneV1::new(
+                RecordClassV1::RequestReceipts,
+                RetentionTombstoneReasonV1::ReceiptRetired,
+                policy_revision,
+                observed_engine_revision.0,
+                identity,
+                scope,
+            );
+            match candidate.retire(tombstone) {
+                Ok(ReceiptRetirementApplyV1::Retired) => {}
+                Ok(ReceiptRetirementApplyV1::Replay) => {
+                    return Err(ReceiptRetentionRefusalV1::Registry(
+                        ReceiptRetirementRefusalV1::Conflict,
+                    ));
+                }
+                Err(refusal) => return Err(ReceiptRetentionRefusalV1::Registry(refusal)),
+            }
+        }
+        for key in selection {
+            self.retained.remove(key);
+        }
+        self.retired_receipts = candidate;
+        Ok(selection.len())
     }
 
     pub fn connect(&mut self, participant: &str) -> Result<ClientIdV2, RefusalV2> {
@@ -556,6 +668,15 @@ impl ServiceV2 {
             return ReplyV2::Refused(RefusalV2::UnknownClient);
         };
         let key = (client, request.request_id);
+        let (retirement_identity, retirement_scope) =
+            receipt_retirement_bindings(client, request.request_id);
+        if self
+            .retired_receipts
+            .is_retired(retirement_identity, retirement_scope)
+        {
+            count(&mut self.usage.conflicts, &mut self.usage.overflowed);
+            return ReplyV2::Refused(RefusalV2::RequestConflict);
+        }
         if let Some(existing) = self.retained.get(&key) {
             if existing.request == request {
                 count(&mut self.usage.replayed, &mut self.usage.overflowed);

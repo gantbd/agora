@@ -36,6 +36,7 @@ dependencies = [
  "agora-host",
  "agora-interaction-port",
  "agora-protocol",
+ "agora-retention-authority-port",
  "agora-scheduled-publication-port",
  "agora-service",
  "agora-storage-observation",
@@ -70,6 +71,7 @@ dependencies = [
  "agora-federated-publication-port",
  "agora-interaction-port",
  "agora-protocol",
+ "agora-retention-authority-port",
  "agora-scheduled-publication-port",
  "agora-service",
  "agora-wire",
@@ -101,6 +103,13 @@ dependencies = [
 [[package]]
 name = "agora-protocol"
 version = "0.1.0"
+
+[[package]]
+name = "agora-retention-authority-port"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+]
 
 [[package]]
 name = "agora-scheduled-publication-port"

@@ -2,9 +2,9 @@ use agora_engine::retention::{
     ContentDigestV1, ExportChunkV1, ExportManifestV1, ExportProfileV1, ExportRequestIdV1,
     ExportScopeBindingV1, RECORD_CLASSES_V1, ReceiptRetirementApplyV1, ReceiptRetirementRefusalV1,
     ReceiptRetirementRegistryV1, ReclamationEvidenceV1, ReclamationStageV1, RecordClassV1,
-    RetentionBoundV1, RetentionFrontierV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
-    RetentionTombstoneReasonV1, RetentionTombstoneV1, RetentionTransitionV1, StoreGenerationIdV1,
-    StoreReclamationPlanV1,
+    RetentionBoundV1, RetentionFrontierV1, RetentionIdentityBindingV1, RetentionPolicyRevisionV1,
+    RetentionPolicyV1, RetentionScopeBindingV1, RetentionTombstoneReasonV1, RetentionTombstoneV1,
+    RetentionTransitionV1, StoreGenerationIdV1, StoreReclamationPlanV1,
 };
 
 fn revision() -> RetentionPolicyRevisionV1 {
@@ -97,27 +97,27 @@ fn retirement_tombstone_is_distinct_redacted_and_revision_bound() {
         RetentionTombstoneReasonV1::ReceiptRetired,
         revision(),
         9,
-        ContentDigestV1::new([0x41; 32]),
-        ContentDigestV1::new([0x42; 32]),
-    )
-    .unwrap();
+        RetentionIdentityBindingV1::new([0x41; 32]).unwrap(),
+        RetentionScopeBindingV1::new([0x42; 32]).unwrap(),
+    );
     let diagnostic = format!("{tombstone:?}");
     assert!(!diagnostic.contains("41"));
     assert!(!diagnostic.contains("42"));
     assert_eq!(
         tombstone.identity_binding(),
-        ContentDigestV1::new([0x41; 32])
+        RetentionIdentityBindingV1::new([0x41; 32]).unwrap()
     );
-    assert!(
+    assert_eq!(
         RetentionTombstoneV1::new(
             RecordClassV1::RequestReceipts,
             RetentionTombstoneReasonV1::ReceiptRetired,
             revision(),
             0,
-            ContentDigestV1::new([1; 32]),
-            ContentDigestV1::new([2; 32]),
+            RetentionIdentityBindingV1::new([1; 32]).unwrap(),
+            RetentionScopeBindingV1::new([2; 32]).unwrap(),
         )
-        .is_none()
+        .transition_engine_revision,
+        0
     );
 }
 
@@ -128,44 +128,45 @@ fn retired_receipt_identity_cannot_become_executable_again() {
         RetentionTombstoneReasonV1::ReceiptRetired,
         revision(),
         9,
-        ContentDigestV1::new([1; 32]),
-        ContentDigestV1::new([2; 32]),
-    )
-    .unwrap();
+        RetentionIdentityBindingV1::new([1; 32]).unwrap(),
+        RetentionScopeBindingV1::new([2; 32]).unwrap(),
+    );
     let mut registry = ReceiptRetirementRegistryV1::new(1).unwrap();
     assert_eq!(
         registry.retire(first),
         Ok(ReceiptRetirementApplyV1::Retired)
     );
     assert_eq!(registry.retire(first), Ok(ReceiptRetirementApplyV1::Replay));
-    assert!(registry.is_retired(ContentDigestV1::new([1; 32]), ContentDigestV1::new([2; 32])));
+    assert!(registry.is_retired(
+        RetentionIdentityBindingV1::new([1; 32]).unwrap(),
+        RetentionScopeBindingV1::new([2; 32]).unwrap()
+    ));
     let changed = RetentionTombstoneV1::new(
         RecordClassV1::RequestReceipts,
         RetentionTombstoneReasonV1::ReceiptRetired,
         revision(),
         10,
-        ContentDigestV1::new([1; 32]),
-        ContentDigestV1::new([2; 32]),
-    )
-    .unwrap();
+        RetentionIdentityBindingV1::new([1; 32]).unwrap(),
+        RetentionScopeBindingV1::new([2; 32]).unwrap(),
+    );
     assert_eq!(
         registry.retire(changed),
         Err(ReceiptRetirementRefusalV1::Conflict)
     );
     let recovered = ReceiptRetirementRegistryV1::recover(1, registry.checkpoint()).unwrap();
-    assert!(recovered.is_retired(ContentDigestV1::new([1; 32]), ContentDigestV1::new([2; 32])));
+    assert!(recovered.is_retired(
+        RetentionIdentityBindingV1::new([1; 32]).unwrap(),
+        RetentionScopeBindingV1::new([2; 32]).unwrap()
+    ));
     assert_eq!(
-        registry.retire(
-            RetentionTombstoneV1::new(
-                RecordClassV1::RequestReceipts,
-                RetentionTombstoneReasonV1::ReceiptRetired,
-                revision(),
-                9,
-                ContentDigestV1::new([3; 32]),
-                ContentDigestV1::new([4; 32]),
-            )
-            .unwrap()
-        ),
+        registry.retire(RetentionTombstoneV1::new(
+            RecordClassV1::RequestReceipts,
+            RetentionTombstoneReasonV1::ReceiptRetired,
+            revision(),
+            9,
+            RetentionIdentityBindingV1::new([3; 32]).unwrap(),
+            RetentionScopeBindingV1::new([4; 32]).unwrap(),
+        )),
         Err(ReceiptRetirementRefusalV1::Capacity)
     );
 }

@@ -855,6 +855,28 @@
   every other suppressed durable outcome MUST remain outcome-unknown.
   Reconnect and peer acknowledgement MUST NOT imply mutation success,
   participant read state, room authority transfer, or gap closure.
+- **R107 — retention/export boundary:** Agora logical retention MUST classify
+  current projections, authoritative changes, exact receipts, participant-
+  private state, federation state, and operational copies independently under
+  one complete revisioned policy. Logical unavailability, domain withdrawal or
+  redaction, export custody, and physical store reclamation MUST remain distinct
+  facts. Receipt retirement MUST atomically replace an exact retained receipt
+  with a bounded durable non-reexecution tombstone before removing the receipt;
+  identity reuse or retry execution MUST remain impossible while the fence is
+  retained. Administrative policy, receipt-retirement, and export operations
+  MUST revalidate an authenticated principal through an injected current-
+  authority port and MUST treat humans and agents identically. Exact export
+  MUST bind request identity, visibility scope, source engine revision,
+  retention-policy revision, profile, ordered chunks, digests, frontiers, and
+  explicit gaps into canonical replayable manifests; it MUST NOT widen
+  visibility, mutate read or delivery state, or reconstruct absent records from
+  an unauthorized copy. Physical reclamation MUST name bounded old generations
+  only after a complete successor checkpoint is durably published, reopened,
+  and validated; unknown publication or validation MUST fence reclamation.
+  Storage unlink, replacement, or provider attestation MUST NOT be represented
+  as secure erasure. Legal hold, eDiscovery, regulated schedules, subject-rights
+  workflow, recipient deletion, backup deletion, and guaranteed erasure remain
+  separate compliance concerns and explicit nonclaims.
 
 ## Explicitly open
 

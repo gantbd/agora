@@ -16,13 +16,14 @@ use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
 };
-use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
+use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2, ReceiptRetirementHostRefusalV1};
 use agora_host::{HostRefusal, HostTimeV1, PrincipalVerifier};
 use agora_interaction_port::{
     InteractionContextRefusalV1, InteractionContextV1, InteractionPromotionAcceptedV1,
     InteractionPromotionRefusalV1, InteractionPromotionRequestV1, InteractionSourceV1,
 };
-use agora_protocol::v2::{ClientIdV2, RefusalV2, ReplyV2, RequestV2};
+use agora_protocol::v2::{ClientIdV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2};
+use agora_retention_authority_port::{RetentionAuthorityPortV1, RetentionPolicyRevisionV1};
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
 };
@@ -1373,6 +1374,31 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
     > {
         let publication =
             self.publish(|host| host.promote_interaction(session, request, context, now));
+        self.counters.record(&publication);
+        publication
+    }
+
+    /// Publishes receipt retirement only after its tombstone-bearing Host
+    /// checkpoint receives a durable store acknowledgement.
+    pub fn retire_request_receipts<A: RetentionAuthorityPortV1>(
+        &mut self,
+        session: HostSessionIdV2,
+        policy_revision: RetentionPolicyRevisionV1,
+        selection: &[(ClientIdV2, RequestIdV2)],
+        authority: &mut A,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<Result<usize, ReceiptRetirementHostRefusalV1>> {
+        let publication = self.publish(|host| {
+            host.retire_request_receipts(
+                session,
+                policy_revision,
+                selection,
+                authority,
+                context,
+                now,
+            )
+        });
         self.counters.record(&publication);
         publication
     }

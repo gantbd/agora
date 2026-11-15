@@ -142,6 +142,17 @@ a bounded recent tombstone window. Tombstone pressure evicts the oldest record;
 it never blocks security cleanup. The V1 volatile profile makes no cross-restart
 replay claim.
 
+The R107 administrative path is outside participant protocol. It accepts only a
+canonical complete selection of retained V2 receipt keys at the current engine
+revision, preflights bounded non-reexecution tombstones atomically, and removes
+the receipts only after every tombstone is admissible. Service checkpoint
+profile 30 preserves the exact retired identities. Host revalidation plus the
+injected retention-authority port gates the operation, and Host profile 27 nests
+the Service profile without interpreting policy. `DurableHostV2` applies its
+ordinary complete-checkpoint commit gate, so known store refusal restores the
+receipts while a committed retirement survives restart. This is neither general
+logical compaction nor evidence of physical deletion.
+
 After completing bounded room state pages at one revision, a client can open a
 room change position at that exact revision and pull retained room events through
 an opaque client-owned cursor. Pages are exclusive-after and replayable by exact
