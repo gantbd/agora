@@ -145,6 +145,49 @@ fn namespaced_request_replays_an_equal_legacy_receipt_during_migration() {
 }
 
 #[test]
+fn federation_retry_retains_first_home_time_while_other_domains_remain_time_exact() {
+    let mut engine = setup(Limits::default());
+    let first = engine
+        .publish(namespaced_publication(
+            &engine,
+            PublicationDomainV2::Federation,
+            [7; 16],
+            "remote",
+        ))
+        .unwrap();
+    let later = PublicationCommandV2::new(
+        engine.revision(),
+        PublicationKeyV2::namespaced(PublicationDomainV2::Federation, [7; 16]),
+        RoomId::from("room"),
+        ParticipantId::from("agent"),
+        LogicalTime(99),
+        "remote",
+    );
+    assert_eq!(engine.publish(later).unwrap(), first);
+
+    engine
+        .publish(namespaced_publication(
+            &engine,
+            PublicationDomainV2::Scheduled,
+            [8; 16],
+            "scheduled",
+        ))
+        .unwrap();
+    let changed_time = PublicationCommandV2::new(
+        engine.revision(),
+        PublicationKeyV2::namespaced(PublicationDomainV2::Scheduled, [8; 16]),
+        RoomId::from("room"),
+        ParticipantId::from("agent"),
+        LogicalTime(99),
+        "scheduled",
+    );
+    assert_eq!(
+        engine.publish(changed_time),
+        Err(PublicationRefusalV2::IdempotencyConflict)
+    );
+}
+
+#[test]
 fn full_publication_receipt_index_backpressures_before_message_mutation() {
     let mut engine = setup(Limits {
         max_publication_receipts: 1,

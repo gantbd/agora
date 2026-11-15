@@ -108,6 +108,17 @@ unknown tags. A scoped request may replay an equal pre-domain legacy receipt so
 upgrade does not duplicate an already accepted message; that compatibility
 path does not let one new source claim another new source's receipt.
 
+Agora exposes this capability through the zero-dependency
+`agora-federated-publication-port`. The port carries only opaque correlation
+plus a local room/body intent. It carries no peer trust, home identity mapping,
+credential, clock, transport, retry, or room-home authority. Service binds the
+currently connected participant and the reserved federation receipt domain;
+Host revalidates the authenticated session and supplies current time; Durable
+Host commits the complete resulting Host checkpoint before the semantic reply
+escapes. An exact federation receipt replay retains the first accepted Host
+time while continuing to require equal room, actor, and body. Legacy migration
+and every non-federation source remain time-exact.
+
 ### Partitions and revocation
 
 During a partition, replicas may serve only explicitly qualified stale reads
@@ -131,6 +142,8 @@ deletion, retention, and trust removal do not claim that the home erased data.
   and observation/replay reconciliation;
 - source-domain collision tests, exact legacy replay, canonical profile-149
   recovery, and unknown-domain refusal;
+- effect-free federated-publication port, current Service policy, authenticated
+  Host binding, durable commit gating, later-time exact replay, and revocation;
 - ordered replication, duplicate replay, changed-event conflict, explicit gap,
   bounded replay, snapshot repair, and restart recovery;
 - direct-home source enforcement, imported-event non-export, and adversarial

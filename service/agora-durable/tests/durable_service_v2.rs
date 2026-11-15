@@ -11,6 +11,9 @@ use agora_engine::{
     Engine, Limits, LogicalTime, Participant, ParticipantId, ParticipantKind,
     ReadScopeV1 as EngineReadScopeV1, RoomId,
 };
+use agora_federated_publication_port::{
+    FederatedPublicationIdV1, FederatedPublicationIntentV1, FederatedPublicationRequestV1,
+};
 use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
@@ -1202,6 +1205,64 @@ fn scheduled_publication_is_commit_gated_and_reconciles_after_unknown_outcome() 
     assert_eq!(accepted.revision, 3);
     assert_eq!(accepted.message_sequence, 0);
     assert_eq!(store.commit_calls(), 4, "exact retry is storage-inert");
+}
+
+#[test]
+fn federated_publication_is_commit_gated_and_replays_with_original_home_time() {
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame(), &context, HostTimeV1(1))
+    else {
+        panic!("connect expected");
+    };
+    let session = opened.session().unwrap();
+    let WireReplyV2::Connected(client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connected frame expected");
+    };
+    assert!(matches!(
+        durable.handle(session, &create_frame(client), &context, HostTimeV1(2)),
+        DurableHostPublicationV2::Published {
+            value: Ok(_),
+            evidence: DurableEvidenceV2::Committed {
+                revision: Revision(2)
+            }
+        }
+    ));
+    let request = FederatedPublicationRequestV1 {
+        id: FederatedPublicationIdV1::new([18; 16]).unwrap(),
+        intent: FederatedPublicationIntentV1::new("room", "federated"),
+    };
+    store.next(NextCommit::IndeterminateAfter);
+    assert_eq!(
+        durable.publish_federated(session, request.clone(), &context, HostTimeV1(3)),
+        DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::OutcomeUnknown)
+    );
+    drop(durable.into_store());
+
+    let mut recovered = DurableHostV2::recover(store.clone(), host_config(), Verifier).unwrap();
+    let retry = recovered.publish_federated(session, request, &context, HostTimeV1(30));
+    let DurableHostPublicationV2::Published {
+        value: Ok(accepted),
+        evidence: DurableEvidenceV2::Committed { revision },
+    } = retry
+    else {
+        panic!("exact retry must resolve the committed publication: {retry:?}");
+    };
+    assert_eq!(revision, Revision(4));
+    assert_eq!(accepted.revision, 3);
+    assert_ne!(accepted.event_sequence, 0);
+    assert_eq!(accepted.message_sequence, 0);
+    assert_eq!(
+        store.commit_calls(),
+        5,
+        "later revalidation commits Host time without duplicating the message"
+    );
 }
 
 #[test]

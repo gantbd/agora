@@ -33,6 +33,9 @@ use agora_engine::{
     VellumArtifactReferenceV1 as EngineVellumArtifactReferenceV1,
     VellumDocumentTargetV1 as EngineVellumDocumentTargetV1,
 };
+use agora_federated_publication_port::{
+    FederatedPublicationAcceptedV1, FederatedPublicationRefusalV1, FederatedPublicationRequestV1,
+};
 use agora_interaction_port::{
     InteractionContextRefusalV1, InteractionContextV1, InteractionPromotionAcceptedV1,
     InteractionPromotionRefusalV1, InteractionPromotionRequestV1, InteractionSourceV1,
@@ -350,6 +353,46 @@ impl ServiceV2 {
         };
         Ok(ScheduledPublicationAcceptedV1 {
             revision: transition.revision.0,
+            message_sequence: sequence,
+        })
+    }
+
+    /// Trusted actor-bound home publication path used by federation adapters.
+    /// The current Host clock supplies both message and admission time.
+    pub fn publish_federated_at(
+        &mut self,
+        client: ClientIdV2,
+        request: FederatedPublicationRequestV1,
+        instant_ms: u64,
+    ) -> Result<FederatedPublicationAcceptedV1, FederatedPublicationRefusalV1> {
+        let participant = self
+            .clients
+            .get(&client)
+            .cloned()
+            .ok_or(FederatedPublicationRefusalV1::NotAuthorized)?;
+        if !valid_text(request.intent.room_id(), self.limits.max_room_id_bytes)
+            || !valid_text(request.intent.body(), self.limits.max_message_body_bytes)
+        {
+            return Err(FederatedPublicationRefusalV1::InvalidInput);
+        }
+        let command = PublicationCommandV2::new(
+            self.engine.revision(),
+            PublicationKeyV2::namespaced(PublicationDomainV2::Federation, request.id.into_bytes()),
+            RoomId::new(request.intent.room_id()),
+            participant,
+            agora_engine::LogicalTime(instant_ms),
+            request.intent.body(),
+        );
+        let transition = self
+            .engine
+            .publish_at_instant(command, instant_ms)
+            .map_err(map_federated_publication_refusal)?;
+        let EngineOutcome::MessageAccepted { sequence, .. } = transition.outcome else {
+            return Err(FederatedPublicationRefusalV1::Unavailable);
+        };
+        Ok(FederatedPublicationAcceptedV1 {
+            revision: transition.revision.0,
+            event_sequence: transition.event_sequence.0,
             message_sequence: sequence,
         })
     }
@@ -5557,6 +5600,24 @@ fn map_scheduled_publication_refusal(
             | EngineRefusal::RevisionConflict { .. },
         ) => ScheduledPublicationRefusalV1::Unavailable,
         PublicationRefusalV2::Core(_) => ScheduledPublicationRefusalV1::InvalidInput,
+    }
+}
+
+fn map_federated_publication_refusal(
+    refusal: PublicationRefusalV2,
+) -> FederatedPublicationRefusalV1 {
+    match map_scheduled_publication_refusal(refusal) {
+        ScheduledPublicationRefusalV1::InvalidInput => FederatedPublicationRefusalV1::InvalidInput,
+        ScheduledPublicationRefusalV1::NotAuthorized => {
+            FederatedPublicationRefusalV1::NotAuthorized
+        }
+        ScheduledPublicationRefusalV1::AdmissionDeferred { retry_after_ms } => {
+            FederatedPublicationRefusalV1::AdmissionDeferred { retry_after_ms }
+        }
+        ScheduledPublicationRefusalV1::Capacity => FederatedPublicationRefusalV1::Capacity,
+        ScheduledPublicationRefusalV1::Conflict => FederatedPublicationRefusalV1::Conflict,
+        ScheduledPublicationRefusalV1::Unavailable => FederatedPublicationRefusalV1::Unavailable,
+        ScheduledPublicationRefusalV1::Exhausted => FederatedPublicationRefusalV1::Exhausted,
     }
 }
 

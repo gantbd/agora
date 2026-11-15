@@ -22,6 +22,7 @@ agora-service --> agora-search-port
 agora-service --> agora-delivery-projection-port
 agora-service --> agora-interaction-port
 agora-service --> agora-scheduled-publication-port
+agora-service --> agora-federated-publication-port
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-observation --> keystone-storage port
 agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem
@@ -30,6 +31,7 @@ agora-search-port --> no normal dependencies
 agora-delivery-projection-port --> no normal dependencies
 agora-interaction-port --> no normal dependencies
 agora-scheduled-publication-port --> no normal dependencies
+agora-federated-publication-port --> no normal dependencies
 agora-aegis-verifier --> agora-host + agora-durable + Aegis public service port
 agora-local-transport --> agora-wire + Unix endpoint/stream resources
 agora-local-daemon --> agora-local-transport + agora-aegis-verifier + agora-host + agora-durable + agora-wire

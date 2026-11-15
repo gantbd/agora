@@ -32,6 +32,7 @@ name = "agora-durable"
 version = "0.1.0"
 dependencies = [
  "agora-delivery-projection-port",
+ "agora-federated-publication-port",
  "agora-host",
  "agora-interaction-port",
  "agora-protocol",
@@ -44,6 +45,10 @@ dependencies = [
 [[package]]
 name = "agora-engine"
 version = "0.3.0"
+
+[[package]]
+name = "agora-federated-publication-port"
+version = "0.1.0"
 
 [[package]]
 name = "agora-fuzz"
@@ -62,6 +67,7 @@ name = "agora-host"
 version = "0.1.0"
 dependencies = [
  "agora-delivery-projection-port",
+ "agora-federated-publication-port",
  "agora-interaction-port",
  "agora-protocol",
  "agora-scheduled-publication-port",
@@ -110,6 +116,7 @@ version = "0.1.0"
 dependencies = [
  "agora-delivery-projection-port",
  "agora-engine",
+ "agora-federated-publication-port",
  "agora-interaction-port",
  "agora-protocol",
  "agora-scheduled-publication-port",

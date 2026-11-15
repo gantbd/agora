@@ -5,6 +5,10 @@ use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, LogicalTime, OutcomeV2 as EngineOutcome,
     Participant, ParticipantId, ParticipantKind, ReadScopeV1, Revision, RoomId, TopicId,
 };
+use agora_federated_publication_port::{
+    FederatedPublicationIdV1, FederatedPublicationIntentV1, FederatedPublicationRefusalV1,
+    FederatedPublicationRequestV1,
+};
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
@@ -226,6 +230,63 @@ fn scheduled_publication_binds_revalidated_session_actor_and_current_host_time()
             HostTimeV1(4),
         ),
         Err(ScheduledPublicationRefusalV1::NotAuthorized)
+    );
+    assert_eq!(host.service().active_client_count(), 0);
+    assert_eq!(calls.get(), 4);
+}
+
+#[test]
+fn federated_publication_binds_revalidated_session_actor_and_current_host_time() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(4),
+    );
+    let (session, _, mut context) = open(&mut host, "alice", 1);
+    let request = FederatedPublicationRequestV1 {
+        id: FederatedPublicationIdV1::new([13; 16]).unwrap(),
+        intent: FederatedPublicationIntentV1::new("room", "federated"),
+    };
+    let accepted = host
+        .publish_federated(session, request.clone(), &context, HostTimeV1(2))
+        .unwrap();
+    assert_eq!(accepted.revision, 4);
+    assert_eq!(accepted.event_sequence, 3);
+    let message = host
+        .service()
+        .engine()
+        .message(&"room".into(), accepted.message_sequence)
+        .unwrap();
+    assert_eq!(message.author(), &"alice".into());
+    assert_eq!(message.at(), LogicalTime(2));
+    assert_eq!(
+        host.publish_federated(session, request, &context, HostTimeV1(3)),
+        Ok(accepted)
+    );
+    context.active = false;
+    assert_eq!(
+        host.publish_federated(
+            session,
+            FederatedPublicationRequestV1 {
+                id: FederatedPublicationIdV1::new([14; 16]).unwrap(),
+                intent: FederatedPublicationIntentV1::new("room", "revoked"),
+            },
+            &context,
+            HostTimeV1(4),
+        ),
+        Err(FederatedPublicationRefusalV1::NotAuthorized)
     );
     assert_eq!(host.service().active_client_count(), 0);
     assert_eq!(calls.get(), 4);

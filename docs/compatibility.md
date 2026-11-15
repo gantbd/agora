@@ -357,6 +357,10 @@ namespaced offers may replay an equal legacy receipt during migration. The
 frozen `checkpoint-v21.hex` fixture pins the federation-domain representation,
 and unknown domain or metadata tags fail closed.
 
+The additive `agora-federated-publication-port` has no wire grammar or durable
+bytes of its own. It reuses the profile-149 federation domain through Service,
+Host, and Durable Host; Protocol V1/V2 and Wire V1/V2 bytes remain unchanged.
+
 ## Conservative baseline gate
 
 `docs/compatibility-baseline.txt` records the exact sorted Cargo package

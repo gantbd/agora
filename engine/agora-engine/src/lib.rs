@@ -3317,6 +3317,18 @@ impl fmt::Debug for PublicationRecordV2 {
     }
 }
 
+fn publication_offer_matches(
+    existing: &PublicationRecordV2,
+    command: &PublicationCommandV2,
+    exact_key: bool,
+) -> bool {
+    existing.room_id == command.room_id
+        && existing.author == command.author
+        && existing.body == command.body
+        && (existing.at == command.at
+            || (exact_key && command.key.domain() == PublicationDomainV2::Federation))
+}
+
 /// The authoritative, serial in-process engine.
 #[derive(Debug)]
 pub struct Engine {
@@ -5302,23 +5314,25 @@ impl Engine {
         &self,
         command: &PublicationCommandV2,
     ) -> Result<Option<TransitionV2>, PublicationRefusalV2> {
-        let existing = self.publications.get(&command.key).or_else(|| {
-            command
-                .key
-                .legacy_alias()
-                .and_then(|legacy| self.publications.get(&legacy))
-        });
-        let Some(existing) = existing else {
-            return Ok(None);
-        };
-        if existing.room_id == command.room_id
-            && existing.author == command.author
-            && existing.at == command.at
-            && existing.body == command.body
-        {
-            return Ok(Some(existing.transition.clone()));
+        if let Some(existing) = self.publications.get(&command.key) {
+            return if publication_offer_matches(existing, command, true) {
+                Ok(Some(existing.transition.clone()))
+            } else {
+                Err(PublicationRefusalV2::IdempotencyConflict)
+            };
         }
-        Err(PublicationRefusalV2::IdempotencyConflict)
+        if let Some(existing) = command
+            .key
+            .legacy_alias()
+            .and_then(|legacy| self.publications.get(&legacy))
+        {
+            return if publication_offer_matches(existing, command, false) {
+                Ok(Some(existing.transition.clone()))
+            } else {
+                Err(PublicationRefusalV2::IdempotencyConflict)
+            };
+        }
+        Ok(None)
     }
 
     fn publish_with_admission_time(
@@ -5326,17 +5340,18 @@ impl Engine {
         command: PublicationCommandV2,
         admission_time: Option<&AdmissionTimeV1>,
     ) -> Result<TransitionV2, PublicationRefusalV2> {
-        if let Some(existing) = self.publications.get(&command.key).or_else(|| {
-            command
-                .key
-                .legacy_alias()
-                .and_then(|legacy| self.publications.get(&legacy))
-        }) {
-            if existing.room_id == command.room_id
-                && existing.author == command.author
-                && existing.at == command.at
-                && existing.body == command.body
-            {
+        if let Some(existing) = self.publications.get(&command.key) {
+            if publication_offer_matches(existing, &command, true) {
+                return Ok(existing.transition.clone());
+            }
+            return Err(PublicationRefusalV2::IdempotencyConflict);
+        }
+        if let Some(existing) = command
+            .key
+            .legacy_alias()
+            .and_then(|legacy| self.publications.get(&legacy))
+        {
+            if publication_offer_matches(existing, &command, false) {
                 return Ok(existing.transition.clone());
             }
             return Err(PublicationRefusalV2::IdempotencyConflict);

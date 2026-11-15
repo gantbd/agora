@@ -837,6 +837,13 @@
   unknown. Any Agora publication identity used by federation MUST occupy a
   closed source domain distinct from scheduling and typed-interaction
   identities; equal raw identifier bytes across domains MUST NOT alias.
+  Agora's trusted federation publication boundary MUST carry no peer trust,
+  identity mapping, credential, clock, transport, retry, or room-home
+  authority. Service MUST bind the current participant and federation receipt
+  domain; Host MUST revalidate its authenticated session and supply current
+  time; Durable Host MUST commit the resulting checkpoint before publishing a
+  semantic reply. Exact later retry MUST retain the first accepted Host time
+  only when room, participant, and content remain equal.
   Reconnect and peer acknowledgement MUST NOT imply mutation success,
   participant read state, room authority transfer, or gap closure.
 
@@ -880,9 +887,11 @@ limits. Canonical admission home/client checkpoints preserve validated exact
 receipts and pending uncertainty without re-execution. Agora revision `f8cec20`
 source-scopes legacy, scheduled, interaction, and federation publication
 receipts, canonically recovers profile 149, and passed the complete gate.
-Trust-provider composition, Agora current-policy/Host composition, physical
-storage, transport composition, adversarial campaigns, and integrated
-qualification remain open.
+The additive federated-publication port plus Service, Host, and Durable Host
+composition implement current policy, authenticated actor/time binding, commit
+gating, and later-time replay; commit-pinned qualification is pending.
+Trust-provider and identity-mapping composition, physical storage, transport
+composition, adversarial campaigns, and integrated qualification remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part

@@ -1,5 +1,6 @@
 use agora_sdk_embedded::{
-    delivery_projection, engine, host, interaction, scheduled_publication, service,
+    delivery_projection, engine, federated_publication, host, interaction, scheduled_publication,
+    service,
 };
 
 struct Verifier;
@@ -103,6 +104,17 @@ fn facade_names_the_trusted_scheduled_publication_contract() {
     };
     assert_eq!(request.id, id);
     assert_eq!(request.intent.logical_time(), 12);
+}
+
+#[test]
+fn facade_names_the_trusted_federated_publication_contract() {
+    let id = federated_publication::FederatedPublicationIdV1::new([8; 16]).unwrap();
+    let request = federated_publication::FederatedPublicationRequestV1 {
+        id,
+        intent: federated_publication::FederatedPublicationIntentV1::new("room", "federated"),
+    };
+    assert_eq!(request.id, id);
+    assert_eq!(request.intent.room_id(), "room");
 }
 
 #[test]

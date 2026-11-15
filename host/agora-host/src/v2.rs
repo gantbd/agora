@@ -7,6 +7,9 @@ use super::{
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
 };
+use agora_federated_publication_port::{
+    FederatedPublicationAcceptedV1, FederatedPublicationRefusalV1, FederatedPublicationRequestV1,
+};
 use agora_interaction_port::{
     InteractionContextRefusalV1, InteractionContextV1, InteractionPromotionAcceptedV1,
     InteractionPromotionRefusalV1, InteractionPromotionRequestV1, InteractionSourceV1,
@@ -222,6 +225,22 @@ impl<V: PrincipalVerifier> HostV2<V> {
             .map_err(|_| ScheduledPublicationRefusalV1::NotAuthorized)?;
         self.service
             .publish_scheduled_at(session.client, request, now.0)
+    }
+
+    /// Trusted transport-neutral publication path for a configured federation
+    /// adapter. Host revalidation supplies the actor and current clock.
+    pub fn publish_federated(
+        &mut self,
+        session_id: HostSessionIdV2,
+        request: FederatedPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<FederatedPublicationAcceptedV1, FederatedPublicationRefusalV1> {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| FederatedPublicationRefusalV1::NotAuthorized)?;
+        self.service
+            .publish_federated_at(session.client, request, now.0)
     }
 
     /// Revalidates the authenticated observer before projecting a minimized

@@ -8,6 +8,9 @@
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
 };
+use agora_federated_publication_port::{
+    FederatedPublicationAcceptedV1, FederatedPublicationRefusalV1, FederatedPublicationRequestV1,
+};
 use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
@@ -1213,6 +1216,23 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
     > {
         let publication =
             self.publish(|host| host.publish_scheduled(session, request, context, now));
+        self.counters.record(&publication);
+        publication
+    }
+
+    /// Offers one actor-bound federated publication and publishes its semantic
+    /// result only after the resulting Host checkpoint is durable.
+    pub fn publish_federated(
+        &mut self,
+        session: HostSessionIdV2,
+        request: FederatedPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<
+        Result<FederatedPublicationAcceptedV1, FederatedPublicationRefusalV1>,
+    > {
+        let publication =
+            self.publish(|host| host.publish_federated(session, request, context, now));
         self.counters.record(&publication);
         publication
     }
