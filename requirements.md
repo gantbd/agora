@@ -866,9 +866,13 @@ profiles, and bounded-minimum limits. Its event, snapshot, and acknowledgement
 frames are distinct, frozen, bounded,
 and fail closed on wrong kind, zero identity, invalid event sequence,
 noncanonical length, truncation, trailing bytes, or negotiated-limit overflow.
-Canonical admission wire, trust-provider composition, durable snapshot recovery,
-remote admission, durable storage, transport composition, and integrated
-qualification remain open.
+The separate federation workspace also has frozen bounded admission
+request/reply frames, authenticated-sender participant
+and room-home preflight, bounded exact receipts, matching replay, changed-input
+conflict, participant-kind-neutral execution, and a client uncertainty fence.
+Trust-provider composition, durable snapshot/receipt recovery, Agora current-
+policy/Host composition, durable storage, transport composition, adversarial
+campaigns, and integrated qualification remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part
