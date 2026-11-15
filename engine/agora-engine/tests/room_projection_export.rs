@@ -186,11 +186,21 @@ fn room_projection_source_is_bounded_canonical_and_fail_closed() {
     );
 
     let mut stale = enabled;
-    stale.effective_engine_revision -= 1;
+    stale.effective_engine_revision += 1;
     assert_eq!(
         RoomProjectionSourceV1::capture(&engine, stale, MAX_BYTES),
         Err(RoomProjectionSourceRefusalV1::StalePolicy)
     );
+    let mut advanced = Engine::new();
+    let established = policy(&advanced, RetentionBoundV1::entries(1).unwrap());
+    advanced
+        .apply(CommandV2::RegisterParticipant(Participant::new(
+            "later",
+            "Later",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    assert!(RoomProjectionSourceV1::capture(&advanced, established, MAX_BYTES).is_ok());
     assert_eq!(
         RoomProjectionSourceV1::capture(
             &engine,

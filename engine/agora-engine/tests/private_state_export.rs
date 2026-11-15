@@ -258,11 +258,20 @@ fn empty_private_generation_is_frozen_and_source_preflights_identity_policy_and_
     assert_eq!(source.fragment().records()[0].payload(), expected);
 
     let mut stale = policy(&engine, RetentionBoundV1::entries(1).unwrap());
-    stale.effective_engine_revision -= 1;
+    stale.effective_engine_revision += 1;
     assert_eq!(
         PrivateParticipantStateSourceV1::capture(&engine, stale, MAX_BYTES),
         Err(PrivateParticipantStateSourceRefusalV1::StalePolicy)
     );
+    let established = policy(&engine, RetentionBoundV1::entries(1).unwrap());
+    engine
+        .apply(CommandV2::RegisterParticipant(Participant::new(
+            "later",
+            "Later",
+            ParticipantKind::Agent,
+        )))
+        .unwrap();
+    assert!(PrivateParticipantStateSourceV1::capture(&engine, established, MAX_BYTES).is_ok());
     assert_eq!(
         PrivateParticipantStateSourceV1::capture(
             &engine,

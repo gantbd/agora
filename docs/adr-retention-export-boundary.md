@@ -1,6 +1,6 @@
 # ADR: logical retention, exact export, and store reclamation
 
-Status: accepted architecture; closed values and receipt-retirement slice implemented
+Status: accepted architecture; closed values, receipt retirement, and continuous authoritative-change retention implemented
 
 Date: 2026-11-14
 
@@ -266,16 +266,24 @@ The first owner-native application primitive applies only the current policy's
 preflights the exact engine revision and all record identities, then prunes the
 oldest excess entries and returns the same ordinal frontier exposed by
 `AuthoritativeChangeSourceV1`. Disabled retains none; equal reapplication is an
-inert replay; stale policy is nonmutating; canonical Engine recovery preserves
-the new discard edge. It does not acknowledge or prune the delivery outbox,
-advance the domain revision, apply another class, or keep the bound continuously
-enforced across later domain writes. Service V2 now binds application to its
-exact installed policy and engine revision. Host revalidates the administrative
-session and obtains a fresh authority decision over the class bound, prior
-discard ordinal, and retained count before mutation. Durable Host commit-gates
-the complete checkpoint: known refusal restores the journal, while committed
-restart preserves the exact gap and still-pending delivery outbox. Later-write
-reapplication and the other owner-native application profiles remain open.
+inert replay; a policy whose establishment revision is in the future is
+nonmutating; canonical Engine recovery preserves the new discard edge. Service
+V2 binds explicit backlog application to its exact installed policy and current
+engine revision. Host revalidates the administrative session and obtains a
+fresh authority decision over the class bound, prior discard ordinal, and
+retained count before that mutation. Durable Host commit-gates the complete
+checkpoint: known refusal restores the journal, while committed restart
+preserves the exact gap and still-pending delivery outbox.
+
+Once installed, that policy remains established as the engine revision advances;
+it does not expire after the first domain transition. Service V2 reapplies the
+`AuthoritativeChanges` bound after every successful ordinary, scheduled,
+federated, and typed-interaction domain publication, including exact publication
+replay. This continuous owner-local enforcement never acknowledges or prunes the
+delivery outbox and does not add a participant Wire or remote SDK operation.
+Explicit administrative application remains the freshly authorized operation
+for cutting an already accumulated backlog. The other owner-native application
+profiles remain open.
 
 The engine export foundation now materializes one complete canonical record
 inventory into bounded `AGEXCH1` chunks and an `AGEXMF1` manifest body. It

@@ -1,3 +1,6 @@
+use agora_engine::retention::{
+    RecordClassV1, RetentionBoundV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
+};
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, LogicalTime, Participant,
     ParticipantKind,
@@ -64,6 +67,19 @@ fn promotion(id: u8, body: &str) -> InteractionPromotionRequestV1 {
     }
 }
 
+fn install_single_change_policy(service: &mut ServiceV2) {
+    let mut bounds = [RetentionBoundV1::Disabled; 6];
+    bounds[RecordClassV1::AuthoritativeChanges as usize - 1] =
+        RetentionBoundV1::entries(1).unwrap();
+    service
+        .install_retention_policy(RetentionPolicyV1::new(
+            RetentionPolicyRevisionV1::new(1).unwrap(),
+            service.engine().revision().0,
+            bounds,
+        ))
+        .unwrap();
+}
+
 #[test]
 fn context_is_current_member_bound_message_only_and_domain_neutral() {
     let mut service = setup();
@@ -125,6 +141,31 @@ fn promotion_is_actor_bound_exact_and_replays_after_source_eviction() {
         Err(InteractionPromotionRefusalV1::SourceUnavailable)
     );
     assert!(!format!("{:?}", promotion(4, "diagnostic secret")).contains("diagnostic secret"));
+}
+
+#[test]
+fn interaction_promotion_continuously_enforces_the_installed_change_bound() {
+    let mut service = setup();
+    install_single_change_policy(&mut service);
+    let alice = service.connect("alice").unwrap();
+
+    service
+        .promote_interaction_at(alice, promotion(9, "bounded proposal"), 10)
+        .unwrap();
+
+    assert_eq!(service.engine().retained_changes().len(), 1);
+    assert_eq!(
+        service
+            .engine()
+            .retained_changes()
+            .next()
+            .unwrap()
+            .sequence
+            .0,
+        6
+    );
+    assert_eq!(service.engine().discarded_changes_through().unwrap().0, 5);
+    assert_eq!(service.engine().pending_events().len(), 7);
 }
 
 #[test]

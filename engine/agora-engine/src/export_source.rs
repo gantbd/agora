@@ -58,7 +58,7 @@ impl RoomProjectionSourceV1 {
             return Err(RoomProjectionSourceRefusalV1::InvalidLimit);
         }
         let source_engine_revision = engine.revision().0;
-        if policy.effective_engine_revision != source_engine_revision {
+        if policy.effective_engine_revision > source_engine_revision {
             return Err(RoomProjectionSourceRefusalV1::StalePolicy);
         }
         if !policy
@@ -171,7 +171,7 @@ impl PrivateParticipantStateSourceV1 {
             return Err(PrivateParticipantStateSourceRefusalV1::InvalidLimit);
         }
         let source_engine_revision = engine.revision().0;
-        if policy.effective_engine_revision != source_engine_revision {
+        if policy.effective_engine_revision > source_engine_revision {
             return Err(PrivateParticipantStateSourceRefusalV1::StalePolicy);
         }
         if !policy
@@ -279,7 +279,7 @@ impl AuthoritativeChangeSourceV1 {
             return Err(AuthoritativeChangeSourceRefusalV1::InvalidLimit);
         }
         let source_engine_revision = engine.revision().0;
-        if policy.effective_engine_revision != source_engine_revision {
+        if policy.effective_engine_revision > source_engine_revision {
             return Err(AuthoritativeChangeSourceRefusalV1::StalePolicy);
         }
         if !policy

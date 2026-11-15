@@ -143,9 +143,29 @@ fn authoritative_change_source_and_record_fail_closed() {
         Err(AuthoritativeChangeSourceRefusalV1::NoRetainedChanges)
     );
 
+    let mut advanced = engine_with_retention(2);
+    let established = policy(&advanced, RetentionBoundV1::entries(2).unwrap());
+    advanced
+        .apply(CommandV2::RegisterParticipant(Participant::new(
+            "later",
+            "Later",
+            ParticipantKind::Agent,
+        )))
+        .unwrap();
+    let established_source =
+        AuthoritativeChangeSourceV1::capture(&advanced, established, 2, 16 * 1_024).unwrap();
+    assert_eq!(
+        established_source.fragment().source_engine_revision(),
+        advanced.revision().0
+    );
+    assert_eq!(
+        established_source.fragment().policy_revision(),
+        established.revision
+    );
+
     let engine = engine_with_retention(2);
     let mut stale = policy(&engine, RetentionBoundV1::entries(2).unwrap());
-    stale.effective_engine_revision -= 1;
+    stale.effective_engine_revision += 1;
     assert_eq!(
         AuthoritativeChangeSourceV1::capture(&engine, stale, 2, 16 * 1_024),
         Err(AuthoritativeChangeSourceRefusalV1::StalePolicy)

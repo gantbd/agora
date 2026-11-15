@@ -1,3 +1,6 @@
+use agora_engine::retention::{
+    RecordClassV1, RetentionBoundV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
+};
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Participant, ParticipantKind,
 };
@@ -45,6 +48,19 @@ fn federated(id: u8, body: &str) -> FederatedPublicationRequestV1 {
     }
 }
 
+fn install_single_change_policy(service: &mut ServiceV2) {
+    let mut bounds = [RetentionBoundV1::Disabled; 6];
+    bounds[RecordClassV1::AuthoritativeChanges as usize - 1] =
+        RetentionBoundV1::entries(1).unwrap();
+    service
+        .install_retention_policy(RetentionPolicyV1::new(
+            RetentionPolicyRevisionV1::new(1).unwrap(),
+            service.engine().revision().0,
+            bounds,
+        ))
+        .unwrap();
+}
+
 #[test]
 fn publication_is_actor_bound_host_timed_and_exactly_replayable() {
     let mut service = setup();
@@ -75,6 +91,31 @@ fn publication_is_actor_bound_host_timed_and_exactly_replayable() {
         ),
         Err(FederatedPublicationRefusalV1::NotAuthorized)
     );
+}
+
+#[test]
+fn federated_publication_continuously_enforces_the_installed_change_bound() {
+    let mut service = setup();
+    install_single_change_policy(&mut service);
+    let agent = service.connect("agent").unwrap();
+
+    service
+        .publish_federated_at(agent, federated(9, "bounded"), 1_000)
+        .unwrap();
+
+    assert_eq!(service.engine().retained_changes().len(), 1);
+    assert_eq!(
+        service
+            .engine()
+            .retained_changes()
+            .next()
+            .unwrap()
+            .sequence
+            .0,
+        4
+    );
+    assert_eq!(service.engine().discarded_changes_through().unwrap().0, 3);
+    assert_eq!(service.engine().pending_events().len(), 5);
 }
 
 #[test]

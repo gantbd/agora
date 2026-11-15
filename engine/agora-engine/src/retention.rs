@@ -204,7 +204,7 @@ pub fn apply_authoritative_change_retention_v1(
     policy: RetentionPolicyV1,
 ) -> Result<AuthoritativeChangeRetentionApplicationV1, AuthoritativeChangeRetentionRefusalV1> {
     let source_engine_revision = engine.revision().0;
-    if policy.effective_engine_revision != source_engine_revision {
+    if policy.effective_engine_revision > source_engine_revision {
         return Err(AuthoritativeChangeRetentionRefusalV1::StalePolicy);
     }
     let maximum = policy

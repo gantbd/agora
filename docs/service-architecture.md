@@ -163,7 +163,14 @@ Service V2 separately retains the current installed policy metadata. A proposal
 must name the current engine revision; equal revision and equal policy is replay,
 equal revision with changed bounds conflicts, and policy revision regression is
 inert. Service profile 31 and Host profile 28 recover the policy together with
-receipt tombstones. This installation step authorizes no discard by itself.
+receipt tombstones. Installation establishes the policy at that revision; it
+does not expire merely because later domain transitions advance the engine.
+Installation authorizes no immediate backlog discard by itself. Once installed,
+Service reapplies the authoritative-change bound after every successful ordinary,
+scheduled, federated, and typed-interaction domain publication. That owner-local
+continuous enforcement never acknowledges or removes delivery work. Explicit
+backlog application remains a separately authenticated, freshly authorized,
+commit-gated administrative operation.
 
 Any later receipt-state mutation emits Service profile 32 with a persisted
 monotone receipt-source revision and explicit saturation fence; Host profile 29

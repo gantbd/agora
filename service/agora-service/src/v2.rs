@@ -605,6 +605,7 @@ impl ServiceV2 {
             .engine
             .publish_at_instant(command, instant_ms)
             .map_err(map_scheduled_publication_refusal)?;
+        self.enforce_authoritative_change_retention();
         let EngineOutcome::MessageAccepted { sequence, .. } = transition.outcome else {
             return Err(ScheduledPublicationRefusalV1::Unavailable);
         };
@@ -644,6 +645,7 @@ impl ServiceV2 {
             .engine
             .publish_at_instant(command, instant_ms)
             .map_err(map_federated_publication_refusal)?;
+        self.enforce_authoritative_change_retention();
         let EngineOutcome::MessageAccepted { sequence, .. } = transition.outcome else {
             return Err(FederatedPublicationRefusalV1::Unavailable);
         };
@@ -764,6 +766,7 @@ impl ServiceV2 {
             .replay_publication(&command)
             .map_err(map_interaction_promotion_refusal)?
         {
+            self.enforce_authoritative_change_retention();
             let EngineOutcome::MessageAccepted { sequence, .. } = transition.outcome else {
                 return Err(InteractionPromotionRefusalV1::Unavailable);
             };
@@ -792,6 +795,7 @@ impl ServiceV2 {
             .engine
             .publish_at_instant(command, instant_ms)
             .map_err(map_interaction_promotion_refusal)?;
+        self.enforce_authoritative_change_retention();
         let EngineOutcome::MessageAccepted { sequence, .. } = transition.outcome else {
             return Err(InteractionPromotionRefusalV1::Unavailable);
         };
@@ -1824,6 +1828,7 @@ impl ServiceV2 {
             command,
             admission_time,
         )?;
+        self.enforce_authoritative_change_retention();
         let EngineOutcome::MessageAccepted { room_id, sequence } = transition.outcome else {
             return Err(RefusalV2::Unavailable);
         };
@@ -1851,6 +1856,7 @@ impl ServiceV2 {
             command,
             admission_time,
         )?;
+        self.enforce_authoritative_change_retention();
         let EngineOutcome::AttachmentMessageAccepted {
             message_id,
             sequence,
@@ -1880,6 +1886,7 @@ impl ServiceV2 {
             command,
             admission_time,
         )?;
+        self.enforce_authoritative_change_retention();
         let EngineOutcome::VellumArtifactMessageAccepted {
             message_id,
             sequence,
@@ -1909,6 +1916,7 @@ impl ServiceV2 {
             command,
             admission_time,
         )?;
+        self.enforce_authoritative_change_retention();
         let EngineOutcome::ReplyAccepted {
             room_id,
             root_message_id,
@@ -1942,6 +1950,7 @@ impl ServiceV2 {
                 command,
             })
             .map_err(map_engine_refusal)?;
+        self.enforce_authoritative_change_retention();
         self.map_transition(transition)
     }
 
@@ -2165,6 +2174,13 @@ impl ServiceV2 {
         }
     }
 
+    fn enforce_authoritative_change_retention(&mut self) {
+        if let Some(policy) = self.retention_policy {
+            apply_authoritative_change_retention_v1(&mut self.engine, policy)
+                .expect("installed retention policy cannot be effective in the future");
+        }
+    }
+
     fn mutate_at(
         &mut self,
         expected_revision: u64,
@@ -2177,6 +2193,7 @@ impl ServiceV2 {
             command,
             admission_time,
         )?;
+        self.enforce_authoritative_change_retention();
         self.map_transition(transition)
     }
 

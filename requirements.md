@@ -879,7 +879,11 @@
   revision saturation MUST fence exact export without blocking authorized
   cleanup. Legacy recovery without such a revision MUST remain ineligible for
   that native source until a subsequent class-state mutation establishes the
-  new revision domain. Export retirement MUST revalidate the current source
+  new revision domain. An installed policy MUST remain established after its
+  effective engine revision; every later successful owner-local domain
+  publication MUST continuously enforce enabled authoritative-change bounds
+  without acknowledging or pruning independent delivery work. Export retirement
+  MUST revalidate the current source
   and policy plus fresh administrative authority, atomically replace one exact
   live custody copy with a separately bounded non-reuse tombstone, replay an
   identical request, conflict on changed identity, and survive custody restart;

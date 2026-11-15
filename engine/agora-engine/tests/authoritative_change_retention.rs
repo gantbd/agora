@@ -85,7 +85,7 @@ fn disabled_and_stale_application_are_exact_atomic_and_kind_neutral() {
     let mut engine = engine_with_four_changes();
     let before = engine.prepare_checkpoint(4 * 1024 * 1024).unwrap();
     let mut stale = policy(&engine, RetentionBoundV1::entries(1).unwrap());
-    stale.effective_engine_revision -= 1;
+    stale.effective_engine_revision += 1;
     assert_eq!(
         apply_authoritative_change_retention_v1(&mut engine, stale),
         Err(AuthoritativeChangeRetentionRefusalV1::StalePolicy)

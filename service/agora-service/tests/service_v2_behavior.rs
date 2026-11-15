@@ -92,6 +92,42 @@ fn authoritative_change_retention_requires_the_exact_installed_policy_and_fronti
     assert_eq!(service.engine().revision(), revision);
     assert_eq!(service.engine().retained_changes().len(), 1);
     assert_eq!(service.engine().pending_events().len(), 4);
+
+    let alice = service.connect("alice").unwrap();
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                900,
+                CommandV2::CreateRoom {
+                    room_id: "retained".to_owned(),
+                    name: "Retained".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: revision.0,
+                },
+            ),
+        ),
+        ReplyV2::Accepted(OutcomeV2::RoomCreated {
+            revision: revision.0 + 1,
+        })
+    );
+    assert_eq!(service.engine().retained_changes().len(), 1);
+    assert_eq!(
+        service
+            .engine()
+            .retained_changes()
+            .next()
+            .unwrap()
+            .sequence
+            .0,
+        4
+    );
+    assert_eq!(service.engine().discarded_changes_through().unwrap().0, 3);
+    assert_eq!(service.engine().pending_events().len(), 5);
+    let replay = service
+        .apply_authoritative_change_retention(policy_revision, service.engine().revision())
+        .unwrap();
+    assert_eq!(replay.discarded_records, 0);
 }
 
 #[test]
