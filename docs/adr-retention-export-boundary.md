@@ -187,6 +187,19 @@ the native receipt source remains unavailable until a post-migration
 receipt-state mutation establishes the new domain. This revision is source
 identity substrate, not by itself an export, authorization, or custody grant.
 
+`RequestReceiptSourceV1` now turns that identity domain into one narrow
+owner-native `RequestReceipts` snapshot record. Canonical `AGARRC1` bytes contain
+only ordered live V2 request/reply wire receipts and ordered receipt-retirement
+tombstones. The record ordinal is the receipt revision; its frontier marks all
+earlier receipt generations superseded without claiming that external copies
+were erased. Recovery revalidates bounds, ordering, outer keys against decoded
+wire identities, canonical wire re-encoding, tombstone class/reason/bindings,
+framing, and exact whole-record re-encoding. Missing legacy identity, disabled
+policy, saturation, wire failure, and record limits refuse before a source
+fragment escapes. The administrative materializer composes it with the Engine
+authoritative-change source only at one engine and policy revision. Authority,
+visibility, custody, and physical reclamation remain enclosing obligations.
+
 Service V2 also owns the current installed policy metadata. Installation is
 engine-revision-bound, monotonically policy-revisioned, exact-replay-safe, and
 conflict detecting. Host revalidation and a fresh policy-authority decision

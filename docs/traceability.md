@@ -142,7 +142,14 @@ replay, conflict, and policy-only operations remain stable. Focused evidence
 pins recovery continuity and canonical re-encoding, while a direct boundary
 case proves saturation never wraps and permanently fences exact source identity.
 Profiles 24 through 31 recover with no such identity until a later receipt-state
-mutation. The native receipt projection itself remains open.
+mutation. `RequestReceiptSourceV1` now supplies the native projection as one
+canonical `AGARRC1` generation containing only ordered live wire receipts and
+retirement tombstones. Evidence covers a frozen empty generation, exact
+human/agent state, replay stability, live-plus-retired recovery, class/frontier
+binding, two-owner composition with authoritative changes, bounded refusal,
+redacted diagnostics, and every single-bit record mutation refusing or
+re-encoding exactly. Authority, custody, and physical reclamation remain
+separate.
 
 ## Verification gates
 

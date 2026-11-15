@@ -378,6 +378,14 @@ recover with no receipt-source revision. They become eligible for the new
 domain only after a later receipt-state mutation, preventing migration from
 inventing an export generation.
 
+The owner-native receipt export record is a separate administrative grammar:
+magic `AGARRC1`, version `1`, followed by its nonzero receipt revision, ordered
+live client/request keys with canonical Wire V2 request/reply frames, and
+ordered receipt-retirement tombstones. It changes no participant Protocol or
+Wire tag and no Service/Host checkpoint grammar. A frozen empty revision-2
+record pins the zero-live/zero-tombstone representation; bounded recovery and
+canonical re-encoding close all other records.
+
 The independent `agora-export-service` checkpoint remains outside conversation
 Engine, Service, Host, Protocol, and Wire profiles. Its additive checkpoint V2
 adds an independently bounded retirement-tombstone capacity and a canonical

@@ -5859,6 +5859,9 @@ fn map_interaction_promotion_refusal(
 mod tests {
     use super::{ServiceLimitsV2, ServiceV2};
     use agora_engine::Engine;
+    use agora_engine::retention::{RetentionBoundV1, RetentionPolicyRevisionV1, RetentionPolicyV1};
+
+    use super::export_source::{RequestReceiptSourceRefusalV1, RequestReceiptSourceV1};
 
     #[test]
     fn receipt_revision_saturation_fences_identity_without_wrapping() {
@@ -5877,5 +5880,24 @@ mod tests {
         service.advance_receipt_revision();
         assert_eq!(service.receipt_revision, u64::MAX);
         assert!(service.receipt_revision_exhausted());
+    }
+
+    #[test]
+    fn receipt_revision_saturation_refuses_native_source() {
+        let mut service = ServiceV2::new(Engine::new(), ServiceLimitsV2::default());
+        service
+            .install_retention_policy(RetentionPolicyV1::new(
+                RetentionPolicyRevisionV1::new(1).unwrap(),
+                0,
+                [RetentionBoundV1::entries(1).unwrap(); 6],
+            ))
+            .unwrap();
+        service.receipt_revision = u64::MAX;
+        service.receipt_revision_exhausted = true;
+
+        assert_eq!(
+            RequestReceiptSourceV1::capture(&service, 1_024),
+            Err(RequestReceiptSourceRefusalV1::RevisionExhausted)
+        );
     }
 }

@@ -617,6 +617,12 @@ Legacy checkpoints intentionally recover without one and cannot be presented as
 a native receipt source until a later receipt-state mutation establishes the
 domain. Counter saturation never wraps or aliases an earlier generation; it
 permanently fences exact export while leaving cleanup paths available.
+The native receipt source emits only a canonical snapshot of live wire receipts
+and retirement tombstones under that revision. It cross-checks every outer
+client/request key with the decoded request, re-encodes request and reply bytes,
+and validates tombstone order and class, preventing a complete Service
+checkpoint or malformed receipt bytes from being relabeled as receipt records.
+It remains administrative-only and grants no visibility or custody authority.
 
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;

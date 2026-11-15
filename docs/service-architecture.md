@@ -171,6 +171,20 @@ nests it without adding authority. Profiles 24 through 31 recover with the
 revision absent, so migration cannot synthesize an export identity from an old
 checkpoint.
 
+The administrative `RequestReceiptSourceV1` reads that owner-native revision
+and projects only the current ordered exact receipts and retirement tombstones
+into a canonical `AGARRC1` generation. It does not export clients, cursors,
+private participant state, engine projections, or the enclosing Service
+checkpoint. Its fragment can compose with other class owners only at an exact
+engine and policy revision; authorization and custody remain outside Service.
+
+The administrative `RequestReceiptSourceV1` reads that owner-native revision
+and projects only the current ordered exact receipts and retirement tombstones
+into a canonical `AGARRC1` generation. It does not export clients, cursors,
+private participant state, engine projections, or the enclosing Service
+checkpoint. Its fragment can compose with other class owners only at an exact
+engine and policy revision; authorization and custody remain outside Service.
+
 After completing bounded room state pages at one revision, a client can open a
 room change position at that exact revision and pull retained room events through
 an opaque client-owned cursor. Pages are exclusive-after and replayable by exact
