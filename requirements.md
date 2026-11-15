@@ -860,8 +860,11 @@ R106 has an accepted native single-home federation architecture plus a
 commit-pinned zero-dependency identity/negotiation protocol and bounded
 single-home replica-journal foundation, including bounded authoritative snapshot
 gap repair with rollback fencing and honest unavailable-history classification.
-Canonical wire, session trust binding, durable snapshot recovery, remote
-admission, durable storage, transport composition,
+Its canonical fixed-width hello and session constructor bind externally verified
+server identities/trust epochs, both incarnations, a fresh exporter, exact
+profiles, and bounded-minimum limits. Canonical event/snapshot/admission wire,
+trust-provider composition, durable snapshot recovery, remote admission, durable
+storage, transport composition,
 and integrated qualification remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
