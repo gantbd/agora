@@ -3,6 +3,7 @@
 //! This module performs no authorization or I/O. It defines Agora-owned meaning;
 //! hosts and adapters must provide authority and physical effects separately.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::num::NonZeroUsize;
 
@@ -351,6 +352,106 @@ impl fmt::Debug for RetentionTombstoneV1 {
             .field("identity_binding", &"<redacted>")
             .field("scope_binding", &"<redacted>")
             .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiptRetirementApplyV1 {
+    Retired,
+    Replay,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiptRetirementRefusalV1 {
+    InvalidLimit,
+    WrongClass,
+    WrongReason,
+    Conflict,
+    Capacity,
+    NonCanonicalCheckpoint,
+}
+
+/// Bounded exact tombstones for request receipts removed from replay storage.
+///
+/// Membership means the same identity/scope pair must never execute again. It
+/// does not mean any payload, backup, or remote copy was erased.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReceiptRetirementRegistryV1 {
+    maximum: usize,
+    retired: BTreeMap<(ContentDigestV1, ContentDigestV1), RetentionTombstoneV1>,
+}
+
+impl ReceiptRetirementRegistryV1 {
+    pub fn new(maximum: usize) -> Result<Self, ReceiptRetirementRefusalV1> {
+        if maximum == 0 {
+            return Err(ReceiptRetirementRefusalV1::InvalidLimit);
+        }
+        Ok(Self {
+            maximum,
+            retired: BTreeMap::new(),
+        })
+    }
+
+    pub fn recover(
+        maximum: usize,
+        checkpoint: Vec<RetentionTombstoneV1>,
+    ) -> Result<Self, ReceiptRetirementRefusalV1> {
+        let mut registry = Self::new(maximum)?;
+        if checkpoint.len() > maximum {
+            return Err(ReceiptRetirementRefusalV1::NonCanonicalCheckpoint);
+        }
+        let mut prior_key = None;
+        for tombstone in checkpoint {
+            let key = (tombstone.identity_binding, tombstone.scope_binding);
+            if prior_key.is_some_and(|prior| prior >= key)
+                || registry.retire(tombstone) != Ok(ReceiptRetirementApplyV1::Retired)
+            {
+                return Err(ReceiptRetirementRefusalV1::NonCanonicalCheckpoint);
+            }
+            prior_key = Some(key);
+        }
+        Ok(registry)
+    }
+
+    pub fn retire(
+        &mut self,
+        tombstone: RetentionTombstoneV1,
+    ) -> Result<ReceiptRetirementApplyV1, ReceiptRetirementRefusalV1> {
+        if tombstone.class != RecordClassV1::RequestReceipts {
+            return Err(ReceiptRetirementRefusalV1::WrongClass);
+        }
+        if tombstone.reason != RetentionTombstoneReasonV1::ReceiptRetired {
+            return Err(ReceiptRetirementRefusalV1::WrongReason);
+        }
+        let key = (tombstone.identity_binding, tombstone.scope_binding);
+        if let Some(retained) = self.retired.get(&key) {
+            return if retained == &tombstone {
+                Ok(ReceiptRetirementApplyV1::Replay)
+            } else {
+                Err(ReceiptRetirementRefusalV1::Conflict)
+            };
+        }
+        if self.retired.len() == self.maximum {
+            return Err(ReceiptRetirementRefusalV1::Capacity);
+        }
+        self.retired.insert(key, tombstone);
+        Ok(ReceiptRetirementApplyV1::Retired)
+    }
+
+    pub fn is_retired(&self, identity: ContentDigestV1, scope: ContentDigestV1) -> bool {
+        self.retired.contains_key(&(identity, scope))
+    }
+
+    pub fn checkpoint(&self) -> Vec<RetentionTombstoneV1> {
+        self.retired.values().copied().collect()
+    }
+
+    pub fn len(&self) -> usize {
+        self.retired.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.retired.is_empty()
     }
 }
 

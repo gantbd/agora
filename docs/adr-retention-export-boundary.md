@@ -152,6 +152,11 @@ The effect-free `agora-retention-authority-port` reuses those
 Agora-owned values and gives a configured application verifier separate,
 revision-bound policy-installation and export decisions. It grants no storage,
 materialization, reclamation, legal-hold, or compliance authority.
+The engine foundation also includes a bounded exact receipt-retirement registry.
+It accepts only request-receipt retirement tombstones, treats an identical
+retry as replay, rejects changed evidence for the same identity/scope, refuses
+capacity atomically, and recovers only canonical sorted checkpoints. Membership
+is a non-reexecution fence, not an erasure claim.
 
 ## Nonclaims
 

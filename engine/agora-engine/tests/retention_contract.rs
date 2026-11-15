@@ -1,9 +1,10 @@
 use agora_engine::retention::{
     ContentDigestV1, ExportChunkV1, ExportManifestV1, ExportProfileV1, ExportRequestIdV1,
-    ExportScopeBindingV1, RECORD_CLASSES_V1, ReclamationEvidenceV1, ReclamationStageV1,
-    RecordClassV1, RetentionBoundV1, RetentionFrontierV1, RetentionPolicyRevisionV1,
-    RetentionPolicyV1, RetentionTombstoneReasonV1, RetentionTombstoneV1, RetentionTransitionV1,
-    StoreGenerationIdV1, StoreReclamationPlanV1,
+    ExportScopeBindingV1, RECORD_CLASSES_V1, ReceiptRetirementApplyV1, ReceiptRetirementRefusalV1,
+    ReceiptRetirementRegistryV1, ReclamationEvidenceV1, ReclamationStageV1, RecordClassV1,
+    RetentionBoundV1, RetentionFrontierV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
+    RetentionTombstoneReasonV1, RetentionTombstoneV1, RetentionTransitionV1, StoreGenerationIdV1,
+    StoreReclamationPlanV1,
 };
 
 fn revision() -> RetentionPolicyRevisionV1 {
@@ -117,6 +118,55 @@ fn retirement_tombstone_is_distinct_redacted_and_revision_bound() {
             ContentDigestV1::new([2; 32]),
         )
         .is_none()
+    );
+}
+
+#[test]
+fn retired_receipt_identity_cannot_become_executable_again() {
+    let first = RetentionTombstoneV1::new(
+        RecordClassV1::RequestReceipts,
+        RetentionTombstoneReasonV1::ReceiptRetired,
+        revision(),
+        9,
+        ContentDigestV1::new([1; 32]),
+        ContentDigestV1::new([2; 32]),
+    )
+    .unwrap();
+    let mut registry = ReceiptRetirementRegistryV1::new(1).unwrap();
+    assert_eq!(
+        registry.retire(first),
+        Ok(ReceiptRetirementApplyV1::Retired)
+    );
+    assert_eq!(registry.retire(first), Ok(ReceiptRetirementApplyV1::Replay));
+    assert!(registry.is_retired(ContentDigestV1::new([1; 32]), ContentDigestV1::new([2; 32])));
+    let changed = RetentionTombstoneV1::new(
+        RecordClassV1::RequestReceipts,
+        RetentionTombstoneReasonV1::ReceiptRetired,
+        revision(),
+        10,
+        ContentDigestV1::new([1; 32]),
+        ContentDigestV1::new([2; 32]),
+    )
+    .unwrap();
+    assert_eq!(
+        registry.retire(changed),
+        Err(ReceiptRetirementRefusalV1::Conflict)
+    );
+    let recovered = ReceiptRetirementRegistryV1::recover(1, registry.checkpoint()).unwrap();
+    assert!(recovered.is_retired(ContentDigestV1::new([1; 32]), ContentDigestV1::new([2; 32])));
+    assert_eq!(
+        registry.retire(
+            RetentionTombstoneV1::new(
+                RecordClassV1::RequestReceipts,
+                RetentionTombstoneReasonV1::ReceiptRetired,
+                revision(),
+                9,
+                ContentDigestV1::new([3; 32]),
+                ContentDigestV1::new([4; 32]),
+            )
+            .unwrap()
+        ),
+        Err(ReceiptRetirementRefusalV1::Capacity)
     );
 }
 
