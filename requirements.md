@@ -879,9 +879,14 @@
   revision saturation MUST fence exact export without blocking authorized
   cleanup. Legacy recovery without such a revision MUST remain ineligible for
   that native source until a subsequent class-state mutation establishes the
-  new revision domain. An installed policy MUST remain established after its
-  effective engine revision; every later successful owner-local domain
-  publication MUST continuously enforce enabled authoritative-change bounds
+  new revision domain. The live authoritative room projection MUST NOT be
+  treated as a retained historical copy: a positive class bound MUST identify
+  only its current generation, a larger bound MUST NOT reconstruct superseded
+  generations, and a disabled class MUST NOT silently delete rooms,
+  memberships, or current messages. An installed policy MUST remain
+  established after its effective engine revision; every later successful
+  owner-local domain publication MUST continuously enforce enabled
+  authoritative-change bounds
   without acknowledging or pruning independent delivery work. The installed
   request-receipt bound MUST limit new live replay payloads before execution,
   MUST resolve an already retained exact replay before applying that limit, and

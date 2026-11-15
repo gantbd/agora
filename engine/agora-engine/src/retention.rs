@@ -183,6 +183,67 @@ pub enum AuthoritativeChangeRetentionRefusalV1 {
     IdentityExhausted,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RoomProjectionRetentionRefusalV1 {
+    StalePolicy,
+    ClassDisabled,
+    IdentityExhausted,
+}
+
+/// Exact owner-native application evidence for the live public-room
+/// projection. The engine owns exactly one current authoritative generation;
+/// it does not retain superseded projection generations for this policy to
+/// prune.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RoomProjectionRetentionApplicationV1 {
+    pub policy_revision: RetentionPolicyRevisionV1,
+    pub source_engine_revision: u64,
+    pub configured_bound: RetentionBoundV1,
+    pub retained_records: u64,
+    pub discarded_records: u64,
+    pub current_generation: RetentionRecordIdV1,
+    pub frontier: RetentionFrontierV1,
+}
+
+/// Applies the `RoomProjection` class semantics without mutating conversation
+/// authority. A positive bound retains the sole current generation; larger
+/// bounds cannot reconstruct superseded generations. `Disabled` makes the
+/// class unavailable to this retention/export profile but never silently
+/// deletes live rooms, membership, or messages.
+pub fn apply_room_projection_retention_v1(
+    engine: &Engine,
+    policy: RetentionPolicyV1,
+) -> Result<RoomProjectionRetentionApplicationV1, RoomProjectionRetentionRefusalV1> {
+    let source_engine_revision = engine.revision().0;
+    if policy.effective_engine_revision > source_engine_revision {
+        return Err(RoomProjectionRetentionRefusalV1::StalePolicy);
+    }
+    let configured_bound = policy.bound(RecordClassV1::RoomProjection);
+    if !configured_bound.retains_records() {
+        return Err(RoomProjectionRetentionRefusalV1::ClassDisabled);
+    }
+    let ordinal = source_engine_revision
+        .checked_add(1)
+        .ok_or(RoomProjectionRetentionRefusalV1::IdentityExhausted)?;
+    let current_generation = RetentionRecordIdV1::new(RecordClassV1::RoomProjection, ordinal)
+        .ok_or(RoomProjectionRetentionRefusalV1::IdentityExhausted)?;
+    let frontier = RetentionFrontierV1::new(
+        RecordClassV1::RoomProjection,
+        source_engine_revision,
+        Some(ordinal),
+    )
+    .ok_or(RoomProjectionRetentionRefusalV1::IdentityExhausted)?;
+    Ok(RoomProjectionRetentionApplicationV1 {
+        policy_revision: policy.revision,
+        source_engine_revision,
+        configured_bound,
+        retained_records: 1,
+        discarded_records: 0,
+        current_generation,
+        frontier,
+    })
+}
+
 /// Exact result of applying only the `AuthoritativeChanges` class bound to its
 /// Engine-owned journal. No other class, delivery acknowledgement, or domain
 /// revision is changed.

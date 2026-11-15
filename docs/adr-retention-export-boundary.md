@@ -1,6 +1,6 @@
 # ADR: logical retention, exact export, and store reclamation
 
-Status: accepted architecture; closed values, receipt retirement, and continuous authoritative-change retention implemented
+Status: accepted architecture; closed values, receipt retirement, current-room classification, and continuous authoritative-change retention implemented
 
 Date: 2026-11-14
 
@@ -224,6 +224,18 @@ ordering, participant references, aggregate shape, framing, and exact
 re-encoding. An empty engine has a frozen generation, and equal public poll
 aggregates remain byte-identical when only the private ballot owner differs.
 This administrative source grants no room visibility or custody authority.
+
+`apply_room_projection_retention_v1` closes the corresponding application
+semantics without inventing destructive authority. The Engine owns exactly one
+live authoritative room generation and retains no superseded projection
+generations for this policy to prune. A positive bound therefore returns that
+one current record and the exact `AGAROM1` frontier; a wider bound cannot
+reconstruct an earlier generation. `Disabled` makes the class unavailable to
+this retention/export profile and refuses the application without changing the
+Engine. Room, membership, and message removal remain explicit domain
+transitions governed by their existing authority and bounded-domain rules.
+Because this application is byte-inert, it requires no store publication and
+cannot be widened into deletion, custody retirement, or physical reclamation.
 
 The Engine now also owns a persisted monotone private-state revision, separate
 from the room/domain revision. Effective read-position, attention, private-save,
