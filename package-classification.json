@@ -145,6 +145,14 @@
       "audiences": ["application", "trusted-host"],
       "publish": false
     },
+    "agora-sha256": {
+      "path": "adapters/agora-sha256",
+      "category": "adapter",
+      "maturity": "qualified",
+      "effect_class": "pure",
+      "audiences": ["application", "trusted-host"],
+      "publish": false
+    },
     "agora-search-port": {
       "path": "ports/agora-search-port",
       "category": "port",

@@ -22,13 +22,15 @@ entries and requires every path to occupy its declared category directory.
 | Service | `agora-service`, `agora-export-service`, `agora-export-durable`, `agora-durable` | Conversation serialization, independent export custody, replay, persistence gating and recovery |
 | Host | `agora-host` | Verified principal/context binding and external ports |
 | Port | `agora-delivery-projection-port`, `agora-export-custody-port`, `agora-federated-publication-port`, `agora-interaction-port`, `agora-retention-authority-port`, `agora-scheduled-publication-port`, `agora-search-port`, `agora-storage-observation` | Effect-free outbound and trusted integration contracts |
-| Adapter | `agora-aegis-verifier`, `agora-search-memory`, `agora-storage-directory` | Concrete or reference interpretations of ports |
+| Adapter | `agora-aegis-verifier`, `agora-search-memory`, `agora-sha256`, `agora-storage-directory` | Concrete or reference interpretations of ports and named pure provider profiles |
 | Transport | `agora-local-transport` | Authority-free Unix endpoint, stream, framing, lifetime, and entropy mechanics |
 | Application | `agora-local-daemon` | Aegis/Host/durability composition, routing, clocks, recovery policy, lifecycle, and observation |
 | SDK | `agora-sdk-embedded`, `agora-sdk-client` | Zero-authority audience facades |
 
 The packages occupy explicit engine, protocol, client, service, host, port,
-adapter, transport, application, and SDK directories. The local transport owns
+adapter, transport, application, and SDK directories. The pure SHA-256 adapter
+interprets only the engine's named digest profile and gains no export authority.
+The local transport owns
 only authority-free Unix resource mechanics; the daemon application selects and
 coordinates semantic owners and policy-bearing adapters. Their dependency and
 effect closures are checked independently.

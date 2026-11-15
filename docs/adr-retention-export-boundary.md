@@ -193,11 +193,12 @@ inventory into bounded `AGEXCH1` chunks and an `AGEXMF1` manifest body. It
 requires canonical record order, exact included-class/frontier agreement,
 nonempty bounded payloads, whole-record chunk framing, and a named SHA-256
 digest profile. Chunk payload diagnostics are redacted. The digest function is
-injected into the no-I/O engine and must be qualified by the enclosing host;
-equal inputs with the same implementation produce byte-identical chunks and
-manifest evidence. This is materialization substrate only: source projection,
-visibility authorization, cryptographic-provider qualification, durable exact
-replay/conflict handling, protocol and SDK exposure remain open.
+injected into the no-I/O engine. The pure `agora-sha256` adapter supplies that
+named profile and is qualified by standard vectors, padding-boundary coverage,
+exact Agora materialization/recovery, and payload-mutation refusal. Equal inputs
+produce byte-identical chunks and manifest evidence. This is materialization
+substrate only: source projection, visibility authorization, concrete provider
+composition, protocol, and SDK exposure remain open.
 An engine-owned bounded export registry now gives the materialized result exact
 request-identity semantics: equal retry replays the complete manifest and chunk
 bytes, changed materialization conflicts, saturation refuses before mutation,
@@ -221,8 +222,8 @@ The separate `agora-export-durable` owner gives that checkpoint its own store
 key and revision line. Exact durable receipts commit custody, equal replay
 suppresses another offer, known refusal rolls back, and unknown or weak outcomes
 fence until fresh recovery. A concrete store composition, source projection,
-authorization, qualified SHA-256 composition, and export retirement remain
-open. The participant protocol remains free of administrative export commands.
+authorization, digest-provider composition, and export retirement remain open.
+The participant protocol remains free of administrative export commands.
 The effect-free `agora-export-custody-port` now separates Host from that durable
 implementation. `HostV2` revalidates the administrative session, checks the
 prepared manifest against the current engine and installed-policy revisions,

@@ -228,6 +228,15 @@ if [[ $(printf '%s\n' "$search_memory_tree" | wc -l | tr -d ' ') != 2 ]] \
   exit 1
 fi
 
+sha256_tree=$(cargo tree -p agora-sha256 --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$sha256_tree" | wc -l | tr -d ' ') != 2 ]] \
+  || ! printf '%s\n' "$sha256_tree" | rg -q 'agora-engine' \
+  || printf '%s\n' "$sha256_tree" | rg -q 'agora-(service|host|protocol|wire|client|durable)'; then
+  printf '%s\n' "$sha256_tree" >&2
+  echo 'Agora SHA-256 adapter escaped its pure engine-value closure' >&2
+  exit 1
+fi
+
 embedded_sdk_tree=$(cargo tree -p agora-sdk-embedded --edges normal --depth 1 --locked --offline)
 if [[ $(printf '%s\n' "$embedded_sdk_tree" | wc -l | tr -d ' ') != 8 ]] \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-engine' \

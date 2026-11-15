@@ -59,4 +59,4 @@ done < <(rg --no-filename '^[A-Za-z0-9_-]+ = \{.*\}$' \
   adapters/*/Cargo.toml applications/*/Cargo.toml sdk/*/Cargo.toml \
   | LC_ALL=C sort)
 
-echo 'Agora supply profile closes over 28 locked local components'
+echo 'Agora supply profile closes over 29 locked local components'

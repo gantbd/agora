@@ -3,7 +3,7 @@
 Status: deterministic local-source inventory and source SBOM; not a binary SBOM
 or legal review.
 
-The current stable locked graph contains twenty components: sixteen Agora
+The current locked graph contains twenty-nine components: twenty-five Agora
 packages, two Aegis packages, and the sibling `keystone-codec` and
 `keystone-storage` path packages. It contains no registry or Git source and no
 Cargo checksum records. Every stable-workspace manifest dependency uses an
@@ -16,10 +16,10 @@ changed-version, and empty-inventory mutants.
 
 The same gate regenerates `docs/agora-source.cdx.json` from locked offline Cargo
 metadata and requires byte equality. This canonical CycloneDX 1.5 document
-contains exactly the twenty stable local-path components, their closed Cargo
+contains exactly the twenty-nine local-path components, their closed Cargo
 dependency edges, exact versions, declared `MIT OR Apache-2.0` expressions, and
 denied publication state. Its SHA-256 digest is
-`a34ab2774391d301e737e5983e753d97ac2b6d10fd1e962c417c7b7c58e789e5`.
+`a2c086a746e7a02cf00e14bd851c9df93f13e6ced2cc86dd5e65e1b6ceefe799`.
 The validator rejects vocabulary drift, noncanonical order, missing or duplicate
 components and edges, unknown references, host paths, altered licenses, and
 publication-enabled records; focused mutants exercise those boundaries.
@@ -30,8 +30,10 @@ the fuzz contract pins the driver, nightly compiler, and `libfuzzer-sys`
 versions. Those tools produce test evidence only and are not linked into any
 Agora package or included in the stable local-only supply claim.
 
-The source-candidate profile copies exactly those twenty stable components into
-one local directory. Agora bytes come from an exact clean tracked revision;
+The latest qualified source-candidate remains the historical twenty-component
+profile described below; it has not yet been regenerated for the current
+twenty-nine-component graph. In that profile, Agora bytes came from an exact
+clean tracked revision;
 selected Aegis and Keystone bytes are individually checksummed and their subtree
 cleanliness is stated rather than inferred from the contextual repository
 revision. A reduced reviewed Keystone workspace manifest supplies only inherited

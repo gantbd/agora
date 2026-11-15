@@ -20,6 +20,7 @@ members = [
     "ports/agora-storage-observation",
     "adapters/agora-aegis-verifier",
     "adapters/agora-search-memory",
+    "adapters/agora-sha256",
     "adapters/agora-storage-directory",
     "transport/agora-local-transport",
     "applications/agora-local-daemon",

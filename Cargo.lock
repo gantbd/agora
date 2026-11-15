@@ -198,6 +198,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "agora-sha256"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+]
+
+[[package]]
 name = "agora-storage-directory"
 version = "0.1.0"
 dependencies = [
