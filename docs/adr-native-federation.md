@@ -24,6 +24,28 @@ keeps the authoritative room state machine; the federation project owns peer
 trust composition, native federation protocol, replica journals, subscriptions,
 and reconciliation. The remote transport remains authority-free.
 
+### Placement and dependency direction
+
+Native federation is an enclosing composition for Agora, Chronos, and Vellum;
+it is not a feature embedded in any domain engine. Each engine owns its domain
+truth and ordinary authorized commands. Its separate federation project owns
+peer identity, trust/session binding, negotiation, canonical remote protocol,
+replicas, gaps, repair, replay, and transport uncertainty.
+
+An engine-specific federation adapter may depend inward on the engine's
+effect-free Host/Service port. The engine must never depend outward on a
+federation package. Protocol, port, and service packages in a federation
+project must remain engine-independent; only a classified composition adapter
+may import the ordinary engine boundary. Agora already follows the stronger
+form: `agora-federation-agora` depends on
+`agora-federated-publication-port`, not `agora-engine`.
+
+Chronos federation remains outside `chronos-engine` and must enter through an
+ordinary current-authority Chronos Host adapter. Vellum federation remains
+outside `vellum-engine`; Vellum stays the writing engine, and federation enters
+through an ordinary current-authority Vellum Host adapter. Federation never
+owns harness behavior or task orchestration.
+
 ### Server identity and trust
 
 Each deployment has one stable opaque 32-byte `FederationServerIdV1`. A
