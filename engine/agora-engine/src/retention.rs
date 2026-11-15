@@ -3,6 +3,7 @@
 //! This module performs no authorization or I/O. It defines Agora-owned meaning;
 //! hosts and adapters must provide authority and physical effects separately.
 
+use crate::Engine;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::num::NonZeroUsize;
@@ -174,6 +175,93 @@ pub struct RetentionApplicationPlanV1 {
     pub transition: RetentionTransitionV1,
     retained: Vec<RetentionRecordIdV1>,
     discarded: Vec<RetentionRecordIdV1>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuthoritativeChangeRetentionRefusalV1 {
+    StalePolicy,
+    IdentityExhausted,
+}
+
+/// Exact result of applying only the `AuthoritativeChanges` class bound to its
+/// Engine-owned journal. No other class, delivery acknowledgement, or domain
+/// revision is changed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AuthoritativeChangeRetentionApplicationV1 {
+    pub policy_revision: RetentionPolicyRevisionV1,
+    pub source_engine_revision: u64,
+    pub discarded_records: u64,
+    pub retained_records: u64,
+    pub frontier: RetentionFrontierV1,
+}
+
+/// Applies one current policy's `AuthoritativeChanges` bound to the native
+/// retained-change journal. This is an owner-local logical transition only;
+/// authority, durable commit gating, other classes, and physical reclamation
+/// remain enclosing concerns.
+pub fn apply_authoritative_change_retention_v1(
+    engine: &mut Engine,
+    policy: RetentionPolicyV1,
+) -> Result<AuthoritativeChangeRetentionApplicationV1, AuthoritativeChangeRetentionRefusalV1> {
+    let source_engine_revision = engine.revision().0;
+    if policy.effective_engine_revision != source_engine_revision {
+        return Err(AuthoritativeChangeRetentionRefusalV1::StalePolicy);
+    }
+    let maximum = policy
+        .bound(RecordClassV1::AuthoritativeChanges)
+        .maximum()
+        .unwrap_or(0);
+    let discard_count = engine.retained_changes.len().saturating_sub(maximum);
+    let discarded_through = if discard_count == 0 {
+        match engine.discarded_changes_through {
+            Some(sequence) => sequence
+                .0
+                .checked_add(1)
+                .ok_or(AuthoritativeChangeRetentionRefusalV1::IdentityExhausted)?,
+            None => 0,
+        }
+    } else {
+        engine.retained_changes[discard_count - 1]
+            .sequence
+            .0
+            .checked_add(1)
+            .ok_or(AuthoritativeChangeRetentionRefusalV1::IdentityExhausted)?
+    };
+    let oldest_retained = match engine.retained_changes.get(discard_count) {
+        Some(envelope) => Some(
+            envelope
+                .sequence
+                .0
+                .checked_add(1)
+                .ok_or(AuthoritativeChangeRetentionRefusalV1::IdentityExhausted)?,
+        ),
+        None => None,
+    };
+    let frontier = RetentionFrontierV1::new(
+        RecordClassV1::AuthoritativeChanges,
+        discarded_through,
+        oldest_retained,
+    )
+    .ok_or(AuthoritativeChangeRetentionRefusalV1::IdentityExhausted)?;
+    let discarded_records = u64::try_from(discard_count)
+        .map_err(|_| AuthoritativeChangeRetentionRefusalV1::IdentityExhausted)?;
+    let retained_records = u64::try_from(engine.retained_changes.len() - discard_count)
+        .map_err(|_| AuthoritativeChangeRetentionRefusalV1::IdentityExhausted)?;
+
+    for _ in 0..discard_count {
+        let discarded = engine
+            .retained_changes
+            .pop_front()
+            .expect("discard count was derived from retained journal length");
+        engine.discarded_changes_through = Some(discarded.sequence);
+    }
+    Ok(AuthoritativeChangeRetentionApplicationV1 {
+        policy_revision: policy.revision,
+        source_engine_revision,
+        discarded_records,
+        retained_records,
+        frontier,
+    })
 }
 
 impl RetentionApplicationPlanV1 {

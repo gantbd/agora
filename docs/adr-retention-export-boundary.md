@@ -261,6 +261,18 @@ producing a plan, and reports exact retained/discarded identities, class counts,
 and frontiers. Planning mutates nothing; authoritative record owners still need
 qualified class-specific application and persistence.
 
+The first owner-native application primitive applies only the current policy's
+`AuthoritativeChanges` bound to the Engine-owned retained-change journal. It
+preflights the exact engine revision and all record identities, then prunes the
+oldest excess entries and returns the same ordinal frontier exposed by
+`AuthoritativeChangeSourceV1`. Disabled retains none; equal reapplication is an
+inert replay; stale policy is nonmutating; canonical Engine recovery preserves
+the new discard edge. It does not acknowledge or prune the delivery outbox,
+advance the domain revision, apply another class, install authority, persist a
+transition independently, or keep the bound continuously enforced across later
+domain writes. Service authorization, durable commit gating, later-write
+reapplication, and the other owner-native application profiles remain open.
+
 The engine export foundation now materializes one complete canonical record
 inventory into bounded `AGEXCH1` chunks and an `AGEXMF1` manifest body. It
 requires canonical record order, exact included-class/frontier agreement,
