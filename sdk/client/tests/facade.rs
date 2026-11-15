@@ -1,6 +1,17 @@
 use agora_sdk_client::{client, protocol, wire};
 use std::convert::Infallible;
 
+#[test]
+fn facade_exposes_the_canonical_remote_handshake_without_tls_policy() {
+    let hello = wire::remote_handshake::RemoteClientHelloV1::current();
+    let encoded = wire::remote_handshake::encode_client_hello_v1(hello);
+    assert_eq!(
+        wire::remote_handshake::decode_client_hello_v1(&encoded).unwrap(),
+        hello
+    );
+    assert_eq!(wire::remote_handshake::REMOTE_ALPN_V1, b"agora/remote/1");
+}
+
 struct Port;
 
 struct PortV2;

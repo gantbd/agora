@@ -1,6 +1,6 @@
 # ADR: remote transport profile
 
-Status: accepted; implementation open
+Status: accepted; transport substrate implemented; application composition open
 
 Date: 2026-11-14
 
@@ -79,6 +79,20 @@ incarnation rotation, and refusal of unsupported intersections.
   pending replies, deadline expiry, forced close, and sticky fences;
 - dependency/effect closure, exact package/supply/SBOM inventory, platform
   matrix, deterministic soak, and commit-pinned produced-artifact qualification.
+
+## Implementation status
+
+Agora Wire now provides the canonical closed-range post-TLS client/server hello,
+two frozen fixtures, fail-closed negotiation tests, and client-SDK reachability.
+The separate `agora-remote-transport` revision `0bcf2ef` provides a TLS-1.3-only
+rustls profile with exact ALPN, disabled tickets/resumption/early data, configured
+server roots, optional required client certificates, exporter agreement,
+bounded framing, deterministic capacity/drain accounting, real-loopback
+positive and negative tests, and exact compatibility/supply/package gates.
+
+Application authentication and Host routing, per-connection concurrent runtime
+composition, slow-peer and reconnect campaigns, upgrade matrix, platform soak,
+produced artifacts, and commit-pinned full-profile qualification remain open.
 
 ## Nonclaims
 

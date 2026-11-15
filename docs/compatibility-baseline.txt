@@ -55,6 +55,8 @@ fixture|protocol/agora-wire/tests/fixtures/local-search-client-hello-v1.hex|14|8
 fixture|protocol/agora-wire/tests/fixtures/local-search-server-hello-v1.hex|42|171ccedc5b997c10640b08de1f03481b23a507d60016a278ee35094d6f618136
 fixture|protocol/agora-wire/tests/fixtures/local-server-hello-v1.hex|40|01d73f25289710bec38abf9b8c2d0a12961c135ff56eed4b1e758a44b740b868
 fixture|protocol/agora-wire/tests/fixtures/local-session-hello-v1.hex|40|004f71ee1c672e7ce16d910184dcc956feecb1c075a3ed45c827968291705e11
+fixture|protocol/agora-wire/tests/fixtures/remote-client-hello-v1.hex|20|e118d9d225f2a373b79d0c2d2e28dc3e22d5ab12289456b2b57874e11769bfec
+fixture|protocol/agora-wire/tests/fixtures/remote-server-hello-v1.hex|44|d984e78255108a6e9d231c18c5e8413fecd8c3138f148351382ab6b5f08bc0b1
 fixture|protocol/agora-wire/tests/fixtures/message-edited-change-reply-v2.hex|96|d5cd5a7ef862e469ae674b59c215ffa5761dcc68d7c90d7b903f3dc98b61c04e
 fixture|protocol/agora-wire/tests/fixtures/message-revision-page-reply-v2.hex|127|d9972f4eaf78a713e44ee927e8480f830148217a78dfa9ac533cd9a2b01b7b23
 fixture|protocol/agora-wire/tests/fixtures/messages-reply-v2.hex|104|ef10c0a4aacca3be9317207eec8bc9fd5f2403a1a64379fbfee961331cfcbb79
