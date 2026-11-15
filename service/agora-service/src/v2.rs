@@ -388,6 +388,17 @@ impl ServiceV2 {
         self.receipt_revision_exhausted |= previous == u64::MAX;
     }
 
+    fn live_request_receipt_limit(&self) -> usize {
+        self.retention_policy
+            .map_or(self.limits.max_retained_requests, |policy| {
+                policy
+                    .bound(RecordClassV1::RequestReceipts)
+                    .maximum()
+                    .unwrap_or(0)
+                    .min(self.limits.max_retained_requests)
+            })
+    }
+
     /// Installs current administrative policy metadata without itself pruning
     /// any record class. Later class-specific transitions must bind this exact
     /// policy revision and current engine frontier.
@@ -838,7 +849,7 @@ impl ServiceV2 {
             count(&mut self.usage.refused, &mut self.usage.overflowed);
             return ReplyV2::Refused(RefusalV2::InvalidInput);
         }
-        if self.retained.len() >= self.limits.max_retained_requests {
+        if self.retained.len() >= self.live_request_receipt_limit() {
             count(&mut self.usage.refused, &mut self.usage.overflowed);
             return ReplyV2::Refused(RefusalV2::RequestLimit);
         }

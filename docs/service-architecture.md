@@ -172,6 +172,15 @@ continuous enforcement never acknowledges or removes delivery work. Explicit
 backlog application remains a separately authenticated, freshly authorized,
 commit-gated administrative operation.
 
+The installed `RequestReceipts` bound is an admission ceiling for live exact
+request/reply payloads, not permission to drop replay safety. Service resolves
+an existing exact replay before checking the ceiling, but refuses a new request
+before engine execution when the ceiling is full. Disabled means no new
+receipt-backed execution. Freshly authorized retirement may free a live slot
+only after installing its durable non-reexecution tombstone; tombstone registry
+capacity remains an independent safety backpressure and is not reclaimed to
+admit new work.
+
 Any later receipt-state mutation emits Service profile 32 with a persisted
 monotone receipt-source revision and explicit saturation fence; Host profile 29
 nests it without adding authority. Profiles 24 through 31 recover with the

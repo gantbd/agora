@@ -882,7 +882,10 @@
   new revision domain. An installed policy MUST remain established after its
   effective engine revision; every later successful owner-local domain
   publication MUST continuously enforce enabled authoritative-change bounds
-  without acknowledging or pruning independent delivery work. Export retirement
+  without acknowledging or pruning independent delivery work. The installed
+  request-receipt bound MUST limit new live replay payloads before execution,
+  MUST resolve an already retained exact replay before applying that limit, and
+  MUST NOT evict a non-reexecution tombstone to admit work. Export retirement
   MUST revalidate the current source
   and policy plus fresh administrative authority, atomically replace one exact
   live custody copy with a separately bounded non-reuse tombstone, replay an

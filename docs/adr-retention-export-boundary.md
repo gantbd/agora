@@ -170,7 +170,17 @@ checkpoint is durably committed, restores the prior receipt state on a known
 store refusal, and preserves the non-reexecution fence across restart. Human and
 agent receipt identities follow the same path. This implements receipt
 retirement only; general policy application, exact export, and store reclamation
-remain open.
+remain separate.
+
+The installed `RequestReceipts` bound continuously limits live exact replay
+payloads. Exact replay is checked before the limit, so an already retained
+request remains replayable at capacity. A new request is refused before domain
+execution when the live bound is full; a disabled class therefore refuses all
+new receipt-backed execution. Only explicit authorized retirement can free a
+live slot, and it first installs the durable non-reexecution tombstone. Those
+tombstones are protected safety dependencies rather than live replay payloads:
+they are bounded by their own registry capacity and are never evicted merely to
+satisfy the live-receipt policy bound.
 
 Service V2 now also owns a persisted monotone receipt-state revision. It starts
 absent, advances exactly once when a new exact request/refusal receipt is
@@ -280,7 +290,10 @@ it does not expire after the first domain transition. Service V2 reapplies the
 `AuthoritativeChanges` bound after every successful ordinary, scheduled,
 federated, and typed-interaction domain publication, including exact publication
 replay. This continuous owner-local enforcement never acknowledges or prunes the
-delivery outbox and does not add a participant Wire or remote SDK operation.
+delivery outbox. The same established policy continuously backpressures new
+ordinary requests at the live `RequestReceipts` bound without disturbing exact
+replay or retired-identity fences. Neither mechanism adds a participant Wire or
+remote SDK operation.
 Explicit administrative application remains the freshly authorized operation
 for cutting an already accumulated backlog. The other owner-native application
 profiles remain open.

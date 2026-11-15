@@ -61,6 +61,82 @@ fn retention_policy_installation_is_revision_and_engine_bound() {
 }
 
 #[test]
+fn installed_request_receipt_bound_backpressures_new_work_but_preserves_replay() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let revision = service.engine().revision();
+    let mut bounds = [RetentionBoundV1::Disabled; 6];
+    bounds[RecordClassV1::RequestReceipts as usize - 1] = RetentionBoundV1::entries(1).unwrap();
+    service
+        .install_retention_policy(RetentionPolicyV1::new(
+            RetentionPolicyRevisionV1::new(1).unwrap(),
+            revision.0,
+            bounds,
+        ))
+        .unwrap();
+    let alice = service.connect("alice").unwrap();
+    let first = request(1, CommandV2::Capabilities);
+
+    let accepted = service.execute(alice, first.clone());
+    assert!(matches!(accepted, ReplyV2::Accepted(_)));
+    assert_eq!(service.execute(alice, first), accepted);
+    assert_eq!(
+        service.execute(alice, request(2, CommandV2::Capabilities)),
+        ReplyV2::Refused(RefusalV2::RequestLimit)
+    );
+
+    service
+        .retire_request_receipts(
+            RetentionPolicyRevisionV1::new(1).unwrap(),
+            revision,
+            &[(alice, RequestIdV2(1))],
+        )
+        .unwrap();
+    assert_eq!(service.retired_receipt_count(), 1);
+    assert!(matches!(
+        service.execute(alice, request(2, CommandV2::Capabilities)),
+        ReplyV2::Accepted(_)
+    ));
+    assert_eq!(
+        service.execute(alice, request(1, CommandV2::Capabilities)),
+        ReplyV2::Refused(RefusalV2::RequestConflict),
+        "freeing live capacity never releases the retired identity fence"
+    );
+}
+
+#[test]
+fn disabled_request_receipts_refuse_new_execution_without_disturbing_domain_state() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let revision = service.engine().revision();
+    service
+        .install_retention_policy(RetentionPolicyV1::new(
+            RetentionPolicyRevisionV1::new(1).unwrap(),
+            revision.0,
+            [RetentionBoundV1::Disabled; 6],
+        ))
+        .unwrap();
+    let alice = service.connect("alice").unwrap();
+
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                1,
+                CommandV2::CreateRoom {
+                    room_id: "must-not-execute".to_owned(),
+                    name: "Must Not Execute".to_owned(),
+                    admission: AdmissionPolicyV2::Open,
+                    expected_revision: revision.0,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::RequestLimit)
+    );
+    assert_eq!(service.engine().revision(), revision);
+    assert!(service.engine().room(&"must-not-execute".into()).is_none());
+    assert_eq!(service.receipt_revision(), None);
+}
+
+#[test]
 fn authoritative_change_retention_requires_the_exact_installed_policy_and_frontier() {
     let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
     let revision = service.engine().revision();
@@ -68,6 +144,7 @@ fn authoritative_change_retention_requires_the_exact_installed_policy_and_fronti
     let mut bounds = [RetentionBoundV1::Disabled; 6];
     bounds[RecordClassV1::AuthoritativeChanges as usize - 1] =
         RetentionBoundV1::entries(1).unwrap();
+    bounds[RecordClassV1::RequestReceipts as usize - 1] = RetentionBoundV1::entries(4).unwrap();
     let policy = RetentionPolicyV1::new(policy_revision, revision.0, bounds);
 
     assert_eq!(
