@@ -9,7 +9,8 @@ use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
 };
 use agora_federated_publication_port::{
-    FederatedPublicationAcceptedV1, FederatedPublicationRefusalV1, FederatedPublicationRequestV1,
+    FederatedPublicationAcceptedV1, FederatedPublicationOutcomeV1, FederatedPublicationPortV1,
+    FederatedPublicationRefusalV1, FederatedPublicationRequestV1,
 };
 use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::persistence::{
@@ -619,6 +620,69 @@ pub struct DurableHostV2<V, S> {
     store_revision: Revision,
     state: DurableOwnerStateV2,
     counters: DurableHostCountersV2,
+}
+
+/// A configured federation publication endpoint over one durable Host owner.
+///
+/// The endpoint captures the trusted local session, verifier context, and
+/// clock. Federation callers can offer only the bounded publication request;
+/// they cannot choose local authority or time.
+pub struct DurableFederatedPublicationEndpointV1<'a, V: PrincipalVerifier, S, C> {
+    owner: &'a mut DurableHostV2<V, S>,
+    session: HostSessionIdV2,
+    context: &'a V::Context,
+    clock: C,
+}
+
+impl<'a, V, S, C> DurableFederatedPublicationEndpointV1<'a, V, S, C>
+where
+    V: PrincipalVerifier,
+    S: CheckpointStore,
+    C: FnMut() -> HostTimeV1,
+{
+    pub fn new(
+        owner: &'a mut DurableHostV2<V, S>,
+        session: HostSessionIdV2,
+        context: &'a V::Context,
+        clock: C,
+    ) -> Self {
+        Self {
+            owner,
+            session,
+            context,
+            clock,
+        }
+    }
+}
+
+impl<V, S, C> fmt::Debug for DurableFederatedPublicationEndpointV1<'_, V, S, C>
+where
+    V: PrincipalVerifier,
+{
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DurableFederatedPublicationEndpointV1")
+            .field("owner", &"<redacted>")
+            .field("session", &"<redacted>")
+            .field("context", &"<redacted>")
+            .field("clock", &"<redacted>")
+            .finish()
+    }
+}
+
+impl<V, S, C> FederatedPublicationPortV1 for DurableFederatedPublicationEndpointV1<'_, V, S, C>
+where
+    V: PrincipalVerifier,
+    S: CheckpointStore,
+    C: FnMut() -> HostTimeV1,
+{
+    fn publish_federated(
+        &mut self,
+        request: FederatedPublicationRequestV1,
+    ) -> FederatedPublicationOutcomeV1 {
+        self.owner
+            .publish_federated_outcome(self.session, request, self.context, (self.clock)())
+    }
 }
 
 fn commit_host_restore_boundary<
@@ -1235,6 +1299,37 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
             self.publish(|host| host.publish_federated(session, request, context, now));
         self.counters.record(&publication);
         publication
+    }
+
+    /// Offers one federated publication through the durable Host and exposes
+    /// only the retry certainty that the commit boundary can prove.
+    ///
+    /// A known store refusal is definite non-execution only because the Host
+    /// checkpoint was restored successfully. Every other suppressed result is
+    /// conservative: a caller must reconcile the same scoped request identity
+    /// rather than assume a retry is a fresh execution.
+    pub fn publish_federated_outcome(
+        &mut self,
+        session: HostSessionIdV2,
+        request: FederatedPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> FederatedPublicationOutcomeV1 {
+        match self.publish_federated(session, request, context, now) {
+            DurableHostPublicationV2::Published { value, .. } => {
+                FederatedPublicationOutcomeV1::Reply(value)
+            }
+            DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::StoreRefused(_)) => {
+                FederatedPublicationOutcomeV1::DefinitelyNotExecuted
+            }
+            DurableHostPublicationV2::Suppressed(
+                DurableHostSuppressionV2::Fenced
+                | DurableHostSuppressionV2::Checkpoint(_)
+                | DurableHostSuppressionV2::OutcomeUnknown
+                | DurableHostSuppressionV2::NotDurable
+                | DurableHostSuppressionV2::InvalidReceipt,
+            ) => FederatedPublicationOutcomeV1::OutcomeUnknown,
+        }
     }
 
     /// Revalidates and projects through the durable Host owner. A projection

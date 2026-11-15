@@ -848,7 +848,11 @@
   ambiguity MUST NOT be converted into a stable refusal. The receipt identity
   MUST include the full authenticated participant/room home scope in addition
   to the sender-scoped request ID; equal request bytes under distinct scopes
-  MUST NOT alias.
+  MUST NOT alias. Agora's concrete durable endpoint MUST capture the configured
+  Host owner, authenticated session, verifier context, and trusted clock rather
+  than accepting them from the federation caller. It MAY report definitely-not-
+  executed only after a known store refusal and successful checkpoint rollback;
+  every other suppressed durable outcome MUST remain outcome-unknown.
   Reconnect and peer acknowledgement MUST NOT imply mutation success,
   participant read state, room authority transfer, or gap closure.
 
@@ -897,6 +901,9 @@ composition implement current policy, authenticated actor/time binding, commit
 gating, and later-time replay; revision `2fe8bb0` passed the complete gate.
 Revision `eaa22b1` commit-pins the passing full home-scoped receipt identity,
 profile-150 recovery, and three-way port certainty result.
+The concrete durable endpoint captures local session, verifier, and clock
+authority and conservatively maps commit-gate evidence without exposing those
+facts to a peer; its source qualification is pending a commit pin.
 Trust-provider and identity-mapping composition, physical storage, transport
 composition, adversarial campaigns, and integrated qualification remain open.
 Additional physical durable storage adapters,

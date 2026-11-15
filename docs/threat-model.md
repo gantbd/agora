@@ -574,6 +574,14 @@ and room-home binding. Equal request bytes under distinct remote scopes cannot
 replay or conflict with one another. Profile-150 recovery rejects a scoped key
 under any non-federation domain.
 
+The concrete durable federation endpoint captures the local Host owner,
+authenticated session, verifier context, and clock, so a peer or adapter cannot
+substitute those authorities per request. It publishes definite non-execution
+only for a known store refusal whose checkpoint rollback succeeded. Fencing,
+checkpoint failure, indeterminate commit, weak durability evidence, and invalid
+receipts remain outcome-unknown; this may force conservative reconciliation but
+does not permit an unsafe fresh retry.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

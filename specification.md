@@ -1211,3 +1211,28 @@ cursors are correlation only. Their acknowledgment never changes an Agora read
 position, attention preference, presence fact, or domain revision. Lost append
 replies replay the exact envelope; endpoint uncertainty, revocation, membership
 loss, and retention gaps remain explicit.
+
+## Adopted native-federation publication boundary
+
+R106 is defined by `docs/adr-native-federation.md`. Agora exposes a zero-effect
+federated-publication port carrying an opaque nonzero request identity, a full
+64-byte participant/room-home receipt scope, and bounded local room/message
+intent. It carries no peer trust, credential, transport, clock, retry policy, or
+room-home authority. Service binds the current participant and federation
+receipt domain; Host revalidates the authenticated session and supplies current
+time; Durable Host publishes a semantic result only after the complete Host
+checkpoint is durable.
+
+`DurableFederatedPublicationEndpointV1` captures one configured `DurableHostV2`
+owner, authenticated Host session, verifier context, and trusted clock. Its
+caller supplies only the bounded federation request. A published durable result
+becomes `Reply`; a known store refusal becomes `DefinitelyNotExecuted` only
+after successful Host checkpoint rollback. Fencing, checkpoint failure,
+indeterminate commit, weak acknowledgement, and invalid receipt all become
+`OutcomeUnknown` and require reconciliation of the same scoped identity.
+
+Exact later retry retains the first accepted Host time only when room, actor,
+body, request identity, and full scope remain equal. Equal request bytes under
+different scopes are independent. Profile 150 preserves scoped receipt keys
+canonically, rejects wrong-domain scoped keys, and retains old unscoped receipts
+only as an exact-content migration alias.

@@ -121,6 +121,12 @@ and every non-federation source remain time-exact.
 The configured endpoint reports only `Reply`, `DefinitelyNotExecuted`, or
 `OutcomeUnknown`; the composition must never convert durability or transport
 ambiguity into a stable refusal.
+The concrete durable endpoint captures the configured Host owner, authenticated
+session, verifier context, and trusted clock. The federation adapter therefore
+cannot assert any of those local facts. Only a known store refusal followed by
+successful checkpoint rollback proves non-execution; every other suppressed
+durable publication is reported as unknown and must reconcile the same scoped
+identity.
 Because admission request IDs are scoped by authenticated sender, the adapter
 must also supply the full participant/room binding as a 64-byte receipt scope.
 Agora checkpoint profile 150 retains that scope canonically. Equal request IDs
@@ -151,7 +157,8 @@ deletion, retention, and trust removal do not claim that the home erased data.
 - source-domain collision tests, exact legacy replay, canonical profile-149
   recovery, and unknown-domain refusal;
 - effect-free federated-publication port, current Service policy, authenticated
-  Host binding, durable commit gating, later-time exact replay, and revocation;
+  Host binding, durable commit gating, concrete authority-capturing endpoint,
+  conservative certainty mapping, later-time exact replay, and revocation;
 - ordered replication, duplicate replay, changed-event conflict, explicit gap,
   bounded replay, snapshot repair, and restart recovery;
 - direct-home source enforcement, imported-event non-export, and adversarial

@@ -1,10 +1,10 @@
 use agora_delivery_projection_port::{DeliveryProjectionV1, DeliverySourceV1, WakeClassV1};
 use agora_durable::{
-    DurableConfigV2, DurableEvidenceV2, DurableHostConfigV2, DurableHostPublicationV2,
-    DurableHostStartErrorV2, DurableHostSuppressionV2, DurableHostV2, DurableOwnerStateV2,
-    DurablePublicationV2, DurableServiceV2, DurableStartErrorV2, DurableSuppressionV2,
-    DurableTransientHostV1, OperatorRestoreAuthorityV1, OperatorRestoreAuthorizationV1,
-    OperatorRestoreRequestV1,
+    DurableConfigV2, DurableEvidenceV2, DurableFederatedPublicationEndpointV1, DurableHostConfigV2,
+    DurableHostPublicationV2, DurableHostStartErrorV2, DurableHostSuppressionV2, DurableHostV2,
+    DurableOwnerStateV2, DurablePublicationV2, DurableServiceV2, DurableStartErrorV2,
+    DurableSuppressionV2, DurableTransientHostV1, OperatorRestoreAuthorityV1,
+    OperatorRestoreAuthorizationV1, OperatorRestoreRequestV1,
 };
 use agora_engine::{
     AdmissionPolicy, AttentionScopeV1 as EngineAttentionScopeV1, CommandV2 as EngineCommand,
@@ -12,8 +12,8 @@ use agora_engine::{
     ReadScopeV1 as EngineReadScopeV1, RoomId,
 };
 use agora_federated_publication_port::{
-    FederatedPublicationIdV1, FederatedPublicationIntentV1, FederatedPublicationRequestV1,
-    FederatedPublicationScopeV1,
+    FederatedPublicationIdV1, FederatedPublicationIntentV1, FederatedPublicationOutcomeV1,
+    FederatedPublicationPortV1, FederatedPublicationRequestV1, FederatedPublicationScopeV1,
 };
 use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::HostV2;
@@ -1265,6 +1265,68 @@ fn federated_publication_is_commit_gated_and_replays_with_original_home_time() {
         5,
         "later revalidation commits Host time without duplicating the message"
     );
+}
+
+#[test]
+fn durable_federation_endpoint_preserves_provable_retry_certainty() {
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame(), &context, HostTimeV1(1))
+    else {
+        panic!("connect expected");
+    };
+    let session = opened.session().unwrap();
+    let WireReplyV2::Connected(client) =
+        decode_reply_v2(opened.frame(), host_limits().wire).unwrap()
+    else {
+        panic!("connected frame expected");
+    };
+    assert!(matches!(
+        durable.handle(session, &create_frame(client), &context, HostTimeV1(2)),
+        DurableHostPublicationV2::Published { value: Ok(_), .. }
+    ));
+    let request = FederatedPublicationRequestV1 {
+        id: FederatedPublicationIdV1::new([19; 16]).unwrap(),
+        scope: FederatedPublicationScopeV1::new([4; 64]),
+        intent: FederatedPublicationIntentV1::new("room", "federated"),
+    };
+
+    store.next(NextCommit::Refuse);
+    assert_eq!(
+        durable.publish_federated_outcome(session, request.clone(), &context, HostTimeV1(3),),
+        FederatedPublicationOutcomeV1::DefinitelyNotExecuted
+    );
+    assert_eq!(durable.state(), DurableOwnerStateV2::Active);
+
+    {
+        let mut endpoint =
+            DurableFederatedPublicationEndpointV1::new(&mut durable, session, &context, || {
+                HostTimeV1(4)
+            });
+        let diagnostic = format!("{endpoint:?}");
+        assert!(!diagnostic.contains("room"));
+        assert!(!diagnostic.contains("federated"));
+        assert!(matches!(
+            endpoint.publish_federated(request),
+            FederatedPublicationOutcomeV1::Reply(Ok(_))
+        ));
+    }
+
+    store.next(NextCommit::IndeterminateAfter);
+    let uncertain = FederatedPublicationRequestV1 {
+        id: FederatedPublicationIdV1::new([20; 16]).unwrap(),
+        scope: FederatedPublicationScopeV1::new([4; 64]),
+        intent: FederatedPublicationIntentV1::new("room", "uncertain"),
+    };
+    assert_eq!(
+        durable.publish_federated_outcome(session, uncertain, &context, HostTimeV1(5)),
+        FederatedPublicationOutcomeV1::OutcomeUnknown
+    );
+    assert_eq!(durable.state(), DurableOwnerStateV2::Fenced);
 }
 
 #[test]
