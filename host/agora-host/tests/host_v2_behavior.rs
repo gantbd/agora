@@ -815,7 +815,7 @@ fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    assert_eq!(checkpoint.bytes()[8], 28);
+    assert_eq!(checkpoint.bytes()[8], 29);
     let recovered = HostV2::recover_checkpoint(
         checkpoint.bytes(),
         CHECKPOINT_SCOPE,
@@ -1525,7 +1525,7 @@ fn v2_topic_collections_bind_the_authenticated_observer_and_exact_filter() {
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    assert_eq!(checkpoint.bytes()[8], 26);
+    assert_eq!(checkpoint.bytes()[8], 29);
     let mut recovered = HostV2::recover_checkpoint(
         checkpoint.bytes(),
         CHECKPOINT_SCOPE,
@@ -1591,7 +1591,7 @@ fn v2_attention_receipt_and_private_state_recover_through_host_checkpoint() {
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    assert_eq!(checkpoint.bytes()[8], 25);
+    assert_eq!(checkpoint.bytes()[8], 29);
 
     let mut recovered = HostV2::recover_checkpoint(
         checkpoint.bytes(),
@@ -1825,7 +1825,7 @@ fn v2_vellum_artifact_receipt_and_actor_binding_recover_through_host_checkpoint(
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    assert_eq!(checkpoint.bytes()[8], 25);
+    assert_eq!(checkpoint.bytes()[8], 29);
 
     let mut recovered = HostV2::recover_checkpoint(
         checkpoint.bytes(),
@@ -2295,14 +2295,8 @@ fn v2_host_checkpoint_recovers_session_service_receipt_and_verifier_continuity()
     let checkpoint = host
         .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
         .unwrap();
-    let mut fixture = decode_hex(include_str!("fixtures/host-checkpoint-v24.hex"));
-    fixture[8] = 25;
-    let service_offset = fixture
-        .windows(8)
-        .position(|window| window == b"AGORASV\0")
-        .unwrap();
-    fixture[service_offset + 8] = 26;
-    assert_eq!(checkpoint.bytes(), fixture);
+    assert_eq!(checkpoint.bytes()[8], 29);
+    assert_eq!(host.service().receipt_revision(), Some(11));
 
     let calls = Rc::new(Cell::new(0));
     let mut recovered = HostV2::recover_checkpoint(

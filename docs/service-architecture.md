@@ -165,6 +165,12 @@ equal revision with changed bounds conflicts, and policy revision regression is
 inert. Service profile 31 and Host profile 28 recover the policy together with
 receipt tombstones. This installation step authorizes no discard by itself.
 
+Any later receipt-state mutation emits Service profile 32 with a persisted
+monotone receipt-source revision and explicit saturation fence; Host profile 29
+nests it without adding authority. Profiles 24 through 31 recover with the
+revision absent, so migration cannot synthesize an export identity from an old
+checkpoint.
+
 After completing bounded room state pages at one revision, a client can open a
 room change position at that exact revision and pull retained room events through
 an opaque client-owned cursor. Pages are exclusive-after and replayable by exact

@@ -134,6 +134,15 @@ frontier translation, sequence-to-nonzero-ordinal identity, a frozen `AGACHG1`
 human/agent record, bounded recovery, administrative-only materialization,
 stale/disabled/empty/capacity refusals, redacted diagnostics, and deterministic
 single-bit mutation closure with exact re-encoding for every accepted mutant.
+Service profile 32, nested unchanged by Host profile 29, adds the prerequisite
+owner-native identity domain for
+`RequestReceipts`: a persisted monotone revision advances once per retained
+receipt insertion, receipt-removing disconnect, or atomic retirement batch;
+replay, conflict, and policy-only operations remain stable. Focused evidence
+pins recovery continuity and canonical re-encoding, while a direct boundary
+case proves saturation never wraps and permanently fences exact source identity.
+Profiles 24 through 31 recover with no such identity until a later receipt-state
+mutation. The native receipt projection itself remains open.
 
 ## Verification gates
 

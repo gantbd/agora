@@ -121,6 +121,12 @@ authority decision carrying the current policy revision, proposed closed policy,
 and observed engine revision. Its canonical durable envelope is Service profile
 31 nested in Host profile 28. Installing policy metadata does not apply bounds.
 
+Once receipt state changes, Service profile 32 carries its persisted source
+revision and Host profile 29 encloses it unchanged. Durable rollback and
+recovery therefore preserve the receipt identity domain with the same combined
+Host commit gate. Earlier Host/Service profile pairs remain accepted and do not
+invent a receipt-source revision during migration.
+
 Exact export admission is also outside participant Wire V2. `HostV2` first
 revalidates the session and requires the prepared manifest's source and policy
 revisions to equal the current conversation owner. It then asks the injected

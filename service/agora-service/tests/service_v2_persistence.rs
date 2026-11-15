@@ -33,6 +33,110 @@ fn request(request_id: u64, command: CommandV2) -> RequestV2 {
     }
 }
 
+fn receipt_service() -> (ServiceV2, ClientIdV2) {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    let mut service = ServiceV2::new(engine, ServiceLimitsV2::default());
+    let alice = service.connect("alice").unwrap();
+    (service, alice)
+}
+
+#[test]
+fn receipt_revision_tracks_state_changes_not_offers_and_survives_recovery() {
+    let (mut service, alice) = receipt_service();
+    assert_eq!(service.receipt_revision(), None);
+    assert!(!service.receipt_revision_exhausted());
+
+    let first = request(1, CommandV2::Capabilities);
+    let first_reply = service.execute(alice, first.clone());
+    assert!(matches!(first_reply, ReplyV2::Accepted(_)));
+    assert_eq!(service.receipt_revision(), Some(1));
+
+    assert_eq!(service.execute(alice, first.clone()), first_reply);
+    assert_eq!(service.receipt_revision(), Some(1));
+    assert_eq!(
+        service.execute(
+            alice,
+            request(
+                1,
+                CommandV2::Rooms {
+                    cursor: None,
+                    limit: 1,
+                },
+            ),
+        ),
+        ReplyV2::Refused(RefusalV2::RequestConflict)
+    );
+    assert_eq!(service.receipt_revision(), Some(1));
+
+    let second = request(2, CommandV2::Capabilities);
+    assert!(matches!(
+        service.execute(alice, second),
+        ReplyV2::Accepted(_)
+    ));
+    assert_eq!(service.receipt_revision(), Some(2));
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    assert_eq!(checkpoint.bytes()[8], 32);
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.receipt_revision(), Some(2));
+    assert_eq!(
+        recovered
+            .prepare_checkpoint(SCOPE, MAX_CHECKPOINT)
+            .unwrap()
+            .bytes(),
+        checkpoint.bytes()
+    );
+
+    assert_eq!(recovered.disconnect(alice), Ok(true));
+    assert_eq!(recovered.receipt_revision(), Some(3));
+    assert_eq!(recovered.disconnect(alice), Ok(false));
+    assert_eq!(recovered.receipt_revision(), Some(3));
+}
+
+#[test]
+fn receipt_retirement_batch_advances_once_and_survives_recovery() {
+    let (mut service, alice) = receipt_service();
+    for request_id in [1, 2] {
+        assert!(matches!(
+            service.execute(alice, request(request_id, CommandV2::Capabilities)),
+            ReplyV2::Accepted(_)
+        ));
+    }
+    assert_eq!(service.receipt_revision(), Some(2));
+
+    let engine_revision = service.engine().revision();
+    let policy_revision = RetentionPolicyRevisionV1::new(1).unwrap();
+    service
+        .install_retention_policy(RetentionPolicyV1::new(
+            policy_revision,
+            engine_revision.0,
+            [RetentionBoundV1::entries(4_096).unwrap(); 6],
+        ))
+        .unwrap();
+    assert_eq!(
+        service.retire_request_receipts(
+            policy_revision,
+            engine_revision,
+            &[(alice, RequestIdV2(1)), (alice, RequestIdV2(2))],
+        ),
+        Ok(2)
+    );
+    assert_eq!(service.receipt_revision(), Some(3));
+    assert_eq!(service.retired_receipt_count(), 2);
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.receipt_revision(), Some(3));
+    assert_eq!(recovered.retired_receipt_count(), 2);
+}
+
 #[test]
 fn retired_receipt_fence_is_canonical_and_survives_recovery() {
     let mut engine = Engine::new();
@@ -66,8 +170,10 @@ fn retired_receipt_fence_is_canonical_and_survives_recovery() {
         )
         .unwrap();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    assert_eq!(checkpoint.bytes()[8], 31);
+    assert_eq!(checkpoint.bytes()[8], 32);
+    assert_eq!(service.receipt_revision(), Some(2));
     let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.receipt_revision(), Some(2));
     assert_eq!(recovered.retention_policy(), service.retention_policy());
     assert_eq!(recovered.retired_receipt_count(), 1);
     assert_eq!(
@@ -154,7 +260,7 @@ fn peer_conversation_profile_cohort_and_exact_receipts_survive_recovery() {
     );
 
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    assert_eq!(checkpoint.bytes()[8], 26);
+    assert_eq!(checkpoint.bytes()[8], 32);
     let mut disguised_as_legacy = checkpoint.bytes().to_vec();
     disguised_as_legacy[8] = 24;
     assert_eq!(
@@ -496,10 +602,10 @@ fn complete_service_state_round_trips_and_continues_exactly() {
         .cloned()
         .collect::<Vec<_>>();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    let mut fixture = decode_hex(include_str!("fixtures/service-checkpoint-v24.hex"));
-    fixture[8] = 26;
-    assert_eq!(checkpoint.bytes(), fixture);
+    assert_eq!(checkpoint.bytes()[8], 32);
+    assert_eq!(service.receipt_revision(), Some(15));
     let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.receipt_revision(), Some(15));
 
     assert_eq!(recovered.engine().revision(), revision);
     assert!(
@@ -654,7 +760,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 32;
+    future[8] = 33;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile

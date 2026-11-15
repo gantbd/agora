@@ -873,7 +873,13 @@
   an unauthorized copy. Independently owned record-class sources MUST compose
   only at one exact engine and policy revision, MUST be canonically ordered and
   nonoverlapping by class, and MUST NOT relabel an enclosing checkpoint as
-  narrower records. Export retirement MUST revalidate the current source
+  narrower records. Each independently owned class source MUST expose a
+  persisted monotone source revision that advances exactly once per accepted
+  class-state change, not per offer, replay, conflict, or policy-only change;
+  revision saturation MUST fence exact export without blocking authorized
+  cleanup. Legacy recovery without such a revision MUST remain ineligible for
+  that native source until a subsequent class-state mutation establishes the
+  new revision domain. Export retirement MUST revalidate the current source
   and policy plus fresh administrative authority, atomically replace one exact
   live custody copy with a separately bounded non-reuse tombstone, replay an
   identical request, conflict on changed identity, and survive custody restart;

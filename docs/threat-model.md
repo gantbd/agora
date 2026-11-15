@@ -608,6 +608,16 @@ retained-change journal—not the delivery outbox—and carries the exact discar
 edge so an enclosing authority cannot silently represent a gap as completeness.
 Custody admission must still revalidate the administrative scope and revisions.
 
+Request-receipt export has a separate rollback and identity-collision risk:
+engine revision alone does not change when Service receipts are added, replayed,
+retired, or removed on disconnect. Service therefore persists a monotone
+receipt-state revision and advances it once per accepted state change. Replays,
+conflicts, and policy-only changes cannot manufacture new source identities.
+Legacy checkpoints intentionally recover without one and cannot be presented as
+a native receipt source until a later receipt-state mutation establishes the
+domain. Counter saturation never wraps or aliases an earlier generation; it
+permanently fences exact export while leaving cleanup paths available.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

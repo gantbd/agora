@@ -26,16 +26,22 @@ use agora_storage_directory::generational::{
 };
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_BYTES: usize = 2 * 1_024 * 1_024;
+static NEXT_TEMPORARY_PATH: AtomicU64 = AtomicU64::new(0);
 
 fn temporary_path() -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("agora-export-local-{}-{nonce}", std::process::id()))
+    let ordinal = NEXT_TEMPORARY_PATH.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "agora-export-local-{}-{nonce}-{ordinal}",
+        std::process::id()
+    ))
 }
 
 fn durable_config() -> DurableExportConfigV1 {

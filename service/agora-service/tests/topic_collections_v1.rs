@@ -201,7 +201,7 @@ fn filtered_collection_cursor_is_client_filter_and_checkpoint_bound() {
     let checkpoint = service
         .prepare_checkpoint(SCOPE, 2 * 1_024 * 1_024)
         .unwrap();
-    assert_eq!(checkpoint.bytes()[8], 28);
+    assert_eq!(checkpoint.bytes()[8], 32);
     let mut recovered =
         ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, recovery_limits()).unwrap();
     let ReplyV2::Accepted(OutcomeV2::TopicCollection(second)) = recovered.execute(

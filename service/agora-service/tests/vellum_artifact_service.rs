@@ -245,7 +245,7 @@ fn history_cursor_and_artifact_receipt_recover_exactly() {
     const SCOPE: ServiceCheckpointScopeV1 = ServiceCheckpointScopeV1::new(*b"vellum-scope-v1!");
     const MAX: usize = 2 * 1024 * 1024;
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX).unwrap();
-    assert_eq!(checkpoint.bytes()[8], 27);
+    assert_eq!(checkpoint.bytes()[8], 32);
     let mut recovered = ServiceV2::recover_checkpoint(
         checkpoint.bytes(),
         SCOPE,

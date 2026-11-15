@@ -369,6 +369,15 @@ frozen `checkpoint-v22.hex` fixture pins the grammar; unknown identity tags and
 scoped identities under other domains fail closed. Profile 149 bytes remain
 unchanged and provide the bounded exact-content migration alias.
 
+Conversation Service profile `32` is additive and selected after the first
+receipt-state mutation in the new source-revision domain. It adds an explicit
+policy-presence byte, a nonzero receipt revision, and a closed exhaustion byte;
+Host profile `29` encloses exactly that Service profile. Service profiles 24
+through 31 and Host profiles 24 through 28 retain their established bytes and
+recover with no receipt-source revision. They become eligible for the new
+domain only after a later receipt-state mutation, preventing migration from
+inventing an export generation.
+
 The independent `agora-export-service` checkpoint remains outside conversation
 Engine, Service, Host, Protocol, and Wire profiles. Its additive checkpoint V2
 adds an independently bounded retirement-tombstone capacity and a canonical

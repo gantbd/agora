@@ -172,6 +172,21 @@ agent receipt identities follow the same path. This implements receipt
 retirement only; general policy application, exact export, and store reclamation
 remain open.
 
+Service V2 now also owns a persisted monotone receipt-state revision. It starts
+absent, advances exactly once when a new exact request/refusal receipt is
+retained, when disconnect removes one or more retained receipts, or when one
+atomic retirement batch replaces receipts with tombstones. Exact replay,
+changed-input conflict, inert refusal, connection changes without receipt
+removal, and policy installation do not advance it. Canonical Service profile
+32 stores the revision and an explicit exhaustion fence; Host profile 29 nests
+that Service profile without interpreting the revision. Reaching `u64::MAX`
+does not wrap; the next receipt-state mutation permanently makes exact receipt
+export unavailable while still permitting cleanup. Profiles 24 through 31
+recover with no receipt-source revision and preserve their historical bytes;
+the native receipt source remains unavailable until a post-migration
+receipt-state mutation establishes the new domain. This revision is source
+identity substrate, not by itself an export, authorization, or custody grant.
+
 Service V2 also owns the current installed policy metadata. Installation is
 engine-revision-bound, monotonically policy-revisioned, exact-replay-safe, and
 conflict detecting. Host revalidation and a fresh policy-authority decision

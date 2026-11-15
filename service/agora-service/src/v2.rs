@@ -292,6 +292,8 @@ pub struct ServiceV2 {
     clients: BTreeMap<ClientIdV2, ParticipantId>,
     retired_clients: VecDeque<ClientIdV2>,
     retained: BTreeMap<(ClientIdV2, RequestIdV2), RetainedRequestV2>,
+    receipt_revision: u64,
+    receipt_revision_exhausted: bool,
     retention_policy: Option<RetentionPolicyV1>,
     retired_receipts: ReceiptRetirementRegistryV1,
     cursors: BTreeMap<PageCursorV2, CursorRecord>,
@@ -308,6 +310,8 @@ impl ServiceV2 {
             clients: BTreeMap::new(),
             retired_clients: VecDeque::new(),
             retained: BTreeMap::new(),
+            receipt_revision: 0,
+            receipt_revision_exhausted: false,
             retention_policy: None,
             retired_receipts: ReceiptRetirementRegistryV1::new(limits.max_retained_requests.max(1))
                 .expect("positive receipt-retirement capacity"),
@@ -344,8 +348,27 @@ impl ServiceV2 {
         self.retired_receipts.len()
     }
 
+    /// Current exact receipt-state generation, if at least one mutation has
+    /// occurred and its identity domain has not saturated.
+    pub fn receipt_revision(&self) -> Option<u64> {
+        (!self.receipt_revision_exhausted && self.receipt_revision != 0)
+            .then_some(self.receipt_revision)
+    }
+
+    /// Saturation never blocks cleanup, but permanently fences exact receipt
+    /// export until a separately qualified migration establishes a new domain.
+    pub fn receipt_revision_exhausted(&self) -> bool {
+        self.receipt_revision_exhausted
+    }
+
     pub fn retention_policy(&self) -> Option<RetentionPolicyV1> {
         self.retention_policy
+    }
+
+    fn advance_receipt_revision(&mut self) {
+        let previous = self.receipt_revision;
+        self.receipt_revision = self.receipt_revision.saturating_add(1);
+        self.receipt_revision_exhausted |= previous == u64::MAX;
     }
 
     /// Installs current administrative policy metadata without itself pruning
@@ -435,6 +458,7 @@ impl ServiceV2 {
             self.retained.remove(key);
         }
         self.retired_receipts = candidate;
+        self.advance_receipt_revision();
         Ok(selection.len())
     }
 
@@ -474,7 +498,11 @@ impl ServiceV2 {
             }
             self.retired_clients.push_back(client);
         }
+        let retained_before = self.retained.len();
         self.retained.retain(|(owner, _), _| *owner != client);
+        if self.retained.len() != retained_before {
+            self.advance_receipt_revision();
+        }
         self.cursors.retain(|_, record| record.owner != client);
         count(&mut self.usage.disconnected, &mut self.usage.overflowed);
         Ok(true)
@@ -773,6 +801,7 @@ impl ServiceV2 {
                                     reply: reply.clone(),
                                 },
                             );
+                            self.advance_receipt_revision();
                             return reply;
                         }
                     },
@@ -801,6 +830,7 @@ impl ServiceV2 {
                 reply: reply.clone(),
             },
         );
+        self.advance_receipt_revision();
         reply
     }
 
@@ -5822,5 +5852,30 @@ fn map_interaction_promotion_refusal(
         ScheduledPublicationRefusalV1::Conflict => InteractionPromotionRefusalV1::Conflict,
         ScheduledPublicationRefusalV1::Unavailable => InteractionPromotionRefusalV1::Unavailable,
         ScheduledPublicationRefusalV1::Exhausted => InteractionPromotionRefusalV1::Exhausted,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ServiceLimitsV2, ServiceV2};
+    use agora_engine::Engine;
+
+    #[test]
+    fn receipt_revision_saturation_fences_identity_without_wrapping() {
+        let mut service = ServiceV2::new(Engine::new(), ServiceLimitsV2::default());
+        service.receipt_revision = u64::MAX - 1;
+
+        service.advance_receipt_revision();
+        assert_eq!(service.receipt_revision(), Some(u64::MAX));
+        assert!(!service.receipt_revision_exhausted());
+
+        service.advance_receipt_revision();
+        assert_eq!(service.receipt_revision(), None);
+        assert!(service.receipt_revision_exhausted());
+        assert_eq!(service.receipt_revision, u64::MAX);
+
+        service.advance_receipt_revision();
+        assert_eq!(service.receipt_revision, u64::MAX);
+        assert!(service.receipt_revision_exhausted());
     }
 }
