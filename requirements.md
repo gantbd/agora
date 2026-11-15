@@ -835,7 +835,8 @@ and compatible/disjoint upgrade cuts; a concrete credential-authenticator
 profile, broader disconnect/multi-writer schedules, platform and produced-
 binary-artifact evidence, and full-profile qualification remain open; the fixed
 reconnect/clean-drain soak and reproducible self-contained source candidate are
-commit-pinned.
+commit-pinned, with ordinary/soak/source evidence recorded on
+`aarch64-apple-darwin`; a multi-platform matrix remains open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part

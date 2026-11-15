@@ -100,7 +100,8 @@ is `c04b3263c8bfd512e5624e132b3db0e759e5b20118d22a885965d2ca25fa9f2a`
 and inventory digest is
 `c95c6f1ab812e20bb164308ab69aa9993e84bcbf368faa51da5ec765fc6ae167`.
 Exact compatibility, supply, package, ordinary, soak, and source-candidate gates
-pass; revision `9502788` pins them.
+pass on Darwin/aarch64; revision `ec8e023` records the platform and pins the
+qualification metadata to source `4cf7d0a`.
 
 The separately owned `agora-remote-daemon` source revision `5b32b4b` composes
 negotiated connections with bounded opaque credential frames, TLS exporters and
@@ -111,7 +112,7 @@ exit and forces overlapping human and agent participants through the identical
 path. Revision `b91d23e` pins the passing real TLS/mTLS gate.
 
 A concrete credential authenticator, broader disconnect uncertainty and multi-
-writer schedules, platform matrix, binary artifacts, signatures/installers, and
+writer schedules, additional platforms, binary artifacts, signatures/installers, and
 commit-pinned full-profile qualification remain open.
 
 ## Nonclaims
