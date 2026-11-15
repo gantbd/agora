@@ -9,6 +9,7 @@ const VERSION_V24: u8 = 24;
 const VERSION_V25: u8 = 25;
 const VERSION_V26: u8 = 26;
 const VERSION_V27: u8 = 27;
+const VERSION_V28: u8 = 28;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct HostCheckpointScopeV1([u8; 16]);
@@ -279,6 +280,7 @@ fn encode_state(
         .copied()
         .ok_or(HostCheckpointErrorV2::Service)?;
     writer.byte(match service_version {
+        31 => VERSION_V28,
         30 => VERSION_V27,
         28 | 29 => VERSION_V26,
         _ => VERSION_V25,
@@ -317,7 +319,7 @@ fn decode_state(
     let version = reader.byte()?;
     if !matches!(
         version,
-        VERSION_V24 | VERSION_V25 | VERSION_V26 | VERSION_V27
+        VERSION_V24 | VERSION_V25 | VERSION_V26 | VERSION_V27 | VERSION_V28
     ) {
         return Err(HostCheckpointErrorV2::Profile);
     }
@@ -335,6 +337,7 @@ fn decode_state(
         || (version == VERSION_V25 && !matches!(service_version, 26 | 27))
         || (version == VERSION_V26 && !matches!(service_version, 28 | 29))
         || (version == VERSION_V27 && service_version != 30)
+        || (version == VERSION_V28 && service_version != 31)
     {
         return Err(HostCheckpointErrorV2::Profile);
     }

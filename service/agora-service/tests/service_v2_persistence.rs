@@ -1,4 +1,4 @@
-use agora_engine::retention::RetentionPolicyRevisionV1;
+use agora_engine::retention::{RetentionBoundV1, RetentionPolicyRevisionV1, RetentionPolicyV1};
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantId,
     ParticipantKind, ReadScopeV1 as EngineReadScopeV1, RoomId,
@@ -52,6 +52,13 @@ fn retired_receipt_fence_is_canonical_and_survives_recovery() {
     ));
     let revision = service.engine().revision();
     service
+        .install_retention_policy(RetentionPolicyV1::new(
+            RetentionPolicyRevisionV1::new(1).unwrap(),
+            revision.0,
+            [RetentionBoundV1::entries(4_096).unwrap(); 6],
+        ))
+        .unwrap();
+    service
         .retire_request_receipts(
             RetentionPolicyRevisionV1::new(1).unwrap(),
             revision,
@@ -59,8 +66,9 @@ fn retired_receipt_fence_is_canonical_and_survives_recovery() {
         )
         .unwrap();
     let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
-    assert_eq!(checkpoint.bytes()[8], 30);
+    assert_eq!(checkpoint.bytes()[8], 31);
     let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+    assert_eq!(recovered.retention_policy(), service.retention_policy());
     assert_eq!(recovered.retired_receipt_count(), 1);
     assert_eq!(
         recovered.execute(alice, offered),
@@ -646,7 +654,7 @@ fn recovery_is_bounded_scope_bound_and_fail_closed() {
         ServiceCheckpointErrorV2::Trailing
     );
     let mut future = bytes.to_vec();
-    future[8] = 31;
+    future[8] = 32;
     assert_eq!(
         ServiceV2::recover_checkpoint(&future, SCOPE, bounds()).unwrap_err(),
         ServiceCheckpointErrorV2::Profile

@@ -6,6 +6,7 @@ use agora_durable::{
     DurableSuppressionV2, DurableTransientHostV1, OperatorRestoreAuthorityV1,
     OperatorRestoreAuthorizationV1, OperatorRestoreRequestV1,
 };
+use agora_engine::retention::{RetentionBoundV1, RetentionPolicyV1};
 use agora_engine::{
     AdmissionPolicy, AttentionScopeV1 as EngineAttentionScopeV1, CommandV2 as EngineCommand,
     Engine, Limits, LogicalTime, Participant, ParticipantId, ParticipantKind,
@@ -71,7 +72,7 @@ struct RetentionAuthority;
 
 impl RetentionAuthorityPortV1 for RetentionAuthority {
     fn authorize_policy(&mut self, _request: PolicyAuthorityRequestV1) -> AuthorityDecisionV1 {
-        panic!("policy authority is outside this test")
+        AuthorityDecisionV1::Authorized
     }
 
     fn authorize_export(&mut self, _request: ExportAuthorityRequestV1) -> AuthorityDecisionV1 {
@@ -1208,6 +1209,18 @@ fn receipt_retirement_rolls_back_on_store_refusal_and_survives_restart_when_comm
     let selection = [(client, RequestIdV2(7))];
     let policy_revision = RetentionPolicyRevisionV1::new(1).unwrap();
     let mut authority = RetentionAuthority;
+    let policy = RetentionPolicyV1::new(
+        policy_revision,
+        durable.host().unwrap().service().engine().revision().0,
+        [RetentionBoundV1::entries(4_096).unwrap(); 6],
+    );
+    assert!(matches!(
+        durable.install_retention_policy(session, policy, &mut authority, &context, HostTimeV1(3),),
+        DurableHostPublicationV2::Published {
+            value: Ok(agora_service::v2::RetentionPolicyInstallV1::Installed),
+            evidence: DurableEvidenceV2::Committed { .. }
+        }
+    ));
 
     store.next(NextCommit::Refuse);
     assert!(matches!(
@@ -1217,7 +1230,7 @@ fn receipt_retirement_rolls_back_on_store_refusal_and_survives_restart_when_comm
             &selection,
             &mut authority,
             &context,
-            HostTimeV1(3),
+            HostTimeV1(4),
         ),
         DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::StoreRefused(
             StoreRefusal::ValueLimit
@@ -1225,7 +1238,7 @@ fn receipt_retirement_rolls_back_on_store_refusal_and_survives_restart_when_comm
     ));
     assert_eq!(durable.host().unwrap().service().retired_receipt_count(), 0);
     assert!(matches!(
-        durable.handle(session, &frame, &context, HostTimeV1(3)),
+        durable.handle(session, &frame, &context, HostTimeV1(4)),
         DurableHostPublicationV2::Published { value: Ok(_), .. }
     ));
 
@@ -1236,7 +1249,7 @@ fn receipt_retirement_rolls_back_on_store_refusal_and_survives_restart_when_comm
             &selection,
             &mut authority,
             &context,
-            HostTimeV1(4),
+            HostTimeV1(5),
         ),
         DurableHostPublicationV2::Published {
             value: Ok(1),
@@ -1250,9 +1263,13 @@ fn receipt_retirement_rolls_back_on_store_refusal_and_survives_restart_when_comm
         recovered.host().unwrap().service().retired_receipt_count(),
         1
     );
+    assert_eq!(
+        recovered.host().unwrap().service().retention_policy(),
+        Some(policy)
+    );
     let DurableHostPublicationV2::Published {
         value: Ok(reply), ..
-    } = recovered.handle(session, &frame, &context, HostTimeV1(5))
+    } = recovered.handle(session, &frame, &context, HostTimeV1(6))
     else {
         panic!("retired receipt retry must publish a refusal");
     };

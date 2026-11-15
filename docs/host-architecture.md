@@ -112,7 +112,14 @@ principal binding from verifier evidence, and requests a current decision from
 the retention-authority port over the exact ordered receipt selection and
 engine/policy revisions. Denied, stale, unavailable, malformed, or service-
 refused offers are inert. Durable composition publishes an authorized result
-only after Host profile 27, including Service profile 30 tombstones, is committed.
+only after the current Host profile 28, including Service profile 31 policy and
+tombstones, is committed; profiles 27/30 remain recovery-compatible with the
+earlier receipt-only slice.
+
+Policy installation uses the same administrative-session binding but a distinct
+authority decision carrying the current policy revision, proposed closed policy,
+and observed engine revision. Its canonical durable envelope is Service profile
+31 nested in Host profile 28. Installing policy metadata does not apply bounds.
 
 The separate `agora-storage-directory` package can supply that receipt for the
 qualified single-owner local Unix profile. End-to-end restart evidence closes

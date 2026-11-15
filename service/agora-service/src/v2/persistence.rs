@@ -24,6 +24,7 @@ const VERSION_V27: u8 = 27;
 const VERSION_V28: u8 = 28;
 const VERSION_V29: u8 = 29;
 const VERSION_V30: u8 = 30;
+const VERSION_V31: u8 = 31;
 
 fn command_uses_v26_vocabulary(command: &CommandV2) -> bool {
     matches!(
@@ -414,7 +415,9 @@ impl ServiceV2 {
             .any(|record| matches!(record.page, CursorPage::TopicCollection { .. }))
             || self.retained.values().any(retained_uses_topic_collections);
         writer.raw(MAGIC)?;
-        writer.byte(if self.retired_receipts.is_empty() {
+        writer.byte(if self.retention_policy.is_some() {
+            VERSION_V31
+        } else if self.retired_receipts.is_empty() {
             match (includes_topic_collections, includes_vellum) {
                 (false, false) => VERSION_V26,
                 (false, true) => VERSION_V27,
@@ -429,6 +432,20 @@ impl ServiceV2 {
         writer.number(self.next_client)?;
         writer.number(self.next_cursor)?;
         writer.blob(engine.bytes())?;
+
+        if let Some(policy) = self.retention_policy {
+            writer.number(policy.revision.get())?;
+            writer.number(policy.effective_engine_revision)?;
+            for bound in policy.bounds() {
+                match bound {
+                    RetentionBoundV1::Disabled => writer.byte(0)?,
+                    RetentionBoundV1::Entries(maximum) => {
+                        writer.byte(1)?;
+                        writer.size(maximum.get())?;
+                    }
+                }
+            }
+        }
 
         writer.size(self.clients.len())?;
         for (client, participant) in &self.clients {
@@ -460,7 +477,7 @@ impl ServiceV2 {
             writer.blob(&reply)?;
         }
 
-        if !self.retired_receipts.is_empty() {
+        if self.retention_policy.is_some() || !self.retired_receipts.is_empty() {
             let tombstones = self.retired_receipts.checkpoint();
             writer.size(tombstones.len())?;
             for tombstone in tombstones {
@@ -661,6 +678,7 @@ impl ServiceV2 {
                 | VERSION_V28
                 | VERSION_V29
                 | VERSION_V30
+                | VERSION_V31
         ) {
             return Err(ServiceCheckpointErrorV2::Profile);
         }
@@ -686,6 +704,31 @@ impl ServiceV2 {
             },
         )
         .map_err(|error| map_engine(error, false))?;
+
+        let retention_policy = if version == VERSION_V31 {
+            let revision = RetentionPolicyRevisionV1::new(reader.number()?)
+                .ok_or(ServiceCheckpointErrorV2::Invalid)?;
+            let effective_engine_revision = reader.number()?;
+            if effective_engine_revision > engine.revision().0 {
+                return Err(ServiceCheckpointErrorV2::Invalid);
+            }
+            let mut bounds = [RetentionBoundV1::Disabled; 6];
+            for bound in &mut bounds {
+                *bound = match reader.byte()? {
+                    0 => RetentionBoundV1::Disabled,
+                    1 => RetentionBoundV1::entries(reader.size(usize::MAX)?)
+                        .ok_or(ServiceCheckpointErrorV2::Invalid)?,
+                    _ => return Err(ServiceCheckpointErrorV2::Invalid),
+                };
+            }
+            Some(RetentionPolicyV1::new(
+                revision,
+                effective_engine_revision,
+                bounds,
+            ))
+        } else {
+            None
+        };
 
         let client_count = reader.size(limits.max_clients)?;
         let mut clients = BTreeMap::new();
@@ -769,7 +812,7 @@ impl ServiceV2 {
             retained.insert(key, RetainedRequestV2 { request, reply });
         }
 
-        let retired_receipts = if version == VERSION_V30 {
+        let retired_receipts = if matches!(version, VERSION_V30 | VERSION_V31) {
             let count = reader.size(limits.max_retained_requests)?;
             let mut tombstones = Vec::new();
             tombstones
@@ -1056,7 +1099,7 @@ impl ServiceV2 {
                 }
                 17 if matches!(
                     version,
-                    VERSION_V25 | VERSION_V27 | VERSION_V29 | VERSION_V30
+                    VERSION_V25 | VERSION_V27 | VERSION_V29 | VERSION_V30 | VERSION_V31
                 ) =>
                 {
                     let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
@@ -1070,7 +1113,11 @@ impl ServiceV2 {
                     }
                     CursorPage::VellumArtifactMessages { room_id, cursor }
                 }
-                18 if matches!(version, VERSION_V28 | VERSION_V29 | VERSION_V30) => {
+                18 if matches!(
+                    version,
+                    VERSION_V28 | VERSION_V29 | VERSION_V30 | VERSION_V31
+                ) =>
+                {
                     let room_id = RoomId::new(reader.text(limits.max_room_id_bytes)?);
                     let cursor = TopicCollectionCursorV1::recover_checkpoint(
                         reader.blob(bounds.max_snapshot_bytes)?,
@@ -1105,6 +1152,7 @@ impl ServiceV2 {
             clients,
             retired_clients,
             retained,
+            retention_policy,
             retired_receipts,
             cursors,
             next_client,

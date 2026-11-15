@@ -1,6 +1,7 @@
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
 };
+use agora_engine::retention::{RetentionBoundV1, RetentionPolicyV1};
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, LogicalTime, OutcomeV2 as EngineOutcome,
     Participant, ParticipantId, ParticipantKind, ReadScopeV1, Revision, RoomId, TopicId,
@@ -12,7 +13,7 @@ use agora_federated_publication_port::{
 use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
 };
-use agora_host::v2::{HostV2, ReceiptRetirementHostRefusalV1};
+use agora_host::v2::{HostV2, ReceiptRetirementHostRefusalV1, RetentionPolicyHostRefusalV1};
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_interaction_port::{
     InteractionContextRefusalV1, InteractionContextV1, InteractionInvocationIdV1,
@@ -35,7 +36,7 @@ use agora_scheduled_publication_port::{
     ScheduledPublicationRequestV1,
 };
 use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
-use agora_service::v2::{ServiceLimitsV2, ServiceV2};
+use agora_service::v2::{RetentionPolicyInstallV1, ServiceLimitsV2, ServiceV2};
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
 use agora_wire::{WireLimits, WireRequestV1, encode_request_v1};
 use std::cell::Cell;
@@ -54,12 +55,14 @@ struct Verifier {
 
 struct RetentionAuthority {
     decision: AuthorityDecisionV1,
+    policy_calls: usize,
     retirement_calls: usize,
 }
 
 impl RetentionAuthorityPortV1 for RetentionAuthority {
     fn authorize_policy(&mut self, _request: PolicyAuthorityRequestV1) -> AuthorityDecisionV1 {
-        panic!("policy authority is outside this test")
+        self.policy_calls += 1;
+        self.decision
     }
 
     fn authorize_export(&mut self, _request: ExportAuthorityRequestV1) -> AuthorityDecisionV1 {
@@ -614,8 +617,48 @@ fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric
     let policy_revision = RetentionPolicyRevisionV1::new(1).unwrap();
     let mut authority = RetentionAuthority {
         decision: AuthorityDecisionV1::Denied,
+        policy_calls: 0,
         retirement_calls: 0,
     };
+    let policy = RetentionPolicyV1::new(
+        policy_revision,
+        host.service().engine().revision().0,
+        [RetentionBoundV1::entries(4_096).unwrap(); 6],
+    );
+    assert_eq!(
+        host.install_retention_policy(
+            alice_session,
+            policy,
+            &mut authority,
+            &alice_context,
+            HostTimeV1(3),
+        ),
+        Err(RetentionPolicyHostRefusalV1::AuthorityDenied)
+    );
+    authority.decision = AuthorityDecisionV1::Stale;
+    assert_eq!(
+        host.install_retention_policy(
+            alice_session,
+            policy,
+            &mut authority,
+            &alice_context,
+            HostTimeV1(4),
+        ),
+        Err(RetentionPolicyHostRefusalV1::AuthorityStale)
+    );
+    authority.decision = AuthorityDecisionV1::Authorized;
+    assert_eq!(
+        host.install_retention_policy(
+            alice_session,
+            policy,
+            &mut authority,
+            &alice_context,
+            HostTimeV1(5),
+        ),
+        Ok(RetentionPolicyInstallV1::Installed)
+    );
+    assert_eq!(authority.policy_calls, 3);
+    authority.decision = AuthorityDecisionV1::Denied;
     assert_eq!(
         host.retire_request_receipts(
             alice_session,
@@ -623,7 +666,7 @@ fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric
             &selection,
             &mut authority,
             &alice_context,
-            HostTimeV1(3),
+            HostTimeV1(6),
         ),
         Err(ReceiptRetirementHostRefusalV1::AuthorityDenied)
     );
@@ -636,7 +679,7 @@ fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric
             &selection,
             &mut authority,
             &alice_context,
-            HostTimeV1(4),
+            HostTimeV1(7),
         ),
         Err(ReceiptRetirementHostRefusalV1::AuthorityStale)
     );
@@ -649,7 +692,7 @@ fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric
             &selection,
             &mut authority,
             &alice_context,
-            HostTimeV1(5),
+            HostTimeV1(8),
         ),
         Ok(2)
     );
@@ -659,12 +702,27 @@ fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric
         (alice_session, &alice_frame, &alice_context),
         (bot_session, &bot_frame, &bot_context),
     ] {
-        let reply = host.handle(session, frame, context, HostTimeV1(6)).unwrap();
+        let reply = host.handle(session, frame, context, HostTimeV1(9)).unwrap();
         assert_eq!(
             decode_reply_v2(&reply, limits(4).wire).unwrap(),
             WireReplyV2::Executed(ReplyV2::Refused(RefusalV2::RequestConflict))
         );
     }
+    let checkpoint = host
+        .prepare_checkpoint(CHECKPOINT_SCOPE, MAX_CHECKPOINT)
+        .unwrap();
+    assert_eq!(checkpoint.bytes()[8], 28);
+    let recovered = HostV2::recover_checkpoint(
+        checkpoint.bytes(),
+        CHECKPOINT_SCOPE,
+        recovery_limits(),
+        Verifier {
+            calls: Rc::new(Cell::new(0)),
+        },
+    )
+    .unwrap();
+    assert_eq!(recovered.service().retention_policy(), Some(policy));
+    assert_eq!(recovered.service().retired_receipt_count(), 2);
 }
 
 #[test]

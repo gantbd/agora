@@ -16,19 +16,25 @@ use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
 };
-use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2, ReceiptRetirementHostRefusalV1};
+use agora_host::v2::{
+    HostSessionIdV2, HostV2, OpenReplyV2, ReceiptRetirementHostRefusalV1,
+    RetentionPolicyHostRefusalV1,
+};
 use agora_host::{HostRefusal, HostTimeV1, PrincipalVerifier};
 use agora_interaction_port::{
     InteractionContextRefusalV1, InteractionContextV1, InteractionPromotionAcceptedV1,
     InteractionPromotionRefusalV1, InteractionPromotionRequestV1, InteractionSourceV1,
 };
 use agora_protocol::v2::{ClientIdV2, RefusalV2, ReplyV2, RequestIdV2, RequestV2};
-use agora_retention_authority_port::{RetentionAuthorityPortV1, RetentionPolicyRevisionV1};
+use agora_retention_authority_port::{
+    RetentionAuthorityPortV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
+};
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
 };
 use agora_service::transient::TransientLimitsV1;
 use agora_service::typing::TypingLimitsV1;
+use agora_service::v2::RetentionPolicyInstallV1;
 use agora_service::v2::{
     ServiceV2,
     persistence::{ServiceCheckpointErrorV2, ServiceCheckpointScopeV1, ServiceRecoveryLimitsV2},
@@ -1398,6 +1404,24 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
                 context,
                 now,
             )
+        });
+        self.counters.record(&publication);
+        publication
+    }
+
+    /// Publishes retention-policy installation only after the complete Host
+    /// checkpoint receives a durable store acknowledgement.
+    pub fn install_retention_policy<A: RetentionAuthorityPortV1>(
+        &mut self,
+        session: HostSessionIdV2,
+        proposed: RetentionPolicyV1,
+        authority: &mut A,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<Result<RetentionPolicyInstallV1, RetentionPolicyHostRefusalV1>>
+    {
+        let publication = self.publish(|host| {
+            host.install_retention_policy(session, proposed, authority, context, now)
         });
         self.counters.record(&publication);
         publication

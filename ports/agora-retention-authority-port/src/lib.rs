@@ -3,10 +3,8 @@
 //! The port decides current authority only. It performs no retention transition,
 //! export materialization, store publication, reclamation, or compliance policy.
 
-pub use agora_engine::retention::RetentionPolicyRevisionV1;
-use agora_engine::retention::{
-    ExportProfileV1, ExportRequestIdV1, ExportScopeBindingV1, RetentionPolicyV1,
-};
+use agora_engine::retention::{ExportProfileV1, ExportRequestIdV1, ExportScopeBindingV1};
+pub use agora_engine::retention::{RetentionPolicyRevisionV1, RetentionPolicyV1};
 use std::fmt;
 
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]

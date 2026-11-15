@@ -6,8 +6,8 @@ use agora_delivery_projection_port::{
 };
 use agora_engine::retention::{
     ReceiptRetirementApplyV1, ReceiptRetirementRefusalV1, ReceiptRetirementRegistryV1,
-    RecordClassV1, RetentionIdentityBindingV1, RetentionPolicyRevisionV1, RetentionScopeBindingV1,
-    RetentionTombstoneReasonV1, RetentionTombstoneV1,
+    RecordClassV1, RetentionBoundV1, RetentionIdentityBindingV1, RetentionPolicyRevisionV1,
+    RetentionPolicyV1, RetentionScopeBindingV1, RetentionTombstoneReasonV1, RetentionTombstoneV1,
 };
 use agora_engine::{
     AdmissionPolicy, AdmissionTimeRefusalV1, AdmissionTimeV1,
@@ -142,7 +142,28 @@ pub enum ReceiptRetentionRefusalV1 {
         actual: Revision,
     },
     UnknownReceipt,
+    NoCurrentPolicy,
+    PolicyRevisionMismatch {
+        expected: RetentionPolicyRevisionV1,
+        actual: RetentionPolicyRevisionV1,
+    },
     Registry(ReceiptRetirementRefusalV1),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RetentionPolicyInstallV1 {
+    Installed,
+    Replay,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RetentionPolicyInstallRefusalV1 {
+    StaleEngineRevision {
+        expected: Revision,
+        actual: Revision,
+    },
+    RevisionRegression,
+    RevisionConflict,
 }
 
 fn receipt_retirement_bindings(
@@ -270,6 +291,7 @@ pub struct ServiceV2 {
     clients: BTreeMap<ClientIdV2, ParticipantId>,
     retired_clients: VecDeque<ClientIdV2>,
     retained: BTreeMap<(ClientIdV2, RequestIdV2), RetainedRequestV2>,
+    retention_policy: Option<RetentionPolicyV1>,
     retired_receipts: ReceiptRetirementRegistryV1,
     cursors: BTreeMap<PageCursorV2, CursorRecord>,
     next_client: u64,
@@ -285,6 +307,7 @@ impl ServiceV2 {
             clients: BTreeMap::new(),
             retired_clients: VecDeque::new(),
             retained: BTreeMap::new(),
+            retention_policy: None,
             retired_receipts: ReceiptRetirementRegistryV1::new(limits.max_retained_requests.max(1))
                 .expect("positive receipt-retirement capacity"),
             cursors: BTreeMap::new(),
@@ -320,6 +343,38 @@ impl ServiceV2 {
         self.retired_receipts.len()
     }
 
+    pub fn retention_policy(&self) -> Option<RetentionPolicyV1> {
+        self.retention_policy
+    }
+
+    /// Installs current administrative policy metadata without itself pruning
+    /// any record class. Later class-specific transitions must bind this exact
+    /// policy revision and current engine frontier.
+    pub fn install_retention_policy(
+        &mut self,
+        proposed: RetentionPolicyV1,
+    ) -> Result<RetentionPolicyInstallV1, RetentionPolicyInstallRefusalV1> {
+        let actual = self.engine.revision();
+        let expected = Revision(proposed.effective_engine_revision);
+        if expected != actual {
+            return Err(RetentionPolicyInstallRefusalV1::StaleEngineRevision { expected, actual });
+        }
+        if let Some(current) = self.retention_policy {
+            if proposed.revision < current.revision {
+                return Err(RetentionPolicyInstallRefusalV1::RevisionRegression);
+            }
+            if proposed.revision == current.revision {
+                return if proposed == current {
+                    Ok(RetentionPolicyInstallV1::Replay)
+                } else {
+                    Err(RetentionPolicyInstallRefusalV1::RevisionConflict)
+                };
+            }
+        }
+        self.retention_policy = Some(proposed);
+        Ok(RetentionPolicyInstallV1::Installed)
+    }
+
     /// Trusted administrative receipt pruning. This path is absent from the
     /// participant protocol. The complete selection is preflighted and its
     /// non-reexecution tombstones are installed atomically before receipts are
@@ -337,6 +392,15 @@ impl ServiceV2 {
             return Err(ReceiptRetentionRefusalV1::StaleEngineRevision {
                 expected: observed_engine_revision,
                 actual: self.engine.revision(),
+            });
+        }
+        let Some(policy) = self.retention_policy else {
+            return Err(ReceiptRetentionRefusalV1::NoCurrentPolicy);
+        };
+        if policy_revision != policy.revision {
+            return Err(ReceiptRetentionRefusalV1::PolicyRevisionMismatch {
+                expected: policy_revision,
+                actual: policy.revision,
             });
         }
         if selection.windows(2).any(|pair| pair[0] >= pair[1]) {

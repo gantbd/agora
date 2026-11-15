@@ -16,13 +16,15 @@ use agora_interaction_port::{
 };
 use agora_protocol::v2::{ClientIdV2, RefusalV2};
 use agora_retention_authority_port::{
-    AuthorityDecisionV1, ReceiptRetirementAuthorityRequestV1, ReceiptRetirementKeyV1,
-    RetentionAuthorityPortV1, RetentionPolicyRevisionV1,
+    AuthorityDecisionV1, PolicyAuthorityRequestV1, ReceiptRetirementAuthorityRequestV1,
+    ReceiptRetirementKeyV1, RetentionAuthorityPortV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
 };
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
 };
-use agora_service::v2::{ReceiptRetentionRefusalV1, ServiceV2};
+use agora_service::v2::{
+    ReceiptRetentionRefusalV1, RetentionPolicyInstallRefusalV1, RetentionPolicyInstallV1, ServiceV2,
+};
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_request_v2, encode_reply_v2};
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
@@ -57,6 +59,15 @@ pub enum ReceiptRetirementHostRefusalV1 {
     AuthorityStale,
     AuthorityUnavailable,
     Service(ReceiptRetentionRefusalV1),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RetentionPolicyHostRefusalV1 {
+    NotAuthorized,
+    AuthorityDenied,
+    AuthorityStale,
+    AuthorityUnavailable,
+    Service(RetentionPolicyInstallRefusalV1),
 }
 
 impl OpenReplyV2 {
@@ -301,6 +312,41 @@ impl<V: PrincipalVerifier> HostV2<V> {
             .map_err(|_| InteractionPromotionRefusalV1::NotAuthorized)?;
         self.service
             .promote_interaction_at(session.client, request, now.0)
+    }
+
+    /// Revalidates the administrative session and installs policy metadata only
+    /// after a fresh decision from the configured retention authority.
+    pub fn install_retention_policy<A: RetentionAuthorityPortV1>(
+        &mut self,
+        session_id: HostSessionIdV2,
+        proposed: RetentionPolicyV1,
+        authority: &mut A,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<RetentionPolicyInstallV1, RetentionPolicyHostRefusalV1> {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| RetentionPolicyHostRefusalV1::NotAuthorized)?;
+        let request = PolicyAuthorityRequestV1 {
+            principal: session.subject.administrative_principal_binding(),
+            observed_engine_revision: self.service.engine().revision().0,
+            current_policy_revision: self
+                .service
+                .retention_policy()
+                .map(|policy| policy.revision),
+            proposed_policy: proposed,
+        };
+        match authority.authorize_policy(request) {
+            AuthorityDecisionV1::Authorized => self
+                .service
+                .install_retention_policy(proposed)
+                .map_err(RetentionPolicyHostRefusalV1::Service),
+            AuthorityDecisionV1::Denied => Err(RetentionPolicyHostRefusalV1::AuthorityDenied),
+            AuthorityDecisionV1::Stale => Err(RetentionPolicyHostRefusalV1::AuthorityStale),
+            AuthorityDecisionV1::Unavailable => {
+                Err(RetentionPolicyHostRefusalV1::AuthorityUnavailable)
+            }
+        }
     }
 
     /// Revalidates the administrative session, obtains a fresh decision from

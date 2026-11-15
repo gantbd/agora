@@ -171,6 +171,15 @@ agent receipt identities follow the same path. This implements receipt
 retirement only; general policy application, exact export, and store reclamation
 remain open.
 
+Service V2 also owns the current installed policy metadata. Installation is
+engine-revision-bound, monotonically policy-revisioned, exact-replay-safe, and
+conflict detecting. Host revalidation and a fresh policy-authority decision
+precede installation; Durable Host commit gating makes it recoverable in
+canonical Service profile 31 and Host profile 28. Receipt retirement must bind
+that exact current policy revision. Installation does not itself discard any
+class; deterministic class-specific application and transition evidence remain
+open.
+
 ## Nonclaims
 
 R107 does not provide legal advice, records classification, legal hold,

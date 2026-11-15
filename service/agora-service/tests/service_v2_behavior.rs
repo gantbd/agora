@@ -1,4 +1,4 @@
-use agora_engine::retention::RetentionPolicyRevisionV1;
+use agora_engine::retention::{RetentionBoundV1, RetentionPolicyRevisionV1, RetentionPolicyV1};
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind,
 };
@@ -9,13 +9,53 @@ use agora_protocol::v2::{
     RoleV2, RoomEventV2, StableReferenceAvailabilityV1, ThreadLifecycleStateV1,
     ThreadedRoomEventV1, TopicIdV1, TopicRoomEventV1,
 };
-use agora_service::v2::{ReceiptRetentionRefusalV1, ServiceLimitsV2, ServiceV2};
+use agora_service::v2::{
+    ReceiptRetentionRefusalV1, RetentionPolicyInstallRefusalV1, RetentionPolicyInstallV1,
+    ServiceLimitsV2, ServiceV2,
+};
 
 fn request(id: u64, command: CommandV2) -> RequestV2 {
     RequestV2 {
         request_id: RequestIdV2(id),
         command,
     }
+}
+
+#[test]
+fn retention_policy_installation_is_revision_and_engine_bound() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let revision = service.engine().revision();
+    let policy = |policy_revision, effective_engine_revision, maximum| {
+        RetentionPolicyV1::new(
+            RetentionPolicyRevisionV1::new(policy_revision).unwrap(),
+            effective_engine_revision,
+            [RetentionBoundV1::entries(maximum).unwrap(); 6],
+        )
+    };
+    assert!(matches!(
+        service.install_retention_policy(policy(1, revision.0 - 1, 4)),
+        Err(RetentionPolicyInstallRefusalV1::StaleEngineRevision { .. })
+    ));
+    assert_eq!(
+        service.install_retention_policy(policy(1, revision.0, 4)),
+        Ok(RetentionPolicyInstallV1::Installed)
+    );
+    assert_eq!(
+        service.install_retention_policy(policy(1, revision.0, 4)),
+        Ok(RetentionPolicyInstallV1::Replay)
+    );
+    assert_eq!(
+        service.install_retention_policy(policy(1, revision.0, 5)),
+        Err(RetentionPolicyInstallRefusalV1::RevisionConflict)
+    );
+    assert_eq!(
+        service.install_retention_policy(policy(2, revision.0, 5)),
+        Ok(RetentionPolicyInstallV1::Installed)
+    );
+    assert_eq!(
+        service.install_retention_policy(policy(1, revision.0, 4)),
+        Err(RetentionPolicyInstallRefusalV1::RevisionRegression)
+    );
 }
 
 #[test]
@@ -33,6 +73,13 @@ fn policy_pruned_receipt_is_atomically_fenced_from_reexecution() {
         ReplyV2::Accepted(OutcomeV2::Capabilities(_))
     ));
     let revision = service.engine().revision();
+    service
+        .install_retention_policy(RetentionPolicyV1::new(
+            RetentionPolicyRevisionV1::new(1).unwrap(),
+            revision.0,
+            [RetentionBoundV1::entries(4_096).unwrap(); 6],
+        ))
+        .unwrap();
     assert_eq!(
         service.retire_request_receipts(
             RetentionPolicyRevisionV1::new(1).unwrap(),
@@ -52,7 +99,7 @@ fn policy_pruned_receipt_is_atomically_fenced_from_reexecution() {
     );
     assert_eq!(
         service.retire_request_receipts(
-            RetentionPolicyRevisionV1::new(2).unwrap(),
+            RetentionPolicyRevisionV1::new(1).unwrap(),
             revision,
             &[(alice, RequestIdV2(88))],
         ),

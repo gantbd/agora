@@ -153,6 +153,12 @@ ordinary complete-checkpoint commit gate, so known store refusal restores the
 receipts while a committed retirement survives restart. This is neither general
 logical compaction nor evidence of physical deletion.
 
+Service V2 separately retains the current installed policy metadata. A proposal
+must name the current engine revision; equal revision and equal policy is replay,
+equal revision with changed bounds conflicts, and policy revision regression is
+inert. Service profile 31 and Host profile 28 recover the policy together with
+receipt tombstones. This installation step authorizes no discard by itself.
+
 After completing bounded room state pages at one revision, a client can open a
 room change position at that exact revision and pull retained room events through
 an opaque client-owned cursor. Pages are exclusive-after and replayable by exact
