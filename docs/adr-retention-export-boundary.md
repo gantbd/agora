@@ -1,6 +1,6 @@
 # ADR: logical retention, exact export, and store reclamation
 
-Status: accepted architecture; closed values, receipt retirement, live-generation classification, and continuous authoritative-change retention implemented
+Status: accepted architecture; owner-native sources include the separately owned federation-copy profile
 
 Date: 2026-11-14
 
@@ -462,6 +462,20 @@ after every named unlink and directory sync does the adapter return
 foreign/stale plans, saturation, and unvalidated successors fail closed. This
 is local Unix unlink evidence only, never provider attestation or secure
 erasure.
+
+Federation-copy export remains owned by the separate `agora-federation`
+project. Its pure `agora-federation-export-agora` adapter captures one canonical
+replica checkpoint generation as exactly one administrative `FederationState`
+record. The source binds the current Agora engine revision, retention-policy
+revision, and a nonzero federation-state generation; preserves the exact
+discarded-generation frontier; and refuses disabled, future-policy, malformed,
+or oversized input before producing a fragment. Revision
+`7fd9acfc8434fceb008656fc9d10597b5d6b0e77` passed that project's complete
+commit-pinned gate against Agora
+`299676e031eaafcd8cf6577735bd93bb262ff7f6`. This closes the first exact
+federation-copy source, not subscription removal, replica-policy application,
+physical replica reclamation, authoritative-home deletion, remote-copy
+destruction, or erasure.
 
 ## Nonclaims
 

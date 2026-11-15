@@ -206,7 +206,12 @@ not ready for a network service or crates.io release.
   federation-copy retention, secure erasure, other storage hardware, or a
   distributable artifact. The subsequent Engine-owned `AGACHG1`, `AGAROM1`,
   and `AGAPRV1` sources and Service-owned `AGARRC1` source each pass the
-  complete ordinary gate but do not widen that integrated release claim;
+  complete ordinary gate but do not widen that integrated release claim. The
+  separately owned federation source at
+  `7fd9acfc8434fceb008656fc9d10597b5d6b0e77` additionally passes its complete
+  commit-pinned gate and maps one canonical replica generation into the
+  `FederationState` class; it does not qualify replica-policy application,
+  subscription removal, physical replica reclamation, or erasure;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound
