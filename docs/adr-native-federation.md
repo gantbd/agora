@@ -99,6 +99,15 @@ or `OutcomeUnknown`. An unknown result is reconciled with the exact request
 identity or authoritative room observation before retry; reconnect, peer
 acknowledgement, or replica appearance alone does not manufacture success.
 
+Agora current-policy composition must use a federation-scoped publication
+identity. The engine receipt key includes a closed source domain; Chronos,
+typed-interaction, federation, and legacy identities with equal 16-byte values
+are distinct. New scheduling and interaction receipts use their own domains.
+Engine checkpoint profile 149 preserves the domain tag canonically and rejects
+unknown tags. A scoped request may replay an equal pre-domain legacy receipt so
+upgrade does not duplicate an already accepted message; that compatibility
+path does not let one new source claim another new source's receipt.
+
 ### Partitions and revocation
 
 During a partition, replicas may serve only explicitly qualified stale reads
@@ -120,6 +129,8 @@ deletion, retention, and trust removal do not claim that the home erased data.
 - identical human/agent remote admission and current home-policy enforcement;
 - exact retry, changed-input conflict, definitely-not-sent, unknown outcome,
   and observation/replay reconciliation;
+- source-domain collision tests, exact legacy replay, canonical profile-149
+  recovery, and unknown-domain refusal;
 - ordered replication, duplicate replay, changed-event conflict, explicit gap,
   bounded replay, snapshot repair, and restart recovery;
 - direct-home source enforcement, imported-event non-export, and adversarial

@@ -2924,13 +2924,55 @@ pub struct RevisionedCommandV2 {
     pub command: CommandV2,
 }
 
-/// Opaque adapter-supplied identity for one response publication.
+/// Closed source domain for one response-publication identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+pub enum PublicationDomainV2 {
+    /// Pre-domain checkpoints and direct engine callers.
+    Legacy = 0,
+    Scheduled = 1,
+    Interaction = 2,
+    Federation = 3,
+}
+
+impl PublicationDomainV2 {
+    fn from_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Legacy),
+            1 => Some(Self::Scheduled),
+            2 => Some(Self::Interaction),
+            3 => Some(Self::Federation),
+            _ => None,
+        }
+    }
+}
+
+/// Opaque, source-scoped adapter identity for one response publication.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PublicationKeyV2([u8; 16]);
+pub struct PublicationKeyV2 {
+    domain: PublicationDomainV2,
+    value: [u8; 16],
+}
 
 impl PublicationKeyV2 {
+    /// Constructs the compatibility domain used by pre-domain checkpoints.
     pub const fn new(value: [u8; 16]) -> Self {
-        Self(value)
+        Self {
+            domain: PublicationDomainV2::Legacy,
+            value,
+        }
+    }
+
+    pub const fn namespaced(domain: PublicationDomainV2, value: [u8; 16]) -> Self {
+        Self { domain, value }
+    }
+
+    pub const fn domain(self) -> PublicationDomainV2 {
+        self.domain
+    }
+
+    fn legacy_alias(self) -> Option<Self> {
+        (self.domain != PublicationDomainV2::Legacy).then_some(Self::new(self.value))
     }
 }
 
@@ -5260,7 +5302,13 @@ impl Engine {
         &self,
         command: &PublicationCommandV2,
     ) -> Result<Option<TransitionV2>, PublicationRefusalV2> {
-        let Some(existing) = self.publications.get(&command.key) else {
+        let existing = self.publications.get(&command.key).or_else(|| {
+            command
+                .key
+                .legacy_alias()
+                .and_then(|legacy| self.publications.get(&legacy))
+        });
+        let Some(existing) = existing else {
             return Ok(None);
         };
         if existing.room_id == command.room_id
@@ -5278,7 +5326,12 @@ impl Engine {
         command: PublicationCommandV2,
         admission_time: Option<&AdmissionTimeV1>,
     ) -> Result<TransitionV2, PublicationRefusalV2> {
-        if let Some(existing) = self.publications.get(&command.key) {
+        if let Some(existing) = self.publications.get(&command.key).or_else(|| {
+            command
+                .key
+                .legacy_alias()
+                .and_then(|legacy| self.publications.get(&legacy))
+        }) {
             if existing.room_id == command.room_id
                 && existing.author == command.author
                 && existing.at == command.at

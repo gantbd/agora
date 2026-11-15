@@ -834,7 +834,10 @@
   snapshot repair. Remote mutations MUST bind an authenticated participant,
   preserve human/agent symmetry, revalidate current home authority, retain
   bounded exact receipts, and distinguish definitely-not-sent from outcome-
-  unknown. Reconnect and peer acknowledgement MUST NOT imply mutation success,
+  unknown. Any Agora publication identity used by federation MUST occupy a
+  closed source domain distinct from scheduling and typed-interaction
+  identities; equal raw identifier bytes across domains MUST NOT alias.
+  Reconnect and peer acknowledgement MUST NOT imply mutation success,
   participant read state, room authority transfer, or gap closure.
 
 ## Explicitly open

@@ -347,6 +347,16 @@ explicit feature byte only when private reports exist; profiles `20` through
 `147` retain their exact prior grammar and bytes. The frozen restriction request
 and report-list reply pin representative new frames.
 
+Engine checkpoint profile `149` is additive and selected only when at least one
+source-scoped publication receipt exists. It retains the profile-148 feature
+byte, adds a closed private-report-presence byte, and prefixes every publication
+key with one closed domain tag before its unchanged 16-byte identity. Legacy
+receipts continue to emit and recover under their earlier profile and bytes.
+Scheduled and typed-interaction services now allocate distinct domains; exact
+namespaced offers may replay an equal legacy receipt during migration. The
+frozen `checkpoint-v21.hex` fixture pins the federation-domain representation,
+and unknown domain or metadata tags fail closed.
+
 ## Conservative baseline gate
 
 `docs/compatibility-baseline.txt` records the exact sorted Cargo package

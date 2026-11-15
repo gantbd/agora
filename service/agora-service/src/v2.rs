@@ -20,10 +20,10 @@ use agora_engine::{
     MessageReportV1 as EngineMessageReportV1, MessageRevisionPageCursorV1, ModerationCausationV1,
     ModerationReasonV1, NotificationIntentV1 as EngineNotificationIntentV1, ObservationRefusal,
     OutcomeV2 as EngineOutcome, ParticipantId, ParticipantKind, PollId as EnginePollId,
-    PollObservationRefusalV1, PrivateSaveRefusalV1, PublicationCommandV2, PublicationKeyV2,
-    PublicationRefusalV2, ReadPositionRefusalV1, ReadScopeV1 as EngineReadScopeV1,
-    Refusal as EngineRefusal, Revision, RevisionedCommandV2, Role, RoomChangeGap,
-    RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
+    PollObservationRefusalV1, PrivateSaveRefusalV1, PublicationCommandV2, PublicationDomainV2,
+    PublicationKeyV2, PublicationRefusalV2, ReadPositionRefusalV1,
+    ReadScopeV1 as EngineReadScopeV1, Refusal as EngineRefusal, Revision, RevisionedCommandV2,
+    Role, RoomChangeGap, RoomChangePosition, RoomChangeResult, RoomId, RoomPageCursor,
     Sha256DigestV1 as EngineSha256DigestV1, ThreadMessagePageCursor, TopicCollectionCursorV1,
     TopicCollectionFilterV1 as EngineTopicCollectionFilterV1,
     TopicCollectionLifecycleV1 as EngineTopicCollectionLifecycleV1, TopicId,
@@ -335,7 +335,7 @@ impl ServiceV2 {
         }
         let command = PublicationCommandV2::new(
             self.engine.revision(),
-            PublicationKeyV2::new(request.id.into_bytes()),
+            PublicationKeyV2::namespaced(PublicationDomainV2::Scheduled, request.id.into_bytes()),
             RoomId::new(request.intent.room_id()),
             participant,
             agora_engine::LogicalTime(request.intent.logical_time()),
@@ -453,7 +453,7 @@ impl ServiceV2 {
         }
         let command = PublicationCommandV2::new(
             self.engine.revision(),
-            PublicationKeyV2::new(request.id.into_bytes()),
+            PublicationKeyV2::namespaced(PublicationDomainV2::Interaction, request.id.into_bytes()),
             RoomId::new(request.intent.room_id()),
             participant.clone(),
             agora_engine::LogicalTime(request.intent.logical_time()),

@@ -1,6 +1,7 @@
 use agora_engine::{
     AdmissionPolicy, CommandV2, Engine, Limits, LogicalTime, Participant, ParticipantId,
-    ParticipantKind, PublicationCommandV2, PublicationKeyV2, PublicationRefusalV2, RoomId,
+    ParticipantKind, PublicationCommandV2, PublicationDomainV2, PublicationKeyV2,
+    PublicationRefusalV2, RoomId,
 };
 
 fn setup(limits: Limits) -> Engine {
@@ -34,6 +35,22 @@ fn setup(limits: Limits) -> Engine {
         })
         .unwrap();
     engine
+}
+
+fn namespaced_publication(
+    engine: &Engine,
+    domain: PublicationDomainV2,
+    key: [u8; 16],
+    body: &str,
+) -> PublicationCommandV2 {
+    PublicationCommandV2::new(
+        engine.revision(),
+        PublicationKeyV2::namespaced(domain, key),
+        RoomId::from("room"),
+        ParticipantId::from("agent"),
+        LogicalTime(20),
+        body,
+    )
 }
 
 fn publication(engine: &Engine, key: [u8; 16], body: &str) -> PublicationCommandV2 {
@@ -82,6 +99,45 @@ fn publication_key_reuse_with_changed_content_is_a_conflict() {
         Err(PublicationRefusalV2::IdempotencyConflict)
     );
     assert_eq!(engine.revision(), revision);
+    assert_eq!(
+        engine.room(&RoomId::from("room")).unwrap().messages.len(),
+        1
+    );
+}
+
+#[test]
+fn equal_bytes_in_distinct_source_domains_do_not_collide() {
+    let mut engine = setup(Limits::default());
+    engine
+        .publish(namespaced_publication(
+            &engine,
+            PublicationDomainV2::Scheduled,
+            [5; 16],
+            "scheduled",
+        ))
+        .unwrap();
+    engine
+        .publish(namespaced_publication(
+            &engine,
+            PublicationDomainV2::Interaction,
+            [5; 16],
+            "interaction",
+        ))
+        .unwrap();
+    assert_eq!(
+        engine.room(&RoomId::from("room")).unwrap().messages.len(),
+        2
+    );
+}
+
+#[test]
+fn namespaced_request_replays_an_equal_legacy_receipt_during_migration() {
+    let mut engine = setup(Limits::default());
+    let legacy = publication(&engine, [6; 16], "legacy");
+    let first = engine.publish(legacy).unwrap();
+    let migrated =
+        namespaced_publication(&engine, PublicationDomainV2::Scheduled, [6; 16], "legacy");
+    assert_eq!(engine.publish(migrated).unwrap(), first);
     assert_eq!(
         engine.room(&RoomId::from("room")).unwrap().messages.len(),
         1

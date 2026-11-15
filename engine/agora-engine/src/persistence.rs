@@ -1241,20 +1241,31 @@ impl Engine {
         let include_polls = engine_has_polls(self);
         let include_admission_control = engine_has_admission_control(self);
         let include_message_reports = !self.message_reports.is_empty();
+        let include_publication_domains = self
+            .publications
+            .keys()
+            .any(|key| key.domain != PublicationDomainV2::Legacy);
         w.raw(b"AGORACP\0")?;
         let feature_bits = u8::from(include_vellum_artifacts)
             + (u8::from(include_conversation_profiles) * 2)
             + (u8::from(include_attention_preferences) * 4)
             + (u8::from(include_private_saves) * 8)
             + (u8::from(include_shared_pins) * 16);
-        if include_message_reports {
-            w.byte(148)?;
+        if include_message_reports || include_publication_domains {
+            w.byte(if include_publication_domains {
+                149
+            } else {
+                148
+            })?;
             w.byte(
                 feature_bits
                     | (u8::from(include_polls) << 5)
                     | (u8::from(include_admission_control) << 6)
                     | 0x80,
             )?;
+            if include_publication_domains {
+                w.byte(u8::from(include_message_reports))?;
+            }
         } else {
             w.byte(
                 if include_admission_control {
@@ -1492,7 +1503,10 @@ impl Engine {
         }
         w.count(self.publications.len())?;
         for (key, p) in &self.publications {
-            w.raw(&key.0)?;
+            if include_publication_domains {
+                w.byte(key.domain as u8)?;
+            }
+            w.raw(&key.value)?;
             w.text(p.room_id.as_str())?;
             w.text(p.author.as_str())?;
             w.number(p.at.0)?;
@@ -1531,11 +1545,17 @@ impl Engine {
             return Err(CheckpointError::Profile);
         }
         let profile = r.byte()?;
-        let (feature_bits, has_polls, has_admission_control, has_message_reports) = match profile {
-            20..=51 => (profile - 20, false, false, false),
-            52..=83 => (profile - 52, true, false, false),
-            84..=115 => (profile - 84, false, true, false),
-            116..=147 => (profile - 116, true, true, false),
+        let (
+            feature_bits,
+            has_polls,
+            has_admission_control,
+            has_message_reports,
+            has_publication_domains,
+        ) = match profile {
+            20..=51 => (profile - 20, false, false, false, false),
+            52..=83 => (profile - 52, true, false, false, false),
+            84..=115 => (profile - 84, false, true, false, false),
+            116..=147 => (profile - 116, true, true, false, false),
             148 => {
                 let extended = r.byte()?;
                 if extended & 0x80 == 0 {
@@ -1545,6 +1565,25 @@ impl Engine {
                     extended & 0x1f,
                     extended & 0x20 != 0,
                     extended & 0x40 != 0,
+                    true,
+                    false,
+                )
+            }
+            149 => {
+                let extended = r.byte()?;
+                if extended & 0x80 == 0 {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                let has_message_reports = match r.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::NonCanonical),
+                };
+                (
+                    extended & 0x1f,
+                    extended & 0x20 != 0,
+                    extended & 0x40 != 0,
+                    has_message_reports,
                     true,
                 )
             }
@@ -2048,7 +2087,12 @@ impl Engine {
         }
         let n = r.count(l.max_publication_receipts)?;
         for _ in 0..n {
-            let key = PublicationKeyV2::new(r.fixed()?);
+            let domain = if has_publication_domains {
+                PublicationDomainV2::from_tag(r.byte()?).ok_or(CheckpointError::Invalid)?
+            } else {
+                PublicationDomainV2::Legacy
+            };
+            let key = PublicationKeyV2::namespaced(domain, r.fixed()?);
             let room_id = r.room(l)?;
             let author = r.participant(l)?;
             let at = LogicalTime(r.number()?);

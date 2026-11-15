@@ -6,6 +6,9 @@ use agora_interaction_port::{
     InteractionContextV1, InteractionInvocationIdV1, InteractionPromotionIntentV1,
     InteractionPromotionRefusalV1, InteractionPromotionRequestV1, InteractionSourceV1,
 };
+use agora_scheduled_publication_port::{
+    ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationRequestV1,
+};
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
 fn setup() -> ServiceV2 {
@@ -122,4 +125,32 @@ fn promotion_is_actor_bound_exact_and_replays_after_source_eviction() {
         Err(InteractionPromotionRefusalV1::SourceUnavailable)
     );
     assert!(!format!("{:?}", promotion(4, "diagnostic secret")).contains("diagnostic secret"));
+}
+
+#[test]
+fn scheduled_and_interaction_ids_are_source_scoped() {
+    let mut service = setup();
+    let alice = service.connect("alice").unwrap();
+    service
+        .publish_scheduled_at(
+            alice,
+            ScheduledPublicationRequestV1 {
+                id: ScheduledPublicationIdV1::new([8; 16]).unwrap(),
+                intent: ScheduledPublicationIntentV1::new("room", 2, "scheduled"),
+            },
+            10,
+        )
+        .unwrap();
+    service
+        .promote_interaction_at(alice, promotion(8, "interaction"), 11)
+        .unwrap();
+    assert_eq!(
+        service
+            .engine()
+            .room(&"room".into())
+            .unwrap()
+            .messages
+            .len(),
+        3
+    );
 }

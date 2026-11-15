@@ -554,6 +554,14 @@ same request or authoritative observation. Peer acknowledgement proves only a
 replication frontier, never participant attention, mutation success, global
 delivery, erasure, or transfer of room ownership.
 
+Adapter-controlled publication identities are source scoped. Equal 16-byte
+values from Chronos, typed interaction, and federation are not the same engine
+receipt key, preventing a peer from selecting an existing non-federation key to
+manufacture replay or conflict. Profile-149 recovery rejects unknown source
+tags. Legacy unscoped receipts remain a bounded upgrade ambiguity: an exact
+content match may replay the already accepted transition, but changed content
+conflicts and every newly accepted receipt is source scoped.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

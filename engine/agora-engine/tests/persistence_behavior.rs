@@ -72,6 +72,92 @@ fn native_checkpoint_retains_evicted_publication_receipts_and_exact_outbox() {
     assert_eq!(r.prepare_checkpoint(65536).unwrap().bytes(), cp.bytes());
     assert!(!format!("{cp:?}").contains("reply"));
 }
+
+#[test]
+fn namespaced_publication_receipts_select_profile_149_and_recover_exactly() {
+    let mut engine = configured();
+    let publication = PublicationCommandV2::new(
+        engine.revision(),
+        PublicationKeyV2::namespaced(PublicationDomainV2::Federation, [7; 16]),
+        "room".into(),
+        "agent".into(),
+        LogicalTime(12),
+        "federated",
+    );
+    let first = engine.publish(publication.clone()).unwrap();
+    let checkpoint = engine.prepare_checkpoint(65_536).unwrap();
+    assert_eq!(checkpoint.bytes()[8], 149);
+    assert_eq!(
+        checkpoint.bytes(),
+        decode_hex(include_str!("fixtures/checkpoint-v21.hex"))
+    );
+    let mut recovered = recover(checkpoint.bytes());
+    assert_eq!(recovered.publish(publication).unwrap(), first);
+    assert_eq!(
+        recovered.prepare_checkpoint(65_536).unwrap().bytes(),
+        checkpoint.bytes()
+    );
+}
+
+fn decode_hex(text: &str) -> Vec<u8> {
+    text.trim()
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+        .collect()
+}
+
+#[test]
+fn namespaced_publication_checkpoint_refuses_unknown_domain_and_metadata_tags() {
+    let mut engine = configured();
+    engine
+        .publish(PublicationCommandV2::new(
+            engine.revision(),
+            PublicationKeyV2::namespaced(PublicationDomainV2::Federation, [7; 16]),
+            "room".into(),
+            "agent".into(),
+            LogicalTime(12),
+            "federated",
+        ))
+        .unwrap();
+    let checkpoint = engine.prepare_checkpoint(65_536).unwrap();
+
+    let mut invalid_metadata = checkpoint.bytes().to_vec();
+    invalid_metadata[10] = 2;
+    assert_eq!(
+        Engine::recover_checkpoint(
+            &invalid_metadata,
+            RecoveryLimits {
+                max_snapshot_bytes: 65_536,
+                maximum_engine_limits: Limits::default(),
+            }
+        )
+        .unwrap_err(),
+        CheckpointError::NonCanonical
+    );
+
+    let marker: Vec<u8> = std::iter::once(PublicationDomainV2::Federation as u8)
+        .chain([7; 16])
+        .collect();
+    let position = checkpoint
+        .bytes()
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap();
+    let mut invalid_domain = checkpoint.bytes().to_vec();
+    invalid_domain[position] = 4;
+    assert_eq!(
+        Engine::recover_checkpoint(
+            &invalid_domain,
+            RecoveryLimits {
+                max_snapshot_bytes: 65_536,
+                maximum_engine_limits: Limits::default(),
+            }
+        )
+        .unwrap_err(),
+        CheckpointError::Invalid
+    );
+}
 #[test]
 fn snapshot_framing_and_host_limits_are_checked_before_reconstruction() {
     let e = configured();

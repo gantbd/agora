@@ -109,3 +109,4 @@ fixture|engine/agora-engine/tests/fixtures/checkpoint-v17.hex|3013|07691a181f032
 fixture|engine/agora-engine/tests/fixtures/checkpoint-v18.hex|3164|f11969efb2b37376c03e6bad2084f3c2dc68157509c868cef9a552530f6f8dca
 fixture|engine/agora-engine/tests/fixtures/checkpoint-v19.hex|3312|ca36f514514973aadb47b964fdef3cd34a88612138e77fbad0e6962004006cfd
 fixture|engine/agora-engine/tests/fixtures/checkpoint-v20.hex|3384|fa5044f71eb9159f42da1f562acfedd1d6d5a812b5dc666395ebfcf418a01e22
+fixture|engine/agora-engine/tests/fixtures/checkpoint-v21.hex|1181|9519fc0a6f6d41d0fff69043464d7c8cb89dff8af5795833fedd58f0de72e634
