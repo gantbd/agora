@@ -376,6 +376,12 @@ pub enum ExportProfileV1 {
     Administrative = 3,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u16)]
+pub enum ContentDigestProfileV1 {
+    Sha256 = 1,
+}
+
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ContentDigestV1([u8; 32]);
 
@@ -443,6 +449,7 @@ pub struct ExportManifestV1 {
     pub request: ExportRequestIdV1,
     pub profile: ExportProfileV1,
     pub scope: ExportScopeBindingV1,
+    pub digest_profile: ContentDigestProfileV1,
     pub source_engine_revision: u64,
     pub policy_revision: RetentionPolicyRevisionV1,
     pub included_classes: [bool; 6],
@@ -457,6 +464,7 @@ impl ExportManifestV1 {
         request: ExportRequestIdV1,
         profile: ExportProfileV1,
         scope: ExportScopeBindingV1,
+        digest_profile: ContentDigestProfileV1,
         source_engine_revision: u64,
         policy_revision: RetentionPolicyRevisionV1,
         included_classes: [bool; 6],
@@ -479,6 +487,7 @@ impl ExportManifestV1 {
             request,
             profile,
             scope,
+            digest_profile,
             source_engine_revision,
             policy_revision,
             included_classes,
@@ -491,6 +500,249 @@ impl ExportManifestV1 {
     pub fn chunks(&self) -> &[ExportChunkV1] {
         &self.chunks
     }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ExportRecordV1 {
+    pub id: RetentionRecordIdV1,
+    payload: Vec<u8>,
+}
+
+impl ExportRecordV1 {
+    pub fn new(
+        id: RetentionRecordIdV1,
+        payload: Vec<u8>,
+        max_payload_bytes: usize,
+    ) -> Option<Self> {
+        (!payload.is_empty() && payload.len() <= max_payload_bytes).then_some(Self { id, payload })
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+}
+
+impl fmt::Debug for ExportRecordV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExportRecordV1")
+            .field("id", &self.id)
+            .field("payload", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ExportChunkPayloadV1 {
+    pub index: u32,
+    bytes: Vec<u8>,
+}
+
+impl ExportChunkPayloadV1 {
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl fmt::Debug for ExportChunkPayloadV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExportChunkPayloadV1")
+            .field("index", &self.index)
+            .field("byte_length", &self.bytes.len())
+            .field("bytes", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExportMaterializationV1 {
+    pub manifest: ExportManifestV1,
+    chunks: Vec<ExportChunkPayloadV1>,
+}
+
+impl ExportMaterializationV1 {
+    pub fn chunks(&self) -> &[ExportChunkPayloadV1] {
+        &self.chunks
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExportMaterializationRefusalV1 {
+    InvalidLimit,
+    NonCanonicalRecords,
+    ExcludedRecordClass,
+    FrontierMismatch,
+    OversizedRecord,
+    ChunkLimit,
+}
+
+const EXPORT_CHUNK_DOMAIN_V1: &[u8; 8] = b"AGEXCH1\0";
+const EXPORT_MANIFEST_DOMAIN_V1: &[u8; 8] = b"AGEXMF1\0";
+
+/// Materializes one complete, bounded export inventory into canonical chunks.
+///
+/// `digest` is supplied by the enclosing qualified composition so this no-I/O
+/// engine does not implement a cryptographic provider. The implementation must
+/// match `digest_profile`; qualification of that binding belongs to the host.
+/// It is called once for each chunk and once for the canonical manifest body.
+/// Equal inputs and an equal digest implementation produce byte-identical output.
+#[allow(clippy::too_many_arguments)]
+pub fn materialize_export_v1<D>(
+    request: ExportRequestIdV1,
+    profile: ExportProfileV1,
+    scope: ExportScopeBindingV1,
+    digest_profile: ContentDigestProfileV1,
+    source_engine_revision: u64,
+    policy_revision: RetentionPolicyRevisionV1,
+    included_classes: [bool; 6],
+    frontiers: [RetentionFrontierV1; 6],
+    records: &[ExportRecordV1],
+    max_records: usize,
+    max_record_bytes: usize,
+    max_chunks: usize,
+    max_chunk_bytes: usize,
+    mut digest: D,
+) -> Result<ExportMaterializationV1, ExportMaterializationRefusalV1>
+where
+    D: FnMut(&[u8]) -> ContentDigestV1,
+{
+    if max_records == 0
+        || max_record_bytes == 0
+        || max_chunks == 0
+        || max_chunk_bytes < EXPORT_CHUNK_DOMAIN_V1.len()
+        || max_record_bytes > u32::MAX as usize
+        || max_chunk_bytes > u32::MAX as usize
+        || !included_classes.iter().any(|included| *included)
+        || records.len() > max_records
+    {
+        return Err(ExportMaterializationRefusalV1::InvalidLimit);
+    }
+    if records.windows(2).any(|pair| pair[0].id >= pair[1].id) {
+        return Err(ExportMaterializationRefusalV1::NonCanonicalRecords);
+    }
+    if records.iter().any(|record| {
+        !included_classes[record.id.class as usize - 1]
+            || record.payload.is_empty()
+            || record.payload.len() > max_record_bytes
+    }) {
+        return Err(
+            if records
+                .iter()
+                .any(|record| !included_classes[record.id.class as usize - 1])
+            {
+                ExportMaterializationRefusalV1::ExcludedRecordClass
+            } else {
+                ExportMaterializationRefusalV1::OversizedRecord
+            },
+        );
+    }
+    let exact_frontiers = frontiers
+        .iter()
+        .zip(RECORD_CLASSES_V1)
+        .all(|(frontier, class)| frontier.class == class);
+    let records_match_frontiers = RECORD_CLASSES_V1.iter().all(|class| {
+        let class_records: Vec<_> = records
+            .iter()
+            .filter(|record| record.id.class == *class)
+            .collect();
+        if included_classes[*class as usize - 1] {
+            class_records.first().map(|record| record.id.ordinal)
+                == frontiers[*class as usize - 1].oldest_retained
+                && class_records.iter().all(|record| {
+                    record.id.ordinal > frontiers[*class as usize - 1].discarded_through
+                })
+        } else {
+            class_records.is_empty()
+        }
+    });
+    if !exact_frontiers || !records_match_frontiers {
+        return Err(ExportMaterializationRefusalV1::FrontierMismatch);
+    }
+
+    let mut bodies = Vec::new();
+    let mut current = EXPORT_CHUNK_DOMAIN_V1.to_vec();
+    for record in records {
+        let payload_length = u32::try_from(record.payload.len())
+            .map_err(|_| ExportMaterializationRefusalV1::OversizedRecord)?;
+        let frame_length = 1_usize
+            .checked_add(8)
+            .and_then(|length| length.checked_add(4))
+            .and_then(|length| length.checked_add(record.payload.len()))
+            .ok_or(ExportMaterializationRefusalV1::OversizedRecord)?;
+        if EXPORT_CHUNK_DOMAIN_V1
+            .len()
+            .checked_add(frame_length)
+            .is_none_or(|length| length > max_chunk_bytes)
+        {
+            return Err(ExportMaterializationRefusalV1::OversizedRecord);
+        }
+        if current
+            .len()
+            .checked_add(frame_length)
+            .is_none_or(|length| length > max_chunk_bytes)
+        {
+            bodies.push(current);
+            current = EXPORT_CHUNK_DOMAIN_V1.to_vec();
+        }
+        current.push(record.id.class as u8);
+        current.extend_from_slice(&record.id.ordinal.to_be_bytes());
+        current.extend_from_slice(&payload_length.to_be_bytes());
+        current.extend_from_slice(&record.payload);
+    }
+    bodies.push(current);
+    if bodies.len() > max_chunks {
+        return Err(ExportMaterializationRefusalV1::ChunkLimit);
+    }
+
+    let mut chunks = Vec::with_capacity(bodies.len());
+    let mut chunk_metadata = Vec::with_capacity(bodies.len());
+    for (index, bytes) in bodies.into_iter().enumerate() {
+        let index = u32::try_from(index).map_err(|_| ExportMaterializationRefusalV1::ChunkLimit)?;
+        let byte_length =
+            u32::try_from(bytes.len()).map_err(|_| ExportMaterializationRefusalV1::InvalidLimit)?;
+        chunk_metadata.push(
+            ExportChunkV1::new(index, byte_length, digest(&bytes))
+                .expect("canonical export chunks are nonempty"),
+        );
+        chunks.push(ExportChunkPayloadV1 { index, bytes });
+    }
+
+    let mut manifest_body = EXPORT_MANIFEST_DOMAIN_V1.to_vec();
+    manifest_body.extend_from_slice(&request.as_bytes());
+    manifest_body.extend_from_slice(&(profile as u16).to_be_bytes());
+    manifest_body.extend_from_slice(&scope.as_bytes());
+    manifest_body.extend_from_slice(&(digest_profile as u16).to_be_bytes());
+    manifest_body.extend_from_slice(&source_engine_revision.to_be_bytes());
+    manifest_body.extend_from_slice(&policy_revision.get().to_be_bytes());
+    manifest_body.extend(included_classes.map(u8::from));
+    for frontier in frontiers {
+        manifest_body.push(frontier.class as u8);
+        manifest_body.extend_from_slice(&frontier.discarded_through.to_be_bytes());
+        manifest_body.push(u8::from(frontier.oldest_retained.is_some()));
+        manifest_body.extend_from_slice(&frontier.oldest_retained.unwrap_or(0).to_be_bytes());
+    }
+    manifest_body.extend_from_slice(&(chunk_metadata.len() as u32).to_be_bytes());
+    for chunk in &chunk_metadata {
+        manifest_body.extend_from_slice(&chunk.index.to_be_bytes());
+        manifest_body.extend_from_slice(&chunk.byte_length.to_be_bytes());
+        manifest_body.extend_from_slice(&chunk.digest.as_bytes());
+    }
+    let manifest = ExportManifestV1::new(
+        request,
+        profile,
+        scope,
+        digest_profile,
+        source_engine_revision,
+        policy_revision,
+        included_classes,
+        frontiers,
+        chunk_metadata,
+        digest(&manifest_body),
+        max_chunks,
+    )
+    .expect("materializer constructs a canonical manifest");
+    Ok(ExportMaterializationV1 { manifest, chunks })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

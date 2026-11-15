@@ -1,11 +1,13 @@
 use agora_engine::retention::{
-    ContentDigestV1, ExportChunkV1, ExportManifestV1, ExportProfileV1, ExportRequestIdV1,
+    ContentDigestProfileV1, ContentDigestV1, ExportChunkV1, ExportManifestV1,
+    ExportMaterializationRefusalV1, ExportProfileV1, ExportRecordV1, ExportRequestIdV1,
     ExportScopeBindingV1, RECORD_CLASSES_V1, ReceiptRetirementApplyV1, ReceiptRetirementRefusalV1,
     ReceiptRetirementRegistryV1, ReclamationEvidenceV1, ReclamationStageV1, RecordClassV1,
     RetentionBoundV1, RetentionFrontierV1, RetentionIdentityBindingV1, RetentionPlanRefusalV1,
     RetentionPolicyRevisionV1, RetentionPolicyV1, RetentionRecordIdV1, RetentionRecordV1,
     RetentionScopeBindingV1, RetentionTombstoneReasonV1, RetentionTombstoneV1,
-    RetentionTransitionV1, StoreGenerationIdV1, StoreReclamationPlanV1, plan_retention_v1,
+    RetentionTransitionV1, StoreGenerationIdV1, StoreReclamationPlanV1, materialize_export_v1,
+    plan_retention_v1,
 };
 
 fn revision() -> RetentionPolicyRevisionV1 {
@@ -63,6 +65,7 @@ fn transition_and_export_require_canonical_class_and_chunk_order() {
         ExportRequestIdV1::new([7; 16]).unwrap(),
         ExportProfileV1::RoomVisible,
         ExportScopeBindingV1::new([6; 32]).unwrap(),
+        ContentDigestProfileV1::Sha256,
         9,
         revision(),
         [true, true, false, false, false, false],
@@ -79,6 +82,7 @@ fn transition_and_export_require_canonical_class_and_chunk_order() {
             ExportRequestIdV1::new([7; 16]).unwrap(),
             ExportProfileV1::RoomVisible,
             ExportScopeBindingV1::new([6; 32]).unwrap(),
+            ContentDigestProfileV1::Sha256,
             9,
             revision(),
             [true; 6],
@@ -88,6 +92,85 @@ fn transition_and_export_require_canonical_class_and_chunk_order() {
             2,
         )
         .is_none()
+    );
+}
+
+#[test]
+fn export_materialization_is_bounded_canonical_and_frontier_exact() {
+    let id = |class, ordinal| RetentionRecordIdV1::new(class, ordinal).unwrap();
+    let records = vec![
+        ExportRecordV1::new(id(RecordClassV1::RoomProjection, 3), b"one".to_vec(), 3).unwrap(),
+        ExportRecordV1::new(
+            id(RecordClassV1::AuthoritativeChanges, 5),
+            b"two".to_vec(),
+            3,
+        )
+        .unwrap(),
+    ];
+    let export_frontiers = [
+        RetentionFrontierV1::new(RecordClassV1::RoomProjection, 2, Some(3)).unwrap(),
+        RetentionFrontierV1::new(RecordClassV1::AuthoritativeChanges, 4, Some(5)).unwrap(),
+        RetentionFrontierV1::new(RecordClassV1::RequestReceipts, 0, None).unwrap(),
+        RetentionFrontierV1::new(RecordClassV1::PrivateParticipantState, 0, None).unwrap(),
+        RetentionFrontierV1::new(RecordClassV1::FederationState, 0, None).unwrap(),
+        RetentionFrontierV1::new(RecordClassV1::OperationalCopies, 0, None).unwrap(),
+    ];
+    let digest = |bytes: &[u8]| {
+        let value = bytes
+            .iter()
+            .fold(0_u8, |state, byte| state.wrapping_add(*byte));
+        ContentDigestV1::new([value; 32])
+    };
+    let materialize = |records: &[ExportRecordV1], included, frontiers, max_chunks| {
+        materialize_export_v1(
+            ExportRequestIdV1::new([7; 16]).unwrap(),
+            ExportProfileV1::Administrative,
+            ExportScopeBindingV1::new([8; 32]).unwrap(),
+            ContentDigestProfileV1::Sha256,
+            9,
+            revision(),
+            included,
+            frontiers,
+            records,
+            2,
+            3,
+            max_chunks,
+            24,
+            digest,
+        )
+    };
+    let included = [true, true, false, false, false, false];
+    let first = materialize(&records, included, export_frontiers, 2).unwrap();
+    let second = materialize(&records, included, export_frontiers, 2).unwrap();
+    assert_eq!(first, second);
+    assert_eq!(first.chunks().len(), 2);
+    assert_eq!(first.manifest.chunks().len(), 2);
+    assert!(
+        first
+            .chunks()
+            .iter()
+            .all(|chunk| { chunk.bytes().starts_with(b"AGEXCH1\0") && chunk.bytes().len() == 24 })
+    );
+    assert!(!format!("{:?}", first.chunks()[0]).contains("one"));
+    assert_eq!(
+        materialize(&records, included, export_frontiers, 1),
+        Err(ExportMaterializationRefusalV1::ChunkLimit)
+    );
+    assert_eq!(
+        materialize(
+            &records,
+            [true, false, false, false, false, false],
+            export_frontiers,
+            2,
+        ),
+        Err(ExportMaterializationRefusalV1::ExcludedRecordClass)
+    );
+    let mut stale_frontiers = export_frontiers;
+    stale_frontiers[0] =
+        RetentionFrontierV1::new(RecordClassV1::RoomProjection, 1, Some(2)).unwrap();
+    assert_eq!(
+        materialize(&records, included, stale_frontiers, 2),
+        Err(ExportMaterializationRefusalV1::FrontierMismatch)
     );
 }
 

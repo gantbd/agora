@@ -188,6 +188,17 @@ producing a plan, and reports exact retained/discarded identities, class counts,
 and frontiers. Planning mutates nothing; authoritative record owners still need
 qualified class-specific application and persistence.
 
+The engine export foundation now materializes one complete canonical record
+inventory into bounded `AGEXCH1` chunks and an `AGEXMF1` manifest body. It
+requires canonical record order, exact included-class/frontier agreement,
+nonempty bounded payloads, whole-record chunk framing, and a named SHA-256
+digest profile. Chunk payload diagnostics are redacted. The digest function is
+injected into the no-I/O engine and must be qualified by the enclosing host;
+equal inputs with the same implementation produce byte-identical chunks and
+manifest evidence. This is materialization substrate only: source projection,
+visibility authorization, cryptographic-provider qualification, durable exact
+replay/conflict handling, protocol and SDK exposure remain open.
+
 ## Nonclaims
 
 R107 does not provide legal advice, records classification, legal hold,
