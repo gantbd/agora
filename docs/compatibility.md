@@ -378,6 +378,13 @@ capacities continues to emit byte-identical V1, so enabling retirement does not
 rewrite existing empty or live-only compatible custody checkpoints. Frozen V1
 empty-custody and V2 retired-custody fixtures pin both representations.
 
+The directory adapter's generational profile is separately typed from the
+unchanged single-head V1 store. Its canonical reclamation journal uses magic
+`AGGREC1`, version `1`, bounded sorted plan receipts, exact replacement digest,
+and engine generation identities followed by CRC32C. A frozen completed-plan
+fixture pins the representation; the compatibility mutation gate rejects byte,
+inventory, and empty-fixture drift.
+
 ## Conservative baseline gate
 
 `docs/compatibility-baseline.txt` records the exact sorted Cargo package

@@ -31,7 +31,7 @@ agora-export-local --> agora-export-durable + agora-export-service + agora-sha25
 agora-sdk-embedded --> engine + service + host + effect-free trusted composition ports
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-observation --> keystone-storage port
-agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem
+agora-storage-directory --> engine reclamation values + storage-observation port + keystone-storage port + local Unix filesystem
 agora-search-memory --> agora-search-port
 agora-sha256 --> agora-engine closed digest value
 agora-search-port --> no normal dependencies
@@ -292,10 +292,14 @@ calls this port. Retirement is separately authorized over the complete
 manifest-derived tombstone identity before the same port can remove custody.
 Humans and agents follow the same administrative paths. Prepared source truth
 and digest-provider composition remain prerequisites outside Host.
-The existing directory adapter also cannot support R107 physical
-reclamation: its v1 atomic replacement unlinks the prior head before a separate
-reopen-validation step. A generational storage profile is required rather than
-reinterpreting that mechanism as reclamation evidence.
+The existing directory V1 profile remains ineligible for R107 physical
+reclamation: its atomic replacement unlinks the prior head before a separate
+reopen-validation step. The separately typed generational profile retains each
+immutable generation, backpressures at its live-generation ceiling, requires a
+fresh owner to reopen the exact successor, journals the bounded engine plan
+before unlink, resumes partial progress, and returns only directory-synced
+`GenerationUnlinked` evidence. Exact completed retry survives restart. It does
+not reinterpret unlink as provider attestation or erasure.
 
 ## Derived search
 

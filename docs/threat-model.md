@@ -247,6 +247,16 @@ The parent directory and same-UID processes remain trusted; CRC32C is corruption
 detection, not authentication. Hardware power-loss behavior, controller caches,
 network filesystems, rollback by a trusted process, encryption, remote backup
 transport, retention policy, and disaster-recovery objectives remain unqualified.
+The separately typed generational profile narrows only the replacement-before-
+reclaim hazard. Immutable generation records remain until a different owner has
+reopened the exact successor; a digest-bound bounded plan is synchronized before
+unlink, and a completed journal makes retry explicit. Live-generation and plan-
+receipt ceilings prevent unbounded amplification. Missing/replaced resources,
+unknown files, stale or changed plans, and corrupt journals fail closed; partial
+unlink resumes only under the same recorded plan. Directory-synced unlink is not
+proof about open handles, filesystem snapshots, copy-on-write extents, flash
+translation, backups, replicas, provider media, or secure erasure, and the
+parent directory plus same-UID processes remain trusted.
 The offline backup mechanism acquires the ordinary source lock, emits the exact
 checksummed record to a new synchronized private file, and restores only into a
 new private store while retaining revision continuity. CRC32C detects accidental

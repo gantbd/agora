@@ -177,12 +177,13 @@ if [[ $(printf '%s\n' "$observation_tree" | wc -l | tr -d ' ') != 2 ]] \
 fi
 
 directory_tree=$(cargo tree -p agora-storage-directory --edges normal --depth 1 --locked --offline)
-if [[ $(printf '%s\n' "$directory_tree" | wc -l | tr -d ' ') != 3 ]] \
+if [[ $(printf '%s\n' "$directory_tree" | wc -l | tr -d ' ') != 4 ]] \
+  || ! printf '%s\n' "$directory_tree" | rg -q 'agora-engine' \
   || ! printf '%s\n' "$directory_tree" | rg -q 'agora-storage-observation' \
   || ! printf '%s\n' "$directory_tree" | rg -q 'keystone-storage' \
-  || printf '%s\n' "$directory_tree" | rg -q 'agora-(engine|host|service|wire|client)'; then
+  || printf '%s\n' "$directory_tree" | rg -q 'agora-(host|service|wire|client)'; then
   printf '%s\n' "$directory_tree" >&2
-  echo 'Agora directory adapter escaped its storage-port-only runtime closure' >&2
+  echo 'Agora directory adapter escaped its engine-value/storage-port runtime closure' >&2
   exit 1
 fi
 

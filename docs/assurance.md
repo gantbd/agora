@@ -622,6 +622,19 @@ explicit `.pending` residue states, or an exact post-rename revision-1 checkpoin
 that can advance by CAS to revision 2. This closes process-visible residue
 classification without claiming automatic remediation or device-level crash
 durability.
+The separate generational-directory scenarios retain three immutable revisions,
+backpressure a fourth, and prove the publishing owner cannot reclaim. After all
+owners close, a fresh owner reopens and validates revision 2, emits a bounded
+digest-bound plan for revisions 0 and 1, persists the plan journal, unlinks only
+those generations, syncs the directory, and returns non-erasure
+`GenerationUnlinked` evidence. Exact replay works both before and after another
+drop/reopen; a later revision again requires a fresh reopen. A partial-unlink
+schedule persists the plan, removes only one generation, terminates the owner,
+and proves a fresh owner resumes the same plan safely. Resource replacement and
+journal corruption fail closed, and a frozen canonical journal fixture plus the
+compatibility mutation gate pin the representation. These facts do not qualify
+hardware power-loss, hostile same-UID mutation, snapshots, backups, remote
+media, provider deletion, or secure erasure.
 Host-level operator-restore evidence starts from an authenticated session with a
 committed room mutation, preserves the conversation revision and event count,
 invalidates the old session without verifier I/O, continues Host and Service

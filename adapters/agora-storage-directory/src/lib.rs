@@ -21,6 +21,8 @@ use std::io::{Read, Write};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
+pub mod generational;
+
 const HEAD: &str = "checkpoint.bin";
 const LOCK: &str = ".owner.lock";
 const PENDING: &str = ".pending";

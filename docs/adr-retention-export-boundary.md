@@ -146,8 +146,9 @@ record-class set, positive-or-disabled bounds, revisioned policies, canonical
 frontiers and transition evidence, redacted export request/scope bindings,
 ordered bounded chunk manifests, distinct retention tombstones, ordered bounded
 reclamation plans, and the four non-erasure reclamation evidence stages. Engine
-state transitions, canonical persistence/wire profiles, authority composition,
-export materialization, and physical adapter reclamation remain open.
+state transitions and class-specific policy application remain separate work;
+the later sections record qualified export materialization, authority
+composition, and physical adapter reclamation slices.
 The effect-free `agora-retention-authority-port` reuses those
 Agora-owned values and gives a configured application verifier separate,
 revision-bound policy-installation and export decisions. It grants no storage,
@@ -263,13 +264,26 @@ authority decision over the complete digest-bound retirement identity, and only
 then calls custody. Humans and agents remain symmetric. No layer translates
 this logical transition into reclamation or erasure evidence.
 
-The current `agora-storage-directory` adapter is not a reclamation
-implementation. Its v1 compare-exchange renames a new record over the sole
+The `agora-storage-directory` V1 profile is not a reclamation implementation.
+Its compare-exchange renames a new record over the sole
 head, unlinking the prior directory entry before a separately reopened successor
-can be validated. R107 physical reclamation therefore requires a new
-generational store profile that retains named prior generations through durable
-successor publication and reopen validation. The v1 mechanism must not be
-relabelled as checkpoint-before-reclaim evidence.
+can be validated. It remains unchanged and must not be relabelled as
+checkpoint-before-reclaim evidence.
+
+The same adapter package now supplies a separately typed generational profile.
+Every successful CAS retains an immutable checksummed generation in addition to
+the synchronized head. Live-generation capacity backpressures publication
+instead of silently deleting recovery material. Reclamation is unavailable to
+the publishing owner: it requires closing and reopening the exact current head,
+then prepares an engine-owned bounded plan naming only older generation IDs and
+the digest of that reopened replacement. A private canonical plan journal is
+synchronized before any unlink; partial progress resumes from the same plan
+after a fresh reopen; the completed receipt makes exact retry replayable. Only
+after every named unlink and directory sync does the adapter return
+`GenerationUnlinked` evidence. Resource replacement, journal corruption,
+foreign/stale plans, saturation, and unvalidated successors fail closed. This
+is local Unix unlink evidence only, never provider attestation or secure
+erasure.
 
 ## Nonclaims
 

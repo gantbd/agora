@@ -120,3 +120,4 @@ fixture|engine/agora-engine/tests/fixtures/checkpoint-v21.hex|1181|9519fc0a6f6d4
 fixture|engine/agora-engine/tests/fixtures/checkpoint-v22.hex|1302|e582d12c194890bb39ce2162213dd73e01d81d3fc1a0f683ab64866c9250c2a1
 fixture|service/agora-export-service/tests/fixtures/export-checkpoint-v1.hex|89|6e5920d5be60af2a6485563fe14a2b7d33c77db8a35e94162eac667e20d0d504
 fixture|service/agora-export-service/tests/fixtures/export-checkpoint-v2.hex|203|675713a2efc34d2da2c5ddb838c54d0566b0ea37e005f760ce5e69eff0344817
+fixture|adapters/agora-storage-directory/tests/fixtures/generational-reclamation-v1.hex|110|c1ee516d080227deb1273e8953822a35d310e49d63917d35550056fa0d480fae
