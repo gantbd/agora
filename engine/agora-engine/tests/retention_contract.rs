@@ -155,6 +155,48 @@ fn export_materialization_is_bounded_canonical_and_frontier_exact() {
     );
     assert!(!format!("{:?}", first.chunks()[0]).contains("one"));
     assert_eq!(
+        agora_engine::retention::ExportMaterializationV1::recover(
+            first.manifest.clone(),
+            first.chunks().to_vec(),
+            2,
+            24,
+            digest,
+        ),
+        Ok(first.clone())
+    );
+    let mut changed_chunks = first.chunks().to_vec();
+    let mut changed_bytes = changed_chunks[0].bytes().to_vec();
+    *changed_bytes.last_mut().unwrap() ^= 1;
+    changed_chunks[0] =
+        agora_engine::retention::ExportChunkPayloadV1::new(0, changed_bytes, 24).unwrap();
+    assert_eq!(
+        agora_engine::retention::ExportMaterializationV1::recover(
+            first.manifest.clone(),
+            changed_chunks,
+            2,
+            24,
+            digest,
+        ),
+        Err(ExportMaterializationRefusalV1::DigestMismatch)
+    );
+    let mut misindexed_chunks = first.chunks().to_vec();
+    misindexed_chunks[0] = agora_engine::retention::ExportChunkPayloadV1::new(
+        1,
+        misindexed_chunks[0].bytes().to_vec(),
+        24,
+    )
+    .unwrap();
+    assert_eq!(
+        agora_engine::retention::ExportMaterializationV1::recover(
+            first.manifest.clone(),
+            misindexed_chunks,
+            2,
+            24,
+            digest,
+        ),
+        Err(ExportMaterializationRefusalV1::NonCanonicalChunks)
+    );
+    assert_eq!(
         materialize(7, &records, included, export_frontiers, 1),
         Err(ExportMaterializationRefusalV1::ChunkLimit)
     );

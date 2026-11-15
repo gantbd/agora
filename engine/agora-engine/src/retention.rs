@@ -500,6 +500,30 @@ impl ExportManifestV1 {
     pub fn chunks(&self) -> &[ExportChunkV1] {
         &self.chunks
     }
+
+    fn digest_body(&self) -> Vec<u8> {
+        let mut body = EXPORT_MANIFEST_DOMAIN_V1.to_vec();
+        body.extend_from_slice(&self.request.as_bytes());
+        body.extend_from_slice(&(self.profile as u16).to_be_bytes());
+        body.extend_from_slice(&self.scope.as_bytes());
+        body.extend_from_slice(&(self.digest_profile as u16).to_be_bytes());
+        body.extend_from_slice(&self.source_engine_revision.to_be_bytes());
+        body.extend_from_slice(&self.policy_revision.get().to_be_bytes());
+        body.extend(self.included_classes.map(u8::from));
+        for frontier in self.frontiers {
+            body.push(frontier.class as u8);
+            body.extend_from_slice(&frontier.discarded_through.to_be_bytes());
+            body.push(u8::from(frontier.oldest_retained.is_some()));
+            body.extend_from_slice(&frontier.oldest_retained.unwrap_or(0).to_be_bytes());
+        }
+        body.extend_from_slice(&(self.chunks.len() as u32).to_be_bytes());
+        for chunk in &self.chunks {
+            body.extend_from_slice(&chunk.index.to_be_bytes());
+            body.extend_from_slice(&chunk.byte_length.to_be_bytes());
+            body.extend_from_slice(&chunk.digest.as_bytes());
+        }
+        body
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -539,6 +563,13 @@ pub struct ExportChunkPayloadV1 {
 }
 
 impl ExportChunkPayloadV1 {
+    pub fn new(index: u32, bytes: Vec<u8>, max_chunk_bytes: usize) -> Option<Self> {
+        (!bytes.is_empty()
+            && bytes.len() <= max_chunk_bytes
+            && bytes.starts_with(EXPORT_CHUNK_DOMAIN_V1))
+        .then_some(Self { index, bytes })
+    }
+
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
@@ -564,6 +595,46 @@ pub struct ExportMaterializationV1 {
 impl ExportMaterializationV1 {
     pub fn chunks(&self) -> &[ExportChunkPayloadV1] {
         &self.chunks
+    }
+
+    pub fn recover<D>(
+        manifest: ExportManifestV1,
+        chunks: Vec<ExportChunkPayloadV1>,
+        max_chunks: usize,
+        max_chunk_bytes: usize,
+        mut digest: D,
+    ) -> Result<Self, ExportMaterializationRefusalV1>
+    where
+        D: FnMut(&[u8]) -> ContentDigestV1,
+    {
+        if max_chunks == 0 || max_chunk_bytes < EXPORT_CHUNK_DOMAIN_V1.len() {
+            return Err(ExportMaterializationRefusalV1::InvalidLimit);
+        }
+        if chunks.is_empty()
+            || chunks.len() > max_chunks
+            || chunks.len() != manifest.chunks.len()
+            || chunks.iter().zip(&manifest.chunks).enumerate().any(
+                |(index, (payload, metadata))| {
+                    usize::try_from(payload.index) != Ok(index)
+                        || payload.index != metadata.index
+                        || payload.bytes.is_empty()
+                        || payload.bytes.len() > max_chunk_bytes
+                        || u32::try_from(payload.bytes.len()) != Ok(metadata.byte_length)
+                        || !payload.bytes.starts_with(EXPORT_CHUNK_DOMAIN_V1)
+                },
+            )
+        {
+            return Err(ExportMaterializationRefusalV1::NonCanonicalChunks);
+        }
+        if chunks
+            .iter()
+            .zip(&manifest.chunks)
+            .any(|(payload, metadata)| digest(&payload.bytes) != metadata.digest)
+            || digest(&manifest.digest_body()) != manifest.manifest_digest
+        {
+            return Err(ExportMaterializationRefusalV1::DigestMismatch);
+        }
+        Ok(Self { manifest, chunks })
     }
 }
 
@@ -666,6 +737,8 @@ pub enum ExportMaterializationRefusalV1 {
     FrontierMismatch,
     OversizedRecord,
     ChunkLimit,
+    NonCanonicalChunks,
+    DigestMismatch,
 }
 
 const EXPORT_CHUNK_DOMAIN_V1: &[u8; 8] = b"AGEXCH1\0";
@@ -796,29 +869,26 @@ where
             ExportChunkV1::new(index, byte_length, digest(&bytes))
                 .expect("canonical export chunks are nonempty"),
         );
-        chunks.push(ExportChunkPayloadV1 { index, bytes });
+        chunks.push(
+            ExportChunkPayloadV1::new(index, bytes, max_chunk_bytes)
+                .expect("materializer constructs a canonical chunk payload"),
+        );
     }
 
-    let mut manifest_body = EXPORT_MANIFEST_DOMAIN_V1.to_vec();
-    manifest_body.extend_from_slice(&request.as_bytes());
-    manifest_body.extend_from_slice(&(profile as u16).to_be_bytes());
-    manifest_body.extend_from_slice(&scope.as_bytes());
-    manifest_body.extend_from_slice(&(digest_profile as u16).to_be_bytes());
-    manifest_body.extend_from_slice(&source_engine_revision.to_be_bytes());
-    manifest_body.extend_from_slice(&policy_revision.get().to_be_bytes());
-    manifest_body.extend(included_classes.map(u8::from));
-    for frontier in frontiers {
-        manifest_body.push(frontier.class as u8);
-        manifest_body.extend_from_slice(&frontier.discarded_through.to_be_bytes());
-        manifest_body.push(u8::from(frontier.oldest_retained.is_some()));
-        manifest_body.extend_from_slice(&frontier.oldest_retained.unwrap_or(0).to_be_bytes());
-    }
-    manifest_body.extend_from_slice(&(chunk_metadata.len() as u32).to_be_bytes());
-    for chunk in &chunk_metadata {
-        manifest_body.extend_from_slice(&chunk.index.to_be_bytes());
-        manifest_body.extend_from_slice(&chunk.byte_length.to_be_bytes());
-        manifest_body.extend_from_slice(&chunk.digest.as_bytes());
-    }
+    let provisional_manifest = ExportManifestV1::new(
+        request,
+        profile,
+        scope,
+        digest_profile,
+        source_engine_revision,
+        policy_revision,
+        included_classes,
+        frontiers,
+        chunk_metadata.clone(),
+        ContentDigestV1::new([0; 32]),
+        max_chunks,
+    )
+    .expect("materializer constructs a canonical manifest");
     let manifest = ExportManifestV1::new(
         request,
         profile,
@@ -829,7 +899,7 @@ where
         included_classes,
         frontiers,
         chunk_metadata,
-        digest(&manifest_body),
+        digest(&provisional_manifest.digest_body()),
         max_chunks,
     )
     .expect("materializer constructs a canonical manifest");

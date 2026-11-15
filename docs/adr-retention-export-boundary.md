@@ -203,6 +203,28 @@ request-identity semantics: equal retry replays the complete manifest and chunk
 bytes, changed materialization conflicts, saturation refuses before mutation,
 and recovery accepts only canonical request order. The registry is volatile
 substrate until Service and Host checkpoint profiles durably compose it.
+Recovery of one materialization now rechecks canonical chunk indices, declared
+lengths, framing domains, every chunk digest, and the manifest digest through
+the same named digest implementation. A structurally valid payload mutation is
+therefore a digest refusal rather than silently recovered export state.
+
+Export custody will be a separate service owner, not a field in the
+conversation `ServiceV2` checkpoint. An export is a newly retained copy with a
+different access and retention lifecycle; folding it into the authoritative
+room checkpoint would make conversation recovery retain export payloads and
+would erase that distinction. The future export service may reuse the engine
+registry and materialization recovery laws, but must have its own capacity,
+checkpoint scope, durable store key, authorization composition, and retirement
+profile. The participant protocol remains free of administrative export
+commands.
+
+The current `agora-storage-directory` adapter is not a reclamation
+implementation. Its v1 compare-exchange renames a new record over the sole
+head, unlinking the prior directory entry before a separately reopened successor
+can be validated. R107 physical reclamation therefore requires a new
+generational store profile that retains named prior generations through durable
+successor publication and reopen validation. The v1 mechanism must not be
+relabelled as checkpoint-before-reclaim evidence.
 
 ## Nonclaims
 

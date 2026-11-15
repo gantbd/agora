@@ -232,6 +232,16 @@ post-rename recovery. It does not automate cleanup or claim hardware power-loss,
 network-filesystem, encryption, remote transport, rollback resistance,
 disaster-recovery objectives, or multi-host behavior.
 
+R107 export custody is intentionally not part of `ServiceV2`. Materialized
+exports are new copies with independent access, capacity, persistence,
+retirement, and reclamation obligations. A separate export-service owner will
+reuse the engine's canonical materialization and replay registry after a
+profile-specific Agora source projector and qualified digest implementation are
+available. The existing directory adapter also cannot support R107 physical
+reclamation: its v1 atomic replacement unlinks the prior head before a separate
+reopen-validation step. A generational storage profile is required rather than
+reinterpreting that mechanism as reclamation evidence.
+
 ## Derived search
 
 `agora-search-port` is an effect-free observation boundary, separate from the
