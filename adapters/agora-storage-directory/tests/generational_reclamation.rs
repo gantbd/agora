@@ -191,3 +191,35 @@ fn limits_and_live_resource_drift_are_sticky_fail_closed() {
     drop(store);
     fs::remove_dir_all(path).unwrap();
 }
+
+#[test]
+fn every_single_bit_reclamation_journal_mutation_fails_closed() {
+    let path = temporary_path("journal-mutations");
+    let mut store = GenerationalDirectoryCheckpointStoreV1::create_new(&path, limits()).unwrap();
+    commit(&mut store, None, b"zero");
+    commit(&mut store, Some(Revision(0)), b"one");
+    commit(&mut store, Some(Revision(1)), b"two");
+    drop(store);
+
+    let mut store = GenerationalDirectoryCheckpointStoreV1::open_existing(&path, limits()).unwrap();
+    let plan = store.prepare_reclamation(7, 2, digest).unwrap();
+    store.reclaim(plan, digest).unwrap();
+    drop(store);
+
+    let journal = path.join(".reclamation");
+    let canonical = fs::read(&journal).unwrap();
+    for byte_index in 0..canonical.len() {
+        for bit in 0..8 {
+            let mut mutated = canonical.clone();
+            mutated[byte_index] ^= 1 << bit;
+            fs::write(&journal, mutated).unwrap();
+            assert!(
+                GenerationalDirectoryCheckpointStoreV1::open_existing(&path, limits()).is_err(),
+                "accepted journal mutation at byte {byte_index}, bit {bit}"
+            );
+        }
+    }
+    fs::write(&journal, &canonical).unwrap();
+    assert!(GenerationalDirectoryCheckpointStoreV1::open_existing(&path, limits()).is_ok());
+    fs::remove_dir_all(path).unwrap();
+}

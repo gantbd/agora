@@ -872,3 +872,12 @@ counterexample search; it is not a proof of arbitrary graphs, a physical-store
 fault campaign, cryptographic validation of the test digest, or federation-copy
 retention evidence.
 
+The generational-directory fault campaign flips every bit of every byte in the
+canonical persisted reclamation journal and requires a fresh owner to refuse
+each mutation before exposing a usable store. The valid journal reopens after
+the campaign, while separate restart evidence resumes a journaled partial
+unlink and returns only directory-synchronized `GenerationUnlinked` evidence.
+This covers the bounded local journal framing/checksum and represented restart
+cut, not malicious same-UID replacement during an operation, storage-hardware
+faults, power loss, backups, provider deletion, or secure erasure.
+
