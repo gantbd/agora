@@ -877,10 +877,12 @@ The replica foundation additionally refuses self-replication, redacts opaque
 event/snapshot/checkpoint payloads, and canonically recovers only a contiguous
 room-bound frontier within current event, snapshot, count, and retained-byte
 limits. Canonical admission home/client checkpoints preserve validated exact
-receipts and pending uncertainty without re-execution.
-Trust-provider composition, Agora current-policy/Host composition, physical storage,
-transport composition, adversarial campaigns, and integrated qualification
-remain open.
+receipts and pending uncertainty without re-execution. Agora revision `f8cec20`
+source-scopes legacy, scheduled, interaction, and federation publication
+receipts, canonically recovers profile 149, and passed the complete gate.
+Trust-provider composition, Agora current-policy/Host composition, physical
+storage, transport composition, adversarial campaigns, and integrated
+qualification remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part
