@@ -84,24 +84,25 @@ incarnation rotation, and refusal of unsupported intersections.
 
 Agora Wire now provides the canonical closed-range post-TLS client/server hello,
 two frozen fixtures, fail-closed negotiation tests, and client-SDK reachability.
-The separate `agora-remote-transport` source revision `4cf7d0a` provides a
+The separate `agora-remote-transport` source revision `14a92cc` provides a
 TLS-1.3-only rustls profile with exact ALPN, disabled tickets/resumption/early
 data, configured server roots, optional required client certificates, exporter
 agreement, bounded framing, actual concurrent listener ownership, request
 permits, clean and deadline-forced drain, graceful close notification, real-
 loopback positive and negative tests, pre-application overload refusal, distinct
 reconnect exporter bindings, compatible/disjoint real-TLS upgrade cuts, and a
-blocked bounded-writer drain cut with exact pending-reply accounting. Its fixed
+blocked bounded-writer drain cut plus a mixed three-writer schedule with one
+clean and two exact forced replies. Its fixed
 256-cycle TLS/mTLS reconnect and clean-drain soak requires distinct exporter
 bindings and zero refusal, force, or fidelity-loss counts. Two independently
-built 153-file self-contained source candidates are byte-identical; one passes
+built 157-file self-contained source candidates are byte-identical; one passes
 the complete extracted-source locked/offline Rust surface. The manifest digest
-is `c04b3263c8bfd512e5624e132b3db0e759e5b20118d22a885965d2ca25fa9f2a`
+is `819a58b1f94697be48d90fc1d9d78c768a45368afbe6a638eb10c62f769b15e7`
 and inventory digest is
-`c95c6f1ab812e20bb164308ab69aa9993e84bcbf368faa51da5ec765fc6ae167`.
+`f354d7f6de30c9c5da51340384353cce1e4e0c70400460a8d079603bbd1707ac`.
 Exact compatibility, supply, package, ordinary, soak, and source-candidate gates
-pass on Darwin/aarch64; revision `ec8e023` records the platform and pins the
-qualification metadata to source `4cf7d0a`.
+pass on Darwin/aarch64; revision `b271dfb` pins all qualification metadata to
+source `14a92cc`.
 
 The separately owned `agora-remote-daemon` source revision `5b32b4b` composes
 negotiated connections with bounded opaque credential frames, TLS exporters and
@@ -111,8 +112,8 @@ permit, while network I/O never holds the Host lock. It closes sessions on every
 exit and forces overlapping human and agent participants through the identical
 path. Revision `b91d23e` pins the passing real TLS/mTLS gate.
 
-A concrete credential authenticator, broader disconnect uncertainty and multi-
-writer schedules, additional platforms, binary artifacts, signatures/installers, and
+A concrete credential authenticator, broader disconnect uncertainty, additional
+platforms, binary artifacts, signatures/installers, and
 commit-pinned full-profile qualification remain open.
 
 ## Nonclaims

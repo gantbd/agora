@@ -832,7 +832,7 @@ R105's canonical hello, separate TLS transport substrate, bounded concurrent
 listener/drain owner, and authenticated request-gated Host-routing composition
 are implemented and commit-pinned, including local overload, fresh reconnect,
 and compatible/disjoint upgrade cuts; a concrete credential-authenticator
-profile, broader disconnect/multi-writer schedules, platform and produced-
+profile, broader disconnect uncertainty, platform and produced-
 binary-artifact evidence, and full-profile qualification remain open; the fixed
 reconnect/clean-drain soak and reproducible self-contained source candidate are
 commit-pinned, with ordinary/soak/source evidence recorded on
