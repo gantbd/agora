@@ -190,8 +190,11 @@ not ready for a network service or crates.io release.
   exact reopen and digest validation precede a journaled plan, only the two
   named predecessor generations are unlinked, replay performs no second
   unlink, and a fresh owner selects the one validated successor. This evidence
-  does not qualify class-specific source profiles, federation-copy retention,
-  secure erasure, other storage hardware, or a distributable artifact;
+  does not qualify the later class-specific native source profiles,
+  federation-copy retention, secure erasure, other storage hardware, or a
+  distributable artifact. The subsequent Engine-owned `AGACHG1`, `AGAROM1`,
+  and `AGAPRV1` sources and Service-owned `AGARRC1` source each pass the
+  complete ordinary gate but do not widen that integrated release claim;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound

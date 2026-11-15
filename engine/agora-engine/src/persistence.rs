@@ -56,6 +56,44 @@ pub struct RoomProjectionCheckpointV1 {
     room_count: usize,
 }
 
+/// Canonical owner-native representation of the complete participant-private
+/// generation. Diagnostics expose shape only, never private content.
+pub struct PrivateParticipantStateCheckpointV1 {
+    bytes: Vec<u8>,
+    source_engine_revision: u64,
+    private_state_revision: u64,
+    private_record_count: usize,
+}
+
+impl PrivateParticipantStateCheckpointV1 {
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub fn source_engine_revision(&self) -> u64 {
+        self.source_engine_revision
+    }
+
+    pub fn private_state_revision(&self) -> u64 {
+        self.private_state_revision
+    }
+
+    pub fn private_record_count(&self) -> usize {
+        self.private_record_count
+    }
+}
+
+impl fmt::Debug for PrivateParticipantStateCheckpointV1 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PrivateParticipantStateCheckpointV1")
+            .field("source_engine_revision", &self.source_engine_revision)
+            .field("private_state_revision", &self.private_state_revision)
+            .field("private_record_count", &self.private_record_count)
+            .field("bytes", &"<redacted>")
+            .finish()
+    }
+}
+
 impl RoomProjectionCheckpointV1 {
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
@@ -1741,6 +1779,415 @@ pub fn recover_room_projection_checkpoint_v1(
         source_engine_revision,
         referenced_participant_count: participant_count,
         room_count,
+    })
+}
+
+const PRIVATE_PARTICIPANT_STATE_MAGIC_V1: &[u8; 8] = b"AGAPRV1\0";
+
+fn write_read_scope_v1(writer: &mut Writer, scope: ReadScopeV1) -> Result<(), CheckpointError> {
+    match scope {
+        ReadScopeV1::Room => writer.byte(1),
+        ReadScopeV1::Thread(message_id) => {
+            writer.byte(2)?;
+            writer.raw(&message_id.into_bytes())
+        }
+        ReadScopeV1::Topic(topic_id) => {
+            writer.byte(3)?;
+            writer.raw(&topic_id.into_bytes())
+        }
+    }
+}
+
+fn read_read_scope_v1(reader: &mut Reader<'_>) -> Result<ReadScopeV1, CheckpointError> {
+    match reader.byte()? {
+        1 => Ok(ReadScopeV1::Room),
+        2 => Ok(ReadScopeV1::Thread(MessageId::from_bytes(reader.fixed()?))),
+        3 => Ok(ReadScopeV1::Topic(TopicId::from_bytes(reader.fixed()?))),
+        _ => Err(CheckpointError::Invalid),
+    }
+}
+
+fn write_attention_scope_v1(
+    writer: &mut Writer,
+    scope: AttentionScopeV1,
+) -> Result<(), CheckpointError> {
+    match scope {
+        AttentionScopeV1::Room => writer.byte(1),
+        AttentionScopeV1::Thread(message_id) => {
+            writer.byte(2)?;
+            writer.raw(&message_id.into_bytes())
+        }
+        AttentionScopeV1::Topic(topic_id) => {
+            writer.byte(3)?;
+            writer.raw(&topic_id.into_bytes())
+        }
+    }
+}
+
+fn read_attention_scope_v1(reader: &mut Reader<'_>) -> Result<AttentionScopeV1, CheckpointError> {
+    match reader.byte()? {
+        1 => Ok(AttentionScopeV1::Room),
+        2 => Ok(AttentionScopeV1::Thread(MessageId::from_bytes(
+            reader.fixed()?,
+        ))),
+        3 => Ok(AttentionScopeV1::Topic(TopicId::from_bytes(
+            reader.fixed()?,
+        ))),
+        _ => Err(CheckpointError::Invalid),
+    }
+}
+
+fn private_ballot_count(engine: &Engine) -> Result<usize, CheckpointError> {
+    engine
+        .rooms
+        .values()
+        .flat_map(|room| room.polls.values())
+        .map(|poll| poll.ballots.len())
+        .try_fold(0_usize, |count, value| count.checked_add(value))
+        .ok_or(CheckpointError::Limit)
+}
+
+fn private_record_count(engine: &Engine) -> Result<usize, CheckpointError> {
+    let ballots = private_ballot_count(engine)?;
+    engine
+        .read_positions
+        .len()
+        .checked_add(engine.attention_preferences.len())
+        .and_then(|count| count.checked_add(engine.private_saves.len()))
+        .and_then(|count| count.checked_add(ballots))
+        .and_then(|count| count.checked_add(engine.message_reports.len()))
+        .ok_or(CheckpointError::Limit)
+}
+
+/// Encodes the complete current participant-private generation without room,
+/// receipt, delivery, federation, or operational-copy state.
+pub fn prepare_private_participant_state_checkpoint_v1(
+    engine: &Engine,
+    max_snapshot_bytes: usize,
+) -> Result<PrivateParticipantStateCheckpointV1, CheckpointError> {
+    if max_snapshot_bytes == 0
+        || engine.private_state_revision_exhausted
+        || engine.private_state_revision.is_none()
+    {
+        return Err(CheckpointError::Invalid);
+    }
+    validate(engine)?;
+    let private_state_revision = engine
+        .private_state_revision
+        .ok_or(CheckpointError::Invalid)?;
+    let private_record_count = private_record_count(engine)?;
+    let mut writer = Writer {
+        bytes: Vec::new(),
+        max: max_snapshot_bytes,
+    };
+    writer.raw(PRIVATE_PARTICIPANT_STATE_MAGIC_V1)?;
+    writer.number(engine.revision.0)?;
+    writer.number(private_state_revision)?;
+    writer.number(engine.next_message_report_id)?;
+
+    writer.count(engine.read_positions.len())?;
+    for ((participant, room_id, scope), position) in &engine.read_positions {
+        writer.text(participant.as_str())?;
+        writer.text(room_id.as_str())?;
+        write_read_scope_v1(&mut writer, *scope)?;
+        writer.raw(&position.target_message_id.into_bytes())?;
+        writer.number(position.target_sequence)?;
+        writer.number(position.observed_revision.0)?;
+    }
+    writer.count(engine.attention_preferences.len())?;
+    for ((participant, room_id, scope), preference) in &engine.attention_preferences {
+        writer.text(participant.as_str())?;
+        writer.text(room_id.as_str())?;
+        write_attention_scope_v1(&mut writer, *scope)?;
+        writer.byte(u8::from(preference.following))?;
+        writer.byte(u8::from(preference.muted))?;
+        writer.byte(notification_intent_tag(preference.notification_intent))?;
+    }
+    writer.count(engine.private_saves.len())?;
+    for ((participant, room_id, message_id), original_sequence) in &engine.private_saves {
+        writer.text(participant.as_str())?;
+        writer.text(room_id.as_str())?;
+        writer.raw(&message_id.into_bytes())?;
+        writer.number(*original_sequence)?;
+    }
+
+    let ballot_count = private_ballot_count(engine)?;
+    writer.count(ballot_count)?;
+    for (room_id, room) in &engine.rooms {
+        for (poll_id, poll) in &room.polls {
+            for (participant, selections) in &poll.ballots {
+                writer.text(room_id.as_str())?;
+                writer.raw(&poll_id.into_bytes())?;
+                writer.text(participant.as_str())?;
+                writer.count(selections.len())?;
+                for selection in selections {
+                    writer.byte(*selection)?;
+                }
+            }
+        }
+    }
+
+    writer.count(engine.message_reports.len())?;
+    for report in engine.message_reports.values() {
+        writer.number(report.report_id.get())?;
+        writer.text(report.room_id.as_str())?;
+        writer.raw(&report.message_id.into_bytes())?;
+        writer.number(report.original_sequence)?;
+        writer.text(report.target_author.as_str())?;
+        writer.text(report.reporter.as_str())?;
+        writer.text(report.reason.as_str())?;
+        writer.raw(&report.causation.into_bytes())?;
+        writer.number(report.creation_order)?;
+        writer.byte(match report.disposition {
+            MessageReportDispositionV1::Pending => 1,
+            MessageReportDispositionV1::Dismissed => 2,
+            MessageReportDispositionV1::Escalated => 3,
+        })?;
+        match (&report.review_reason, report.review_causation) {
+            (None, None) => writer.byte(0)?,
+            (Some(reason), Some(causation)) => {
+                writer.byte(1)?;
+                writer.text(reason.as_str())?;
+                writer.raw(&causation.into_bytes())?;
+            }
+            _ => return Err(CheckpointError::Invalid),
+        }
+    }
+    Ok(PrivateParticipantStateCheckpointV1 {
+        bytes: writer.bytes,
+        source_engine_revision: engine.revision.0,
+        private_state_revision,
+        private_record_count,
+    })
+}
+
+/// Recovers and exactly canonicalizes one complete participant-private
+/// generation. It validates only the standalone private projection; applying
+/// it to an Engine is deliberately outside this export source.
+pub fn recover_private_participant_state_checkpoint_v1(
+    bytes: &[u8],
+    bounds: RecoveryLimits,
+) -> Result<PrivateParticipantStateCheckpointV1, CheckpointError> {
+    if bounds.max_snapshot_bytes == 0 || bytes.len() > bounds.max_snapshot_bytes {
+        return Err(CheckpointError::Limit);
+    }
+    let limits = bounds.maximum_engine_limits;
+    let mut reader = Reader { bytes, pos: 0 };
+    let mut writer = Writer {
+        bytes: Vec::new(),
+        max: bounds.max_snapshot_bytes,
+    };
+    let magic = reader.raw(PRIVATE_PARTICIPANT_STATE_MAGIC_V1.len())?;
+    if magic != PRIVATE_PARTICIPANT_STATE_MAGIC_V1 {
+        return Err(CheckpointError::Profile);
+    }
+    writer.raw(magic)?;
+    let source_engine_revision = reader.number()?;
+    writer.number(source_engine_revision)?;
+    let private_state_revision = reader.number()?;
+    if private_state_revision == 0 {
+        return Err(CheckpointError::Invalid);
+    }
+    writer.number(private_state_revision)?;
+    let next_message_report_id = reader.number()?;
+    if next_message_report_id == 0 {
+        return Err(CheckpointError::Invalid);
+    }
+    writer.number(next_message_report_id)?;
+
+    let read_count = reader.count(MAX_READ_POSITIONS_V1)?;
+    writer.count(read_count)?;
+    let mut prior_read: Option<(ParticipantId, RoomId, ReadScopeV1)> = None;
+    for _ in 0..read_count {
+        let participant = reader.participant(limits)?;
+        let room_id = reader.room(limits)?;
+        let scope = read_read_scope_v1(&mut reader)?;
+        let key = (participant.clone(), room_id.clone(), scope);
+        if participant.as_str().is_empty()
+            || room_id.as_str().is_empty()
+            || prior_read.as_ref().is_some_and(|prior| prior >= &key)
+        {
+            return Err(CheckpointError::NonCanonical);
+        }
+        prior_read = Some(key);
+        let target_message_id = MessageId::from_bytes(reader.fixed()?);
+        let target_sequence = reader.number()?;
+        let observed_revision = reader.number()?;
+        if observed_revision > source_engine_revision {
+            return Err(CheckpointError::Invalid);
+        }
+        writer.text(participant.as_str())?;
+        writer.text(room_id.as_str())?;
+        write_read_scope_v1(&mut writer, scope)?;
+        writer.raw(&target_message_id.into_bytes())?;
+        writer.number(target_sequence)?;
+        writer.number(observed_revision)?;
+    }
+
+    let attention_count = reader.count(MAX_ATTENTION_PREFERENCES_V1)?;
+    writer.count(attention_count)?;
+    let mut prior_attention: Option<(ParticipantId, RoomId, AttentionScopeV1)> = None;
+    for _ in 0..attention_count {
+        let participant = reader.participant(limits)?;
+        let room_id = reader.room(limits)?;
+        let scope = read_attention_scope_v1(&mut reader)?;
+        let key = (participant.clone(), room_id.clone(), scope);
+        if participant.as_str().is_empty()
+            || room_id.as_str().is_empty()
+            || prior_attention.as_ref().is_some_and(|prior| prior >= &key)
+        {
+            return Err(CheckpointError::NonCanonical);
+        }
+        prior_attention = Some(key);
+        let following = match reader.byte()? {
+            value @ 0..=1 => value != 0,
+            _ => return Err(CheckpointError::Invalid),
+        };
+        let muted = match reader.byte()? {
+            value @ 0..=1 => value != 0,
+            _ => return Err(CheckpointError::Invalid),
+        };
+        let intent = read_notification_intent(reader.byte()?)?;
+        let preference = AttentionPreferenceV1::new(following, muted, intent);
+        if preference.is_default() {
+            return Err(CheckpointError::NonCanonical);
+        }
+        writer.text(participant.as_str())?;
+        writer.text(room_id.as_str())?;
+        write_attention_scope_v1(&mut writer, scope)?;
+        writer.byte(u8::from(following))?;
+        writer.byte(u8::from(muted))?;
+        writer.byte(notification_intent_tag(intent))?;
+    }
+
+    let save_count = reader.count(MAX_PRIVATE_SAVES_V1)?;
+    writer.count(save_count)?;
+    let mut prior_save: Option<(ParticipantId, RoomId, MessageId)> = None;
+    for _ in 0..save_count {
+        let participant = reader.participant(limits)?;
+        let room_id = reader.room(limits)?;
+        let message_id = MessageId::from_bytes(reader.fixed()?);
+        let key = (participant.clone(), room_id.clone(), message_id);
+        if participant.as_str().is_empty()
+            || room_id.as_str().is_empty()
+            || prior_save.as_ref().is_some_and(|prior| prior >= &key)
+        {
+            return Err(CheckpointError::NonCanonical);
+        }
+        prior_save = Some(key);
+        writer.text(participant.as_str())?;
+        writer.text(room_id.as_str())?;
+        writer.raw(&message_id.into_bytes())?;
+        writer.number(reader.number()?)?;
+    }
+
+    let ballot_count = reader.count(bounds.max_snapshot_bytes)?;
+    writer.count(ballot_count)?;
+    let mut prior_ballot: Option<(RoomId, PollId, ParticipantId)> = None;
+    for _ in 0..ballot_count {
+        let room_id = reader.room(limits)?;
+        let poll_id = PollId::from_bytes(reader.fixed()?);
+        let participant = reader.participant(limits)?;
+        let key = (room_id.clone(), poll_id, participant.clone());
+        if participant.as_str().is_empty()
+            || room_id.as_str().is_empty()
+            || prior_ballot.as_ref().is_some_and(|prior| prior >= &key)
+        {
+            return Err(CheckpointError::NonCanonical);
+        }
+        prior_ballot = Some(key);
+        writer.text(room_id.as_str())?;
+        writer.raw(&poll_id.into_bytes())?;
+        writer.text(participant.as_str())?;
+        let selection_count = reader.count(MAX_POLL_OPTIONS_V1)?;
+        if selection_count == 0 {
+            return Err(CheckpointError::NonCanonical);
+        }
+        writer.count(selection_count)?;
+        let mut prior_selection = None;
+        for _ in 0..selection_count {
+            let selection = reader.byte()?;
+            if usize::from(selection) >= MAX_POLL_OPTIONS_V1
+                || prior_selection.is_some_and(|prior| prior >= selection)
+            {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_selection = Some(selection);
+            writer.byte(selection)?;
+        }
+    }
+
+    let report_count = reader.count(MAX_MESSAGE_REPORTS_V1)?;
+    writer.count(report_count)?;
+    let mut prior_report_id = 0;
+    for _ in 0..report_count {
+        let report_id = reader.number()?;
+        if report_id == 0 || report_id <= prior_report_id || report_id >= next_message_report_id {
+            return Err(CheckpointError::NonCanonical);
+        }
+        prior_report_id = report_id;
+        writer.number(report_id)?;
+        let room_id = reader.room(limits)?;
+        if room_id.as_str().is_empty() {
+            return Err(CheckpointError::Invalid);
+        }
+        writer.text(room_id.as_str())?;
+        writer.raw(&reader.fixed::<16>()?)?;
+        writer.number(reader.number()?)?;
+        let target_author = reader.participant(limits)?;
+        let reporter = reader.participant(limits)?;
+        if target_author.as_str().is_empty() || reporter.as_str().is_empty() {
+            return Err(CheckpointError::Invalid);
+        }
+        writer.text(target_author.as_str())?;
+        writer.text(reporter.as_str())?;
+        let reason = reader.text(limits.max_moderation_reason_bytes)?;
+        if reason.is_empty() {
+            return Err(CheckpointError::Invalid);
+        }
+        writer.text(&reason)?;
+        writer.raw(&reader.fixed::<16>()?)?;
+        let creation_order = reader.number()?;
+        if creation_order != report_id {
+            return Err(CheckpointError::Invalid);
+        }
+        writer.number(creation_order)?;
+        let disposition = match reader.byte()? {
+            value @ 1..=3 => value,
+            _ => return Err(CheckpointError::Invalid),
+        };
+        writer.byte(disposition)?;
+        match (disposition, reader.byte()?) {
+            (1, 0) => writer.byte(0)?,
+            (2 | 3, 1) => {
+                writer.byte(1)?;
+                let review_reason = reader.text(limits.max_moderation_reason_bytes)?;
+                if review_reason.is_empty() {
+                    return Err(CheckpointError::Invalid);
+                }
+                writer.text(&review_reason)?;
+                writer.raw(&reader.fixed::<16>()?)?;
+            }
+            _ => return Err(CheckpointError::NonCanonical),
+        }
+    }
+    if reader.pos != bytes.len() {
+        return Err(CheckpointError::Trailing);
+    }
+    if writer.bytes != bytes {
+        return Err(CheckpointError::NonCanonical);
+    }
+    let private_record_count = read_count
+        .checked_add(attention_count)
+        .and_then(|count| count.checked_add(save_count))
+        .and_then(|count| count.checked_add(ballot_count))
+        .and_then(|count| count.checked_add(report_count))
+        .ok_or(CheckpointError::Limit)?;
+    Ok(PrivateParticipantStateCheckpointV1 {
+        bytes: writer.bytes,
+        source_engine_revision,
+        private_state_revision,
+        private_record_count,
     })
 }
 

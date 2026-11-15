@@ -228,6 +228,22 @@ private-state source while remaining available for cleanup and ordinary use.
 This identity domain is prerequisite substrate, not itself an export or an
 authorization decision.
 
+`PrivateParticipantStateSourceV1` turns that identity domain into one narrow
+Engine-owned `PrivateParticipantState` generation. Canonical `AGAPRV1` bytes
+contain only ordered read positions, non-default attention preferences, private
+saves, individual poll ballots, and private message reports and reviews. They
+exclude the public room projection, request and publication receipts, delivery
+and change journals, federation state, clocks, and operational copies. The
+record ordinal is the persisted private-state revision; its frontier marks all
+earlier private generations superseded without claiming that any external copy
+was erased. Recovery revalidates bounded framing, canonical key and selection
+ordering, report/review consistency, source revisions, and exact whole-record
+re-encoding. Missing legacy identity, disabled policy, saturation, and byte
+limits refuse before a fragment escapes. The source is administrative-only:
+participant-private export still requires that exact participant or a
+separately defined administrative authority, and custody and physical
+reclamation remain enclosing obligations.
+
 Service V2 also owns the current installed policy metadata. Installation is
 engine-revision-bound, monotonically policy-revisioned, exact-replay-safe, and
 conflict detecting. Host revalidation and a fresh policy-authority decision
