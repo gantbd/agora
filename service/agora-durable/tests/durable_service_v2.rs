@@ -15,6 +15,10 @@ use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
+use agora_interaction_port::{
+    InteractionInvocationIdV1, InteractionPromotionIntentV1, InteractionPromotionRequestV1,
+    InteractionSourceV1,
+};
 use agora_protocol::transient::{
     PresenceStateV1, PresenceViewStateV1, TransientCommandV1, TransientOutcomeV1, TransientReplyV1,
     TransientRequestIdV1, TransientRequestV1,
@@ -1250,6 +1254,75 @@ fn delivery_projection_is_commit_gated_and_reconciles_after_unknown_outcome() {
     assert_eq!(wake.source, source);
     assert_eq!(wake.class, WakeClassV1::ConversationActivity);
     assert_eq!(store.commit_calls(), 4, "exact retry is storage-inert");
+}
+
+#[test]
+fn interaction_promotion_is_commit_gated_and_reconciles_after_unknown_outcome() {
+    let store = TestStore::default();
+    let mut source_engine = Engine::new();
+    source_engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    source_engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    source_engine
+        .apply(EngineCommand::Speak {
+            room_id: "room".into(),
+            author: "alice".into(),
+            at: LogicalTime(1),
+            body: "source".to_owned(),
+        })
+        .unwrap();
+    let source_service = ServiceV2::new(source_engine, ServiceLimitsV2::default());
+    let host = HostV2::new(source_service, Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame(), &context, HostTimeV1(1))
+    else {
+        panic!("connect expected");
+    };
+    let session = opened.session().unwrap();
+    let request = InteractionPromotionRequestV1 {
+        id: InteractionInvocationIdV1::new([9; 16]).unwrap(),
+        intent: InteractionPromotionIntentV1::new(
+            InteractionSourceV1 { event_sequence: 2 },
+            "room",
+            2,
+            "proposal",
+        ),
+    };
+    store.next(NextCommit::IndeterminateAfter);
+    assert_eq!(
+        durable.promote_interaction(session, request.clone(), &context, HostTimeV1(2)),
+        DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::OutcomeUnknown)
+    );
+    drop(durable.into_store());
+
+    let mut recovered = DurableHostV2::recover(store.clone(), host_config(), Verifier).unwrap();
+    let DurableHostPublicationV2::Published {
+        value: Ok(accepted),
+        evidence:
+            DurableEvidenceV2::PreviouslyCommitted {
+                revision: Revision(2),
+            },
+    } = recovered.promote_interaction(session, request, &context, HostTimeV1(2))
+    else {
+        panic!("exact retry must resolve committed interaction promotion");
+    };
+    assert_eq!(accepted.revision, 4);
+    assert_eq!(accepted.message_sequence, 1);
 }
 
 #[test]

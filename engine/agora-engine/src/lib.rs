@@ -5244,20 +5244,33 @@ impl Engine {
         command: PublicationCommandV2,
         instant_ms: u64,
     ) -> Result<TransitionV2, PublicationRefusalV2> {
-        if let Some(existing) = self.publications.get(&command.key) {
-            if existing.room_id == command.room_id
-                && existing.author == command.author
-                && existing.at == command.at
-                && existing.body == command.body
-            {
-                return Ok(existing.transition.clone());
-            }
-            return Err(PublicationRefusalV2::IdempotencyConflict);
+        if let Some(replay) = self.replay_publication(&command)? {
+            return Ok(replay);
         }
         let admission_time = self
             .advance_admission_time(instant_ms)
             .map_err(PublicationRefusalV2::AdmissionTime)?;
         self.publish_with_admission_time(command, Some(&admission_time))
+    }
+
+    /// Resolves an exact retained publication without consulting authority,
+    /// source visibility, optimistic revision, or admission time. `None` means
+    /// the key has not been accepted; it grants no permission to publish.
+    pub fn replay_publication(
+        &self,
+        command: &PublicationCommandV2,
+    ) -> Result<Option<TransitionV2>, PublicationRefusalV2> {
+        let Some(existing) = self.publications.get(&command.key) else {
+            return Ok(None);
+        };
+        if existing.room_id == command.room_id
+            && existing.author == command.author
+            && existing.at == command.at
+            && existing.body == command.body
+        {
+            return Ok(Some(existing.transition.clone()));
+        }
+        Err(PublicationRefusalV2::IdempotencyConflict)
     }
 
     fn publish_with_admission_time(

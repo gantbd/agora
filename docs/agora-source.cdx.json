@@ -181,6 +181,28 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:cargo/agora-interaction-port@0.1.0",
+      "name": "agora-interaction-port",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-interaction-port@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:cargo/agora-local-daemon@0.1.0",
       "name": "agora-local-daemon",
       "version": "0.1.0",
@@ -529,6 +551,7 @@
         "pkg:cargo/agora-delivery-projection-port@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-host@0.1.0",
+        "pkg:cargo/agora-interaction-port@0.1.0",
         "pkg:cargo/agora-protocol@0.1.0",
         "pkg:cargo/agora-scheduled-publication-port@0.1.0",
         "pkg:cargo/agora-service@0.1.0",
@@ -546,11 +569,16 @@
       "dependsOn": [
         "pkg:cargo/agora-delivery-projection-port@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-interaction-port@0.1.0",
         "pkg:cargo/agora-protocol@0.1.0",
         "pkg:cargo/agora-scheduled-publication-port@0.1.0",
         "pkg:cargo/agora-service@0.1.0",
         "pkg:cargo/agora-wire@0.1.0"
       ]
+    },
+    {
+      "ref": "pkg:cargo/agora-interaction-port@0.1.0",
+      "dependsOn": []
     },
     {
       "ref": "pkg:cargo/agora-local-daemon@0.1.0",
@@ -597,6 +625,7 @@
         "pkg:cargo/agora-delivery-projection-port@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-host@0.1.0",
+        "pkg:cargo/agora-interaction-port@0.1.0",
         "pkg:cargo/agora-scheduled-publication-port@0.1.0",
         "pkg:cargo/agora-service@0.1.0"
       ]
@@ -616,6 +645,7 @@
       "dependsOn": [
         "pkg:cargo/agora-delivery-projection-port@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-interaction-port@0.1.0",
         "pkg:cargo/agora-protocol@0.1.0",
         "pkg:cargo/agora-scheduled-publication-port@0.1.0",
         "pkg:cargo/agora-search-memory@0.1.0",

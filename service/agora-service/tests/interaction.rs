@@ -1,0 +1,125 @@
+use agora_engine::{
+    AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, LogicalTime, Participant,
+    ParticipantKind,
+};
+use agora_interaction_port::{
+    InteractionContextV1, InteractionInvocationIdV1, InteractionPromotionIntentV1,
+    InteractionPromotionRefusalV1, InteractionPromotionRequestV1, InteractionSourceV1,
+};
+use agora_service::v2::{ServiceLimitsV2, ServiceV2};
+
+fn setup() -> ServiceV2 {
+    let mut engine = Engine::with_limits(Limits {
+        max_retained_changes: 2,
+        ..Limits::default()
+    });
+    for (id, kind) in [
+        ("alice", ParticipantKind::Human),
+        ("bot", ParticipantKind::Agent),
+        ("outsider", ParticipantKind::Human),
+    ] {
+        engine
+            .apply(EngineCommand::RegisterParticipant(Participant::new(
+                id, id, kind,
+            )))
+            .unwrap();
+    }
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Speak {
+            room_id: "room".into(),
+            author: "alice".into(),
+            at: LogicalTime(1),
+            body: "source body".to_owned(),
+        })
+        .unwrap();
+    ServiceV2::new(engine, ServiceLimitsV2::default())
+}
+
+fn promotion(id: u8, body: &str) -> InteractionPromotionRequestV1 {
+    InteractionPromotionRequestV1 {
+        id: InteractionInvocationIdV1::new([id; 16]).unwrap(),
+        intent: InteractionPromotionIntentV1::new(
+            InteractionSourceV1 { event_sequence: 5 },
+            "room",
+            2,
+            body,
+        ),
+    }
+}
+
+#[test]
+fn context_is_current_member_bound_message_only_and_domain_neutral() {
+    let mut service = setup();
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let outsider = service.connect("outsider").unwrap();
+    let source = InteractionSourceV1 { event_sequence: 5 };
+    let revision = service.engine().revision();
+    assert_eq!(
+        service.interaction_context(alice, source),
+        Ok(InteractionContextV1::Available { source })
+    );
+    assert_eq!(
+        service.interaction_context(bot, source),
+        Ok(InteractionContextV1::Available { source })
+    );
+    assert_eq!(
+        service.interaction_context(outsider, source),
+        Ok(InteractionContextV1::NotVisible)
+    );
+    assert_eq!(
+        service.interaction_context(alice, InteractionSourceV1 { event_sequence: 4 }),
+        Ok(InteractionContextV1::NotVisible)
+    );
+    assert_eq!(
+        service.interaction_context(alice, InteractionSourceV1 { event_sequence: 0 }),
+        Ok(InteractionContextV1::Gap { retained_from: 4 })
+    );
+    assert_eq!(service.engine().revision(), revision);
+}
+
+#[test]
+fn promotion_is_actor_bound_exact_and_replays_after_source_eviction() {
+    let mut service = setup();
+    let alice = service.connect("alice").unwrap();
+    let bot = service.connect("bot").unwrap();
+    let outsider = service.connect("outsider").unwrap();
+    let first = service
+        .promote_interaction_at(alice, promotion(1, "human proposal"), 10)
+        .unwrap();
+    assert_eq!(first.revision, 7);
+    assert_eq!(first.message_sequence, 1);
+    let second = service
+        .promote_interaction_at(bot, promotion(2, "agent proposal"), 11)
+        .unwrap();
+    assert_eq!(second.revision, 8);
+    assert_eq!(second.message_sequence, 2);
+    assert_eq!(
+        service.promote_interaction_at(alice, promotion(1, "human proposal"), 1),
+        Ok(first),
+        "exact replay resolves before source retention and Host time"
+    );
+    assert_eq!(
+        service.promote_interaction_at(alice, promotion(1, "changed"), 12),
+        Err(InteractionPromotionRefusalV1::Conflict)
+    );
+    assert_eq!(
+        service.promote_interaction_at(outsider, promotion(3, "outsider"), 12),
+        Err(InteractionPromotionRefusalV1::SourceUnavailable)
+    );
+    assert!(!format!("{:?}", promotion(4, "diagnostic secret")).contains("diagnostic secret"));
+}

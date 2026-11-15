@@ -1,6 +1,6 @@
 # ADR: typed interaction adapter boundary
 
-Status: accepted; implementation open
+Status: accepted; Agora boundary implemented; separate adapters open
 
 Date: 2026-11-14
 
@@ -68,6 +68,22 @@ writing engine for separately admitted document artifacts.
 - Aegis action separation and content-safe diagnostics;
 - dependency/effect boundaries, SDK taxonomy, corruption/model evidence, and
   commit-pinned qualification in the separate adapter.
+
+## Implementation status
+
+Agora now provides the zero-dependency `agora-interaction-port` plus Service,
+Host, durable Host, and embedded-SDK surfaces. Context lookup derives the
+participant from the authenticated binding, exposes only a retained visible
+message event sequence, distinguishes retention gaps from invisibility and
+unavailability, and is domain-neutral. Promotion derives the author from that
+same binding and traverses ordinary publication admission at current Host time.
+An exact retained publication replays even after the source event is evicted;
+changed reuse conflicts. Commit uncertainty is reconciled through the durable
+Host before a result is returned.
+
+The separate schema adapters, their ephemeral state, invocation journals,
+Aegis action composition, external transport reconciliation, and qualification
+remain outside this repository and open.
 
 ## Nonclaims
 

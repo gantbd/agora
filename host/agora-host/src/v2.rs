@@ -7,6 +7,10 @@ use super::{
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
 };
+use agora_interaction_port::{
+    InteractionContextRefusalV1, InteractionContextV1, InteractionPromotionAcceptedV1,
+    InteractionPromotionRefusalV1, InteractionPromotionRequestV1, InteractionSourceV1,
+};
 use agora_protocol::v2::{ClientIdV2, RefusalV2};
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
@@ -233,6 +237,37 @@ impl<V: PrincipalVerifier> HostV2<V> {
             .authorize_session(session_id, context, now)
             .map_err(|_| DeliveryProjectionRefusalV1::NotAuthorized)?;
         self.service.project_delivery(session.client, source)
+    }
+
+    /// Revalidates the authenticated participant before exposing one minimized
+    /// typed-interaction source context outside ordinary Wire V2.
+    pub fn interaction_context(
+        &mut self,
+        session_id: HostSessionIdV2,
+        source: InteractionSourceV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<InteractionContextV1, InteractionContextRefusalV1> {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| InteractionContextRefusalV1::NotAuthorized)?;
+        self.service.interaction_context(session.client, source)
+    }
+
+    /// Promotes one proposal as the current authenticated participant at
+    /// current Host time. The adapter cannot assert author authority.
+    pub fn promote_interaction(
+        &mut self,
+        session_id: HostSessionIdV2,
+        request: InteractionPromotionRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<InteractionPromotionAcceptedV1, InteractionPromotionRefusalV1> {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| InteractionPromotionRefusalV1::NotAuthorized)?;
+        self.service
+            .promote_interaction_at(session.client, request, now.0)
     }
 
     pub fn close(&mut self, session: HostSessionIdV2) -> bool {

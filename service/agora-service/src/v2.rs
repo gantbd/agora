@@ -13,8 +13,8 @@ use agora_engine::{
     AttachmentStoreIdV1 as EngineAttachmentStoreIdV1, AttentionPreferenceRefusalV1,
     AttentionPreferenceV1 as EngineAttentionPreferenceV1,
     AttentionScopeV1 as EngineAttentionScopeV1, BanPageCursor, CommandV2 as EngineCommand,
-    ConversationProfileV1 as EngineConversationProfileV1, Engine, MAX_REACTION_KEY_BYTES_V1,
-    MemberPageCursor, MessageId, MessagePageCursor,
+    ConversationProfileV1 as EngineConversationProfileV1, DomainEventV2, Engine,
+    MAX_REACTION_KEY_BYTES_V1, MemberPageCursor, MessageId, MessagePageCursor,
     MessageReportDispositionV1 as EngineMessageReportDispositionV1,
     MessageReportIdV1 as EngineMessageReportIdV1, MessageReportRefusalV1,
     MessageReportV1 as EngineMessageReportV1, MessageRevisionPageCursorV1, ModerationCausationV1,
@@ -32,6 +32,10 @@ use agora_engine::{
     VellumArtifactReferenceIdV1 as EngineVellumArtifactReferenceIdV1,
     VellumArtifactReferenceV1 as EngineVellumArtifactReferenceV1,
     VellumDocumentTargetV1 as EngineVellumDocumentTargetV1,
+};
+use agora_interaction_port::{
+    InteractionContextRefusalV1, InteractionContextV1, InteractionPromotionAcceptedV1,
+    InteractionPromotionRefusalV1, InteractionPromotionRequestV1, InteractionSourceV1,
 };
 use agora_protocol::v2::{
     AdmissionControlStatusV1, AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1,
@@ -389,6 +393,112 @@ impl ServiceV2 {
             source,
             class: WakeClassV1::ConversationActivity,
         }))
+    }
+
+    /// Validates that one retained source is a currently visible message for
+    /// the participant bound to `client`. No message content is projected.
+    pub fn interaction_context(
+        &self,
+        client: ClientIdV2,
+        source: InteractionSourceV1,
+    ) -> Result<InteractionContextV1, InteractionContextRefusalV1> {
+        let participant = self
+            .clients
+            .get(&client)
+            .ok_or(InteractionContextRefusalV1::NotAuthorized)?;
+        if let Some(discarded) = self.engine.discarded_changes_through()
+            && source.event_sequence <= discarded.0
+        {
+            return Ok(discarded
+                .0
+                .checked_add(1)
+                .map_or(InteractionContextV1::Unavailable, |retained_from| {
+                    InteractionContextV1::Gap { retained_from }
+                }));
+        }
+        let Some(event) = self
+            .engine
+            .retained_changes()
+            .find(|event| event.sequence.0 == source.event_sequence)
+        else {
+            return Ok(InteractionContextV1::Unavailable);
+        };
+        let DomainEventV2::MessageAccepted { room_id, .. } = &event.event else {
+            return Ok(InteractionContextV1::NotVisible);
+        };
+        if self.engine.member_role(room_id, participant).is_none() {
+            return Ok(InteractionContextV1::NotVisible);
+        }
+        Ok(InteractionContextV1::Available { source })
+    }
+
+    /// Promotes a proposal through the same publication primitive as every
+    /// trusted plain-message adapter, after exact replay and current source/
+    /// membership validation. This path is absent from ordinary Wire V2.
+    pub fn promote_interaction_at(
+        &mut self,
+        client: ClientIdV2,
+        request: InteractionPromotionRequestV1,
+        instant_ms: u64,
+    ) -> Result<InteractionPromotionAcceptedV1, InteractionPromotionRefusalV1> {
+        let participant = self
+            .clients
+            .get(&client)
+            .cloned()
+            .ok_or(InteractionPromotionRefusalV1::NotAuthorized)?;
+        if !valid_text(request.intent.room_id(), self.limits.max_room_id_bytes)
+            || !valid_text(request.intent.body(), self.limits.max_message_body_bytes)
+        {
+            return Err(InteractionPromotionRefusalV1::InvalidInput);
+        }
+        let command = PublicationCommandV2::new(
+            self.engine.revision(),
+            PublicationKeyV2::new(request.id.into_bytes()),
+            RoomId::new(request.intent.room_id()),
+            participant.clone(),
+            agora_engine::LogicalTime(request.intent.logical_time()),
+            request.intent.body(),
+        );
+        if let Some(transition) = self
+            .engine
+            .replay_publication(&command)
+            .map_err(map_interaction_promotion_refusal)?
+        {
+            let EngineOutcome::MessageAccepted { sequence, .. } = transition.outcome else {
+                return Err(InteractionPromotionRefusalV1::Unavailable);
+            };
+            return Ok(InteractionPromotionAcceptedV1 {
+                revision: transition.revision.0,
+                message_sequence: sequence,
+            });
+        }
+        let source = request.intent.source();
+        let Some(event) = self
+            .engine
+            .retained_changes()
+            .find(|event| event.sequence.0 == source.event_sequence)
+        else {
+            return Err(InteractionPromotionRefusalV1::SourceUnavailable);
+        };
+        let DomainEventV2::MessageAccepted { room_id, .. } = &event.event else {
+            return Err(InteractionPromotionRefusalV1::SourceUnavailable);
+        };
+        if room_id.as_str() != request.intent.room_id()
+            || self.engine.member_role(room_id, &participant).is_none()
+        {
+            return Err(InteractionPromotionRefusalV1::NotAuthorized);
+        }
+        let transition = self
+            .engine
+            .publish_at_instant(command, instant_ms)
+            .map_err(map_interaction_promotion_refusal)?;
+        let EngineOutcome::MessageAccepted { sequence, .. } = transition.outcome else {
+            return Err(InteractionPromotionRefusalV1::Unavailable);
+        };
+        Ok(InteractionPromotionAcceptedV1 {
+            revision: transition.revision.0,
+            message_sequence: sequence,
+        })
     }
 
     fn execute_with_host_time(
@@ -5447,5 +5557,23 @@ fn map_scheduled_publication_refusal(
             | EngineRefusal::RevisionConflict { .. },
         ) => ScheduledPublicationRefusalV1::Unavailable,
         PublicationRefusalV2::Core(_) => ScheduledPublicationRefusalV1::InvalidInput,
+    }
+}
+
+fn map_interaction_promotion_refusal(
+    refusal: PublicationRefusalV2,
+) -> InteractionPromotionRefusalV1 {
+    match map_scheduled_publication_refusal(refusal) {
+        ScheduledPublicationRefusalV1::InvalidInput => InteractionPromotionRefusalV1::InvalidInput,
+        ScheduledPublicationRefusalV1::NotAuthorized => {
+            InteractionPromotionRefusalV1::NotAuthorized
+        }
+        ScheduledPublicationRefusalV1::AdmissionDeferred { retry_after_ms } => {
+            InteractionPromotionRefusalV1::AdmissionDeferred { retry_after_ms }
+        }
+        ScheduledPublicationRefusalV1::Capacity => InteractionPromotionRefusalV1::Capacity,
+        ScheduledPublicationRefusalV1::Conflict => InteractionPromotionRefusalV1::Conflict,
+        ScheduledPublicationRefusalV1::Unavailable => InteractionPromotionRefusalV1::Unavailable,
+        ScheduledPublicationRefusalV1::Exhausted => InteractionPromotionRefusalV1::Exhausted,
     }
 }

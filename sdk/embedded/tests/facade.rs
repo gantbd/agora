@@ -1,4 +1,6 @@
-use agora_sdk_embedded::{delivery_projection, engine, host, scheduled_publication, service};
+use agora_sdk_embedded::{
+    delivery_projection, engine, host, interaction, scheduled_publication, service,
+};
 
 struct Verifier;
 
@@ -110,6 +112,16 @@ fn facade_names_the_minimized_delivery_projection_contract() {
         class: delivery_projection::WakeClassV1::ConversationActivity,
     };
     assert_eq!(wake.source.event_sequence, 9);
+}
+
+#[test]
+fn facade_names_the_typed_interaction_contract() {
+    let source = interaction::InteractionSourceV1 { event_sequence: 9 };
+    let request = interaction::InteractionPromotionRequestV1 {
+        id: interaction::InteractionInvocationIdV1::new([9; 16]).unwrap(),
+        intent: interaction::InteractionPromotionIntentV1::new(source, "room", 11, "proposal"),
+    };
+    assert_eq!(request.intent.source(), source);
 }
 
 #[test]

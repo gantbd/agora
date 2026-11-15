@@ -14,6 +14,10 @@ use agora_host::v2::persistence::{
 };
 use agora_host::v2::{HostSessionIdV2, HostV2, OpenReplyV2};
 use agora_host::{HostRefusal, HostTimeV1, PrincipalVerifier};
+use agora_interaction_port::{
+    InteractionContextRefusalV1, InteractionContextV1, InteractionPromotionAcceptedV1,
+    InteractionPromotionRefusalV1, InteractionPromotionRequestV1, InteractionSourceV1,
+};
 use agora_protocol::v2::{ClientIdV2, RefusalV2, ReplyV2, RequestV2};
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
@@ -1223,6 +1227,37 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
         now: HostTimeV1,
     ) -> DurableHostPublicationV2<Result<DeliveryProjectionV1, DeliveryProjectionRefusalV1>> {
         let publication = self.publish(|host| host.project_delivery(session, source, context, now));
+        self.counters.record(&publication);
+        publication
+    }
+
+    /// Receipt-gates Host revalidation before interaction context can escape.
+    pub fn interaction_context(
+        &mut self,
+        session: HostSessionIdV2,
+        source: InteractionSourceV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<Result<InteractionContextV1, InteractionContextRefusalV1>> {
+        let publication =
+            self.publish(|host| host.interaction_context(session, source, context, now));
+        self.counters.record(&publication);
+        publication
+    }
+
+    /// Publishes a proposal only after session verification and ordinary
+    /// message admission are committed in one complete Host checkpoint.
+    pub fn promote_interaction(
+        &mut self,
+        session: HostSessionIdV2,
+        request: InteractionPromotionRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<
+        Result<InteractionPromotionAcceptedV1, InteractionPromotionRefusalV1>,
+    > {
+        let publication =
+            self.publish(|host| host.promote_interaction(session, request, context, now));
         self.counters.record(&publication);
         publication
     }

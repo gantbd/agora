@@ -10,6 +10,10 @@ use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
 };
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
+use agora_interaction_port::{
+    InteractionContextRefusalV1, InteractionContextV1, InteractionInvocationIdV1,
+    InteractionPromotionIntentV1, InteractionPromotionRequestV1, InteractionSourceV1,
+};
 use agora_protocol::v2::{
     AdmissionPolicyV2, AttachmentDescriptorV1, AttachmentIdV1, AttachmentIntegrityV1,
     AttachmentMessageTargetV1, AttachmentObjectKeyV1, AttachmentStoreIdV1, AttentionPreferenceV1,
@@ -265,6 +269,56 @@ fn delivery_projection_binds_current_authenticated_observer_without_content() {
     assert_eq!(
         host.project_delivery(session, source, &context, HostTimeV1(3)),
         Err(DeliveryProjectionRefusalV1::NotAuthorized)
+    );
+    assert_eq!(host.service().active_client_count(), 0);
+}
+
+#[test]
+fn interaction_context_and_promotion_bind_current_authenticated_participant() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Speak {
+            room_id: "room".into(),
+            author: "alice".into(),
+            at: LogicalTime(1),
+            body: "source".to_owned(),
+        })
+        .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: calls.clone(),
+        },
+        limits(4),
+    );
+    let (session, _, mut context) = open(&mut host, "alice", 1);
+    let source = InteractionSourceV1 { event_sequence: 3 };
+    assert_eq!(
+        host.interaction_context(session, source, &context, HostTimeV1(2)),
+        Ok(InteractionContextV1::Available { source })
+    );
+    let request = InteractionPromotionRequestV1 {
+        id: InteractionInvocationIdV1::new([8; 16]).unwrap(),
+        intent: InteractionPromotionIntentV1::new(source, "room", 2, "proposal"),
+    };
+    let accepted = host
+        .promote_interaction(session, request, &context, HostTimeV1(3))
+        .unwrap();
+    assert_eq!(accepted.revision, 5);
+    assert_eq!(accepted.message_sequence, 1);
+    context.active = false;
+    assert_eq!(
+        host.interaction_context(session, source, &context, HostTimeV1(4)),
+        Err(InteractionContextRefusalV1::NotAuthorized)
     );
     assert_eq!(host.service().active_client_count(), 0);
 }

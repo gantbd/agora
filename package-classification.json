@@ -49,6 +49,14 @@
       "audiences": ["application", "sdk", "trusted-host"],
       "publish": false
     },
+    "agora-interaction-port": {
+      "path": "ports/agora-interaction-port",
+      "category": "port",
+      "maturity": "adopted",
+      "effect_class": "pure",
+      "audiences": ["service", "trusted-host"],
+      "publish": false
+    },
     "agora-local-daemon": {
       "path": "applications/agora-local-daemon",
       "category": "application",

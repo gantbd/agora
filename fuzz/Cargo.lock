@@ -33,6 +33,7 @@ version = "0.1.0"
 dependencies = [
  "agora-delivery-projection-port",
  "agora-host",
+ "agora-interaction-port",
  "agora-protocol",
  "agora-scheduled-publication-port",
  "agora-service",
@@ -61,11 +62,16 @@ name = "agora-host"
 version = "0.1.0"
 dependencies = [
  "agora-delivery-projection-port",
+ "agora-interaction-port",
  "agora-protocol",
  "agora-scheduled-publication-port",
  "agora-service",
  "agora-wire",
 ]
+
+[[package]]
+name = "agora-interaction-port"
+version = "0.1.0"
 
 [[package]]
 name = "agora-local-daemon"
@@ -104,6 +110,7 @@ version = "0.1.0"
 dependencies = [
  "agora-delivery-projection-port",
  "agora-engine",
+ "agora-interaction-port",
  "agora-protocol",
  "agora-scheduled-publication-port",
  "agora-search-port",

@@ -163,6 +163,13 @@ if [[ $(printf '%s\n' "$delivery_projection_port_tree" | wc -l | tr -d ' ') != 1
   exit 1
 fi
 
+interaction_port_tree=$(cargo tree -p agora-interaction-port --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$interaction_port_tree" | wc -l | tr -d ' ') != 1 ]]; then
+  printf '%s\n' "$interaction_port_tree" >&2
+  echo 'Agora interaction port gained a normal dependency' >&2
+  exit 1
+fi
+
 search_memory_tree=$(cargo tree -p agora-search-memory --edges normal --depth 1 --locked --offline)
 if [[ $(printf '%s\n' "$search_memory_tree" | wc -l | tr -d ' ') != 2 ]] \
   || ! printf '%s\n' "$search_memory_tree" | rg -q 'agora-search-port' \
@@ -173,10 +180,11 @@ if [[ $(printf '%s\n' "$search_memory_tree" | wc -l | tr -d ' ') != 2 ]] \
 fi
 
 embedded_sdk_tree=$(cargo tree -p agora-sdk-embedded --edges normal --depth 1 --locked --offline)
-if [[ $(printf '%s\n' "$embedded_sdk_tree" | wc -l | tr -d ' ') != 6 ]] \
+if [[ $(printf '%s\n' "$embedded_sdk_tree" | wc -l | tr -d ' ') != 7 ]] \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-engine' \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-delivery-projection-port' \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-host' \
+  || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-interaction-port' \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-scheduled-publication-port' \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-service' \
   || printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-(client|sdk-client)'; then
@@ -203,4 +211,4 @@ for sdk_manifest in sdk/embedded/Cargo.toml sdk/client/Cargo.toml; do
   fi
 done
 
-echo 'Agora dependency direction closed; search, delivery projection, and scheduled publication remain port-only and effects stay in qualified adapters'
+echo 'Agora dependency direction closed; search, delivery projection, interaction, and scheduled publication remain port-only and effects stay in qualified adapters'

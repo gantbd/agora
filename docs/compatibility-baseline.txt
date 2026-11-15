@@ -5,6 +5,7 @@ package|adapters/agora-aegis-verifier/Cargo.toml|agora-aegis-verifier|0.1.0
 package|client/agora-client/Cargo.toml|agora-client|0.1.0
 package|service/agora-durable/Cargo.toml|agora-durable|0.1.0
 package|ports/agora-delivery-projection-port/Cargo.toml|agora-delivery-projection-port|0.1.0
+package|ports/agora-interaction-port/Cargo.toml|agora-interaction-port|0.1.0
 package|host/agora-host/Cargo.toml|agora-host|0.1.0
 package|applications/agora-local-daemon/Cargo.toml|agora-local-daemon|0.1.0
 package|transport/agora-local-transport/Cargo.toml|agora-local-transport|0.1.0
