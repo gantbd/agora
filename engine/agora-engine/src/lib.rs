@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 use std::sync::Arc;
+pub mod export_source;
 pub mod persistence;
 pub mod retention;
 

@@ -29,6 +29,21 @@ impl CheckpointV2 {
     }
 }
 
+/// Canonical owner-native representation of one authoritative engine change.
+pub struct AuthoritativeChangeCheckpointV1(Vec<u8>);
+
+impl AuthoritativeChangeCheckpointV1 {
+    pub fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for AuthoritativeChangeCheckpointV1 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AuthoritativeChangeCheckpointV1(<redacted>)")
+    }
+}
+
 /// Bounds for restoring an opaque observation cursor from durable service state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CursorRecoveryLimitsV1 {
@@ -1091,6 +1106,96 @@ impl<'a> Reader<'a> {
             _ => return Err(CheckpointError::Invalid),
         })
     }
+}
+
+const AUTHORITATIVE_CHANGE_MAGIC_V1: &[u8; 8] = b"AGACHG1\0";
+
+fn authoritative_change_feature_bits(event: &DomainEventV2) -> u8 {
+    let vellum = matches!(
+        event,
+        DomainEventV2::MessageAccepted { message, .. } if !message.vellum_artifacts.is_empty()
+    );
+    let conversation = matches!(event, DomainEventV2::PeerConversationCreated { .. });
+    let pins = matches!(event, DomainEventV2::PinChanged { .. });
+    let polls = matches!(
+        event,
+        DomainEventV2::PollCreated { .. }
+            | DomainEventV2::PollBallotChanged { .. }
+            | DomainEventV2::PollLifecycleChanged { .. }
+    );
+    let admission = matches!(
+        event,
+        DomainEventV2::MessageIntervalChanged { .. }
+            | DomainEventV2::PostingRestrictionChanged { .. }
+    );
+    u8::from(vellum)
+        | (u8::from(conversation) << 1)
+        | (u8::from(pins) << 2)
+        | (u8::from(polls) << 3)
+        | (u8::from(admission) << 4)
+}
+
+/// Encodes one authoritative event without importing Service or wire state.
+pub fn prepare_authoritative_change_checkpoint_v1(
+    envelope: &EventEnvelopeV2,
+    max_snapshot_bytes: usize,
+) -> Result<AuthoritativeChangeCheckpointV1, CheckpointError> {
+    if max_snapshot_bytes == 0 || envelope.sequence.0.checked_add(1) != Some(envelope.revision.0) {
+        return Err(CheckpointError::Invalid);
+    }
+    let feature_bits = authoritative_change_feature_bits(&envelope.event);
+    let mut writer = Writer {
+        bytes: Vec::new(),
+        max: max_snapshot_bytes,
+    };
+    writer.raw(AUTHORITATIVE_CHANGE_MAGIC_V1)?;
+    writer.byte(feature_bits)?;
+    writer.number(envelope.sequence.0)?;
+    writer.number(envelope.revision.0)?;
+    writer.event(&envelope.event, feature_bits & 1 != 0)?;
+    Ok(AuthoritativeChangeCheckpointV1(writer.bytes))
+}
+
+/// Recovers one standalone authoritative event under explicit engine bounds.
+pub fn recover_authoritative_change_checkpoint_v1(
+    bytes: &[u8],
+    bounds: RecoveryLimits,
+) -> Result<EventEnvelopeV2, CheckpointError> {
+    if bounds.max_snapshot_bytes == 0 || bytes.len() > bounds.max_snapshot_bytes {
+        return Err(CheckpointError::Limit);
+    }
+    let mut reader = Reader { bytes, pos: 0 };
+    if reader.raw(AUTHORITATIVE_CHANGE_MAGIC_V1.len())? != AUTHORITATIVE_CHANGE_MAGIC_V1 {
+        return Err(CheckpointError::Profile);
+    }
+    let feature_bits = reader.byte()?;
+    if feature_bits & !0b1_1111 != 0 {
+        return Err(CheckpointError::Profile);
+    }
+    let sequence = EventSequence(reader.number()?);
+    let revision = Revision(reader.number()?);
+    if sequence.0.checked_add(1) != Some(revision.0) {
+        return Err(CheckpointError::Invalid);
+    }
+    let event = reader.event(
+        bounds.maximum_engine_limits,
+        feature_bits & 1 != 0,
+        feature_bits & 2 != 0,
+        feature_bits & 4 != 0,
+        feature_bits & 8 != 0,
+        feature_bits & 16 != 0,
+    )?;
+    if reader.pos != bytes.len() {
+        return Err(CheckpointError::Trailing);
+    }
+    if authoritative_change_feature_bits(&event) != feature_bits {
+        return Err(CheckpointError::NonCanonical);
+    }
+    Ok(EventEnvelopeV2 {
+        sequence,
+        revision,
+        event,
+    })
 }
 fn kind_tag(v: ParticipantKind) -> u8 {
     match v {

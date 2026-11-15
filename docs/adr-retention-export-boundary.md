@@ -218,6 +218,18 @@ uses this path. This substrate permits future Engine, Service, federation, and
 operator-owned projections to compose without importing one another's storage
 or relabeling a complete checkpoint; it does not itself create the remaining
 class-specific projections.
+The first narrower owner-native projection is `AuthoritativeChangeSourceV1`.
+It reads only the engine's independent retained-change journal, maps event
+sequence `n` to nonzero record ordinal `n + 1`, translates the journal's exact
+discard edge into the class frontier, and binds the current engine and policy
+revisions. Each `AGACHG1` payload reuses the canonical event grammar under
+minimal exact feature bits and recovers with sequence/revision, bound,
+truncation, trailing-byte, and canonical re-encoding checks. A frozen human/
+agent registration case and deterministic single-bit mutation closure cover the
+record. This source is administrative-only and performs no room visibility,
+authority, materialization custody, or physical retention action. Pending
+delivery events are not a second source: the retained-change journal is the
+authoritative export owner for this class.
 An engine-owned bounded export registry now gives the materialized result exact
 request-identity semantics: equal retry replays the complete manifest and chunk
 bytes, changed materialization conflicts, saturation refuses before mutation,

@@ -128,6 +128,12 @@ its positive case derives one exact two-class manifest. The existing
 administrative operational-copy projection now traverses that same composition
 law without reclassifying its complete Service checkpoint. Remaining
 owner-native class projections and federation-copy policy are still open.
+The first class projection, `AuthoritativeChangeSourceV1`, derives only from the
+engine-owned retained-change journal. Focused evidence covers exact discard
+frontier translation, sequence-to-nonzero-ordinal identity, a frozen `AGACHG1`
+human/agent record, bounded recovery, administrative-only materialization,
+stale/disabled/empty/capacity refusals, redacted diagnostics, and deterministic
+single-bit mutation closure with exact re-encoding for every accepted mutant.
 
 ## Verification gates
 

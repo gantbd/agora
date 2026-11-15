@@ -600,6 +600,14 @@ mismatch before digesting bytes. A complete Service checkpoint remains one
 `OperationalCopies` record; composition never authorizes callers to relabel its
 internals as room, receipt, private, change, or federation records.
 
+Authoritative-change export can disclose complete retained domain events and
+their human or agent attribution if mistaken for a participant-visible feed.
+The engine source therefore exposes only an administrative source fragment and
+does not evaluate membership or grant visibility. It uses the independent
+retained-change journal—not the delivery outbox—and carries the exact discard
+edge so an enclosing authority cannot silently represent a gap as completeness.
+Custody admission must still revalidate the administrative scope and revisions.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A
