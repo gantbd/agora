@@ -84,7 +84,7 @@ incarnation rotation, and refusal of unsupported intersections.
 
 Agora Wire now provides the canonical closed-range post-TLS client/server hello,
 two frozen fixtures, fail-closed negotiation tests, and client-SDK reachability.
-The separate `agora-remote-transport` source revision `b9367fa` provides a
+The separate `agora-remote-transport` source revision `4cf7d0a` provides a
 TLS-1.3-only rustls profile with exact ALPN, disabled tickets/resumption/early
 data, configured server roots, optional required client certificates, exporter
 agreement, bounded framing, actual concurrent listener ownership, request
@@ -93,8 +93,14 @@ loopback positive and negative tests, pre-application overload refusal, distinct
 reconnect exporter bindings, compatible/disjoint real-TLS upgrade cuts, and a
 blocked bounded-writer drain cut with exact pending-reply accounting. Its fixed
 256-cycle TLS/mTLS reconnect and clean-drain soak requires distinct exporter
-bindings and zero refusal, force, or fidelity-loss counts. Exact compatibility,
-supply, package, ordinary, and soak gates pass; revision `8b511d4` pins them.
+bindings and zero refusal, force, or fidelity-loss counts. Two independently
+built 153-file self-contained source candidates are byte-identical; one passes
+the complete extracted-source locked/offline Rust surface. The manifest digest
+is `c04b3263c8bfd512e5624e132b3db0e759e5b20118d22a885965d2ca25fa9f2a`
+and inventory digest is
+`c95c6f1ab812e20bb164308ab69aa9993e84bcbf368faa51da5ec765fc6ae167`.
+Exact compatibility, supply, package, ordinary, soak, and source-candidate gates
+pass; revision `9502788` pins them.
 
 The separately owned `agora-remote-daemon` source revision `5b32b4b` composes
 negotiated connections with bounded opaque credential frames, TLS exporters and
@@ -105,8 +111,8 @@ exit and forces overlapping human and agent participants through the identical
 path. Revision `b91d23e` pins the passing real TLS/mTLS gate.
 
 A concrete credential authenticator, broader disconnect uncertainty and multi-
-writer schedules, platform matrix, produced artifacts, and commit-pinned full-
-profile qualification remain open.
+writer schedules, platform matrix, binary artifacts, signatures/installers, and
+commit-pinned full-profile qualification remain open.
 
 ## Nonclaims
 
