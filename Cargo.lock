@@ -194,6 +194,7 @@ dependencies = [
  "agora-scheduled-publication-port",
  "agora-search-memory",
  "agora-search-port",
+ "agora-sha256",
  "agora-wire",
 ]
 

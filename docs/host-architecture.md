@@ -130,6 +130,9 @@ passed to `agora-export-custody-port`; denied or stale authority and stale local
 bindings never touch custody. The port preserves durable commit/replay versus
 definite noncommit, unknown outcome, or fencing without exposing storage
 mechanisms. Host neither prepares source records nor certifies SHA-256.
+The service layer can now prepare one administrative operational-copy source
+from its exact canonical checkpoint, but Host still receives only the resulting
+materialization and does not reinterpret or widen that source profile.
 
 The separate `agora-storage-directory` package can supply that receipt for the
 qualified single-owner local Unix profile. End-to-end restart evidence closes

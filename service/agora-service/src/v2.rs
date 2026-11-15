@@ -73,6 +73,7 @@ use agora_scheduled_publication_port::{
 };
 use std::collections::{BTreeMap, VecDeque};
 
+pub mod export_source;
 pub mod persistence;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

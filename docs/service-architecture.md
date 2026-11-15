@@ -247,6 +247,13 @@ records, authorize export, or expose participant protocol. The separate pure
 `agora-sha256` adapter implements only the engine's named digest profile; standard
 empty, single-block, multi-block, million-byte and padding-boundary vectors plus
 Agora materialization/recovery and mutation-refusal tests qualify that binding.
+`ServiceV2::export_source` adds one deliberately narrow source profile: it
+captures the exact canonical complete service checkpoint as a single
+`OperationalCopies` record under the administrative export profile. Capture
+requires an installed current policy with that class enabled, binds the current
+engine and policy revisions, uses a monotone revision-derived record ordinal,
+and preserves the checkpoint's own recovery scope. It does not relabel nested
+room, change, receipt, private, or federation bytes as class-specific records.
 The separate adopted `agora-export-durable` owner publishes that checkpoint
 under its own configured store key and revision line. Only an exact strong
 receipt publishes a new custody result; equal replay does not re-offer storage,

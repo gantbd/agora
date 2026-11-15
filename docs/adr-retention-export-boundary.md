@@ -196,9 +196,15 @@ digest profile. Chunk payload diagnostics are redacted. The digest function is
 injected into the no-I/O engine. The pure `agora-sha256` adapter supplies that
 named profile and is qualified by standard vectors, padding-boundary coverage,
 exact Agora materialization/recovery, and payload-mutation refusal. Equal inputs
-produce byte-identical chunks and manifest evidence. This is materialization
-substrate only: source projection, visibility authorization, concrete provider
-composition, protocol, and SDK exposure remain open.
+produce byte-identical chunks and manifest evidence. `ServiceV2::export_source`
+now supplies one narrow projection: the exact canonical complete Service V2
+checkpoint becomes one administrative `OperationalCopies` record only when the
+current policy enables that class. Its ordinal is the current engine revision's
+successor, its frontier is exact, and the embedded checkpoint remains independently
+scope-bound and recoverable. Nested checkpoint content is not reclassified as
+room, change, receipt, private, or federation records. Other source projections,
+visibility authorization, concrete provider composition, protocol, and SDK
+exposure remain open.
 An engine-owned bounded export registry now gives the materialized result exact
 request-identity semantics: equal retry replays the complete manifest and chunk
 bytes, changed materialization conflicts, saturation refuses before mutation,
@@ -221,8 +227,9 @@ digest, and recovers only after revalidating nested chunk and manifest digests.
 The separate `agora-export-durable` owner gives that checkpoint its own store
 key and revision line. Exact durable receipts commit custody, equal replay
 suppresses another offer, known refusal rolls back, and unknown or weak outcomes
-fence until fresh recovery. A concrete store composition, source projection,
-authorization, digest-provider composition, and export retirement remain open.
+fence until fresh recovery. A concrete store composition, other class-specific
+source projections, authorization, digest-provider composition, and export
+retirement remain open.
 The participant protocol remains free of administrative export commands.
 The effect-free `agora-export-custody-port` now separates Host from that durable
 implementation. `HostV2` revalidates the administrative session, checks the

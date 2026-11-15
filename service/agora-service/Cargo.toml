@@ -19,6 +19,7 @@ agora-wire = { path = "../../protocol/agora-wire", version = "=0.1.0" }
 
 [dev-dependencies]
 agora-search-memory = { path = "../../adapters/agora-search-memory", version = "=0.1.0" }
+agora-sha256 = { path = "../../adapters/agora-sha256", version = "=0.1.0" }
 
 [lints.rust]
 unsafe_code = "forbid"
