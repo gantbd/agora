@@ -1,4 +1,6 @@
-use agora_engine::retention::{RetentionBoundV1, RetentionPolicyRevisionV1, RetentionPolicyV1};
+use agora_engine::retention::{
+    RecordClassV1, RetentionBoundV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
+};
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantId,
     ParticipantKind, ReadScopeV1 as EngineReadScopeV1, RoomId,
@@ -98,6 +100,34 @@ fn receipt_revision_tracks_state_changes_not_offers_and_survives_recovery() {
     assert_eq!(recovered.receipt_revision(), Some(3));
     assert_eq!(recovered.disconnect(alice), Ok(false));
     assert_eq!(recovered.receipt_revision(), Some(3));
+}
+
+#[test]
+fn request_receipt_policy_replays_and_backpressures_after_recovery() {
+    let (mut service, alice) = receipt_service();
+    let mut policy_bounds = [RetentionBoundV1::entries(4_096).unwrap(); 6];
+    policy_bounds[RecordClassV1::RequestReceipts as usize - 1] =
+        RetentionBoundV1::entries(1).unwrap();
+    service
+        .install_retention_policy(RetentionPolicyV1::new(
+            RetentionPolicyRevisionV1::new(1).unwrap(),
+            service.engine().revision().0,
+            policy_bounds,
+        ))
+        .unwrap();
+    let first = request(1, CommandV2::Capabilities);
+    let accepted = service.execute(alice, first.clone());
+    assert!(matches!(accepted, ReplyV2::Accepted(_)));
+
+    let checkpoint = service.prepare_checkpoint(SCOPE, MAX_CHECKPOINT).unwrap();
+    let mut recovered = ServiceV2::recover_checkpoint(checkpoint.bytes(), SCOPE, bounds()).unwrap();
+
+    assert_eq!(recovered.execute(alice, first), accepted);
+    assert_eq!(
+        recovered.execute(alice, request(2, CommandV2::Capabilities)),
+        ReplyV2::Refused(RefusalV2::RequestLimit)
+    );
+    assert_eq!(recovered.receipt_revision(), Some(1));
 }
 
 #[test]
