@@ -488,6 +488,16 @@ contains the tombstone and no event or snapshot payload. This closes the first
 exact federation-copy source, its one-current-generation application law, and
 logical subscription retirement, not physical replica-generation reclamation,
 authoritative-home deletion, remote-copy destruction, or erasure.
+Federation source `eb8eb9983d4a529106812b75820ac403c1dc1d17`, recorded by
+`837a1ee8c6bf11ed8fa1a3fec02d5b873e617bc1`, closes the bounded physical
+replica-generation composition over Agora's pinned generational directory and
+qualified SHA-256 adapter. Reclamation requires dropping the publishing owner,
+reopening and validating the exact retired head, durably journaling a
+digest-bound plan, unlinking only the two named predecessor generations, and
+directory-syncing before evidence. The tombstone generation survives and exact
+plan replay performs no second unlink. This is local generation-unlink evidence,
+not authoritative-home deletion, remote-copy destruction, provider attestation,
+or secure erasure.
 
 ## Nonclaims
 

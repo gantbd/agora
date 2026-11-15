@@ -220,7 +220,12 @@ not ready for a network service or crates.io release.
   non-reuse, known-refusal preservation, ambiguity fencing, and minimal
   tombstone-only retired export. Physical replica-generation reclamation,
   authoritative-home deletion, remote-copy destruction, and erasure remain
-  nonclaims;
+  nonclaims. Federation source `eb8eb9983d4a529106812b75820ac403c1dc1d17`,
+  recorded by `837a1ee8c6bf11ed8fa1a3fec02d5b873e617bc1`, then qualifies the
+  physical composition: exact retired-head reopen, SHA-256-bound journaled
+  plan, two predecessor-generation unlinks, directory sync, tombstone recovery,
+  and replay without another unlink. It does not widen local unlink evidence
+  into any of those nonclaims;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound
