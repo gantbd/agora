@@ -870,9 +870,14 @@ The separate federation workspace also has frozen bounded admission
 request/reply frames, authenticated-sender participant
 and room-home preflight, bounded exact receipts, matching replay, changed-input
 conflict, participant-kind-neutral execution, and a client uncertainty fence.
-Trust-provider composition, durable snapshot/receipt recovery, Agora current-
-policy/Host composition, durable storage, transport composition, adversarial
-campaigns, and integrated qualification remain open.
+The replica foundation additionally refuses self-replication, redacts opaque
+event/snapshot/checkpoint payloads, exports an exact structural checkpoint, and
+recovers only a contiguous room-bound frontier within current event, snapshot,
+count, and retained-byte limits.
+Trust-provider composition, canonical durable checkpoint bytes, admission
+receipt recovery, Agora current-policy/Host composition, physical storage,
+transport composition, adversarial campaigns, and integrated qualification
+remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part
