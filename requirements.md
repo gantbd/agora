@@ -858,8 +858,10 @@ commit-pinned, with ordinary/soak/source evidence recorded on
 `aarch64-apple-darwin`; a multi-platform matrix remains open.
 R106 has an accepted native single-home federation architecture plus a
 commit-pinned zero-dependency identity/negotiation protocol and bounded
-single-home replica-journal foundation. Canonical wire, session trust binding,
-snapshot recovery, remote admission, durable storage, transport composition,
+single-home replica-journal foundation, including bounded authoritative snapshot
+gap repair with rollback fencing and honest unavailable-history classification.
+Canonical wire, session trust binding, durable snapshot recovery, remote
+admission, durable storage, transport composition,
 and integrated qualification remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
