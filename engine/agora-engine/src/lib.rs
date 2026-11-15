@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 use std::sync::Arc;
 pub mod persistence;
+pub mod retention;
 
 pub const MAX_TOPIC_ALIASES_PER_TOPIC_V1: usize = 16;
 pub const MAX_TOPIC_TAGS_PER_TOPIC_V1: usize = 8;

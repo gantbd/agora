@@ -1,6 +1,6 @@
 # ADR: logical retention, exact export, and store reclamation
 
-Status: accepted architecture; implementation open
+Status: accepted architecture; closed-value foundation implemented
 
 Date: 2026-11-14
 
@@ -138,6 +138,16 @@ does not prove those copies were destroyed.
   storage adapters, and native federation where applicable;
 - compatibility fixtures, finite models, corruption/fuzz/soak campaigns,
   supply inventory, and commit-pinned integrated qualification.
+
+## Implementation status
+
+`agora_engine::retention` implements the first no-I/O foundation: the complete
+record-class set, positive-or-disabled bounds, revisioned policies, canonical
+frontiers and transition evidence, redacted export request/scope bindings,
+ordered bounded chunk manifests, distinct retention tombstones, ordered bounded
+reclamation plans, and the four non-erasure reclamation evidence stages. Engine
+state transitions, canonical persistence/wire profiles, authority composition,
+export materialization, and physical adapter reclamation remain open.
 
 ## Nonclaims
 
