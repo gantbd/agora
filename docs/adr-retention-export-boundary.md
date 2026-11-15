@@ -198,6 +198,11 @@ equal inputs with the same implementation produce byte-identical chunks and
 manifest evidence. This is materialization substrate only: source projection,
 visibility authorization, cryptographic-provider qualification, durable exact
 replay/conflict handling, protocol and SDK exposure remain open.
+An engine-owned bounded export registry now gives the materialized result exact
+request-identity semantics: equal retry replays the complete manifest and chunk
+bytes, changed materialization conflicts, saturation refuses before mutation,
+and recovery accepts only canonical request order. The registry is volatile
+substrate until Service and Host checkpoint profiles durably compose it.
 
 ## Nonclaims
 

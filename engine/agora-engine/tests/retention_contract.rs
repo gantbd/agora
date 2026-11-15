@@ -1,7 +1,8 @@
 use agora_engine::retention::{
     ContentDigestProfileV1, ContentDigestV1, ExportChunkV1, ExportManifestV1,
-    ExportMaterializationRefusalV1, ExportProfileV1, ExportRecordV1, ExportRequestIdV1,
-    ExportScopeBindingV1, RECORD_CLASSES_V1, ReceiptRetirementApplyV1, ReceiptRetirementRefusalV1,
+    ExportMaterializationApplyV1, ExportMaterializationRefusalV1, ExportProfileV1, ExportRecordV1,
+    ExportRegistryRefusalV1, ExportRegistryV1, ExportRequestIdV1, ExportScopeBindingV1,
+    RECORD_CLASSES_V1, ReceiptRetirementApplyV1, ReceiptRetirementRefusalV1,
     ReceiptRetirementRegistryV1, ReclamationEvidenceV1, ReclamationStageV1, RecordClassV1,
     RetentionBoundV1, RetentionFrontierV1, RetentionIdentityBindingV1, RetentionPlanRefusalV1,
     RetentionPolicyRevisionV1, RetentionPolicyV1, RetentionRecordIdV1, RetentionRecordV1,
@@ -121,27 +122,28 @@ fn export_materialization_is_bounded_canonical_and_frontier_exact() {
             .fold(0_u8, |state, byte| state.wrapping_add(*byte));
         ContentDigestV1::new([value; 32])
     };
-    let materialize = |records: &[ExportRecordV1], included, frontiers, max_chunks| {
-        materialize_export_v1(
-            ExportRequestIdV1::new([7; 16]).unwrap(),
-            ExportProfileV1::Administrative,
-            ExportScopeBindingV1::new([8; 32]).unwrap(),
-            ContentDigestProfileV1::Sha256,
-            9,
-            revision(),
-            included,
-            frontiers,
-            records,
-            2,
-            3,
-            max_chunks,
-            24,
-            digest,
-        )
-    };
+    let materialize =
+        |request_byte, records: &[ExportRecordV1], included, frontiers, max_chunks| {
+            materialize_export_v1(
+                ExportRequestIdV1::new([request_byte; 16]).unwrap(),
+                ExportProfileV1::Administrative,
+                ExportScopeBindingV1::new([8; 32]).unwrap(),
+                ContentDigestProfileV1::Sha256,
+                9,
+                revision(),
+                included,
+                frontiers,
+                records,
+                2,
+                3,
+                max_chunks,
+                24,
+                digest,
+            )
+        };
     let included = [true, true, false, false, false, false];
-    let first = materialize(&records, included, export_frontiers, 2).unwrap();
-    let second = materialize(&records, included, export_frontiers, 2).unwrap();
+    let first = materialize(7, &records, included, export_frontiers, 2).unwrap();
+    let second = materialize(7, &records, included, export_frontiers, 2).unwrap();
     assert_eq!(first, second);
     assert_eq!(first.chunks().len(), 2);
     assert_eq!(first.manifest.chunks().len(), 2);
@@ -153,11 +155,12 @@ fn export_materialization_is_bounded_canonical_and_frontier_exact() {
     );
     assert!(!format!("{:?}", first.chunks()[0]).contains("one"));
     assert_eq!(
-        materialize(&records, included, export_frontiers, 1),
+        materialize(7, &records, included, export_frontiers, 1),
         Err(ExportMaterializationRefusalV1::ChunkLimit)
     );
     assert_eq!(
         materialize(
+            7,
             &records,
             [true, false, false, false, false, false],
             export_frontiers,
@@ -169,9 +172,37 @@ fn export_materialization_is_bounded_canonical_and_frontier_exact() {
     stale_frontiers[0] =
         RetentionFrontierV1::new(RecordClassV1::RoomProjection, 1, Some(2)).unwrap();
     assert_eq!(
-        materialize(&records, included, stale_frontiers, 2),
+        materialize(7, &records, included, stale_frontiers, 2),
         Err(ExportMaterializationRefusalV1::FrontierMismatch)
     );
+
+    let mut registry = ExportRegistryV1::new(1).unwrap();
+    assert_eq!(
+        registry.offer(first.clone()),
+        Ok(ExportMaterializationApplyV1::Materialized)
+    );
+    assert_eq!(
+        registry.offer(first.clone()),
+        Ok(ExportMaterializationApplyV1::Replay)
+    );
+    let changed_records = vec![
+        ExportRecordV1::new(id(RecordClassV1::RoomProjection, 3), b"ONE".to_vec(), 3).unwrap(),
+        records[1].clone(),
+    ];
+    assert_eq!(
+        registry.offer(materialize(7, &changed_records, included, export_frontiers, 2).unwrap()),
+        Err(ExportRegistryRefusalV1::Conflict)
+    );
+    assert_eq!(
+        registry.offer(materialize(8, &records, included, export_frontiers, 2).unwrap()),
+        Err(ExportRegistryRefusalV1::Capacity)
+    );
+    let recovered = ExportRegistryV1::recover(1, registry.checkpoint()).unwrap();
+    assert_eq!(
+        recovered.materialization(first.manifest.request),
+        Some(&first)
+    );
+    assert_eq!(recovered.len(), 1);
 }
 
 #[test]

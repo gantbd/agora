@@ -568,6 +568,97 @@ impl ExportMaterializationV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExportMaterializationApplyV1 {
+    Materialized,
+    Replay,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExportRegistryRefusalV1 {
+    InvalidLimit,
+    Conflict,
+    Capacity,
+    NonCanonicalCheckpoint,
+}
+
+/// Bounded exact export results keyed by their nonzero request identity.
+///
+/// This registry owns replay/conflict meaning only. It performs no authority
+/// decision, source projection, persistence, publication, or custody action.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExportRegistryV1 {
+    maximum: usize,
+    materializations: BTreeMap<ExportRequestIdV1, ExportMaterializationV1>,
+}
+
+impl ExportRegistryV1 {
+    pub fn new(maximum: usize) -> Result<Self, ExportRegistryRefusalV1> {
+        if maximum == 0 {
+            return Err(ExportRegistryRefusalV1::InvalidLimit);
+        }
+        Ok(Self {
+            maximum,
+            materializations: BTreeMap::new(),
+        })
+    }
+
+    pub fn recover(
+        maximum: usize,
+        checkpoint: Vec<ExportMaterializationV1>,
+    ) -> Result<Self, ExportRegistryRefusalV1> {
+        let mut registry = Self::new(maximum)?;
+        if checkpoint.len() > maximum
+            || checkpoint
+                .windows(2)
+                .any(|pair| pair[0].manifest.request >= pair[1].manifest.request)
+        {
+            return Err(ExportRegistryRefusalV1::NonCanonicalCheckpoint);
+        }
+        for materialization in checkpoint {
+            if registry.offer(materialization) != Ok(ExportMaterializationApplyV1::Materialized) {
+                return Err(ExportRegistryRefusalV1::NonCanonicalCheckpoint);
+            }
+        }
+        Ok(registry)
+    }
+
+    pub fn offer(
+        &mut self,
+        materialization: ExportMaterializationV1,
+    ) -> Result<ExportMaterializationApplyV1, ExportRegistryRefusalV1> {
+        let request = materialization.manifest.request;
+        if let Some(retained) = self.materializations.get(&request) {
+            return if retained == &materialization {
+                Ok(ExportMaterializationApplyV1::Replay)
+            } else {
+                Err(ExportRegistryRefusalV1::Conflict)
+            };
+        }
+        if self.materializations.len() == self.maximum {
+            return Err(ExportRegistryRefusalV1::Capacity);
+        }
+        self.materializations.insert(request, materialization);
+        Ok(ExportMaterializationApplyV1::Materialized)
+    }
+
+    pub fn materialization(&self, request: ExportRequestIdV1) -> Option<&ExportMaterializationV1> {
+        self.materializations.get(&request)
+    }
+
+    pub fn checkpoint(&self) -> Vec<ExportMaterializationV1> {
+        self.materializations.values().cloned().collect()
+    }
+
+    pub fn len(&self) -> usize {
+        self.materializations.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.materializations.is_empty()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExportMaterializationRefusalV1 {
     InvalidLimit,
     NonCanonicalRecords,
