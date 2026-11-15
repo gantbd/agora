@@ -871,11 +871,11 @@ request/reply frames, authenticated-sender participant
 and room-home preflight, bounded exact receipts, matching replay, changed-input
 conflict, participant-kind-neutral execution, and a client uncertainty fence.
 The replica foundation additionally refuses self-replication, redacts opaque
-event/snapshot/checkpoint payloads, exports an exact structural checkpoint, and
-recovers only a contiguous room-bound frontier within current event, snapshot,
-count, and retained-byte limits.
-Trust-provider composition, canonical durable checkpoint bytes, admission
-receipt recovery, Agora current-policy/Host composition, physical storage,
+event/snapshot/checkpoint payloads, and canonically recovers only a contiguous
+room-bound frontier within current event, snapshot, count, and retained-byte
+limits. Canonical admission home/client checkpoints preserve validated exact
+receipts and pending uncertainty without re-execution.
+Trust-provider composition, Agora current-policy/Host composition, physical storage,
 transport composition, adversarial campaigns, and integrated qualification
 remain open.
 Additional physical durable storage adapters,
