@@ -120,6 +120,15 @@ indeterminate-after-commit uncertainty and fencing, and redacted diagnostics.
 Revision `bbdf9d7` passed the complete Agora gate; the separate home-identity
 adapter remains pending a reproducible federation commit.
 
+R107 source-composition evidence note: `ExportSourceFragmentV1` accepts only
+one native class with an exact frontier and bounded canonical records.
+`materialize_export_sources_v1` rejects empty, reordered, duplicate-class,
+cross-engine-revision, and cross-policy-revision compositions before hashing;
+its positive case derives one exact two-class manifest. The existing
+administrative operational-copy projection now traverses that same composition
+law without reclassifying its complete Service checkpoint. Remaining
+owner-native class projections and federation-copy policy are still open.
+
 ## Verification gates
 
 `make check` runs fuzz corpus/toolchain-contract validation, formatting, Clippy

@@ -11,8 +11,8 @@ use super::persistence::{ServiceCheckpointErrorV2, ServiceCheckpointScopeV1};
 use agora_engine::retention::{
     ContentDigestProfileV1, ContentDigestV1, ExportMaterializationRefusalV1,
     ExportMaterializationV1, ExportProfileV1, ExportRecordV1, ExportRequestIdV1,
-    ExportScopeBindingV1, RECORD_CLASSES_V1, RecordClassV1, RetentionFrontierV1,
-    RetentionPolicyRevisionV1, RetentionRecordIdV1, materialize_export_v1,
+    ExportScopeBindingV1, ExportSourceFragmentV1, RecordClassV1, RetentionFrontierV1,
+    RetentionPolicyRevisionV1, RetentionRecordIdV1, materialize_export_sources_v1,
 };
 use std::fmt;
 
@@ -30,10 +30,7 @@ pub enum AdministrativeCheckpointSourceRefusalV1 {
 /// authoritative service owner.
 #[derive(Clone, Eq, PartialEq)]
 pub struct AdministrativeCheckpointSourceV1 {
-    source_engine_revision: u64,
-    policy_revision: RetentionPolicyRevisionV1,
-    frontier: RetentionFrontierV1,
-    record: ExportRecordV1,
+    fragment: ExportSourceFragmentV1,
     max_record_bytes: usize,
 }
 
@@ -70,29 +67,36 @@ impl AdministrativeCheckpointSourceV1 {
         let frontier =
             RetentionFrontierV1::new(RecordClassV1::OperationalCopies, ordinal - 1, Some(ordinal))
                 .expect("the captured operational copy has an exact frontier");
-        Ok(Self {
+        let fragment = ExportSourceFragmentV1::new(
             source_engine_revision,
-            policy_revision: policy.revision,
+            policy.revision,
+            RecordClassV1::OperationalCopies,
             frontier,
-            record,
+            vec![record],
+            1,
+            max_record_bytes,
+        )
+        .map_err(|_| AdministrativeCheckpointSourceRefusalV1::RecordLimit)?;
+        Ok(Self {
+            fragment,
             max_record_bytes,
         })
     }
 
     pub const fn source_engine_revision(&self) -> u64 {
-        self.source_engine_revision
+        self.fragment.source_engine_revision()
     }
 
     pub const fn policy_revision(&self) -> RetentionPolicyRevisionV1 {
-        self.policy_revision
+        self.fragment.policy_revision()
     }
 
-    pub const fn record_id(&self) -> RetentionRecordIdV1 {
-        self.record.id
+    pub fn record_id(&self) -> RetentionRecordIdV1 {
+        self.fragment.records()[0].id
     }
 
     pub fn checkpoint_byte_length(&self) -> usize {
-        self.record.payload().len()
+        self.fragment.records()[0].payload().len()
     }
 
     /// Materializes this exact recovery image under the administrative profile.
@@ -108,25 +112,12 @@ impl AdministrativeCheckpointSourceV1 {
     where
         D: FnMut(&[u8]) -> ContentDigestV1,
     {
-        let included_classes =
-            RECORD_CLASSES_V1.map(|class| matches!(class, RecordClassV1::OperationalCopies));
-        let frontiers = RECORD_CLASSES_V1.map(|class| {
-            if class == RecordClassV1::OperationalCopies {
-                self.frontier
-            } else {
-                RetentionFrontierV1::new(class, 0, None).expect("empty class frontier is canonical")
-            }
-        });
-        materialize_export_v1(
+        materialize_export_sources_v1(
             request,
             ExportProfileV1::Administrative,
             scope,
             ContentDigestProfileV1::Sha256,
-            self.source_engine_revision,
-            self.policy_revision,
-            included_classes,
-            frontiers,
-            std::slice::from_ref(&self.record),
+            std::slice::from_ref(&self.fragment),
             1,
             self.max_record_bytes,
             max_chunks,
@@ -140,10 +131,16 @@ impl fmt::Debug for AdministrativeCheckpointSourceV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("AdministrativeCheckpointSourceV1")
-            .field("source_engine_revision", &self.source_engine_revision)
-            .field("policy_revision", &self.policy_revision)
-            .field("record_id", &self.record.id)
-            .field("checkpoint_byte_length", &self.record.payload().len())
+            .field(
+                "source_engine_revision",
+                &self.fragment.source_engine_revision(),
+            )
+            .field("policy_revision", &self.fragment.policy_revision())
+            .field("record_id", &self.fragment.records()[0].id)
+            .field(
+                "checkpoint_byte_length",
+                &self.fragment.records()[0].payload().len(),
+            )
             .field("checkpoint", &"<redacted>")
             .finish()
     }

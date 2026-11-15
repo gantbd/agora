@@ -781,6 +781,9 @@ impl ExportRegistryV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExportMaterializationRefusalV1 {
     InvalidLimit,
+    NonCanonicalSources,
+    SourceRevisionMismatch,
+    PolicyRevisionMismatch,
     NonCanonicalRecords,
     ExcludedRecordClass,
     FrontierMismatch,
@@ -792,6 +795,183 @@ pub enum ExportMaterializationRefusalV1 {
 
 const EXPORT_CHUNK_DOMAIN_V1: &[u8; 8] = b"AGEXCH1\0";
 const EXPORT_MANIFEST_DOMAIN_V1: &[u8; 8] = b"AGEXMF1\0";
+
+/// One owner-native record-class contribution to an exact export.
+///
+/// A fragment cannot relabel records from another class. Multiple owners may
+/// compose fragments only when they bind the same engine and policy revision;
+/// the composition law below also rejects duplicate class ownership.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ExportSourceFragmentV1 {
+    source_engine_revision: u64,
+    policy_revision: RetentionPolicyRevisionV1,
+    class: RecordClassV1,
+    frontier: RetentionFrontierV1,
+    records: Vec<ExportRecordV1>,
+}
+
+impl ExportSourceFragmentV1 {
+    pub fn new(
+        source_engine_revision: u64,
+        policy_revision: RetentionPolicyRevisionV1,
+        class: RecordClassV1,
+        frontier: RetentionFrontierV1,
+        records: Vec<ExportRecordV1>,
+        max_records: usize,
+        max_record_bytes: usize,
+    ) -> Result<Self, ExportMaterializationRefusalV1> {
+        if max_records == 0
+            || max_record_bytes == 0
+            || records.is_empty()
+            || records.len() > max_records
+        {
+            return Err(ExportMaterializationRefusalV1::InvalidLimit);
+        }
+        if records.windows(2).any(|pair| pair[0].id >= pair[1].id)
+            || records.iter().any(|record| record.id.class != class)
+        {
+            return Err(ExportMaterializationRefusalV1::NonCanonicalRecords);
+        }
+        if records
+            .iter()
+            .any(|record| record.payload.is_empty() || record.payload.len() > max_record_bytes)
+        {
+            return Err(ExportMaterializationRefusalV1::OversizedRecord);
+        }
+        if frontier.class != class
+            || records.first().map(|record| record.id.ordinal) != frontier.oldest_retained
+            || records
+                .iter()
+                .any(|record| record.id.ordinal <= frontier.discarded_through)
+        {
+            return Err(ExportMaterializationRefusalV1::FrontierMismatch);
+        }
+        Ok(Self {
+            source_engine_revision,
+            policy_revision,
+            class,
+            frontier,
+            records,
+        })
+    }
+
+    pub const fn source_engine_revision(&self) -> u64 {
+        self.source_engine_revision
+    }
+
+    pub const fn policy_revision(&self) -> RetentionPolicyRevisionV1 {
+        self.policy_revision
+    }
+
+    pub const fn class(&self) -> RecordClassV1 {
+        self.class
+    }
+
+    pub const fn frontier(&self) -> RetentionFrontierV1 {
+        self.frontier
+    }
+
+    pub fn records(&self) -> &[ExportRecordV1] {
+        &self.records
+    }
+}
+
+impl fmt::Debug for ExportSourceFragmentV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExportSourceFragmentV1")
+            .field("source_engine_revision", &self.source_engine_revision)
+            .field("policy_revision", &self.policy_revision)
+            .field("class", &self.class)
+            .field("frontier", &self.frontier)
+            .field("record_count", &self.records.len())
+            .field("records", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Composes canonically ordered, nonoverlapping owner-native fragments.
+///
+/// The caller supplies the digest implementation. No source can silently
+/// replace another class, cross an engine/policy revision, or reinterpret an
+/// enclosing checkpoint as a set of narrower records.
+#[allow(clippy::too_many_arguments)]
+pub fn materialize_export_sources_v1<D>(
+    request: ExportRequestIdV1,
+    profile: ExportProfileV1,
+    scope: ExportScopeBindingV1,
+    digest_profile: ContentDigestProfileV1,
+    sources: &[ExportSourceFragmentV1],
+    max_records: usize,
+    max_record_bytes: usize,
+    max_chunks: usize,
+    max_chunk_bytes: usize,
+    digest: D,
+) -> Result<ExportMaterializationV1, ExportMaterializationRefusalV1>
+where
+    D: FnMut(&[u8]) -> ContentDigestV1,
+{
+    let Some(first) = sources.first() else {
+        return Err(ExportMaterializationRefusalV1::InvalidLimit);
+    };
+    if sources.len() > RECORD_CLASSES_V1.len()
+        || sources
+            .windows(2)
+            .any(|pair| pair[0].class >= pair[1].class)
+    {
+        return Err(ExportMaterializationRefusalV1::NonCanonicalSources);
+    }
+    if sources
+        .iter()
+        .any(|source| source.source_engine_revision != first.source_engine_revision)
+    {
+        return Err(ExportMaterializationRefusalV1::SourceRevisionMismatch);
+    }
+    if sources
+        .iter()
+        .any(|source| source.policy_revision != first.policy_revision)
+    {
+        return Err(ExportMaterializationRefusalV1::PolicyRevisionMismatch);
+    }
+
+    let mut included_classes = [false; 6];
+    let mut frontiers = RECORD_CLASSES_V1.map(|class| {
+        RetentionFrontierV1::new(class, 0, None).expect("empty class frontier is canonical")
+    });
+    let record_count = sources.iter().try_fold(0_usize, |count, source| {
+        count.checked_add(source.records.len())
+    });
+    let Some(record_count) = record_count else {
+        return Err(ExportMaterializationRefusalV1::InvalidLimit);
+    };
+    let mut records = Vec::new();
+    records
+        .try_reserve_exact(record_count)
+        .map_err(|_| ExportMaterializationRefusalV1::InvalidLimit)?;
+    for source in sources {
+        let index = source.class as usize - 1;
+        included_classes[index] = true;
+        frontiers[index] = source.frontier;
+        records.extend(source.records.iter().cloned());
+    }
+
+    materialize_export_v1(
+        request,
+        profile,
+        scope,
+        digest_profile,
+        first.source_engine_revision,
+        first.policy_revision,
+        included_classes,
+        frontiers,
+        &records,
+        max_records,
+        max_record_bytes,
+        max_chunks,
+        max_chunk_bytes,
+        digest,
+    )
+}
 
 /// Materializes one complete, bounded export inventory into canonical chunks.
 ///

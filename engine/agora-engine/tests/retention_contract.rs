@@ -2,12 +2,13 @@ use agora_engine::retention::{
     ContentDigestProfileV1, ContentDigestV1, ExportChunkV1, ExportManifestV1,
     ExportMaterializationApplyV1, ExportMaterializationRefusalV1, ExportProfileV1, ExportRecordV1,
     ExportRegistryRefusalV1, ExportRegistryV1, ExportRequestIdV1, ExportScopeBindingV1,
-    RECORD_CLASSES_V1, ReceiptRetirementApplyV1, ReceiptRetirementRefusalV1,
-    ReceiptRetirementRegistryV1, ReclamationEvidenceV1, ReclamationStageV1, RecordClassV1,
-    RetentionBoundV1, RetentionFrontierV1, RetentionIdentityBindingV1, RetentionPlanRefusalV1,
-    RetentionPolicyRevisionV1, RetentionPolicyV1, RetentionRecordIdV1, RetentionRecordV1,
-    RetentionScopeBindingV1, RetentionTombstoneReasonV1, RetentionTombstoneV1,
-    RetentionTransitionV1, StoreGenerationIdV1, StoreReclamationPlanV1, materialize_export_v1,
+    ExportSourceFragmentV1, RECORD_CLASSES_V1, ReceiptRetirementApplyV1,
+    ReceiptRetirementRefusalV1, ReceiptRetirementRegistryV1, ReclamationEvidenceV1,
+    ReclamationStageV1, RecordClassV1, RetentionBoundV1, RetentionFrontierV1,
+    RetentionIdentityBindingV1, RetentionPlanRefusalV1, RetentionPolicyRevisionV1,
+    RetentionPolicyV1, RetentionRecordIdV1, RetentionRecordV1, RetentionScopeBindingV1,
+    RetentionTombstoneReasonV1, RetentionTombstoneV1, RetentionTransitionV1, StoreGenerationIdV1,
+    StoreReclamationPlanV1, materialize_export_sources_v1, materialize_export_v1,
     plan_retention_v1,
 };
 
@@ -245,6 +246,116 @@ fn export_materialization_is_bounded_canonical_and_frontier_exact() {
         Some(&first)
     );
     assert_eq!(recovered.len(), 1);
+}
+
+#[test]
+fn owner_native_export_sources_compose_only_at_one_exact_revision() {
+    let record = |class, ordinal, payload: &[u8]| {
+        ExportRecordV1::new(
+            RetentionRecordIdV1::new(class, ordinal).unwrap(),
+            payload.to_vec(),
+            8,
+        )
+        .unwrap()
+    };
+    let fragment = |source_engine_revision, policy_revision, class, ordinal, payload: &[u8]| {
+        ExportSourceFragmentV1::new(
+            source_engine_revision,
+            policy_revision,
+            class,
+            RetentionFrontierV1::new(class, ordinal - 1, Some(ordinal)).unwrap(),
+            vec![record(class, ordinal, payload)],
+            2,
+            8,
+        )
+        .unwrap()
+    };
+    let room = fragment(9, revision(), RecordClassV1::RoomProjection, 3, b"room");
+    let changes = fragment(
+        9,
+        revision(),
+        RecordClassV1::AuthoritativeChanges,
+        5,
+        b"change",
+    );
+    let digest = |bytes: &[u8]| {
+        let value = bytes
+            .iter()
+            .fold(0_u8, |state, byte| state.wrapping_add(*byte));
+        ContentDigestV1::new([value; 32])
+    };
+    let compose = |sources: &[ExportSourceFragmentV1]| {
+        materialize_export_sources_v1(
+            ExportRequestIdV1::new([11; 16]).unwrap(),
+            ExportProfileV1::Administrative,
+            ExportScopeBindingV1::new([12; 32]).unwrap(),
+            ContentDigestProfileV1::Sha256,
+            sources,
+            4,
+            8,
+            2,
+            64,
+            digest,
+        )
+    };
+
+    let materialization = compose(&[room.clone(), changes.clone()]).unwrap();
+    assert_eq!(materialization.manifest.source_engine_revision, 9);
+    assert_eq!(materialization.manifest.policy_revision, revision());
+    assert_eq!(
+        materialization.manifest.included_classes,
+        [true, true, false, false, false, false]
+    );
+    assert_eq!(materialization.manifest.frontiers[0], room.frontier());
+    assert_eq!(materialization.manifest.frontiers[1], changes.frontier());
+    assert!(!format!("{room:?}").contains("room"));
+
+    assert_eq!(
+        compose(&[changes.clone(), room.clone()]),
+        Err(ExportMaterializationRefusalV1::NonCanonicalSources)
+    );
+    assert_eq!(
+        compose(&[room.clone(), room.clone()]),
+        Err(ExportMaterializationRefusalV1::NonCanonicalSources)
+    );
+    let wrong_source = fragment(
+        10,
+        revision(),
+        RecordClassV1::AuthoritativeChanges,
+        5,
+        b"change",
+    );
+    assert_eq!(
+        compose(&[room.clone(), wrong_source]),
+        Err(ExportMaterializationRefusalV1::SourceRevisionMismatch)
+    );
+    let wrong_policy = fragment(
+        9,
+        RetentionPolicyRevisionV1::new(5).unwrap(),
+        RecordClassV1::AuthoritativeChanges,
+        5,
+        b"change",
+    );
+    assert_eq!(
+        compose(&[room.clone(), wrong_policy]),
+        Err(ExportMaterializationRefusalV1::PolicyRevisionMismatch)
+    );
+    assert_eq!(
+        ExportSourceFragmentV1::new(
+            9,
+            revision(),
+            RecordClassV1::RequestReceipts,
+            RetentionFrontierV1::new(RecordClassV1::RequestReceipts, 2, Some(3)).unwrap(),
+            vec![record(
+                RecordClassV1::PrivateParticipantState,
+                3,
+                b"private"
+            )],
+            1,
+            8,
+        ),
+        Err(ExportMaterializationRefusalV1::NonCanonicalRecords)
+    );
 }
 
 #[test]

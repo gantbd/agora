@@ -592,6 +592,14 @@ checkpoint failure, indeterminate commit, weak durability evidence, and invalid
 receipts remain outcome-unknown; this may force conservative reconciliation but
 does not permit an unsafe fresh retry.
 
+Multi-owner export composition introduces class substitution, duplicate source
+ownership, and mixed-revision manifests. R107 requires each source fragment to
+carry exactly one native record class and exact frontier, then rejects
+noncanonical class order, duplicate classes, and any engine- or policy-revision
+mismatch before digesting bytes. A complete Service checkpoint remains one
+`OperationalCopies` record; composition never authorizes callers to relabel its
+internals as room, receipt, private, change, or federation records.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A

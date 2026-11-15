@@ -208,6 +208,16 @@ visibility authorization and concrete provider composition remain open. The
 trusted embedded SDK names the effect-free retention-authority and
 export-custody contracts; the participant protocol and remote-client SDK remain
 deliberately free of administrative export operations.
+Owner-native source composition is now a closed engine law rather than an
+application convention. `ExportSourceFragmentV1` binds exactly one class, its
+records and frontier, and one engine/policy revision. Composition requires
+canonical class order, refuses duplicate ownership and cross-revision input,
+and derives the manifest class set and empty frontiers rather than trusting the
+caller to restate them. The existing administrative operational-copy source
+uses this path. This substrate permits future Engine, Service, federation, and
+operator-owned projections to compose without importing one another's storage
+or relabeling a complete checkpoint; it does not itself create the remaining
+class-specific projections.
 An engine-owned bounded export registry now gives the materialized result exact
 request-identity semantics: equal retry replays the complete manifest and chunk
 bytes, changed materialization conflicts, saturation refuses before mutation,

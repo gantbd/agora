@@ -870,7 +870,10 @@
   retention-policy revision, profile, ordered chunks, digests, frontiers, and
   explicit gaps into canonical replayable manifests; it MUST NOT widen
   visibility, mutate read or delivery state, or reconstruct absent records from
-  an unauthorized copy. Export retirement MUST revalidate the current source
+  an unauthorized copy. Independently owned record-class sources MUST compose
+  only at one exact engine and policy revision, MUST be canonically ordered and
+  nonoverlapping by class, and MUST NOT relabel an enclosing checkpoint as
+  narrower records. Export retirement MUST revalidate the current source
   and policy plus fresh administrative authority, atomically replace one exact
   live custody copy with a separately bounded non-reuse tombstone, replay an
   identical request, conflict on changed identity, and survive custody restart;
