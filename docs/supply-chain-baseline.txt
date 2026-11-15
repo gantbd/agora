@@ -6,6 +6,7 @@ component|agora-client|0.1.0
 component|agora-durable|0.1.0
 component|agora-delivery-projection-port|0.1.0
 component|agora-engine|0.3.0
+component|agora-export-service|0.1.0
 component|agora-federated-publication-port|0.1.0
 component|agora-host|0.1.0
 component|agora-interaction-port|0.1.0

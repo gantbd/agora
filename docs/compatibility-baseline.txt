@@ -4,6 +4,7 @@ package|engine/agora-engine/Cargo.toml|agora-engine|0.3.0
 package|adapters/agora-aegis-verifier/Cargo.toml|agora-aegis-verifier|0.1.0
 package|client/agora-client/Cargo.toml|agora-client|0.1.0
 package|service/agora-durable/Cargo.toml|agora-durable|0.1.0
+package|service/agora-export-service/Cargo.toml|agora-export-service|0.1.0
 package|ports/agora-delivery-projection-port/Cargo.toml|agora-delivery-projection-port|0.1.0
 package|ports/agora-federated-publication-port/Cargo.toml|agora-federated-publication-port|0.1.0
 package|ports/agora-interaction-port/Cargo.toml|agora-interaction-port|0.1.0

@@ -208,15 +208,18 @@ lengths, framing domains, every chunk digest, and the manifest digest through
 the same named digest implementation. A structurally valid payload mutation is
 therefore a digest refusal rather than silently recovered export state.
 
-Export custody will be a separate service owner, not a field in the
+Export custody is a separate service owner, not a field in the
 conversation `ServiceV2` checkpoint. An export is a newly retained copy with a
 different access and retention lifecycle; folding it into the authoritative
 room checkpoint would make conversation recovery retain export payloads and
-would erase that distinction. The future export service may reuse the engine
-registry and materialization recovery laws, but must have its own capacity,
-checkpoint scope, durable store key, authorization composition, and retirement
-profile. The participant protocol remains free of administrative export
-commands.
+would erase that distinction. The adopted `agora-export-service` reuses the
+engine registry and materialization recovery laws with its own capacity and
+checkpoint scope. It binds admission to exact current engine/policy revisions,
+persists canonical request-ordered materializations behind a whole-checkpoint
+digest, and recovers only after revalidating nested chunk and manifest digests.
+Durable publication, a distinct store key, source projection, authorization,
+qualified SHA-256 composition, and export retirement remain open. The
+participant protocol remains free of administrative export commands.
 
 The current `agora-storage-directory` adapter is not a reclamation
 implementation. Its v1 compare-exchange renames a new record over the sole

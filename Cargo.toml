@@ -6,6 +6,7 @@ members = [
     "protocol/agora-wire",
     "client/agora-client",
     "service/agora-service",
+    "service/agora-export-service",
     "service/agora-durable",
     "host/agora-host",
     "ports/agora-search-port",

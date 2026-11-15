@@ -71,6 +71,15 @@ if ! printf '%s\n' "$service_tree" | rg -q 'agora-search-port' \
   exit 1
 fi
 
+export_service_tree=$(cargo tree -p agora-export-service --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$export_service_tree" | wc -l | tr -d ' ') != 2 ]] \
+  || ! printf '%s\n' "$export_service_tree" | rg -q 'agora-engine' \
+  || printf '%s\n' "$export_service_tree" | rg -q 'agora-(service|host|protocol|wire|client|durable)'; then
+  printf '%s\n' "$export_service_tree" >&2
+  echo 'Agora export custody escaped its engine-value-only closure' >&2
+  exit 1
+fi
+
 host_tree=$(cargo tree -p agora-host --edges normal --depth 1 --locked --offline)
 if ! printf '%s\n' "$host_tree" | rg -q 'agora-retention-authority-port' \
   || printf '%s\n' "$host_tree" | rg 'agora-client|aegis|chronos|moira|daimon|hermes'; then
@@ -231,4 +240,4 @@ for sdk_manifest in sdk/embedded/Cargo.toml sdk/client/Cargo.toml; do
   fi
 done
 
-echo 'Agora dependency direction closed; search, delivery projection, federated publication, interaction, retention authority, and scheduled publication remain port-only and effects stay in qualified adapters'
+echo 'Agora dependency direction closed; export custody remains separate, ports remain effect-free, and effects stay in qualified adapters'
