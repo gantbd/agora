@@ -819,6 +819,23 @@
   session and MUST NOT imply replay, authority, or semantic success. Upgrade
   compatibility MUST use closed range intersection and exact profile selection
   without reinterpreting earlier bytes.
+- **R106 — native single-home federation:** Agora-to-Agora federation MUST be a
+  separately owned composition over the authority-free remote transport. Every
+  peer session MUST bind two verified stable server identities, current trust,
+  two nonzero incarnations, the transport exporter, and one exactly negotiated
+  closed protocol profile. Certificate identity alone MUST NOT grant federation
+  authority. Participant, room, message, and event identities MUST be
+  structured home-scoped values. Each room MUST have exactly one authoritative
+  home; only that home may evaluate current admission, allocate ordered room
+  events, or emit authoritative replication. The initial profile MUST accept
+  only direct home-to-subscriber streams and MUST NOT re-export imported events.
+  Replica journals MUST enforce exact next sequence, idempotent equal replay,
+  changed-event conflict, explicit retained-history gaps, and verified bounded
+  snapshot repair. Remote mutations MUST bind an authenticated participant,
+  preserve human/agent symmetry, revalidate current home authority, retain
+  bounded exact receipts, and distinguish definitely-not-sent from outcome-
+  unknown. Reconnect and peer acknowledgement MUST NOT imply mutation success,
+  participant read state, room authority transfer, or gap closure.
 
 ## Explicitly open
 
@@ -839,6 +856,9 @@ binary-artifact evidence, and full-profile qualification remain open; the fixed
 reconnect/clean-drain soak and reproducible self-contained source candidate are
 commit-pinned, with ordinary/soak/source evidence recorded on
 `aarch64-apple-darwin`; a multi-platform matrix remains open.
+R106 has an accepted native single-home federation architecture; its separately
+owned protocol, trust composition, replica journal, remote-admission port, and
+qualification evidence remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part

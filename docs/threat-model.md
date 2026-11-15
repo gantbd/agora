@@ -535,6 +535,25 @@ before cursor advancement, and pre-offer revocation checks. Hermes identifiers
 grant no authority and never become Agora read positions. Providers may still
 duplicate or retain notifications; revocation is not remote erasure.
 
+Native federation introduces peer substitution, stale trust, home-identity
+confusion, non-home event forgery, replay divergence, hidden gaps, snapshot
+rollback, retry duplication, acknowledgement/read conflation, partition writes,
+and relay loops. R106 requires a verifier-bound stable server identity and trust
+epoch on every fresh exporter/incarnation session; certificates alone grant no
+federation authority. Structured home-scoped identities and an exactly one-home
+room rule prevent display names, DNS, or replica placement from becoming
+authority.
+
+The initial topology accepts authoritative events only directly from the room
+home and never re-exports imported events. Replica journals require exact next
+sequence, equal-byte replay, explicit gaps, and verified bounded snapshot
+replacement; they fence changed bytes instead of merging histories. Remote
+admission revalidates current home authority under an authenticated participant
+binding and retains exact receipts. Unknown transport outcomes reconcile the
+same request or authoritative observation. Peer acknowledgement proves only a
+replication frontier, never participant attention, mutation success, global
+delivery, erasure, or transfer of room ownership.
+
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;
 the remote-client facade cannot reach engine, service, or host internals. A
