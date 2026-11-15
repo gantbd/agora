@@ -181,6 +181,18 @@ not ready for a network service or crates.io release.
   10,000 deterministic soak cycles, and 1,000,000 fixed-seed cases on each of
   the three fuzz targets on Darwin 25.6.0 arm64 / macOS 26.6.2 with unchanged
   tracked bytes afterward;
+- commit-pinned the bounded local R106 native single-home federation
+  composition at federation source revision
+  `e9abe776f79c390240bc3fae5353232e83a5e713`, with passing evidence recorded by
+  `381466a263ba7cbd325321c2c2cb63bd0599c182`. Its gate first verifies clean,
+  exact sibling revisions Keystone
+  `405230090796cf0dae1889a5c799872f61acd8a9`, Agora
+  `84681e2eaacb708dd24c9702d54582216d0c05d2`, and remote transport
+  `b271dfb703ac480c5496398a40450adb4dcd2a9a`, then passes the ordinary
+  federation gate, durable home restart, four real mutual-TLS loopback
+  sessions, and the live Agora current-policy/durable-publication path. This
+  evidence does not qualify remote deployment, multi-host availability,
+  multi-writer authority, or a distributable artifact;
 - commit-pinned the integrated R107 retention/export slice at revision
   `1b48be4ee16d60c37aa74d18b5b8fce72fec6b0a` on Darwin 25.6.0 arm64 / macOS
   26.6.2. The campaign passed the ordinary gate, every release-mode workspace

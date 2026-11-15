@@ -1,6 +1,6 @@
 # ADR: native Agora-to-Agora federation
 
-Status: accepted; contract foundation open
+Status: accepted; bounded single-home composition qualified
 
 Date: 2026-11-14
 
@@ -166,6 +166,19 @@ deletion, retention, and trust removal do not claim that the home erased data.
 - acknowledgement/read-state separation and content-safe diagnostics;
 - dependency, package, supply, compatibility, corruption, soak, platform, and
   produced-artifact qualification.
+
+The bounded local composition is commit-pinned and reproducible. Keystone
+revision `405230090796cf0dae1889a5c799872f61acd8a9`, Agora revision
+`84681e2eaacb708dd24c9702d54582216d0c05d2`, and remote-transport revision
+`b271dfb703ac480c5496398a40450adb4dcd2a9a` are the exact sibling inputs to
+`agora-federation` source revision
+`e9abe776f79c390240bc3fae5353232e83a5e713`; revision
+`381466a263ba7cbd325321c2c2cb63bd0599c182` records its passing `make check`.
+That gate verifies the pins before compilation and covers durable home restart,
+four real mutual-TLS loopback sessions, and the live Agora current-policy and
+durable-publication path. This evidence qualifies the local single-home
+composition only; it does not establish remote deployment, multi-host
+availability, or multi-writer authority.
 
 ## Nonclaims
 
