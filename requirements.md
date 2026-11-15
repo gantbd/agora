@@ -830,9 +830,10 @@ Chronos atomic-admission, concrete delivery-endpoint, and additional schema-
 adapter profiles are tracked explicitly in traceability.
 R105's canonical hello, separate TLS transport substrate, bounded concurrent
 listener/drain owner, and authenticated request-gated Host-routing composition
-are implemented and commit-pinned; a concrete credential-authenticator profile,
-reconnect/upgrade campaigns, platform and produced-artifact evidence, and full-
-profile qualification remain open.
+are implemented and commit-pinned, including local overload, fresh reconnect,
+and compatible/disjoint upgrade cuts; a concrete credential-authenticator
+profile, broader disconnect/slow-writer schedules, platform and produced-
+artifact evidence, and full-profile qualification remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part
