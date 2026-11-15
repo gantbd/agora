@@ -84,23 +84,25 @@ incarnation rotation, and refusal of unsupported intersections.
 
 Agora Wire now provides the canonical closed-range post-TLS client/server hello,
 two frozen fixtures, fail-closed negotiation tests, and client-SDK reachability.
-The separate `agora-remote-transport` source revision `58ef35a` provides a
+The separate `agora-remote-transport` source revision `ff4d038` provides a
 TLS-1.3-only rustls profile with exact ALPN, disabled tickets/resumption/early
 data, configured server roots, optional required client certificates, exporter
-agreement, bounded framing, deterministic capacity/drain accounting, graceful
-close notification, real-loopback positive and negative tests, and exact
-compatibility/supply/package gates. Revision `b9db6c0` pins its passing gate.
+agreement, bounded framing, actual concurrent listener ownership, request
+permits, clean and deadline-forced drain, graceful close notification, real-
+loopback positive and negative tests, and exact compatibility/supply/package
+gates. Revision `44512b3` pins its passing gate.
 
-The separately owned `agora-remote-daemon` source revision `9fd83ea` composes
-one negotiated connection with a bounded opaque credential frame, TLS exporter
-and certificate provenance, an injected authenticator, Aegis context, and Host
-V2. It closes the Host session on EOF, refusal, transport failure, or request-
-budget exhaustion and routes human and agent participants through the identical
-path. Revision `42a93c3` pins the passing real TLS/mTLS loopback gate.
+The separately owned `agora-remote-daemon` source revision `5b32b4b` composes
+negotiated connections with bounded opaque credential frames, TLS exporters and
+certificate provenance, an injected authenticator, Aegis contexts, and a shared
+Host V2 owner. Every Host open/request and reply write holds one transport
+permit, while network I/O never holds the Host lock. It closes sessions on every
+exit and forces overlapping human and agent participants through the identical
+path. Revision `b91d23e` pins the passing real TLS/mTLS gate.
 
-A bounded concurrent listener owner, concrete credential authenticator, slow-
-peer and reconnect campaigns, upgrade matrix, platform soak, produced artifacts,
-and commit-pinned full-profile qualification remain open.
+A concrete credential authenticator, reconnect and upgrade campaigns, broader
+slow-peer schedules, platform soak, produced artifacts, and commit-pinned full-
+profile qualification remain open.
 
 ## Nonclaims
 
