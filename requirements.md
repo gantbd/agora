@@ -862,10 +862,13 @@ single-home replica-journal foundation, including bounded authoritative snapshot
 gap repair with rollback fencing and honest unavailable-history classification.
 Its canonical fixed-width hello and session constructor bind externally verified
 server identities/trust epochs, both incarnations, a fresh exporter, exact
-profiles, and bounded-minimum limits. Canonical event/snapshot/admission wire,
-trust-provider composition, durable snapshot recovery, remote admission, durable
-storage, transport composition,
-and integrated qualification remain open.
+profiles, and bounded-minimum limits. Its event, snapshot, and acknowledgement
+frames are distinct, frozen, bounded,
+and fail closed on wrong kind, zero identity, invalid event sequence,
+noncanonical length, truncation, trailing bytes, or negotiated-limit overflow.
+Canonical admission wire, trust-provider composition, durable snapshot recovery,
+remote admission, durable storage, transport composition, and integrated
+qualification remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part
