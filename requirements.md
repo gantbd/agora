@@ -856,9 +856,11 @@ binary-artifact evidence, and full-profile qualification remain open; the fixed
 reconnect/clean-drain soak and reproducible self-contained source candidate are
 commit-pinned, with ordinary/soak/source evidence recorded on
 `aarch64-apple-darwin`; a multi-platform matrix remains open.
-R106 has an accepted native single-home federation architecture; its separately
-owned protocol, trust composition, replica journal, remote-admission port, and
-qualification evidence remain open.
+R106 has an accepted native single-home federation architecture plus a
+commit-pinned zero-dependency identity/negotiation protocol and bounded
+single-home replica-journal foundation. Canonical wire, session trust binding,
+snapshot recovery, remote admission, durable storage, transport composition,
+and integrated qualification remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part
