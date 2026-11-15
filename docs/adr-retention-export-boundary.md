@@ -249,6 +249,16 @@ reopens the tombstone, replays without another store offer, and refuses request
 reuse. This qualifies custody persistence and logical retirement only. The
 single-head directory mechanism remains ineligible for physical reclamation
 evidence.
+The same application now also exposes a separately typed generational custody
+composition. Integrated evidence commits the initial empty custody checkpoint,
+one exact export, and its logical-retirement tombstone as three immutable
+generations; drops every owner; reopens and digest-validates revision 2; then
+prepares and journals a bounded plan naming revisions 0 and 1 before unlink.
+Both returned facts are exactly `GenerationUnlinked`, exact replay performs no
+second unlink, and a later fresh owner observes only the validated successor.
+This composes qualified custody and physical reclamation ordering without
+turning logical retirement into reclamation authority or unlink evidence into
+secure erasure.
 The effect-free `agora-export-custody-port` now separates Host from that durable
 implementation. `HostV2` revalidates the administrative session, checks the
 prepared manifest against the current engine and installed-policy revisions,
