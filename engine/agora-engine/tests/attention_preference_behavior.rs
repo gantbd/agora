@@ -197,7 +197,7 @@ fn preference_checkpoint_is_canonical_and_survives_history_eviction() {
     );
 
     let checkpoint = engine.prepare_checkpoint(65_536).unwrap();
-    assert_eq!(checkpoint.bytes()[8], 24);
+    assert_eq!(checkpoint.bytes()[8], 151);
     let recovered = Engine::recover_checkpoint(
         checkpoint.bytes(),
         RecoveryLimits {

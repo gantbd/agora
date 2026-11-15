@@ -241,7 +241,7 @@ fn private_save_checkpoint_is_canonical_and_preserves_evicted_identity() {
         .unwrap();
     speak(&mut engine, 2);
     let checkpoint = engine.prepare_checkpoint(1 << 20).unwrap();
-    assert_eq!(checkpoint.bytes()[8], 28);
+    assert_eq!(checkpoint.bytes()[8], 151);
     let recovered = Engine::recover_checkpoint(
         checkpoint.bytes(),
         RecoveryLimits {

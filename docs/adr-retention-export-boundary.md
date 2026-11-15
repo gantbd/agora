@@ -215,6 +215,19 @@ re-encoding. An empty engine has a frozen generation, and equal public poll
 aggregates remain byte-identical when only the private ballot owner differs.
 This administrative source grants no room visibility or custody authority.
 
+The Engine now also owns a persisted monotone private-state revision, separate
+from the room/domain revision. Effective read-position, attention, private-save,
+poll-ballot, message-report, and report-review mutations advance it exactly
+once; idempotent observations, invalid changes, and ordinary room mutations do
+not. Poll eviction advances it only when private ballots are actually removed.
+Canonical Engine profile 151 stores the revision and its explicit exhaustion
+fence while preserving profiles 20 through 150 byte-for-byte. Legacy recovery
+has no private source identity until the next effective private mutation.
+Reaching `u64::MAX` never wraps: the next mutation permanently fences an exact
+private-state source while remaining available for cleanup and ordinary use.
+This identity domain is prerequisite substrate, not itself an export or an
+authorization decision.
+
 Service V2 also owns the current installed policy metadata. Installation is
 engine-revision-bound, monotonically policy-revisioned, exact-replay-safe, and
 conflict detecting. Host revalidation and a fresh policy-authority decision

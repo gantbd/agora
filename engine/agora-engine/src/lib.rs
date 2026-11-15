@@ -3380,6 +3380,8 @@ pub struct Engine {
     private_saves: BTreeMap<(ParticipantId, RoomId, MessageId), u64>,
     message_reports: BTreeMap<MessageReportIdV1, MessageReportRecordV1>,
     next_message_report_id: u64,
+    private_state_revision: Option<u64>,
+    private_state_revision_exhausted: bool,
     admission_time_namespace: Arc<()>,
     admission_time_floor_ms: Option<u64>,
     admission_time_sequence: u64,
@@ -3414,6 +3416,8 @@ impl Engine {
             private_saves: BTreeMap::new(),
             message_reports: BTreeMap::new(),
             next_message_report_id: 1,
+            private_state_revision: None,
+            private_state_revision_exhausted: false,
             admission_time_namespace: Arc::new(()),
             admission_time_floor_ms: None,
             admission_time_sequence: 0,
@@ -3669,6 +3673,7 @@ impl Engine {
             observed_revision,
         };
         self.read_positions.insert(key, position.clone());
+        self.note_private_state_mutation();
         Ok(position)
     }
 
@@ -3703,6 +3708,12 @@ impl Engine {
         }
         let key = (actor.clone(), room_id.clone(), scope);
         self.validate_attention_actor(actor, room_id)?;
+        let changed = self
+            .attention_preferences
+            .get(&key)
+            .copied()
+            .unwrap_or_default()
+            != preference;
         if preference.is_default() {
             self.attention_preferences.remove(&key);
         } else {
@@ -3713,6 +3724,9 @@ impl Engine {
                 }
             }
             self.attention_preferences.insert(key, preference);
+        }
+        if changed {
+            self.note_private_state_mutation();
         }
         Ok(preference)
     }
@@ -3945,6 +3959,7 @@ impl Engine {
                 .ok_or(PrivateSaveRefusalV1::UnknownMessage)?;
             let availability = stable_reference_availability(room, message_id);
             self.private_saves.insert(key, sequence);
+            self.note_private_state_mutation();
             Ok(SavedReferenceV1 {
                 message_id,
                 original_sequence: sequence,
@@ -3954,6 +3969,7 @@ impl Engine {
             let original_sequence = current.expect("change validation established saved relation");
             let availability = stable_reference_availability(room, message_id);
             self.private_saves.remove(&key);
+            self.note_private_state_mutation();
             Ok(SavedReferenceV1 {
                 message_id,
                 original_sequence,
@@ -4057,6 +4073,7 @@ impl Engine {
         };
         self.message_reports.insert(report_id, record.clone());
         self.next_message_report_id = next;
+        self.note_private_state_mutation();
         Ok(self.message_report_view(&record))
     }
 
@@ -4124,6 +4141,7 @@ impl Engine {
         report.review_reason = Some(review_reason);
         report.review_causation = Some(review_causation);
         let record = report.clone();
+        self.note_private_state_mutation();
         Ok(self.message_report_view(&record))
     }
 
@@ -5284,6 +5302,28 @@ impl Engine {
 
     pub fn revision(&self) -> Revision {
         self.revision
+    }
+
+    /// Monotone identity of the complete participant-private state generation.
+    /// Legacy checkpoints have no identity until their next private mutation.
+    pub fn private_state_source_revision(&self) -> Option<u64> {
+        self.private_state_revision
+    }
+
+    /// Whether private state changed after its source identity reached `u64::MAX`.
+    pub fn private_state_source_exhausted(&self) -> bool {
+        self.private_state_revision_exhausted
+    }
+
+    fn note_private_state_mutation(&mut self) {
+        if self.private_state_revision_exhausted {
+            return;
+        }
+        match self.private_state_revision {
+            None => self.private_state_revision = Some(1),
+            Some(u64::MAX) => self.private_state_revision_exhausted = true,
+            Some(revision) => self.private_state_revision = Some(revision + 1),
+        }
     }
 
     pub fn pending_events(&self) -> impl ExactSizeIterator<Item = &EventEnvelopeV2> {
@@ -7715,6 +7755,11 @@ impl Engine {
             None
         };
         let poll_id = PollId::allocated(room.poll_identity_incarnation, room.next_poll_identity);
+        let evicted_private_state = evicted.is_some_and(|poll_id| {
+            room.polls
+                .get(&poll_id)
+                .is_some_and(|poll| !poll.ballots.is_empty())
+        });
         let next_poll_identity = room
             .next_poll_identity
             .checked_add(1)
@@ -7748,6 +7793,9 @@ impl Engine {
         );
         room.poll_creation_order.push_back(poll_id);
         room.next_poll_identity = next_poll_identity;
+        if evicted_private_state {
+            self.note_private_state_mutation();
+        }
         Ok(OutcomeV2::PollCreated { room_id, poll_id })
     }
 
@@ -7796,6 +7844,7 @@ impl Engine {
             poll.ballots.insert(actor, replacement);
         }
         let status = poll.status();
+        self.note_private_state_mutation();
         Ok(OutcomeV2::PollBallotChanged {
             room_id,
             poll_id,

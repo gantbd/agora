@@ -205,7 +205,7 @@ fn poll_state_and_private_ballots_recover_canonically() {
         })
         .unwrap();
     let checkpoint = engine.prepare_checkpoint(4 * 1024 * 1024).unwrap();
-    assert_eq!(checkpoint.bytes()[8], 52);
+    assert_eq!(checkpoint.bytes()[8], 151);
     let recovered = Engine::recover_checkpoint(
         checkpoint.bytes(),
         RecoveryLimits {

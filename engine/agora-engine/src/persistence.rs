@@ -1988,13 +1988,34 @@ impl Engine {
             .publications
             .keys()
             .any(|key| matches!(key.identity, PublicationIdentityV2::Federated { .. }));
+        let include_private_state_identity = self.private_state_revision.is_some();
         w.raw(b"AGORACP\0")?;
         let feature_bits = u8::from(include_vellum_artifacts)
             + (u8::from(include_conversation_profiles) * 2)
             + (u8::from(include_attention_preferences) * 4)
             + (u8::from(include_private_saves) * 8)
             + (u8::from(include_shared_pins) * 16);
-        if include_message_reports || include_publication_domains {
+        if include_private_state_identity {
+            w.byte(151)?;
+            w.byte(
+                feature_bits
+                    | (u8::from(include_polls) << 5)
+                    | (u8::from(include_admission_control) << 6)
+                    | 0x80,
+            )?;
+            w.byte(u8::from(include_message_reports))?;
+            w.byte(u8::from(include_publication_domains))?;
+            w.byte(u8::from(include_scoped_federation))?;
+            w.byte(if self.private_state_revision_exhausted {
+                2
+            } else {
+                1
+            })?;
+            w.number(
+                self.private_state_revision
+                    .ok_or(CheckpointError::Invalid)?,
+            )?;
+        } else if include_message_reports || include_publication_domains {
             w.byte(if include_scoped_federation {
                 150
             } else if include_publication_domains {
@@ -2317,11 +2338,12 @@ impl Engine {
             has_message_reports,
             has_publication_domains,
             has_scoped_federation,
+            private_state_identity,
         ) = match profile {
-            20..=51 => (profile - 20, false, false, false, false, false),
-            52..=83 => (profile - 52, true, false, false, false, false),
-            84..=115 => (profile - 84, false, true, false, false, false),
-            116..=147 => (profile - 116, true, true, false, false, false),
+            20..=51 => (profile - 20, false, false, false, false, false, None),
+            52..=83 => (profile - 52, true, false, false, false, false, None),
+            84..=115 => (profile - 84, false, true, false, false, false, None),
+            116..=147 => (profile - 116, true, true, false, false, false, None),
             148 => {
                 let extended = r.byte()?;
                 if extended & 0x80 == 0 {
@@ -2334,6 +2356,7 @@ impl Engine {
                     true,
                     false,
                     false,
+                    None,
                 )
             }
             149 => {
@@ -2353,6 +2376,7 @@ impl Engine {
                     has_message_reports,
                     true,
                     false,
+                    None,
                 )
             }
             150 => {
@@ -2372,6 +2396,49 @@ impl Engine {
                     has_message_reports,
                     true,
                     true,
+                    None,
+                )
+            }
+            151 => {
+                let extended = r.byte()?;
+                if extended & 0x80 == 0 {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                let has_message_reports = match r.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::NonCanonical),
+                };
+                let has_publication_domains = match r.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::NonCanonical),
+                };
+                let has_scoped_federation = match r.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::NonCanonical),
+                };
+                if has_scoped_federation && !has_publication_domains {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                let exhausted = match r.byte()? {
+                    1 => false,
+                    2 => true,
+                    _ => return Err(CheckpointError::NonCanonical),
+                };
+                let revision = r.number()?;
+                if revision == 0 || (exhausted && revision != u64::MAX) {
+                    return Err(CheckpointError::Invalid);
+                }
+                (
+                    extended & 0x1f,
+                    extended & 0x20 != 0,
+                    extended & 0x40 != 0,
+                    has_message_reports,
+                    has_publication_domains,
+                    has_scoped_federation,
+                    Some((revision, exhausted)),
                 )
             }
             _ => return Err(CheckpointError::Profile),
@@ -2383,6 +2450,10 @@ impl Engine {
         let has_shared_pins = feature_bits & 16 != 0;
         let l = read_limits(&mut r, bounds.maximum_engine_limits)?;
         let mut e = Engine::with_limits(l);
+        if let Some((revision, exhausted)) = private_state_identity {
+            e.private_state_revision = Some(revision);
+            e.private_state_revision_exhausted = exhausted;
+        }
         e.revision = Revision(r.number()?);
         e.next_event_sequence = EventSequence(r.number()?);
         e.last_published_event = r.option()?;
@@ -2978,6 +3049,19 @@ impl Engine {
             return Err(CheckpointError::NonCanonical);
         }
         if has_admission_control != engine_has_admission_control(&e) {
+            return Err(CheckpointError::NonCanonical);
+        }
+        let actual_publication_domains = e
+            .publications
+            .keys()
+            .any(|key| key.domain != PublicationDomainV2::Legacy);
+        let actual_scoped_federation = e
+            .publications
+            .keys()
+            .any(|key| matches!(key.identity, PublicationIdentityV2::Federated { .. }));
+        if has_publication_domains != actual_publication_domains
+            || has_scoped_federation != actual_scoped_federation
+        {
             return Err(CheckpointError::NonCanonical);
         }
         Ok(e)
@@ -3742,6 +3826,8 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
     }
     if e.next_event_sequence.0 != e.revision.0
         || e.last_published_event != e.revision.0.checked_sub(1).map(EventSequence)
+        || e.private_state_revision == Some(0)
+        || (e.private_state_revision_exhausted && e.private_state_revision != Some(u64::MAX))
     {
         return Err(CheckpointError::Invalid);
     }

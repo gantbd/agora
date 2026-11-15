@@ -161,6 +161,15 @@ refusal, redacted diagnostics, private-read independence, equal bytes when only
 the ballot owner differs, and every single-bit mutation refusing or recovering
 as an exact canonical record. Authority, custody, and room visibility remain
 separate.
+Engine profile 151 now persists a separate monotone participant-private source
+revision. Effective read, attention, save, ballot, report, review, and
+ballot-bearing poll-eviction changes advance once; no-ops, refusals, and
+ordinary room changes remain stable. Profiles 20 through 150 retain their
+historical bytes and recover without an identity until the next private
+mutation. Focused evidence covers exact recovery/re-encoding, legacy migration,
+all private mutation categories, and a `u64::MAX` boundary where mutation
+continues but exact source identity becomes permanently fenced. The native
+private payload/source and its visibility composition remain separate work.
 
 ## Verification gates
 
