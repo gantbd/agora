@@ -211,7 +211,10 @@ not ready for a network service or crates.io release.
   `7fd9acfc8434fceb008656fc9d10597b5d6b0e77` additionally passes its complete
   commit-pinned gate and maps one canonical replica generation into the
   `FederationState` class; it does not qualify replica-policy application,
-  subscription removal, physical replica reclamation, or erasure;
+  subscription removal, physical replica reclamation, or erasure. Follow-up
+  source `3914dfbd0f8de0f7d711e66029918d9a808dc4c5` separately qualifies the
+  byte-inert one-current-generation application law; it does not widen those
+  remaining nonclaims;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound

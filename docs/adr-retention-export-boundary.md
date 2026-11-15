@@ -472,10 +472,14 @@ discarded-generation frontier; and refuses disabled, future-policy, malformed,
 or oversized input before producing a fragment. Revision
 `7fd9acfc8434fceb008656fc9d10597b5d6b0e77` passed that project's complete
 commit-pinned gate against Agora
-`299676e031eaafcd8cf6577735bd93bb262ff7f6`. This closes the first exact
-federation-copy source, not subscription removal, replica-policy application,
-physical replica reclamation, authoritative-home deletion, remote-copy
-destruction, or erasure.
+`299676e031eaafcd8cf6577735bd93bb262ff7f6`. Follow-up revision
+`3914dfbd0f8de0f7d711e66029918d9a808dc4c5` applies any positive
+`FederationState` bound as one current retained generation, reconstructs no
+prior generation for wider bounds, and makes disabled a byte-inert refusal
+rather than implicit subscription removal. This closes the first exact
+federation-copy source and its one-current-generation application law, not
+subscription removal, physical replica reclamation, authoritative-home
+deletion, remote-copy destruction, or erasure.
 
 ## Nonclaims
 
