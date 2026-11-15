@@ -200,6 +200,21 @@ fragment escapes. The administrative materializer composes it with the Engine
 authoritative-change source only at one engine and policy revision. Authority,
 visibility, custody, and physical reclamation remain enclosing obligations.
 
+`RoomProjectionSourceV1` supplies a separate Engine-owned generation for the
+current public room projection. Canonical `AGAROM1` bytes contain only the
+referenced participant identities, display names, and human/agent kinds plus
+current room metadata, membership and admission controls, retained messages and
+revisions, thread lifecycle, reactions, shared pins, topics, and public poll
+aggregates. Individual ballots, read positions, attention preferences, private
+saves, reports, admission-clock observations, publication receipts, delivery
+journals, and Service receipts are absent. One record represents the complete
+generation: its ordinal is the engine revision successor and its frontier marks
+all earlier generations superseded. Recovery revalidates bounds, canonical
+ordering, participant references, aggregate shape, framing, and exact
+re-encoding. An empty engine has a frozen generation, and equal public poll
+aggregates remain byte-identical when only the private ballot owner differs.
+This administrative source grants no room visibility or custody authority.
+
 Service V2 also owns the current installed policy metadata. Installation is
 engine-revision-bound, monotonically policy-revisioned, exact-replay-safe, and
 conflict detecting. Host revalidation and a fresh policy-authority decision

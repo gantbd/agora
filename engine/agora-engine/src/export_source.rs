@@ -5,7 +5,10 @@
 //! policy and engine revision for later composition.
 
 use crate::Engine;
-use crate::persistence::{CheckpointError, prepare_authoritative_change_checkpoint_v1};
+use crate::persistence::{
+    CheckpointError, prepare_authoritative_change_checkpoint_v1,
+    prepare_room_projection_checkpoint_v1,
+};
 use crate::retention::{
     ContentDigestProfileV1, ContentDigestV1, ExportMaterializationRefusalV1,
     ExportMaterializationV1, ExportProfileV1, ExportRecordV1, ExportRequestIdV1,
@@ -24,6 +27,118 @@ pub enum AuthoritativeChangeSourceRefusalV1 {
     IdentityExhausted,
     Checkpoint(CheckpointError),
     NonCanonical,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RoomProjectionSourceRefusalV1 {
+    InvalidLimit,
+    StalePolicy,
+    ClassDisabled,
+    IdentityExhausted,
+    Checkpoint(CheckpointError),
+    NonCanonical,
+}
+
+/// One complete current public-room generation from one borrowed engine
+/// revision. Individual ballots and every other participant-private projection
+/// remain outside this source.
+#[derive(Clone, Eq, PartialEq)]
+pub struct RoomProjectionSourceV1 {
+    fragment: ExportSourceFragmentV1,
+    max_record_bytes: usize,
+}
+
+impl RoomProjectionSourceV1 {
+    pub fn capture(
+        engine: &Engine,
+        policy: RetentionPolicyV1,
+        max_record_bytes: usize,
+    ) -> Result<Self, RoomProjectionSourceRefusalV1> {
+        if max_record_bytes == 0 {
+            return Err(RoomProjectionSourceRefusalV1::InvalidLimit);
+        }
+        let source_engine_revision = engine.revision().0;
+        if policy.effective_engine_revision != source_engine_revision {
+            return Err(RoomProjectionSourceRefusalV1::StalePolicy);
+        }
+        if !policy
+            .bound(RecordClassV1::RoomProjection)
+            .retains_records()
+        {
+            return Err(RoomProjectionSourceRefusalV1::ClassDisabled);
+        }
+        let ordinal = source_engine_revision
+            .checked_add(1)
+            .ok_or(RoomProjectionSourceRefusalV1::IdentityExhausted)?;
+        let checkpoint = prepare_room_projection_checkpoint_v1(engine, max_record_bytes)
+            .map_err(RoomProjectionSourceRefusalV1::Checkpoint)?;
+        let id = RetentionRecordIdV1::new(RecordClassV1::RoomProjection, ordinal)
+            .ok_or(RoomProjectionSourceRefusalV1::IdentityExhausted)?;
+        let record = ExportRecordV1::new(id, checkpoint.bytes().to_vec(), max_record_bytes)
+            .ok_or(RoomProjectionSourceRefusalV1::InvalidLimit)?;
+        let frontier =
+            RetentionFrontierV1::new(RecordClassV1::RoomProjection, ordinal - 1, Some(ordinal))
+                .ok_or(RoomProjectionSourceRefusalV1::NonCanonical)?;
+        let fragment = ExportSourceFragmentV1::new(
+            source_engine_revision,
+            policy.revision,
+            RecordClassV1::RoomProjection,
+            frontier,
+            vec![record],
+            1,
+            max_record_bytes,
+        )
+        .map_err(|_| RoomProjectionSourceRefusalV1::NonCanonical)?;
+        Ok(Self {
+            fragment,
+            max_record_bytes,
+        })
+    }
+
+    pub fn fragment(&self) -> &ExportSourceFragmentV1 {
+        &self.fragment
+    }
+
+    pub fn materialize<D>(
+        &self,
+        request: ExportRequestIdV1,
+        scope: ExportScopeBindingV1,
+        max_chunks: usize,
+        max_chunk_bytes: usize,
+        digest: D,
+    ) -> Result<ExportMaterializationV1, ExportMaterializationRefusalV1>
+    where
+        D: FnMut(&[u8]) -> ContentDigestV1,
+    {
+        materialize_export_sources_v1(
+            request,
+            ExportProfileV1::Administrative,
+            scope,
+            ContentDigestProfileV1::Sha256,
+            std::slice::from_ref(&self.fragment),
+            1,
+            self.max_record_bytes,
+            max_chunks,
+            max_chunk_bytes,
+            digest,
+        )
+    }
+}
+
+impl fmt::Debug for RoomProjectionSourceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RoomProjectionSourceV1")
+            .field(
+                "source_engine_revision",
+                &self.fragment.source_engine_revision(),
+            )
+            .field("policy_revision", &self.fragment.policy_revision())
+            .field("frontier", &self.fragment.frontier())
+            .field("record_count", &self.fragment.records().len())
+            .field("records", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Exact retained authoritative changes from one borrowed engine revision.

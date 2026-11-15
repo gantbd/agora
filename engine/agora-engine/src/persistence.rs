@@ -44,6 +44,50 @@ impl fmt::Debug for AuthoritativeChangeCheckpointV1 {
     }
 }
 
+/// Canonical owner-native representation of the current public room projection.
+///
+/// The payload deliberately excludes participant-private state, exact request
+/// receipts, publication receipts, delivery journals, and admission-clock
+/// observations. Polls contain only their public aggregate, never ballots.
+pub struct RoomProjectionCheckpointV1 {
+    bytes: Vec<u8>,
+    source_engine_revision: u64,
+    referenced_participant_count: usize,
+    room_count: usize,
+}
+
+impl RoomProjectionCheckpointV1 {
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub fn source_engine_revision(&self) -> u64 {
+        self.source_engine_revision
+    }
+
+    pub fn referenced_participant_count(&self) -> usize {
+        self.referenced_participant_count
+    }
+
+    pub fn room_count(&self) -> usize {
+        self.room_count
+    }
+}
+
+impl fmt::Debug for RoomProjectionCheckpointV1 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RoomProjectionCheckpointV1")
+            .field("source_engine_revision", &self.source_engine_revision)
+            .field(
+                "referenced_participant_count",
+                &self.referenced_participant_count,
+            )
+            .field("room_count", &self.room_count)
+            .field("bytes", &"<redacted>")
+            .finish()
+    }
+}
+
 /// Bounds for restoring an opaque observation cursor from durable service state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CursorRecoveryLimitsV1 {
@@ -1109,6 +1153,596 @@ impl<'a> Reader<'a> {
 }
 
 const AUTHORITATIVE_CHANGE_MAGIC_V1: &[u8; 8] = b"AGACHG1\0";
+const ROOM_PROJECTION_MAGIC_V1: &[u8; 8] = b"AGAROM1\0";
+
+fn room_projection_participants(
+    engine: &Engine,
+) -> Result<BTreeSet<ParticipantId>, CheckpointError> {
+    let mut referenced = BTreeSet::new();
+    for room in engine.rooms.values() {
+        referenced.extend(room.founding_members.iter().cloned());
+        referenced.extend(room.members.keys().cloned());
+        referenced.extend(room.invitations.iter().cloned());
+        referenced.extend(room.bans.keys().cloned());
+        referenced.extend(room.posting_restrictions.iter().cloned());
+        for message in &room.messages {
+            referenced.insert(message.author.clone());
+            referenced.extend(message.addressed_to.iter().cloned());
+            referenced.extend(
+                message
+                    .revisions
+                    .iter()
+                    .map(|revision| revision.editor.clone()),
+            );
+        }
+        for reactions in room.reactions.values() {
+            for participants in reactions.values() {
+                referenced.extend(participants.iter().cloned());
+            }
+        }
+        referenced.extend(
+            room.pins
+                .values()
+                .map(|(_, participant)| participant.clone()),
+        );
+        for poll in room.polls.values() {
+            referenced.insert(poll.creator.clone());
+            referenced.extend(poll.eligible_participants.iter().cloned());
+        }
+        referenced.extend(room.topics.values().map(|topic| topic.creator.clone()));
+    }
+    if referenced
+        .iter()
+        .any(|participant| !engine.participants.contains_key(participant))
+    {
+        return Err(CheckpointError::Invalid);
+    }
+    Ok(referenced)
+}
+
+/// Encodes one complete current public-room generation. The generation is
+/// engine-revision identified; prior generations are superseded by its export
+/// frontier rather than represented as individual room records.
+pub fn prepare_room_projection_checkpoint_v1(
+    engine: &Engine,
+    max_snapshot_bytes: usize,
+) -> Result<RoomProjectionCheckpointV1, CheckpointError> {
+    if max_snapshot_bytes == 0 {
+        return Err(CheckpointError::Limit);
+    }
+    validate(engine)?;
+    let participants = room_projection_participants(engine)?;
+    let mut writer = Writer {
+        bytes: Vec::new(),
+        max: max_snapshot_bytes,
+    };
+    writer.raw(ROOM_PROJECTION_MAGIC_V1)?;
+    writer.number(engine.revision.0)?;
+    writer.count(participants.len())?;
+    for participant_id in &participants {
+        let participant = engine
+            .participants
+            .get(participant_id)
+            .ok_or(CheckpointError::Invalid)?;
+        writer.text(participant_id.as_str())?;
+        writer.text(&participant.display_name)?;
+        writer.byte(kind_tag(participant.kind))?;
+    }
+    writer.count(engine.rooms.len())?;
+    for (room_id, room) in &engine.rooms {
+        writer.text(room_id.as_str())?;
+        writer.text(&room.name)?;
+        writer.byte(conversation_profile_tag(room.profile))?;
+        writer.byte(admission_tag(room.admission))?;
+        writer.count(room.founding_members.len())?;
+        for participant in &room.founding_members {
+            writer.text(participant.as_str())?;
+        }
+        writer.count(room.members.len())?;
+        for (participant, role) in &room.members {
+            writer.text(participant.as_str())?;
+            writer.byte(role_tag(*role))?;
+        }
+        writer.count(room.invitations.len())?;
+        for participant in &room.invitations {
+            writer.text(participant.as_str())?;
+        }
+        writer.count(room.bans.len())?;
+        for (participant, role) in &room.bans {
+            writer.text(participant.as_str())?;
+            writer.byte(role_tag(*role))?;
+        }
+        writer.number(room.minimum_message_interval_ms)?;
+        writer.count(room.posting_restrictions.len())?;
+        for participant in &room.posting_restrictions {
+            writer.text(participant.as_str())?;
+        }
+        writer.number(room.next_message_sequence)?;
+        writer.count(room.messages.len())?;
+        for message in &room.messages {
+            writer.message(message, true)?;
+        }
+        writer.count(room.thread_roots.len())?;
+        for message_id in &room.thread_roots {
+            writer.raw(&message_id.into_bytes())?;
+        }
+        writer.count(room.archived_threads.len())?;
+        for message_id in &room.archived_threads {
+            writer.raw(&message_id.into_bytes())?;
+        }
+        writer.count(room.reactions.len())?;
+        for (message_id, reactions) in &room.reactions {
+            writer.raw(&message_id.into_bytes())?;
+            writer.count(reactions.len())?;
+            for (key, participants) in reactions {
+                writer.text(key)?;
+                writer.count(participants.len())?;
+                for participant in participants {
+                    writer.text(participant.as_str())?;
+                }
+            }
+        }
+        writer.count(room.pins.len())?;
+        for (message_id, (original_sequence, pinned_by)) in &room.pins {
+            writer.raw(&message_id.into_bytes())?;
+            writer.number(*original_sequence)?;
+            writer.text(pinned_by.as_str())?;
+        }
+        writer.count(room.poll_creation_order.len())?;
+        for poll_id in &room.poll_creation_order {
+            let poll = room.polls.get(poll_id).ok_or(CheckpointError::Invalid)?;
+            let status = poll.status();
+            writer.raw(&poll_id.into_bytes())?;
+            writer.text(status.creator().as_str())?;
+            writer.text(status.prompt())?;
+            writer.count(status.options().len())?;
+            for option in status.options() {
+                writer.text(option)?;
+            }
+            writer.count(status.eligible_participants().len())?;
+            for participant in status.eligible_participants() {
+                writer.text(participant.as_str())?;
+            }
+            writer.byte(status.max_choices())?;
+            writer.byte(u8::from(status.is_open()))?;
+            writer.count(status.totals().len())?;
+            for total in status.totals() {
+                writer.number(u64::from(*total))?;
+            }
+            writer.number(u64::from(status.total_ballots()))?;
+        }
+        writer.count(room.topics.len())?;
+        for (topic_id, topic) in &room.topics {
+            writer.raw(&topic_id.into_bytes())?;
+            writer.text(&topic.name)?;
+            writer.text(topic.creator.as_str())?;
+            writer.byte(u8::from(topic.resolved))?;
+            writer.count(topic.aliases.len())?;
+            for alias in &topic.aliases {
+                writer.text(alias)?;
+            }
+            writer.count(topic.tags.len())?;
+            for tag in &topic.tags {
+                writer.text(tag)?;
+            }
+        }
+        writer.count(room.topic_successors.len())?;
+        for (topic_id, successor) in &room.topic_successors {
+            writer.raw(&topic_id.into_bytes())?;
+            writer.raw(&successor.into_bytes())?;
+        }
+    }
+    Ok(RoomProjectionCheckpointV1 {
+        bytes: writer.bytes,
+        source_engine_revision: engine.revision.0,
+        referenced_participant_count: participants.len(),
+        room_count: engine.rooms.len(),
+    })
+}
+
+/// Recovers and canonicalizes one public-room generation under explicit engine
+/// bounds. Recovery validates framing, ordering, participant references, public
+/// poll aggregates, and exact whole-record re-encoding.
+pub fn recover_room_projection_checkpoint_v1(
+    bytes: &[u8],
+    bounds: RecoveryLimits,
+) -> Result<RoomProjectionCheckpointV1, CheckpointError> {
+    if bounds.max_snapshot_bytes == 0 || bytes.len() > bounds.max_snapshot_bytes {
+        return Err(CheckpointError::Limit);
+    }
+    let limits = bounds.maximum_engine_limits;
+    let mut reader = Reader { bytes, pos: 0 };
+    let mut writer = Writer {
+        bytes: Vec::new(),
+        max: bounds.max_snapshot_bytes,
+    };
+    let magic = reader.raw(ROOM_PROJECTION_MAGIC_V1.len())?;
+    if magic != ROOM_PROJECTION_MAGIC_V1 {
+        return Err(CheckpointError::Profile);
+    }
+    writer.raw(magic)?;
+    let source_engine_revision = reader.number()?;
+    writer.number(source_engine_revision)?;
+
+    let participant_count = reader.count(limits.max_participants)?;
+    writer.count(participant_count)?;
+    let mut participants = BTreeMap::new();
+    for _ in 0..participant_count {
+        let id = reader.participant(limits)?;
+        let display_name = reader.text(limits.max_display_name_bytes)?;
+        let kind = read_kind(reader.byte()?)?;
+        writer.text(id.as_str())?;
+        writer.text(&display_name)?;
+        writer.byte(kind_tag(kind))?;
+        insert(
+            &mut participants,
+            id.clone(),
+            Participant::new(id, display_name, kind),
+        )?;
+    }
+
+    let room_count = reader.count(limits.max_rooms)?;
+    writer.count(room_count)?;
+    let mut prior_room: Option<RoomId> = None;
+    let mut referenced = BTreeSet::new();
+    for _ in 0..room_count {
+        let room_id = reader.room(limits)?;
+        if prior_room.as_ref().is_some_and(|prior| prior >= &room_id) {
+            return Err(CheckpointError::NonCanonical);
+        }
+        prior_room = Some(room_id.clone());
+        writer.text(room_id.as_str())?;
+        let name = reader.text(limits.max_room_name_bytes)?;
+        writer.text(&name)?;
+        let profile = read_conversation_profile(reader.byte()?)?;
+        writer.byte(conversation_profile_tag(profile))?;
+        let admission = read_admission(reader.byte()?)?;
+        writer.byte(admission_tag(admission))?;
+
+        let founding_count = reader.count(limits.max_members_per_room)?;
+        writer.count(founding_count)?;
+        let mut prior_participant: Option<ParticipantId> = None;
+        for _ in 0..founding_count {
+            let participant = reader.participant(limits)?;
+            if prior_participant
+                .as_ref()
+                .is_some_and(|prior| prior >= &participant)
+            {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_participant = Some(participant.clone());
+            referenced.insert(participant.clone());
+            writer.text(participant.as_str())?;
+        }
+
+        let member_count = reader.count(limits.max_members_per_room)?;
+        writer.count(member_count)?;
+        prior_participant = None;
+        for _ in 0..member_count {
+            let participant = reader.participant(limits)?;
+            if prior_participant
+                .as_ref()
+                .is_some_and(|prior| prior >= &participant)
+            {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_participant = Some(participant.clone());
+            referenced.insert(participant.clone());
+            let role = read_role(reader.byte()?)?;
+            writer.text(participant.as_str())?;
+            writer.byte(role_tag(role))?;
+        }
+
+        let invitation_count = reader.count(limits.max_invitations_per_room)?;
+        writer.count(invitation_count)?;
+        prior_participant = None;
+        for _ in 0..invitation_count {
+            let participant = reader.participant(limits)?;
+            if prior_participant
+                .as_ref()
+                .is_some_and(|prior| prior >= &participant)
+            {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_participant = Some(participant.clone());
+            referenced.insert(participant.clone());
+            writer.text(participant.as_str())?;
+        }
+
+        let ban_count = reader.count(limits.max_bans_per_room)?;
+        writer.count(ban_count)?;
+        prior_participant = None;
+        for _ in 0..ban_count {
+            let participant = reader.participant(limits)?;
+            if prior_participant
+                .as_ref()
+                .is_some_and(|prior| prior >= &participant)
+            {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_participant = Some(participant.clone());
+            referenced.insert(participant.clone());
+            let role = read_role(reader.byte()?)?;
+            writer.text(participant.as_str())?;
+            writer.byte(role_tag(role))?;
+        }
+
+        let minimum_message_interval_ms = reader.number()?;
+        if minimum_message_interval_ms > MAX_MESSAGE_INTERVAL_MS_V1 {
+            return Err(CheckpointError::Invalid);
+        }
+        writer.number(minimum_message_interval_ms)?;
+        let restriction_count = reader.count(limits.max_members_per_room)?;
+        writer.count(restriction_count)?;
+        prior_participant = None;
+        for _ in 0..restriction_count {
+            let participant = reader.participant(limits)?;
+            if prior_participant
+                .as_ref()
+                .is_some_and(|prior| prior >= &participant)
+            {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_participant = Some(participant.clone());
+            referenced.insert(participant.clone());
+            writer.text(participant.as_str())?;
+        }
+
+        let next_message_sequence = reader.number()?;
+        writer.number(next_message_sequence)?;
+        let message_count = reader.count(limits.max_messages_per_room)?;
+        writer.count(message_count)?;
+        let mut message_ids = BTreeSet::new();
+        let mut prior_sequence = None;
+        for _ in 0..message_count {
+            let message = reader.message(limits, true)?;
+            if !message_ids.insert(message.id)
+                || prior_sequence.is_some_and(|prior| prior >= message.sequence)
+                || message.sequence >= next_message_sequence
+            {
+                return Err(CheckpointError::Invalid);
+            }
+            prior_sequence = Some(message.sequence);
+            referenced.insert(message.author.clone());
+            referenced.extend(message.addressed_to.iter().cloned());
+            referenced.extend(
+                message
+                    .revisions
+                    .iter()
+                    .map(|revision| revision.editor.clone()),
+            );
+            writer.message(&message, true)?;
+        }
+
+        let thread_count = reader.count(limits.max_messages_per_room)?;
+        writer.count(thread_count)?;
+        let mut prior_message_id = None;
+        for _ in 0..thread_count {
+            let message_id = MessageId::from_bytes(reader.fixed()?);
+            if prior_message_id.is_some_and(|prior| prior >= message_id) {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_message_id = Some(message_id);
+            writer.raw(&message_id.into_bytes())?;
+        }
+        let archived_count = reader.count(limits.max_messages_per_room)?;
+        writer.count(archived_count)?;
+        prior_message_id = None;
+        for _ in 0..archived_count {
+            let message_id = MessageId::from_bytes(reader.fixed()?);
+            if prior_message_id.is_some_and(|prior| prior >= message_id) {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_message_id = Some(message_id);
+            writer.raw(&message_id.into_bytes())?;
+        }
+
+        let reaction_message_count = reader.count(limits.max_messages_per_room)?;
+        writer.count(reaction_message_count)?;
+        prior_message_id = None;
+        for _ in 0..reaction_message_count {
+            let message_id = MessageId::from_bytes(reader.fixed()?);
+            if prior_message_id.is_some_and(|prior| prior >= message_id) {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_message_id = Some(message_id);
+            writer.raw(&message_id.into_bytes())?;
+            let key_count = reader.count(MAX_REACTION_KEYS_PER_MESSAGE_V1)?;
+            writer.count(key_count)?;
+            let mut prior_key: Option<String> = None;
+            for _ in 0..key_count {
+                let key = reader.text(MAX_REACTION_KEY_BYTES_V1)?;
+                if prior_key.as_ref().is_some_and(|prior| prior >= &key) {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                prior_key = Some(key.clone());
+                writer.text(&key)?;
+                let reactor_count = reader.count(limits.max_participants)?;
+                writer.count(reactor_count)?;
+                prior_participant = None;
+                for _ in 0..reactor_count {
+                    let participant = reader.participant(limits)?;
+                    if prior_participant
+                        .as_ref()
+                        .is_some_and(|prior| prior >= &participant)
+                    {
+                        return Err(CheckpointError::NonCanonical);
+                    }
+                    prior_participant = Some(participant.clone());
+                    referenced.insert(participant.clone());
+                    writer.text(participant.as_str())?;
+                }
+            }
+        }
+
+        let pin_count = reader.count(MAX_ROOM_PINS_V1)?;
+        writer.count(pin_count)?;
+        prior_message_id = None;
+        for _ in 0..pin_count {
+            let message_id = MessageId::from_bytes(reader.fixed()?);
+            if prior_message_id.is_some_and(|prior| prior >= message_id) {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_message_id = Some(message_id);
+            writer.raw(&message_id.into_bytes())?;
+            writer.number(reader.number()?)?;
+            let participant = reader.participant(limits)?;
+            referenced.insert(participant.clone());
+            writer.text(participant.as_str())?;
+        }
+
+        let poll_count = reader.count(MAX_POLLS_PER_ROOM_V1)?;
+        writer.count(poll_count)?;
+        let mut poll_ids = BTreeSet::new();
+        for _ in 0..poll_count {
+            let poll_id = PollId::from_bytes(reader.fixed()?);
+            if !poll_ids.insert(poll_id) {
+                return Err(CheckpointError::Invalid);
+            }
+            writer.raw(&poll_id.into_bytes())?;
+            let creator = reader.participant(limits)?;
+            referenced.insert(creator.clone());
+            writer.text(creator.as_str())?;
+            let prompt = reader.text(MAX_POLL_PROMPT_BYTES_V1)?;
+            writer.text(&prompt)?;
+            let option_count = reader.count(MAX_POLL_OPTIONS_V1)?;
+            if option_count == 0 {
+                return Err(CheckpointError::Invalid);
+            }
+            writer.count(option_count)?;
+            for _ in 0..option_count {
+                let option = reader.text(MAX_POLL_OPTION_BYTES_V1)?;
+                writer.text(&option)?;
+            }
+            let eligible_count = reader.count(MAX_POLL_ELIGIBLE_PARTICIPANTS_V1)?;
+            writer.count(eligible_count)?;
+            prior_participant = None;
+            for _ in 0..eligible_count {
+                let participant = reader.participant(limits)?;
+                if prior_participant
+                    .as_ref()
+                    .is_some_and(|prior| prior >= &participant)
+                {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                prior_participant = Some(participant.clone());
+                referenced.insert(participant.clone());
+                writer.text(participant.as_str())?;
+            }
+            let max_choices = reader.byte()?;
+            if max_choices == 0 || usize::from(max_choices) > option_count {
+                return Err(CheckpointError::Invalid);
+            }
+            writer.byte(max_choices)?;
+            let open = match reader.byte()? {
+                value @ 0..=1 => value,
+                _ => return Err(CheckpointError::Invalid),
+            };
+            writer.byte(open)?;
+            let total_count = reader.count(MAX_POLL_OPTIONS_V1)?;
+            if total_count != option_count {
+                return Err(CheckpointError::Invalid);
+            }
+            writer.count(total_count)?;
+            let mut totals = Vec::new();
+            for _ in 0..total_count {
+                let total = reader.number()?;
+                if total > eligible_count as u64 {
+                    return Err(CheckpointError::Invalid);
+                }
+                totals.push(total);
+                writer.number(total)?;
+            }
+            let total_ballots = reader.number()?;
+            if total_ballots > eligible_count as u64
+                || totals.iter().sum::<u64>() > total_ballots * u64::from(max_choices)
+            {
+                return Err(CheckpointError::Invalid);
+            }
+            writer.number(total_ballots)?;
+        }
+
+        let topic_count = reader.count(limits.max_topics_per_room)?;
+        writer.count(topic_count)?;
+        let mut topic_ids = BTreeSet::new();
+        let mut prior_topic_id = None;
+        for _ in 0..topic_count {
+            let topic_id = TopicId::from_bytes(reader.fixed()?);
+            if prior_topic_id.is_some_and(|prior| prior >= topic_id) {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_topic_id = Some(topic_id);
+            topic_ids.insert(topic_id);
+            writer.raw(&topic_id.into_bytes())?;
+            let name = reader.text(limits.max_topic_name_bytes)?;
+            writer.text(&name)?;
+            let creator = reader.participant(limits)?;
+            referenced.insert(creator.clone());
+            writer.text(creator.as_str())?;
+            let resolved = match reader.byte()? {
+                value @ 0..=1 => value,
+                _ => return Err(CheckpointError::Invalid),
+            };
+            writer.byte(resolved)?;
+            let alias_count = reader.count(MAX_TOPIC_ALIASES_PER_TOPIC_V1)?;
+            writer.count(alias_count)?;
+            let mut prior_alias: Option<String> = None;
+            for _ in 0..alias_count {
+                let alias = reader.text(limits.max_topic_name_bytes)?;
+                if prior_alias.as_ref().is_some_and(|prior| prior >= &alias) {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                prior_alias = Some(alias.clone());
+                writer.text(&alias)?;
+            }
+            let tag_count = reader.count(MAX_TOPIC_TAGS_PER_TOPIC_V1)?;
+            writer.count(tag_count)?;
+            let mut prior_tag: Option<String> = None;
+            for _ in 0..tag_count {
+                let tag = reader.text(limits.max_topic_name_bytes)?;
+                if prior_tag.as_ref().is_some_and(|prior| prior >= &tag) {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                prior_tag = Some(tag.clone());
+                writer.text(&tag)?;
+            }
+        }
+        let successor_count = reader.count(limits.max_topics_per_room)?;
+        writer.count(successor_count)?;
+        prior_topic_id = None;
+        for _ in 0..successor_count {
+            let topic_id = TopicId::from_bytes(reader.fixed()?);
+            let successor = TopicId::from_bytes(reader.fixed()?);
+            if prior_topic_id.is_some_and(|prior| prior >= topic_id)
+                || !topic_ids.contains(&topic_id)
+                || !topic_ids.contains(&successor)
+                || topic_id == successor
+            {
+                return Err(CheckpointError::NonCanonical);
+            }
+            prior_topic_id = Some(topic_id);
+            writer.raw(&topic_id.into_bytes())?;
+            writer.raw(&successor.into_bytes())?;
+        }
+    }
+    if reader.pos != bytes.len() {
+        return Err(CheckpointError::Trailing);
+    }
+    if referenced.len() != participants.len()
+        || referenced
+            .iter()
+            .any(|participant| !participants.contains_key(participant))
+        || writer.bytes != bytes
+    {
+        return Err(CheckpointError::NonCanonical);
+    }
+    Ok(RoomProjectionCheckpointV1 {
+        bytes: writer.bytes,
+        source_engine_revision,
+        referenced_participant_count: participant_count,
+        room_count,
+    })
+}
 
 fn authoritative_change_feature_bits(event: &DomainEventV2) -> u8 {
     let vellum = matches!(
