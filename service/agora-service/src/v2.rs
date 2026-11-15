@@ -5,9 +5,12 @@ use agora_delivery_projection_port::{
     WakeProjectionV1,
 };
 use agora_engine::retention::{
+    AuthoritativeChangeRetentionApplicationV1,
+    AuthoritativeChangeRetentionRefusalV1 as EngineAuthoritativeChangeRetentionRefusalV1,
     ReceiptRetirementApplyV1, ReceiptRetirementRefusalV1, ReceiptRetirementRegistryV1,
     RecordClassV1, RetentionBoundV1, RetentionIdentityBindingV1, RetentionPolicyRevisionV1,
     RetentionPolicyV1, RetentionScopeBindingV1, RetentionTombstoneReasonV1, RetentionTombstoneV1,
+    apply_authoritative_change_retention_v1,
 };
 use agora_engine::{
     AdmissionPolicy, AdmissionTimeRefusalV1, AdmissionTimeV1,
@@ -165,6 +168,20 @@ pub enum RetentionPolicyInstallRefusalV1 {
     },
     RevisionRegression,
     RevisionConflict,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuthoritativeChangeRetentionServiceRefusalV1 {
+    StaleEngineRevision {
+        expected: Revision,
+        actual: Revision,
+    },
+    NoCurrentPolicy,
+    PolicyRevisionMismatch {
+        expected: RetentionPolicyRevisionV1,
+        actual: RetentionPolicyRevisionV1,
+    },
+    Engine(EngineAuthoritativeChangeRetentionRefusalV1),
 }
 
 fn receipt_retirement_bindings(
@@ -397,6 +414,41 @@ impl ServiceV2 {
         }
         self.retention_policy = Some(proposed);
         Ok(RetentionPolicyInstallV1::Installed)
+    }
+
+    /// Applies only the installed policy's authoritative-change bound at one
+    /// exact Engine revision. This trusted administrative path is absent from
+    /// participant protocol and does not acknowledge delivery.
+    pub fn apply_authoritative_change_retention(
+        &mut self,
+        policy_revision: RetentionPolicyRevisionV1,
+        observed_engine_revision: Revision,
+    ) -> Result<
+        AuthoritativeChangeRetentionApplicationV1,
+        AuthoritativeChangeRetentionServiceRefusalV1,
+    > {
+        let actual = self.engine.revision();
+        if observed_engine_revision != actual {
+            return Err(
+                AuthoritativeChangeRetentionServiceRefusalV1::StaleEngineRevision {
+                    expected: observed_engine_revision,
+                    actual,
+                },
+            );
+        }
+        let Some(policy) = self.retention_policy else {
+            return Err(AuthoritativeChangeRetentionServiceRefusalV1::NoCurrentPolicy);
+        };
+        if policy_revision != policy.revision {
+            return Err(
+                AuthoritativeChangeRetentionServiceRefusalV1::PolicyRevisionMismatch {
+                    expected: policy_revision,
+                    actual: policy.revision,
+                },
+            );
+        }
+        apply_authoritative_change_retention_v1(&mut self.engine, policy)
+            .map_err(AuthoritativeChangeRetentionServiceRefusalV1::Engine)
     }
 
     /// Trusted administrative receipt pruning. This path is absent from the

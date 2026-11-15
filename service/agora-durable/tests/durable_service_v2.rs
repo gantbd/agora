@@ -36,8 +36,9 @@ use agora_protocol::v2::{
     VellumDocumentTargetV1,
 };
 use agora_retention_authority_port::{
-    AuthorityDecisionV1, ExportAuthorityRequestV1, PolicyAuthorityRequestV1,
-    ReceiptRetirementAuthorityRequestV1, RetentionAuthorityPortV1, RetentionPolicyRevisionV1,
+    AuthoritativeChangeRetentionAuthorityRequestV1, AuthorityDecisionV1, ExportAuthorityRequestV1,
+    PolicyAuthorityRequestV1, ReceiptRetirementAuthorityRequestV1, RetentionAuthorityPortV1,
+    RetentionPolicyRevisionV1,
 };
 use agora_scheduled_publication_port::{
     ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationRequestV1,
@@ -77,6 +78,13 @@ impl RetentionAuthorityPortV1 for RetentionAuthority {
 
     fn authorize_export(&mut self, _request: ExportAuthorityRequestV1) -> AuthorityDecisionV1 {
         panic!("export authority is outside this test")
+    }
+
+    fn authorize_authoritative_change_retention(
+        &mut self,
+        _request: AuthoritativeChangeRetentionAuthorityRequestV1,
+    ) -> AuthorityDecisionV1 {
+        AuthorityDecisionV1::Authorized
     }
 
     fn authorize_receipt_retirement(
@@ -1277,6 +1285,83 @@ fn receipt_retirement_rolls_back_on_store_refusal_and_survives_restart_when_comm
         decode_reply_v2(&reply, host_limits().wire).unwrap(),
         WireReplyV2::Executed(ReplyV2::Refused(RefusalV2::RequestConflict))
     );
+}
+
+#[test]
+fn authoritative_change_retention_is_commit_gated_and_recovers_the_exact_gap() {
+    let store = TestStore::default();
+    let host = HostV2::new(service(), Verifier, host_limits());
+    let mut durable = DurableHostV2::initialize(host, store.clone(), host_config()).unwrap();
+    let context = Context { active: true };
+    let DurableHostPublicationV2::Published {
+        value: Ok(opened), ..
+    } = durable.open(&connect_frame(), &context, HostTimeV1(1))
+    else {
+        panic!("connect expected");
+    };
+    let session = opened.session().unwrap();
+    let policy_revision = RetentionPolicyRevisionV1::new(1).unwrap();
+    let bounds = [RetentionBoundV1::Disabled; 6];
+    let policy = RetentionPolicyV1::new(
+        policy_revision,
+        durable.host().unwrap().service().engine().revision().0,
+        bounds,
+    );
+    let mut authority = RetentionAuthority;
+    assert!(matches!(
+        durable.install_retention_policy(session, policy, &mut authority, &context, HostTimeV1(2),),
+        DurableHostPublicationV2::Published { value: Ok(_), .. }
+    ));
+
+    store.next(NextCommit::Refuse);
+    assert!(matches!(
+        durable.apply_authoritative_change_retention(
+            session,
+            policy_revision,
+            &mut authority,
+            &context,
+            HostTimeV1(3),
+        ),
+        DurableHostPublicationV2::Suppressed(DurableHostSuppressionV2::StoreRefused(
+            StoreRefusal::ValueLimit
+        ))
+    ));
+    assert_eq!(
+        durable
+            .host()
+            .unwrap()
+            .service()
+            .engine()
+            .retained_changes()
+            .len(),
+        1
+    );
+    assert!(matches!(
+        durable.apply_authoritative_change_retention(
+            session,
+            policy_revision,
+            &mut authority,
+            &context,
+            HostTimeV1(4),
+        ),
+        DurableHostPublicationV2::Published {
+            value: Ok(
+                agora_retention_authority_port::AuthoritativeChangeRetentionApplicationV1 {
+                    discarded_records: 1,
+                    retained_records: 0,
+                    ..
+                }
+            ),
+            evidence: DurableEvidenceV2::Committed { .. }
+        }
+    ));
+    drop(durable.into_store());
+
+    let recovered = DurableHostV2::recover(store, host_config(), Verifier).unwrap();
+    let engine = recovered.host().unwrap().service().engine();
+    assert_eq!(engine.retained_changes().len(), 0);
+    assert_eq!(engine.pending_events().len(), 1);
+    assert_eq!(engine.discarded_changes_through().unwrap().0, 0);
 }
 
 #[test]

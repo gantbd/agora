@@ -268,10 +268,14 @@ oldest excess entries and returns the same ordinal frontier exposed by
 `AuthoritativeChangeSourceV1`. Disabled retains none; equal reapplication is an
 inert replay; stale policy is nonmutating; canonical Engine recovery preserves
 the new discard edge. It does not acknowledge or prune the delivery outbox,
-advance the domain revision, apply another class, install authority, persist a
-transition independently, or keep the bound continuously enforced across later
-domain writes. Service authorization, durable commit gating, later-write
-reapplication, and the other owner-native application profiles remain open.
+advance the domain revision, apply another class, or keep the bound continuously
+enforced across later domain writes. Service V2 now binds application to its
+exact installed policy and engine revision. Host revalidates the administrative
+session and obtains a fresh authority decision over the class bound, prior
+discard ordinal, and retained count before mutation. Durable Host commit-gates
+the complete checkpoint: known refusal restores the journal, while committed
+restart preserves the exact gap and still-pending delivery outbox. Later-write
+reapplication and the other owner-native application profiles remain open.
 
 The engine export foundation now materializes one complete canonical record
 inventory into bounded `AGEXCH1` chunks and an `AGEXMF1` manifest body. It

@@ -1,4 +1,6 @@
-use agora_engine::retention::{RetentionBoundV1, RetentionPolicyRevisionV1, RetentionPolicyV1};
+use agora_engine::retention::{
+    RecordClassV1, RetentionBoundV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
+};
 use agora_engine::{
     AdmissionPolicy, CommandV2 as EngineCommand, Engine, Limits, Participant, ParticipantKind,
 };
@@ -10,8 +12,8 @@ use agora_protocol::v2::{
     ThreadedRoomEventV1, TopicIdV1, TopicRoomEventV1,
 };
 use agora_service::v2::{
-    ReceiptRetentionRefusalV1, RetentionPolicyInstallRefusalV1, RetentionPolicyInstallV1,
-    ServiceLimitsV2, ServiceV2,
+    AuthoritativeChangeRetentionServiceRefusalV1, ReceiptRetentionRefusalV1,
+    RetentionPolicyInstallRefusalV1, RetentionPolicyInstallV1, ServiceLimitsV2, ServiceV2,
 };
 
 fn request(id: u64, command: CommandV2) -> RequestV2 {
@@ -56,6 +58,40 @@ fn retention_policy_installation_is_revision_and_engine_bound() {
         service.install_retention_policy(policy(1, revision.0, 4)),
         Err(RetentionPolicyInstallRefusalV1::RevisionRegression)
     );
+}
+
+#[test]
+fn authoritative_change_retention_requires_the_exact_installed_policy_and_frontier() {
+    let mut service = ServiceV2::new(participant_engine(), ServiceLimitsV2::default());
+    let revision = service.engine().revision();
+    let policy_revision = RetentionPolicyRevisionV1::new(1).unwrap();
+    let mut bounds = [RetentionBoundV1::Disabled; 6];
+    bounds[RecordClassV1::AuthoritativeChanges as usize - 1] =
+        RetentionBoundV1::entries(1).unwrap();
+    let policy = RetentionPolicyV1::new(policy_revision, revision.0, bounds);
+
+    assert_eq!(
+        service.apply_authoritative_change_retention(policy_revision, revision),
+        Err(AuthoritativeChangeRetentionServiceRefusalV1::NoCurrentPolicy)
+    );
+    service.install_retention_policy(policy).unwrap();
+    assert!(matches!(
+        service.apply_authoritative_change_retention(
+            RetentionPolicyRevisionV1::new(2).unwrap(),
+            revision,
+        ),
+        Err(AuthoritativeChangeRetentionServiceRefusalV1::PolicyRevisionMismatch { .. })
+    ));
+    let applied = service
+        .apply_authoritative_change_retention(policy_revision, revision)
+        .unwrap();
+    assert_eq!(applied.discarded_records, 3);
+    assert_eq!(applied.retained_records, 1);
+    assert_eq!(applied.frontier.discarded_through, 3);
+    assert_eq!(applied.frontier.oldest_retained, Some(4));
+    assert_eq!(service.engine().revision(), revision);
+    assert_eq!(service.engine().retained_changes().len(), 1);
+    assert_eq!(service.engine().pending_events().len(), 4);
 }
 
 #[test]

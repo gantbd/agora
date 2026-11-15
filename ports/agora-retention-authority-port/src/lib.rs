@@ -3,10 +3,13 @@
 //! The port decides current authority only. It performs no retention transition,
 //! export materialization, store publication, reclamation, or compliance policy.
 
+pub use agora_engine::retention::{
+    AuthoritativeChangeRetentionApplicationV1, RecordClassV1, RetentionBoundV1,
+    RetentionPolicyRevisionV1, RetentionPolicyV1,
+};
 use agora_engine::retention::{
     ExportProfileV1, ExportRequestIdV1, ExportRetirementV1, ExportScopeBindingV1,
 };
-pub use agora_engine::retention::{RetentionPolicyRevisionV1, RetentionPolicyV1};
 use std::fmt;
 
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -34,6 +37,42 @@ pub struct PolicyAuthorityRequestV1 {
     pub observed_engine_revision: u64,
     pub current_policy_revision: Option<RetentionPolicyRevisionV1>,
     pub proposed_policy: RetentionPolicyV1,
+}
+
+/// Exact pre-application observation for the Engine-owned authoritative-change
+/// journal. `prior_discarded_through` uses the same nonzero ordinal domain as
+/// `AGACHG1`; zero means no prior discard.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AuthoritativeChangeRetentionAuthorityRequestV1 {
+    pub principal: AdministrativePrincipalBindingV1,
+    pub policy_revision: RetentionPolicyRevisionV1,
+    pub observed_engine_revision: u64,
+    pub bound: RetentionBoundV1,
+    pub prior_discarded_through: u64,
+    pub retained_records: u64,
+}
+
+impl AuthoritativeChangeRetentionAuthorityRequestV1 {
+    pub fn new(
+        principal: AdministrativePrincipalBindingV1,
+        policy_revision: RetentionPolicyRevisionV1,
+        observed_engine_revision: u64,
+        bound: RetentionBoundV1,
+        prior_discarded_through: u64,
+        retained_records: u64,
+    ) -> Option<Self> {
+        observed_engine_revision
+            .checked_sub(prior_discarded_through)
+            .filter(|count| *count == retained_records)
+            .map(|_| Self {
+                principal,
+                policy_revision,
+                observed_engine_revision,
+                bound,
+                prior_discarded_through,
+                retained_records,
+            })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -130,6 +169,16 @@ pub trait RetentionAuthorityPortV1 {
 
     fn authorize_export(&mut self, request: ExportAuthorityRequestV1) -> AuthorityDecisionV1;
 
+    /// Authorizes one exact owner-native change-journal application. The
+    /// default keeps existing authorities closed until this action is
+    /// configured explicitly.
+    fn authorize_authoritative_change_retention(
+        &mut self,
+        _request: AuthoritativeChangeRetentionAuthorityRequestV1,
+    ) -> AuthorityDecisionV1 {
+        AuthorityDecisionV1::Unavailable
+    }
+
     /// Authorizes removal of one exact custody copy. The default keeps
     /// admission-only authorities closed until retirement is configured.
     fn authorize_export_retirement(
@@ -170,7 +219,16 @@ mod tests {
             source_engine_revision: 8,
             policy_revision: revision,
         };
-        let diagnostic = format!("{policy_request:?} {export_request:?}");
+        let change_request = AuthoritativeChangeRetentionAuthorityRequestV1::new(
+            principal,
+            revision,
+            8,
+            RetentionBoundV1::entries(4).unwrap(),
+            3,
+            5,
+        )
+        .unwrap();
+        let diagnostic = format!("{policy_request:?} {export_request:?} {change_request:?}");
         assert!(!diagnostic.contains("[1, 1"));
         assert!(AdministrativePrincipalBindingV1::new([0; 32]).is_none());
         let export_retirement = ExportRetirementAuthorityRequestV1 {
@@ -208,6 +266,17 @@ mod tests {
                     ReceiptRetirementKeyV1::new([1; 16]),
                 ],
                 2,
+            )
+            .is_none()
+        );
+        assert!(
+            AuthoritativeChangeRetentionAuthorityRequestV1::new(
+                principal,
+                revision,
+                8,
+                RetentionBoundV1::Disabled,
+                4,
+                5,
             )
             .is_none()
         );

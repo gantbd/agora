@@ -21,15 +21,17 @@ use agora_interaction_port::{
 };
 use agora_protocol::v2::{ClientIdV2, RefusalV2};
 use agora_retention_authority_port::{
+    AuthoritativeChangeRetentionApplicationV1, AuthoritativeChangeRetentionAuthorityRequestV1,
     AuthorityDecisionV1, ExportAuthorityRequestV1, ExportRetirementAuthorityRequestV1,
     PolicyAuthorityRequestV1, ReceiptRetirementAuthorityRequestV1, ReceiptRetirementKeyV1,
-    RetentionAuthorityPortV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
+    RecordClassV1, RetentionAuthorityPortV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
 };
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
 };
 use agora_service::v2::{
-    ReceiptRetentionRefusalV1, RetentionPolicyInstallRefusalV1, RetentionPolicyInstallV1, ServiceV2,
+    AuthoritativeChangeRetentionServiceRefusalV1, ReceiptRetentionRefusalV1,
+    RetentionPolicyInstallRefusalV1, RetentionPolicyInstallV1, ServiceV2,
 };
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_request_v2, encode_reply_v2};
 use std::collections::{BTreeMap, VecDeque};
@@ -74,6 +76,18 @@ pub enum RetentionPolicyHostRefusalV1 {
     AuthorityStale,
     AuthorityUnavailable,
     Service(RetentionPolicyInstallRefusalV1),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuthoritativeChangeRetentionHostRefusalV1 {
+    NotAuthorized,
+    NoCurrentPolicy,
+    StalePolicy,
+    InvalidSource,
+    AuthorityDenied,
+    AuthorityStale,
+    AuthorityUnavailable,
+    Service(AuthoritativeChangeRetentionServiceRefusalV1),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -375,6 +389,64 @@ impl<V: PrincipalVerifier> HostV2<V> {
             AuthorityDecisionV1::Stale => Err(RetentionPolicyHostRefusalV1::AuthorityStale),
             AuthorityDecisionV1::Unavailable => {
                 Err(RetentionPolicyHostRefusalV1::AuthorityUnavailable)
+            }
+        }
+    }
+
+    /// Revalidates the administrative session and exact native journal shape,
+    /// obtains fresh authority, and applies only the installed
+    /// `AuthoritativeChanges` bound. Delivery acknowledgement is independent.
+    pub fn apply_authoritative_change_retention<A: RetentionAuthorityPortV1>(
+        &mut self,
+        session_id: HostSessionIdV2,
+        policy_revision: RetentionPolicyRevisionV1,
+        authority: &mut A,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<AuthoritativeChangeRetentionApplicationV1, AuthoritativeChangeRetentionHostRefusalV1>
+    {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| AuthoritativeChangeRetentionHostRefusalV1::NotAuthorized)?;
+        let Some(policy) = self.service.retention_policy() else {
+            return Err(AuthoritativeChangeRetentionHostRefusalV1::NoCurrentPolicy);
+        };
+        if policy.revision != policy_revision {
+            return Err(AuthoritativeChangeRetentionHostRefusalV1::StalePolicy);
+        }
+        let engine = self.service.engine();
+        let observed_engine_revision = engine.revision();
+        let prior_discarded_through = match engine.discarded_changes_through() {
+            Some(sequence) => sequence
+                .0
+                .checked_add(1)
+                .ok_or(AuthoritativeChangeRetentionHostRefusalV1::InvalidSource)?,
+            None => 0,
+        };
+        let retained_records = u64::try_from(engine.retained_changes().len())
+            .map_err(|_| AuthoritativeChangeRetentionHostRefusalV1::InvalidSource)?;
+        let request = AuthoritativeChangeRetentionAuthorityRequestV1::new(
+            session.subject.administrative_principal_binding(),
+            policy_revision,
+            observed_engine_revision.0,
+            policy.bound(RecordClassV1::AuthoritativeChanges),
+            prior_discarded_through,
+            retained_records,
+        )
+        .ok_or(AuthoritativeChangeRetentionHostRefusalV1::InvalidSource)?;
+        match authority.authorize_authoritative_change_retention(request) {
+            AuthorityDecisionV1::Authorized => self
+                .service
+                .apply_authoritative_change_retention(policy_revision, observed_engine_revision)
+                .map_err(AuthoritativeChangeRetentionHostRefusalV1::Service),
+            AuthorityDecisionV1::Denied => {
+                Err(AuthoritativeChangeRetentionHostRefusalV1::AuthorityDenied)
+            }
+            AuthorityDecisionV1::Stale => {
+                Err(AuthoritativeChangeRetentionHostRefusalV1::AuthorityStale)
+            }
+            AuthorityDecisionV1::Unavailable => {
+                Err(AuthoritativeChangeRetentionHostRefusalV1::AuthorityUnavailable)
             }
         }
     }

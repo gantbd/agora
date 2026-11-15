@@ -24,8 +24,8 @@ use agora_host::v2::persistence::{
     HostCheckpointErrorV2, HostCheckpointScopeV1, HostRecoveryLimitsV2,
 };
 use agora_host::v2::{
-    ExportHostRefusalV1, ExportRetirementHostRefusalV1, HostV2, ReceiptRetirementHostRefusalV1,
-    RetentionPolicyHostRefusalV1,
+    AuthoritativeChangeRetentionHostRefusalV1, ExportHostRefusalV1, ExportRetirementHostRefusalV1,
+    HostV2, ReceiptRetirementHostRefusalV1, RetentionPolicyHostRefusalV1,
 };
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
 use agora_interaction_port::{
@@ -41,9 +41,9 @@ use agora_protocol::v2::{
     VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use agora_retention_authority_port::{
-    AuthorityDecisionV1, ExportAuthorityRequestV1, ExportRetirementAuthorityRequestV1,
-    PolicyAuthorityRequestV1, ReceiptRetirementAuthorityRequestV1, RetentionAuthorityPortV1,
-    RetentionPolicyRevisionV1,
+    AuthoritativeChangeRetentionAuthorityRequestV1, AuthorityDecisionV1, ExportAuthorityRequestV1,
+    ExportRetirementAuthorityRequestV1, PolicyAuthorityRequestV1,
+    ReceiptRetirementAuthorityRequestV1, RetentionAuthorityPortV1, RetentionPolicyRevisionV1,
 };
 use agora_scheduled_publication_port::{
     ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationRefusalV1,
@@ -75,6 +75,8 @@ struct RetentionAuthority {
     export_retirement_calls: usize,
     last_export_retirement: Option<ExportRetirementAuthorityRequestV1>,
     retirement_calls: usize,
+    change_calls: usize,
+    last_change: Option<AuthoritativeChangeRetentionAuthorityRequestV1>,
 }
 
 impl RetentionAuthorityPortV1 for RetentionAuthority {
@@ -86,6 +88,15 @@ impl RetentionAuthorityPortV1 for RetentionAuthority {
     fn authorize_export(&mut self, request: ExportAuthorityRequestV1) -> AuthorityDecisionV1 {
         self.export_calls += 1;
         self.last_export = Some(request);
+        self.decision
+    }
+
+    fn authorize_authoritative_change_retention(
+        &mut self,
+        request: AuthoritativeChangeRetentionAuthorityRequestV1,
+    ) -> AuthorityDecisionV1 {
+        self.change_calls += 1;
+        self.last_change = Some(request);
         self.decision
     }
 
@@ -685,6 +696,63 @@ fn v2_verified_connection_binds_actor_and_exact_replay() {
 }
 
 #[test]
+fn v2_change_retention_revalidates_exact_authority_and_preserves_delivery() {
+    let (mut host, _) = make_host(2);
+    let (session, _, context) = open(&mut host, "alice", 1);
+    let revision = host.service().engine().revision();
+    let policy_revision = RetentionPolicyRevisionV1::new(1).unwrap();
+    let mut bounds = [RetentionBoundV1::Disabled; 6];
+    bounds[RecordClassV1::AuthoritativeChanges as usize - 1] =
+        RetentionBoundV1::entries(1).unwrap();
+    let policy = RetentionPolicyV1::new(policy_revision, revision.0, bounds);
+    let mut authority = RetentionAuthority {
+        decision: AuthorityDecisionV1::Authorized,
+        policy_calls: 0,
+        export_calls: 0,
+        last_export: None,
+        export_retirement_calls: 0,
+        last_export_retirement: None,
+        retirement_calls: 0,
+        change_calls: 0,
+        last_change: None,
+    };
+    host.install_retention_policy(session, policy, &mut authority, &context, HostTimeV1(2))
+        .unwrap();
+
+    authority.decision = AuthorityDecisionV1::Denied;
+    assert_eq!(
+        host.apply_authoritative_change_retention(
+            session,
+            policy_revision,
+            &mut authority,
+            &context,
+            HostTimeV1(3),
+        ),
+        Err(AuthoritativeChangeRetentionHostRefusalV1::AuthorityDenied)
+    );
+    assert_eq!(host.service().engine().retained_changes().len(), 2);
+    authority.decision = AuthorityDecisionV1::Authorized;
+    let applied = host
+        .apply_authoritative_change_retention(
+            session,
+            policy_revision,
+            &mut authority,
+            &context,
+            HostTimeV1(4),
+        )
+        .unwrap();
+    assert_eq!(applied.discarded_records, 1);
+    assert_eq!(host.service().engine().retained_changes().len(), 1);
+    assert_eq!(host.service().engine().pending_events().len(), 2);
+    assert_eq!(authority.change_calls, 2);
+    let request = authority.last_change.unwrap();
+    assert_eq!(request.observed_engine_revision, 2);
+    assert_eq!(request.prior_discarded_through, 0);
+    assert_eq!(request.retained_records, 2);
+    assert!(!format!("{request:?}").contains("alice"));
+}
+
+#[test]
 fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric() {
     let (mut host, _) = make_host(4);
     let (alice_session, alice_client, alice_context) = open(&mut host, "alice", 1);
@@ -723,6 +791,8 @@ fn v2_receipt_retirement_requires_current_authority_and_is_participant_symmetric
         export_retirement_calls: 0,
         last_export_retirement: None,
         retirement_calls: 0,
+        change_calls: 0,
+        last_change: None,
     };
     let policy = RetentionPolicyV1::new(
         policy_revision,
@@ -849,6 +919,8 @@ fn v2_export_admission_revalidates_exact_authority_before_separate_custody() {
         export_retirement_calls: 0,
         last_export_retirement: None,
         retirement_calls: 0,
+        change_calls: 0,
+        last_change: None,
     };
     host.install_retention_policy(
         alice_session,
@@ -961,6 +1033,8 @@ fn v2_export_retirement_revalidates_exact_authority_before_custody() {
         export_retirement_calls: 0,
         last_export_retirement: None,
         retirement_calls: 0,
+        change_calls: 0,
+        last_change: None,
     };
     host.install_retention_policy(
         alice_session,
