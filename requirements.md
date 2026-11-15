@@ -798,6 +798,27 @@
   MUST remain explicit in the adapter. Addressing, invocation, provider success,
   or an external-work reference MUST NOT imply agent activation, task admission,
   execution, completion, or delivery.
+- **R105 — bounded authenticated remote transport:** Remote transport MUST be a
+  separate authority-free package owning TCP/TLS resources, certificate
+  verification, exact framing, connection concurrency, queue budgets,
+  deadlines, channel binding, and concurrent drain without importing Agora
+  domain, Host, Aegis policy, participant, task, delivery, or federation
+  semantics. The initial profile MUST use TLS 1.3 with exact ALPN, disabled
+  early data and session tickets, configured trust anchors, exact server-name
+  verification, and an optional required-client-certificate service profile.
+  Certificate identity MUST NOT become participant identity or authority. A
+  canonical post-TLS hello MUST negotiate one exact compatible closed protocol
+  profile, positive budgets, capability discovery, and a nonzero server
+  incarnation before authentication or Host work. Connections, handshakes,
+  frames, retained bytes, requests, and pending writes MUST be bounded;
+  overload MUST refuse before application admission, while accepted replies
+  MUST backpressure or close explicitly rather than disappear. Drain MUST stop
+  accepts and new application admission, bound completion of already admitted
+  replies by a deadline, force-close residue, and report exact content-free
+  counts without relabeling a fence. Reconnection MUST create a fresh transport
+  session and MUST NOT imply replay, authority, or semantic success. Upgrade
+  compatibility MUST use closed range intersection and exact profile selection
+  without reinterpreting earlier bytes.
 
 ## Explicitly open
 
@@ -807,6 +828,8 @@ composition foundations, and R104 has a qualified Agora context/promotion
 boundary plus an initial closed acknowledgement adapter; the remaining live
 Chronos atomic-admission, concrete delivery-endpoint, and additional schema-
 adapter profiles are tracked explicitly in traceability.
+R105's remote transport architecture is accepted, while its implementation and
+qualification remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part
