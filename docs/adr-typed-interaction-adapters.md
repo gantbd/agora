@@ -81,9 +81,13 @@ An exact retained publication replays even after the source event is evicted;
 changed reuse conflicts. Commit uncertainty is reconciled through the durable
 Host before a result is returned.
 
-The separate schema adapters, their ephemeral state, invocation journals,
-Aegis action composition, external transport reconciliation, and qualification
-remain outside this repository and open.
+The separate `agora-interaction-adapter` implements and qualifies an initial
+closed acknowledgement schema. Its strong-receipt journal, restart-empty
+ephemeral cache, exact promotion replay, distinct Aegis actions, frozen
+checkpoint, supply inventory, and mutation closure are pinned at revisions
+`6c7429f` and `da40c14`. Additional schemas and any external-provider transport
+remain separately qualified future profiles; the schema identifier is not an
+extension escape hatch.
 
 ## Nonclaims
 
