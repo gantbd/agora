@@ -89,6 +89,14 @@
       "audiences": ["remote-client", "sdk", "trusted-host"],
       "publish": false
     },
+    "agora-retention-authority-port": {
+      "path": "ports/agora-retention-authority-port",
+      "category": "port",
+      "maturity": "adopted",
+      "effect_class": "pure",
+      "audiences": ["application", "trusted-host"],
+      "publish": false
+    },
     "agora-sdk-client": {
       "path": "sdk/client",
       "category": "sdk",

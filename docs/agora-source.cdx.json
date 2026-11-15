@@ -291,6 +291,28 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:cargo/agora-retention-authority-port@0.1.0",
+      "name": "agora-retention-authority-port",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-retention-authority-port@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:cargo/agora-scheduled-publication-port@0.1.0",
       "name": "agora-scheduled-publication-port",
       "version": "0.1.0",
@@ -634,6 +656,12 @@
     {
       "ref": "pkg:cargo/agora-protocol@0.1.0",
       "dependsOn": []
+    },
+    {
+      "ref": "pkg:cargo/agora-retention-authority-port@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-engine@0.3.0"
+      ]
     },
     {
       "ref": "pkg:cargo/agora-scheduled-publication-port@0.1.0",

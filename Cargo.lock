@@ -112,6 +112,13 @@ name = "agora-protocol"
 version = "0.1.0"
 
 [[package]]
+name = "agora-retention-authority-port"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+]
+
+[[package]]
 name = "agora-scheduled-publication-port"
 version = "0.1.0"
 

@@ -177,6 +177,15 @@ if [[ $(printf '%s\n' "$interaction_port_tree" | wc -l | tr -d ' ') != 1 ]]; the
   exit 1
 fi
 
+retention_authority_port_tree=$(cargo tree -p agora-retention-authority-port --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$retention_authority_port_tree" | wc -l | tr -d ' ') != 2 ]] \
+  || ! printf '%s\n' "$retention_authority_port_tree" | rg -q 'agora-engine' \
+  || printf '%s\n' "$retention_authority_port_tree" | rg -q 'agora-(service|host|wire|client)'; then
+  printf '%s\n' "$retention_authority_port_tree" >&2
+  echo 'Agora retention-authority port escaped its pure engine-contract closure' >&2
+  exit 1
+fi
+
 search_memory_tree=$(cargo tree -p agora-search-memory --edges normal --depth 1 --locked --offline)
 if [[ $(printf '%s\n' "$search_memory_tree" | wc -l | tr -d ' ') != 2 ]] \
   || ! printf '%s\n' "$search_memory_tree" | rg -q 'agora-search-port' \
@@ -219,4 +228,4 @@ for sdk_manifest in sdk/embedded/Cargo.toml sdk/client/Cargo.toml; do
   fi
 done
 
-echo 'Agora dependency direction closed; search, delivery projection, federated publication, interaction, and scheduled publication remain port-only and effects stay in qualified adapters'
+echo 'Agora dependency direction closed; search, delivery projection, federated publication, interaction, retention authority, and scheduled publication remain port-only and effects stay in qualified adapters'

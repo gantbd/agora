@@ -23,6 +23,7 @@ agora-service --> agora-delivery-projection-port
 agora-service --> agora-interaction-port
 agora-service --> agora-scheduled-publication-port
 agora-service --> agora-federated-publication-port
+agora-retention-authority-port --> agora-engine closed retention values
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-observation --> keystone-storage port
 agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem

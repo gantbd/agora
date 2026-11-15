@@ -148,6 +148,10 @@ ordered bounded chunk manifests, distinct retention tombstones, ordered bounded
 reclamation plans, and the four non-erasure reclamation evidence stages. Engine
 state transitions, canonical persistence/wire profiles, authority composition,
 export materialization, and physical adapter reclamation remain open.
+The effect-free `agora-retention-authority-port` reuses those
+Agora-owned values and gives a configured application verifier separate,
+revision-bound policy-installation and export decisions. It grants no storage,
+materialization, reclamation, legal-hold, or compliance authority.
 
 ## Nonclaims
 

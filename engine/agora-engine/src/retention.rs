@@ -28,6 +28,8 @@ pub const RECORD_CLASSES_V1: [RecordClassV1; 6] = [
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RetentionBoundV1 {
+    /// This class retains no records under the policy. This never means
+    /// unbounded retention and does not reconstruct records if later enabled.
     Disabled,
     Entries(NonZeroUsize),
 }
@@ -42,6 +44,10 @@ impl RetentionBoundV1 {
             Self::Disabled => None,
             Self::Entries(value) => Some(value.get()),
         }
+    }
+
+    pub fn retains_records(self) -> bool {
+        matches!(self, Self::Entries(_))
     }
 }
 

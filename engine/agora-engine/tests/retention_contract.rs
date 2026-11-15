@@ -40,6 +40,11 @@ fn policy_is_complete_and_classes_do_not_alias() {
         policy.bound(RecordClassV1::OperationalCopies).maximum(),
         None
     );
+    assert!(
+        !policy
+            .bound(RecordClassV1::OperationalCopies)
+            .retains_records()
+    );
     assert!(RetentionBoundV1::entries(0).is_none());
     assert!(RetentionPolicyRevisionV1::new(0).is_none());
 }
