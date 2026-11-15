@@ -89,6 +89,14 @@
       "audiences": ["service", "trusted-host"],
       "publish": false
     },
+    "agora-export-local": {
+      "path": "applications/agora-export-local",
+      "category": "application",
+      "maturity": "qualified",
+      "effect_class": "composition-root",
+      "audiences": ["application"],
+      "publish": false
+    },
     "agora-local-daemon": {
       "path": "applications/agora-local-daemon",
       "category": "application",

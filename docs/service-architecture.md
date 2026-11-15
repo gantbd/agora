@@ -27,6 +27,7 @@ agora-retention-authority-port --> agora-engine closed retention values
 agora-export-custody-port --> agora-engine closed export values
 agora-export-service --> agora-engine closed export values
 agora-export-durable --> export-custody port + agora-export-service + agora-engine + keystone-storage port
+agora-export-local --> agora-export-durable + agora-export-service + agora-sha256 + agora-storage-directory
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-observation --> keystone-storage port
 agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem
@@ -261,6 +262,15 @@ known refusal restores the prior checkpoint, and store error, indeterminate
 outcome, weak acknowledgement, or invalid receipt fences the live owner until
 fresh recovery. Concrete physical composition and selection of the qualified
 digest provider remain enclosing trusted-host obligations.
+The qualified `agora-export-local` application closes one such private-local
+composition. It binds `agora-sha256`, the durable export owner, and an exclusive
+`agora-storage-directory` under independent export store key, revision, scope,
+and limits. Real filesystem evidence commits one administrative operational-copy
+materialization, drops every live owner, reopens and digest-verifies custody, and
+returns exact replay without another retained copy. Startup limit mismatch
+refuses before directory creation; later failure leaves inspectable residue.
+This uses the directory as a custody register only and makes no reclamation
+claim.
 `agora-export-custody-port` erases storage vocabulary while preserving exact
 materialized/replay success, committed/previously-committed evidence, stale or
 conflicting admission, capacity, definite noncommit, unknown outcome, fencing,

@@ -231,6 +231,12 @@ fence until fresh recovery. A concrete store composition, other class-specific
 source projections, authorization, digest-provider composition, and export
 retirement remain open.
 The participant protocol remains free of administrative export commands.
+The separate `agora-export-local` application now closes the bounded private
+local digest/custody/store composition: it selects `agora-sha256`, gives export
+custody its own private-directory register and revision line, verifies recovery
+after dropping every live owner, and proves exact retry is replay rather than a
+second copy. This qualifies custody persistence only. The single-head directory
+mechanism remains ineligible for physical reclamation evidence.
 The effect-free `agora-export-custody-port` now separates Host from that durable
 implementation. `HostV2` revalidates the administrative session, checks the
 prepared manifest against the current engine and installed-policy revisions,

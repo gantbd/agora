@@ -24,7 +24,7 @@ entries and requires every path to occupy its declared category directory.
 | Port | `agora-delivery-projection-port`, `agora-export-custody-port`, `agora-federated-publication-port`, `agora-interaction-port`, `agora-retention-authority-port`, `agora-scheduled-publication-port`, `agora-search-port`, `agora-storage-observation` | Effect-free outbound and trusted integration contracts |
 | Adapter | `agora-aegis-verifier`, `agora-search-memory`, `agora-sha256`, `agora-storage-directory` | Concrete or reference interpretations of ports and named pure provider profiles |
 | Transport | `agora-local-transport` | Authority-free Unix endpoint, stream, framing, lifetime, and entropy mechanics |
-| Application | `agora-local-daemon` | Aegis/Host/durability composition, routing, clocks, recovery policy, lifecycle, and observation |
+| Application | `agora-export-local`, `agora-local-daemon` | Separate private-local export digest/custody/store composition; Aegis/Host/durability conversation composition, routing, clocks, recovery policy, lifecycle, and observation |
 | SDK | `agora-sdk-embedded`, `agora-sdk-client` | Zero-authority audience facades |
 
 The packages occupy explicit engine, protocol, client, service, host, port,

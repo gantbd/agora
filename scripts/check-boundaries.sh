@@ -13,8 +13,15 @@ if rg -n 'std::(fs|net|process)::|tokio|async_std|reqwest|rusqlite' \
   engine protocol client service host ports adapters transport applications sdk -g '*.rs' \
   -g '!adapters/agora-storage-directory/**' \
   -g '!transport/agora-local-transport/**' \
+  -g '!applications/agora-export-local/**' \
   -g '!applications/agora-local-daemon/**'; then
   echo 'effectful runtime dependency crossed an Agora semantic boundary' >&2
+  exit 1
+fi
+
+if sed '/^#\[cfg(test)\]/,$d' applications/agora-export-local/src/lib.rs \
+  | rg -n 'std::(fs|net|process)::|std::os::unix::fs::|UnixListener'; then
+  echo 'filesystem or transport mechanics crossed into the export composition root' >&2
   exit 1
 fi
 
@@ -89,6 +96,19 @@ if [[ $(printf '%s\n' "$export_durable_tree" | wc -l | tr -d ' ') != 5 ]] \
   || printf '%s\n' "$export_durable_tree" | rg -q 'agora-(service|host|protocol|wire|client|durable)'; then
   printf '%s\n' "$export_durable_tree" >&2
   echo 'Agora durable export custody escaped its export-service/storage-port closure' >&2
+  exit 1
+fi
+
+export_local_tree=$(cargo tree -p agora-export-local --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$export_local_tree" | wc -l | tr -d ' ') != 6 ]] \
+  || ! printf '%s\n' "$export_local_tree" | rg -q 'agora-engine' \
+  || ! printf '%s\n' "$export_local_tree" | rg -q 'agora-export-durable' \
+  || ! printf '%s\n' "$export_local_tree" | rg -q 'agora-export-service' \
+  || ! printf '%s\n' "$export_local_tree" | rg -q 'agora-sha256' \
+  || ! printf '%s\n' "$export_local_tree" | rg -q 'agora-storage-directory' \
+  || printf '%s\n' "$export_local_tree" | rg -q 'agora-(host|protocol|wire|client)|aegis'; then
+  printf '%s\n' "$export_local_tree" >&2
+  echo 'Agora local export composition escaped its source-free digest/custody/store closure' >&2
   exit 1
 fi
 

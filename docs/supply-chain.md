@@ -3,7 +3,7 @@
 Status: deterministic local-source inventory and source SBOM; not a binary SBOM
 or legal review.
 
-The current locked graph contains twenty-nine components: twenty-five Agora
+The current locked graph contains thirty components: twenty-six Agora
 packages, two Aegis packages, and the sibling `keystone-codec` and
 `keystone-storage` path packages. It contains no registry or Git source and no
 Cargo checksum records. Every stable-workspace manifest dependency uses an
@@ -16,10 +16,10 @@ changed-version, and empty-inventory mutants.
 
 The same gate regenerates `docs/agora-source.cdx.json` from locked offline Cargo
 metadata and requires byte equality. This canonical CycloneDX 1.5 document
-contains exactly the twenty-nine local-path components, their closed Cargo
+contains exactly the thirty local-path components, their closed Cargo
 dependency edges, exact versions, declared `MIT OR Apache-2.0` expressions, and
 denied publication state. Its SHA-256 digest is
-`1d787d1f6986ffb7dffac5f09edbf824665ac141d2a36c75d1f4d84df18544b9`.
+`c358bd9ec9fb28ebb45c2d74357b0db427dd19e26122ed798cc6780f44e8a38b`.
 The validator rejects vocabulary drift, noncanonical order, missing or duplicate
 components and edges, unknown references, host paths, altered licenses, and
 publication-enabled records; focused mutants exercise those boundaries.
@@ -32,7 +32,7 @@ Agora package or included in the stable local-only supply claim.
 
 The latest qualified source-candidate remains the historical twenty-component
 profile described below; it has not yet been regenerated for the current
-twenty-nine-component graph. In that profile, Agora bytes came from an exact
+thirty-component graph. In that profile, Agora bytes came from an exact
 clean tracked revision;
 selected Aegis and Keystone bytes are individually checksummed and their subtree
 cleanliness is stated rather than inferred from the contextual repository

@@ -79,6 +79,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "agora-export-local"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+ "agora-export-custody-port",
+ "agora-export-durable",
+ "agora-export-service",
+ "agora-service",
+ "agora-sha256",
+ "agora-storage-directory",
+]
+
+[[package]]
 name = "agora-export-service"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,170 @@
+use agora_engine::Engine;
+use agora_engine::retention::{
+    ExportRequestIdV1, ExportScopeBindingV1, RecordClassV1, RetentionBoundV1,
+    RetentionPolicyRevisionV1, RetentionPolicyV1,
+};
+use agora_export_custody_port::{
+    ExportCustodyApplyV1, ExportCustodyDurabilityV1, ExportCustodyPortV1, ExportCustodyRequestV1,
+};
+use agora_export_durable::DurableExportConfigV1;
+use agora_export_local::{initialize_new_v1, recover_existing_v1};
+use agora_export_service::{
+    ExportCheckpointScopeV1, ExportRecoveryLimitsV1, ExportServiceLimitsV1,
+};
+use agora_service::v2::export_source::AdministrativeCheckpointSourceV1;
+use agora_service::v2::persistence::ServiceCheckpointScopeV1;
+use agora_service::v2::{ServiceLimitsV2, ServiceV2};
+use agora_sha256::digest_v1;
+use agora_storage_directory::DirectoryLimitsV1;
+use std::fs;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const MAX_BYTES: usize = 2 * 1_024 * 1_024;
+
+fn temporary_path() -> PathBuf {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("agora-export-local-{}-{nonce}", std::process::id()))
+}
+
+fn durable_config() -> DurableExportConfigV1 {
+    DurableExportConfigV1::new(
+        "export-custody-v1",
+        ExportCheckpointScopeV1::new([9; 16]).unwrap(),
+        MAX_BYTES,
+        ExportRecoveryLimitsV1 {
+            max_snapshot_bytes: MAX_BYTES,
+            maximum_service_limits: ExportServiceLimitsV1 {
+                max_exports: 4,
+                max_chunks_per_export: 4,
+                max_chunk_bytes: MAX_BYTES,
+            },
+        },
+    )
+    .unwrap()
+}
+
+fn materialization() -> (
+    u64,
+    RetentionPolicyRevisionV1,
+    agora_engine::retention::ExportMaterializationV1,
+) {
+    let mut service = ServiceV2::new(Engine::new(), ServiceLimitsV2::default());
+    let mut bounds = [RetentionBoundV1::entries(8).unwrap(); 6];
+    bounds[RecordClassV1::OperationalCopies as usize - 1] = RetentionBoundV1::entries(1).unwrap();
+    let policy_revision = RetentionPolicyRevisionV1::new(3).unwrap();
+    service
+        .install_retention_policy(RetentionPolicyV1::new(
+            policy_revision,
+            service.engine().revision().0,
+            bounds,
+        ))
+        .unwrap();
+    let source = AdministrativeCheckpointSourceV1::capture(
+        &service,
+        ServiceCheckpointScopeV1::new([7; 16]),
+        MAX_BYTES,
+        MAX_BYTES,
+    )
+    .unwrap();
+    let materialization = source
+        .materialize(
+            ExportRequestIdV1::new([4; 16]).unwrap(),
+            ExportScopeBindingV1::new([5; 32]).unwrap(),
+            4,
+            MAX_BYTES,
+            digest_v1,
+        )
+        .unwrap();
+    (
+        source.source_engine_revision(),
+        policy_revision,
+        materialization,
+    )
+}
+
+#[test]
+fn physical_custody_commits_recovers_and_replays_without_a_second_copy() {
+    let path = temporary_path();
+    let directory_limits = DirectoryLimitsV1 {
+        max_key_bytes: 128,
+        max_value_bytes: MAX_BYTES,
+    };
+    let service_limits = ExportServiceLimitsV1 {
+        max_exports: 4,
+        max_chunks_per_export: 4,
+        max_chunk_bytes: MAX_BYTES,
+    };
+    let (engine_revision, policy_revision, materialization) = materialization();
+    let request =
+        ExportCustodyRequestV1::new(engine_revision, policy_revision, materialization.clone());
+    let mut custody =
+        initialize_new_v1(&path, directory_limits, service_limits, durable_config()).unwrap();
+    let accepted = ExportCustodyPortV1::admit(&mut custody, request.clone()).unwrap();
+    assert_eq!(accepted.apply, ExportCustodyApplyV1::Materialized);
+    assert_eq!(
+        accepted.durability,
+        ExportCustodyDurabilityV1::Committed { store_revision: 1 }
+    );
+    let (_, store, _) = custody.into_parts();
+    drop(store);
+
+    let mut recovered = recover_existing_v1(&path, directory_limits, durable_config()).unwrap();
+    assert_eq!(recovered.service().unwrap().len(), 1);
+    let replay = ExportCustodyPortV1::admit(&mut recovered, request).unwrap();
+    assert_eq!(replay.apply, ExportCustodyApplyV1::Replay);
+    assert_eq!(
+        replay.durability,
+        ExportCustodyDurabilityV1::PreviouslyCommitted { store_revision: 1 }
+    );
+    let (_, store, _) = recovered.into_parts();
+    drop(store);
+    fs::remove_dir_all(&path).unwrap();
+}
+
+#[test]
+fn invalid_cross_layer_limit_refuses_before_creating_a_directory() {
+    let path = temporary_path();
+    let refusal = initialize_new_v1(
+        &path,
+        DirectoryLimitsV1 {
+            max_key_bytes: 128,
+            max_value_bytes: 1,
+        },
+        ExportServiceLimitsV1::default(),
+        durable_config(),
+    );
+    assert!(matches!(
+        refusal,
+        Err(agora_export_local::LocalExportStartErrorV1::InvalidComposition)
+    ));
+    assert!(!path.exists());
+}
+
+#[test]
+fn diagnostics_hide_directory_store_and_digest_state() {
+    let path = temporary_path();
+    let custody = initialize_new_v1(
+        &path,
+        DirectoryLimitsV1 {
+            max_key_bytes: 128,
+            max_value_bytes: MAX_BYTES,
+        },
+        ExportServiceLimitsV1 {
+            max_exports: 4,
+            max_chunks_per_export: 4,
+            max_chunk_bytes: MAX_BYTES,
+        },
+        durable_config(),
+    )
+    .unwrap();
+    let rendered = format!("{custody:?}");
+    assert!(rendered.contains("<redacted>"));
+    assert!(!rendered.contains(path.to_string_lossy().as_ref()));
+    let (_, store, _) = custody.into_parts();
+    drop(store);
+    fs::remove_dir_all(path).unwrap();
+}
