@@ -1245,6 +1245,10 @@ impl Engine {
             .publications
             .keys()
             .any(|key| key.domain != PublicationDomainV2::Legacy);
+        let include_scoped_federation = self
+            .publications
+            .keys()
+            .any(|key| matches!(key.identity, PublicationIdentityV2::Federated { .. }));
         w.raw(b"AGORACP\0")?;
         let feature_bits = u8::from(include_vellum_artifacts)
             + (u8::from(include_conversation_profiles) * 2)
@@ -1252,7 +1256,9 @@ impl Engine {
             + (u8::from(include_private_saves) * 8)
             + (u8::from(include_shared_pins) * 16);
         if include_message_reports || include_publication_domains {
-            w.byte(if include_publication_domains {
+            w.byte(if include_scoped_federation {
+                150
+            } else if include_publication_domains {
                 149
             } else {
                 148
@@ -1506,7 +1512,27 @@ impl Engine {
             if include_publication_domains {
                 w.byte(key.domain as u8)?;
             }
-            w.raw(&key.value)?;
+            if include_scoped_federation {
+                match key.identity {
+                    PublicationIdentityV2::Short(value) => {
+                        w.byte(0)?;
+                        w.raw(&value)?;
+                    }
+                    PublicationIdentityV2::Federated { scope, request } => {
+                        if key.domain != PublicationDomainV2::Federation {
+                            return Err(CheckpointError::Invalid);
+                        }
+                        w.byte(1)?;
+                        w.raw(&scope)?;
+                        w.raw(&request)?;
+                    }
+                }
+            } else {
+                let PublicationIdentityV2::Short(value) = key.identity else {
+                    return Err(CheckpointError::Invalid);
+                };
+                w.raw(&value)?;
+            }
             w.text(p.room_id.as_str())?;
             w.text(p.author.as_str())?;
             w.number(p.at.0)?;
@@ -1551,11 +1577,12 @@ impl Engine {
             has_admission_control,
             has_message_reports,
             has_publication_domains,
+            has_scoped_federation,
         ) = match profile {
-            20..=51 => (profile - 20, false, false, false, false),
-            52..=83 => (profile - 52, true, false, false, false),
-            84..=115 => (profile - 84, false, true, false, false),
-            116..=147 => (profile - 116, true, true, false, false),
+            20..=51 => (profile - 20, false, false, false, false, false),
+            52..=83 => (profile - 52, true, false, false, false, false),
+            84..=115 => (profile - 84, false, true, false, false, false),
+            116..=147 => (profile - 116, true, true, false, false, false),
             148 => {
                 let extended = r.byte()?;
                 if extended & 0x80 == 0 {
@@ -1566,6 +1593,7 @@ impl Engine {
                     extended & 0x20 != 0,
                     extended & 0x40 != 0,
                     true,
+                    false,
                     false,
                 )
             }
@@ -1584,6 +1612,26 @@ impl Engine {
                     extended & 0x20 != 0,
                     extended & 0x40 != 0,
                     has_message_reports,
+                    true,
+                    false,
+                )
+            }
+            150 => {
+                let extended = r.byte()?;
+                if extended & 0x80 == 0 {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                let has_message_reports = match r.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(CheckpointError::NonCanonical),
+                };
+                (
+                    extended & 0x1f,
+                    extended & 0x20 != 0,
+                    extended & 0x40 != 0,
+                    has_message_reports,
+                    true,
                     true,
                 )
             }
@@ -2092,7 +2140,17 @@ impl Engine {
             } else {
                 PublicationDomainV2::Legacy
             };
-            let key = PublicationKeyV2::namespaced(domain, r.fixed()?);
+            let key = if has_scoped_federation {
+                match r.byte()? {
+                    0 => PublicationKeyV2::namespaced(domain, r.fixed()?),
+                    1 if domain == PublicationDomainV2::Federation => {
+                        PublicationKeyV2::federation(r.fixed()?, r.fixed()?)
+                    }
+                    _ => return Err(CheckpointError::Invalid),
+                }
+            } else {
+                PublicationKeyV2::namespaced(domain, r.fixed()?)
+            };
             let room_id = r.room(l)?;
             let author = r.participant(l)?;
             let at = LogicalTime(r.number()?);

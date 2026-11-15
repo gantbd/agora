@@ -99,6 +99,69 @@ fn namespaced_publication_receipts_select_profile_149_and_recover_exactly() {
     );
 }
 
+#[test]
+fn scoped_federation_receipts_select_profile_150_and_recover_exactly() {
+    let mut engine = configured();
+    let publication = PublicationCommandV2::new(
+        engine.revision(),
+        PublicationKeyV2::federation([8; 64], [9; 16]),
+        "room".into(),
+        "agent".into(),
+        LogicalTime(12),
+        "scoped federation",
+    );
+    let first = engine.publish(publication.clone()).unwrap();
+    let checkpoint = engine.prepare_checkpoint(65_536).unwrap();
+    assert_eq!(checkpoint.bytes()[8], 150);
+    assert_eq!(
+        checkpoint.bytes(),
+        decode_hex(include_str!("fixtures/checkpoint-v22.hex"))
+    );
+    let mut recovered = recover(checkpoint.bytes());
+    assert_eq!(recovered.publish(publication).unwrap(), first);
+    assert_eq!(
+        recovered.prepare_checkpoint(65_536).unwrap().bytes(),
+        checkpoint.bytes()
+    );
+
+    let marker: Vec<u8> = [PublicationDomainV2::Federation as u8, 1]
+        .into_iter()
+        .chain([8; 64])
+        .chain([9; 16])
+        .collect();
+    let position = checkpoint
+        .bytes()
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap();
+    let mut unknown_identity = checkpoint.bytes().to_vec();
+    unknown_identity[position + 1] = 2;
+    assert_eq!(
+        Engine::recover_checkpoint(
+            &unknown_identity,
+            RecoveryLimits {
+                max_snapshot_bytes: 65_536,
+                maximum_engine_limits: Limits::default(),
+            },
+        )
+        .unwrap_err(),
+        CheckpointError::Invalid
+    );
+    let mut wrong_domain = checkpoint.bytes().to_vec();
+    wrong_domain[position] = PublicationDomainV2::Scheduled as u8;
+    assert_eq!(
+        Engine::recover_checkpoint(
+            &wrong_domain,
+            RecoveryLimits {
+                max_snapshot_bytes: 65_536,
+                maximum_engine_limits: Limits::default(),
+            },
+        )
+        .unwrap_err(),
+        CheckpointError::Invalid
+    );
+}
+
 fn decode_hex(text: &str) -> Vec<u8> {
     text.trim()
         .as_bytes()

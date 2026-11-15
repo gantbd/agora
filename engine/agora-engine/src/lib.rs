@@ -2951,7 +2951,13 @@ impl PublicationDomainV2 {
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PublicationKeyV2 {
     domain: PublicationDomainV2,
-    value: [u8; 16],
+    identity: PublicationIdentityV2,
+}
+
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum PublicationIdentityV2 {
+    Short([u8; 16]),
+    Federated { scope: [u8; 64], request: [u8; 16] },
 }
 
 impl PublicationKeyV2 {
@@ -2959,12 +2965,22 @@ impl PublicationKeyV2 {
     pub const fn new(value: [u8; 16]) -> Self {
         Self {
             domain: PublicationDomainV2::Legacy,
-            value,
+            identity: PublicationIdentityV2::Short(value),
         }
     }
 
     pub const fn namespaced(domain: PublicationDomainV2, value: [u8; 16]) -> Self {
-        Self { domain, value }
+        Self {
+            domain,
+            identity: PublicationIdentityV2::Short(value),
+        }
+    }
+
+    pub const fn federation(scope: [u8; 64], request: [u8; 16]) -> Self {
+        Self {
+            domain: PublicationDomainV2::Federation,
+            identity: PublicationIdentityV2::Federated { scope, request },
+        }
     }
 
     pub const fn domain(self) -> PublicationDomainV2 {
@@ -2972,7 +2988,20 @@ impl PublicationKeyV2 {
     }
 
     fn legacy_alias(self) -> Option<Self> {
-        (self.domain != PublicationDomainV2::Legacy).then_some(Self::new(self.value))
+        let request = match self.identity {
+            PublicationIdentityV2::Short(value) => value,
+            PublicationIdentityV2::Federated { request, .. } => request,
+        };
+        (self.domain != PublicationDomainV2::Legacy).then_some(Self::new(request))
+    }
+
+    fn unscoped_federation_alias(self) -> Option<Self> {
+        match self.identity {
+            PublicationIdentityV2::Federated { request, .. } => {
+                Some(Self::namespaced(PublicationDomainV2::Federation, request))
+            }
+            PublicationIdentityV2::Short(_) => None,
+        }
     }
 }
 
@@ -5323,8 +5352,14 @@ impl Engine {
         }
         if let Some(existing) = command
             .key
-            .legacy_alias()
-            .and_then(|legacy| self.publications.get(&legacy))
+            .unscoped_federation_alias()
+            .and_then(|alias| self.publications.get(&alias))
+            .or_else(|| {
+                command
+                    .key
+                    .legacy_alias()
+                    .and_then(|legacy| self.publications.get(&legacy))
+            })
         {
             return if publication_offer_matches(existing, command, false) {
                 Ok(Some(existing.transition.clone()))
@@ -5348,8 +5383,14 @@ impl Engine {
         }
         if let Some(existing) = command
             .key
-            .legacy_alias()
-            .and_then(|legacy| self.publications.get(&legacy))
+            .unscoped_federation_alias()
+            .and_then(|alias| self.publications.get(&alias))
+            .or_else(|| {
+                command
+                    .key
+                    .legacy_alias()
+                    .and_then(|legacy| self.publications.get(&legacy))
+            })
         {
             if publication_offer_matches(existing, &command, false) {
                 return Ok(existing.transition.clone());

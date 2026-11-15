@@ -361,6 +361,14 @@ The additive `agora-federated-publication-port` has no wire grammar or durable
 bytes of its own. It reuses the profile-149 federation domain through Service,
 Host, and Durable Host; Protocol V1/V2 and Wire V1/V2 bytes remain unchanged.
 
+Engine checkpoint profile `150` is selected only when a federation receipt has
+a full 64-byte home scope in addition to its 16-byte request ID. It preserves
+profile 149's metadata, then gives every receipt a closed short-or-scoped
+identity tag. A scoped identity is valid only in the federation domain. The
+frozen `checkpoint-v22.hex` fixture pins the grammar; unknown identity tags and
+scoped identities under other domains fail closed. Profile 149 bytes remain
+unchanged and provide the bounded exact-content migration alias.
+
 ## Conservative baseline gate
 
 `docs/compatibility-baseline.txt` records the exact sorted Cargo package

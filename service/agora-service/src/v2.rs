@@ -377,7 +377,7 @@ impl ServiceV2 {
         }
         let command = PublicationCommandV2::new(
             self.engine.revision(),
-            PublicationKeyV2::namespaced(PublicationDomainV2::Federation, request.id.into_bytes()),
+            PublicationKeyV2::federation(request.scope.into_bytes(), request.id.into_bytes()),
             RoomId::new(request.intent.room_id()),
             participant,
             agora_engine::LogicalTime(instant_ms),

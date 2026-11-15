@@ -13,6 +13,7 @@ use agora_engine::{
 };
 use agora_federated_publication_port::{
     FederatedPublicationIdV1, FederatedPublicationIntentV1, FederatedPublicationRequestV1,
+    FederatedPublicationScopeV1,
 };
 use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::HostV2;
@@ -1236,6 +1237,7 @@ fn federated_publication_is_commit_gated_and_replays_with_original_home_time() {
     ));
     let request = FederatedPublicationRequestV1 {
         id: FederatedPublicationIdV1::new([18; 16]).unwrap(),
+        scope: FederatedPublicationScopeV1::new([3; 64]),
         intent: FederatedPublicationIntentV1::new("room", "federated"),
     };
     store.next(NextCommit::IndeterminateAfter);

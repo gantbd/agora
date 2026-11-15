@@ -118,6 +118,14 @@ Host commits the complete resulting Host checkpoint before the semantic reply
 escapes. An exact federation receipt replay retains the first accepted Host
 time while continuing to require equal room, actor, and body. Legacy migration
 and every non-federation source remain time-exact.
+The configured endpoint reports only `Reply`, `DefinitelyNotExecuted`, or
+`OutcomeUnknown`; the composition must never convert durability or transport
+ambiguity into a stable refusal.
+Because admission request IDs are scoped by authenticated sender, the adapter
+must also supply the full participant/room binding as a 64-byte receipt scope.
+Agora checkpoint profile 150 retains that scope canonically. Equal request IDs
+from distinct peers or participant/room bindings are independent; an old
+unscoped federation receipt remains only an exact-content migration alias.
 
 ### Partitions and revocation
 

@@ -111,6 +111,7 @@ fn facade_names_the_trusted_federated_publication_contract() {
     let id = federated_publication::FederatedPublicationIdV1::new([8; 16]).unwrap();
     let request = federated_publication::FederatedPublicationRequestV1 {
         id,
+        scope: federated_publication::FederatedPublicationScopeV1::new([9; 64]),
         intent: federated_publication::FederatedPublicationIntentV1::new("room", "federated"),
     };
     assert_eq!(request.id, id);

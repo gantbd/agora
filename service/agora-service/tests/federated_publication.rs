@@ -3,7 +3,7 @@ use agora_engine::{
 };
 use agora_federated_publication_port::{
     FederatedPublicationIdV1, FederatedPublicationIntentV1, FederatedPublicationRefusalV1,
-    FederatedPublicationRequestV1,
+    FederatedPublicationRequestV1, FederatedPublicationScopeV1,
 };
 use agora_protocol::v2::{CommandV2, ReplyV2, RequestIdV2, RequestV2};
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
@@ -40,6 +40,7 @@ fn setup() -> ServiceV2 {
 fn federated(id: u8, body: &str) -> FederatedPublicationRequestV1 {
     FederatedPublicationRequestV1 {
         id: FederatedPublicationIdV1::new([id; 16]).unwrap(),
+        scope: FederatedPublicationScopeV1::new([9; 64]),
         intent: FederatedPublicationIntentV1::new("room", body),
     }
 }
@@ -73,6 +74,26 @@ fn publication_is_actor_bound_host_timed_and_exactly_replayable() {
             1_002,
         ),
         Err(FederatedPublicationRefusalV1::NotAuthorized)
+    );
+}
+
+#[test]
+fn equal_request_ids_in_distinct_home_scopes_do_not_collide() {
+    let mut service = setup();
+    let agent = service.connect("agent").unwrap();
+    let first = federated(7, "first scope");
+    let mut second = federated(7, "second scope");
+    second.scope = FederatedPublicationScopeV1::new([10; 64]);
+    assert!(service.publish_federated_at(agent, first, 1_000).is_ok());
+    assert!(service.publish_federated_at(agent, second, 1_001).is_ok());
+    assert_eq!(
+        service
+            .engine()
+            .room(&"room".into())
+            .unwrap()
+            .messages
+            .len(),
+        2
     );
 }
 

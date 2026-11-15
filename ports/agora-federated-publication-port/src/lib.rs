@@ -29,6 +29,25 @@ impl fmt::Debug for FederatedPublicationIdV1 {
     }
 }
 
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FederatedPublicationScopeV1([u8; 64]);
+
+impl FederatedPublicationScopeV1 {
+    pub const fn new(bytes: [u8; 64]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn into_bytes(self) -> [u8; 64] {
+        self.0
+    }
+}
+
+impl fmt::Debug for FederatedPublicationScopeV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("FederatedPublicationScopeV1(<opaque>)")
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FederatedPublicationInputRefusalV1 {
     ZeroIdentity,
@@ -70,6 +89,7 @@ impl fmt::Debug for FederatedPublicationIntentV1 {
 #[derive(Clone, Eq, PartialEq)]
 pub struct FederatedPublicationRequestV1 {
     pub id: FederatedPublicationIdV1,
+    pub scope: FederatedPublicationScopeV1,
     pub intent: FederatedPublicationIntentV1,
 }
 
@@ -78,6 +98,7 @@ impl fmt::Debug for FederatedPublicationRequestV1 {
         formatter
             .debug_struct("FederatedPublicationRequestV1")
             .field("id", &self.id)
+            .field("scope", &self.scope)
             .field("intent", &self.intent)
             .finish()
     }
@@ -102,13 +123,23 @@ pub enum FederatedPublicationRefusalV1 {
     Exhausted,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FederatedPublicationOutcomeV1 {
+    /// Agora returned the exact request's stable semantic result.
+    Reply(Result<FederatedPublicationAcceptedV1, FederatedPublicationRefusalV1>),
+    /// The configured endpoint establishes that execution did not occur.
+    DefinitelyNotExecuted,
+    /// The endpoint cannot establish whether the exact request executed.
+    OutcomeUnknown,
+}
+
 /// A configured trusted endpoint. Implementations capture identity mapping,
 /// authentication, and clock context; callers cannot assert those facts.
 pub trait FederatedPublicationPortV1 {
     fn publish_federated(
         &mut self,
         request: FederatedPublicationRequestV1,
-    ) -> Result<FederatedPublicationAcceptedV1, FederatedPublicationRefusalV1>;
+    ) -> FederatedPublicationOutcomeV1;
 }
 
 #[cfg(test)]
@@ -123,6 +154,7 @@ mod tests {
         );
         let request = FederatedPublicationRequestV1 {
             id: FederatedPublicationIdV1::new([7; 16]).unwrap(),
+            scope: FederatedPublicationScopeV1::new([8; 64]),
             intent: FederatedPublicationIntentV1::new("secret-room", "secret-body"),
         };
         let debug = format!("{request:?}");

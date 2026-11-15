@@ -568,6 +568,11 @@ Host instant; the engine returns the retained transition only when room, actor,
 and body still match. The newer instant neither rewrites the message nor creates
 a second one. Host still revalidates the current session before this path, and
 Durable Host receipt-gates any changed verification state before reply.
+Federation request IDs are sender-scoped, not globally unique. The Agora
+receipt key therefore combines the request ID with a full 64-byte participant
+and room-home binding. Equal request bytes under distinct remote scopes cannot
+replay or conflict with one another. Profile-150 recovery rejects a scoped key
+under any non-federation domain.
 
 The SDK crates are reexport-only distribution facades. The trusted-host facade
 does not bundle a verifier, transport, storage adapter, or ambient credential;

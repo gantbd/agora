@@ -7,7 +7,7 @@ use agora_engine::{
 };
 use agora_federated_publication_port::{
     FederatedPublicationIdV1, FederatedPublicationIntentV1, FederatedPublicationRefusalV1,
-    FederatedPublicationRequestV1,
+    FederatedPublicationRequestV1, FederatedPublicationScopeV1,
 };
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{
@@ -257,6 +257,7 @@ fn federated_publication_binds_revalidated_session_actor_and_current_host_time()
     let (session, _, mut context) = open(&mut host, "alice", 1);
     let request = FederatedPublicationRequestV1 {
         id: FederatedPublicationIdV1::new([13; 16]).unwrap(),
+        scope: FederatedPublicationScopeV1::new([1; 64]),
         intent: FederatedPublicationIntentV1::new("room", "federated"),
     };
     let accepted = host
@@ -281,6 +282,7 @@ fn federated_publication_binds_revalidated_session_actor_and_current_host_time()
             session,
             FederatedPublicationRequestV1 {
                 id: FederatedPublicationIdV1::new([14; 16]).unwrap(),
+                scope: FederatedPublicationScopeV1::new([1; 64]),
                 intent: FederatedPublicationIntentV1::new("room", "revoked"),
             },
             &context,
