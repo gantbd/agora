@@ -2,9 +2,10 @@ use agora_engine::retention::{
     ContentDigestV1, ExportChunkV1, ExportManifestV1, ExportProfileV1, ExportRequestIdV1,
     ExportScopeBindingV1, RECORD_CLASSES_V1, ReceiptRetirementApplyV1, ReceiptRetirementRefusalV1,
     ReceiptRetirementRegistryV1, ReclamationEvidenceV1, ReclamationStageV1, RecordClassV1,
-    RetentionBoundV1, RetentionFrontierV1, RetentionIdentityBindingV1, RetentionPolicyRevisionV1,
-    RetentionPolicyV1, RetentionScopeBindingV1, RetentionTombstoneReasonV1, RetentionTombstoneV1,
-    RetentionTransitionV1, StoreGenerationIdV1, StoreReclamationPlanV1,
+    RetentionBoundV1, RetentionFrontierV1, RetentionIdentityBindingV1, RetentionPlanRefusalV1,
+    RetentionPolicyRevisionV1, RetentionPolicyV1, RetentionRecordIdV1, RetentionRecordV1,
+    RetentionScopeBindingV1, RetentionTombstoneReasonV1, RetentionTombstoneV1,
+    RetentionTransitionV1, StoreGenerationIdV1, StoreReclamationPlanV1, plan_retention_v1,
 };
 
 fn revision() -> RetentionPolicyRevisionV1 {
@@ -87,6 +88,83 @@ fn transition_and_export_require_canonical_class_and_chunk_order() {
             2,
         )
         .is_none()
+    );
+}
+
+#[test]
+fn policy_plan_is_deterministic_dependency_preserving_and_all_or_nothing() {
+    let id = |class, ordinal| RetentionRecordIdV1::new(class, ordinal).unwrap();
+    let record = |class, ordinal, dependencies| {
+        RetentionRecordV1::new(id(class, ordinal), dependencies, 2).unwrap()
+    };
+    let records = vec![
+        record(RecordClassV1::RoomProjection, 1, vec![]),
+        record(RecordClassV1::RoomProjection, 2, vec![]),
+        record(RecordClassV1::RoomProjection, 3, vec![]),
+        record(
+            RecordClassV1::AuthoritativeChanges,
+            1,
+            vec![id(RecordClassV1::RoomProjection, 1)],
+        ),
+        record(
+            RecordClassV1::AuthoritativeChanges,
+            2,
+            vec![id(RecordClassV1::RoomProjection, 2)],
+        ),
+        record(RecordClassV1::RequestReceipts, 1, vec![]),
+        record(RecordClassV1::RequestReceipts, 2, vec![]),
+        record(RecordClassV1::PrivateParticipantState, 1, vec![]),
+        record(RecordClassV1::FederationState, 1, vec![]),
+        record(RecordClassV1::OperationalCopies, 1, vec![]),
+    ];
+    let policy = RetentionPolicyV1::new(
+        revision(),
+        8,
+        [
+            RetentionBoundV1::entries(1).unwrap(),
+            RetentionBoundV1::entries(1).unwrap(),
+            RetentionBoundV1::Disabled,
+            RetentionBoundV1::entries(1).unwrap(),
+            RetentionBoundV1::entries(1).unwrap(),
+            RetentionBoundV1::Disabled,
+        ],
+    );
+    let plan = plan_retention_v1(policy, 9, &records, 10, 2).unwrap();
+    assert_eq!(
+        plan.retained(),
+        [
+            id(RecordClassV1::RoomProjection, 2),
+            id(RecordClassV1::RoomProjection, 3),
+            id(RecordClassV1::AuthoritativeChanges, 2),
+            id(RecordClassV1::PrivateParticipantState, 1),
+            id(RecordClassV1::FederationState, 1),
+        ]
+    );
+    assert_eq!(plan.transition.discarded_records, [1, 1, 2, 0, 0, 1]);
+    assert_eq!(plan.transition.frontiers[0].discarded_through, 1);
+    assert_eq!(plan.transition.frontiers[0].oldest_retained, Some(2));
+    assert_eq!(plan.transition.frontiers[2].discarded_through, 2);
+    assert_eq!(plan.transition.frontiers[2].oldest_retained, None);
+    assert_eq!(
+        plan_retention_v1(policy, 7, &records, 10, 2),
+        Err(RetentionPlanRefusalV1::StalePolicy)
+    );
+
+    let missing = [RetentionRecordV1::new(
+        id(RecordClassV1::RoomProjection, 1),
+        vec![id(RecordClassV1::AuthoritativeChanges, 99)],
+        2,
+    )
+    .unwrap()];
+    assert_eq!(
+        plan_retention_v1(policy, 9, &missing, 10, 2),
+        Err(RetentionPlanRefusalV1::MissingDependency)
+    );
+    let mut reversed = records.clone();
+    reversed.reverse();
+    assert_eq!(
+        plan_retention_v1(policy, 9, &reversed, 10, 2),
+        Err(RetentionPlanRefusalV1::NonCanonicalRecords)
     );
 }
 

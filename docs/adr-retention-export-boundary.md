@@ -180,6 +180,14 @@ that exact current policy revision. Installation does not itself discard any
 class; deterministic class-specific application and transition evidence remain
 open.
 
+The engine foundation now also supplies a bounded effect-free retention planner
+over one complete canonical record inventory. It selects the newest configured
+ordinal cohort independently per class, closes the retained set transitively
+over explicit dependencies, rejects missing or noncanonical dependencies before
+producing a plan, and reports exact retained/discarded identities, class counts,
+and frontiers. Planning mutates nothing; authoritative record owners still need
+qualified class-specific application and persistence.
+
 ## Nonclaims
 
 R107 does not provide legal advice, records classification, legal hold,

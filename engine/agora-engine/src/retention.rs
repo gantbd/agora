@@ -125,6 +125,182 @@ pub struct RetentionTransitionV1 {
     pub frontiers: [RetentionFrontierV1; 6],
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RetentionRecordIdV1 {
+    pub class: RecordClassV1,
+    pub ordinal: u64,
+}
+
+impl RetentionRecordIdV1 {
+    pub fn new(class: RecordClassV1, ordinal: u64) -> Option<Self> {
+        (ordinal != 0).then_some(Self { class, ordinal })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RetentionRecordV1 {
+    pub id: RetentionRecordIdV1,
+    dependencies: Vec<RetentionRecordIdV1>,
+}
+
+impl RetentionRecordV1 {
+    pub fn new(
+        id: RetentionRecordIdV1,
+        dependencies: Vec<RetentionRecordIdV1>,
+        max_dependencies: usize,
+    ) -> Option<Self> {
+        let canonical = dependencies.len() <= max_dependencies
+            && dependencies.windows(2).all(|pair| pair[0] < pair[1])
+            && dependencies.binary_search(&id).is_err();
+        canonical.then_some(Self { id, dependencies })
+    }
+
+    pub fn dependencies(&self) -> &[RetentionRecordIdV1] {
+        &self.dependencies
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RetentionPlanRefusalV1 {
+    InvalidLimit,
+    StalePolicy,
+    NonCanonicalRecords,
+    MissingDependency,
+    CountOverflow,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RetentionApplicationPlanV1 {
+    pub transition: RetentionTransitionV1,
+    retained: Vec<RetentionRecordIdV1>,
+    discarded: Vec<RetentionRecordIdV1>,
+}
+
+impl RetentionApplicationPlanV1 {
+    pub fn retained(&self) -> &[RetentionRecordIdV1] {
+        &self.retained
+    }
+
+    pub fn discarded(&self) -> &[RetentionRecordIdV1] {
+        &self.discarded
+    }
+}
+
+/// Plans one deterministic logical-retention transition over a complete,
+/// canonically ordered record inventory. The plan performs no mutation or I/O.
+/// Explicit dependencies may preserve records beyond their class bound; a
+/// missing dependency refuses the complete plan.
+pub fn plan_retention_v1(
+    policy: RetentionPolicyV1,
+    source_engine_revision: u64,
+    records: &[RetentionRecordV1],
+    max_records: usize,
+    max_dependencies: usize,
+) -> Result<RetentionApplicationPlanV1, RetentionPlanRefusalV1> {
+    if max_records == 0 || records.len() > max_records {
+        return Err(RetentionPlanRefusalV1::InvalidLimit);
+    }
+    if policy.effective_engine_revision > source_engine_revision {
+        return Err(RetentionPlanRefusalV1::StalePolicy);
+    }
+    if records.windows(2).any(|pair| pair[0].id >= pair[1].id)
+        || records
+            .iter()
+            .any(|record| record.dependencies.len() > max_dependencies)
+    {
+        return Err(RetentionPlanRefusalV1::NonCanonicalRecords);
+    }
+    let by_id: BTreeMap<_, _> = records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| (record.id, index))
+        .collect();
+    if records
+        .iter()
+        .flat_map(|record| &record.dependencies)
+        .any(|dependency| !by_id.contains_key(dependency))
+    {
+        return Err(RetentionPlanRefusalV1::MissingDependency);
+    }
+
+    let mut retained = vec![false; records.len()];
+    for class in RECORD_CLASSES_V1 {
+        let maximum = policy.bound(class).maximum().unwrap_or(0);
+        for (_, index) in by_id
+            .range(
+                RetentionRecordIdV1 { class, ordinal: 1 }..=RetentionRecordIdV1 {
+                    class,
+                    ordinal: u64::MAX,
+                },
+            )
+            .rev()
+            .take(maximum)
+        {
+            retained[*index] = true;
+        }
+    }
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for (index, record) in records.iter().enumerate() {
+            if !retained[index] {
+                continue;
+            }
+            for dependency in &record.dependencies {
+                let dependency_index = by_id[dependency];
+                if !retained[dependency_index] {
+                    retained[dependency_index] = true;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    let mut retained_ids = Vec::new();
+    let mut discarded_ids = Vec::new();
+    let mut discarded_records = [0_u64; 6];
+    for (record, keep) in records.iter().zip(&retained) {
+        if *keep {
+            retained_ids.push(record.id);
+        } else {
+            discarded_records[record.id.class as usize - 1] = discarded_records
+                [record.id.class as usize - 1]
+                .checked_add(1)
+                .ok_or(RetentionPlanRefusalV1::CountOverflow)?;
+            discarded_ids.push(record.id);
+        }
+    }
+    let frontiers = RECORD_CLASSES_V1.map(|class| {
+        let oldest_retained = retained_ids
+            .iter()
+            .find(|record| record.class == class)
+            .map(|record| record.ordinal);
+        let discarded_through = records
+            .iter()
+            .take_while(|record| record.id.class <= class)
+            .filter(|record| record.id.class == class)
+            .take_while(|record| !retained[by_id[&record.id]])
+            .map(|record| record.id.ordinal)
+            .last()
+            .unwrap_or(0);
+        RetentionFrontierV1::new(class, discarded_through, oldest_retained)
+            .expect("planner constructs an ordered frontier")
+    });
+    let transition = RetentionTransitionV1::new(
+        policy.revision,
+        source_engine_revision,
+        source_engine_revision,
+        discarded_records,
+        frontiers,
+    )
+    .expect("planner constructs exact class order");
+    Ok(RetentionApplicationPlanV1 {
+        transition,
+        retained: retained_ids,
+        discarded: discarded_ids,
+    })
+}
+
 impl RetentionTransitionV1 {
     pub fn new(
         policy_revision: RetentionPolicyRevisionV1,
