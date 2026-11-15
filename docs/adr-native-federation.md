@@ -46,6 +46,10 @@ outside `vellum-engine`; Vellum stays the writing engine, and federation enters
 through an ordinary current-authority Vellum Host adapter. Federation never
 owns harness behavior or task orchestration.
 
+The cross-engine identity namespace and optional SPIFFE trust-adapter rules are
+defined in
+[`adr-federation-identity-namespaces.md`](adr-federation-identity-namespaces.md).
+
 ### Server identity and trust
 
 Each deployment has one stable opaque 32-byte `FederationServerIdV1`. A
