@@ -49,6 +49,14 @@
       "audiences": ["application", "trusted-host"],
       "publish": false
     },
+    "agora-export-durable": {
+      "path": "service/agora-export-durable",
+      "category": "service",
+      "maturity": "adopted",
+      "effect_class": "port-only",
+      "audiences": ["application", "trusted-host"],
+      "publish": false
+    },
     "agora-federated-publication-port": {
       "path": "ports/agora-federated-publication-port",
       "category": "port",

@@ -19,7 +19,7 @@ entries and requires every path to occupy its declared category directory.
 | Engine | `agora-engine` | Pure authoritative conversation state and transitions |
 | Protocol | `agora-protocol`, `agora-wire` | Closed values and canonical bounded frames |
 | Client | `agora-client` | Transport-neutral request identity and uncertainty |
-| Service | `agora-service`, `agora-export-service`, `agora-durable` | Conversation serialization, independent export custody, replay, persistence gating and recovery |
+| Service | `agora-service`, `agora-export-service`, `agora-export-durable`, `agora-durable` | Conversation serialization, independent export custody, replay, persistence gating and recovery |
 | Host | `agora-host` | Verified principal/context binding and external ports |
 | Port | `agora-delivery-projection-port`, `agora-federated-publication-port`, `agora-interaction-port`, `agora-retention-authority-port`, `agora-scheduled-publication-port`, `agora-search-port`, `agora-storage-observation` | Effect-free outbound and trusted integration contracts |
 | Adapter | `agora-aegis-verifier`, `agora-search-memory`, `agora-storage-directory` | Concrete or reference interpretations of ports |

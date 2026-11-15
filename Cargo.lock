@@ -62,6 +62,15 @@ name = "agora-engine"
 version = "0.3.0"
 
 [[package]]
+name = "agora-export-durable"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+ "agora-export-service",
+ "keystone-storage",
+]
+
+[[package]]
 name = "agora-export-service"
 version = "0.1.0"
 dependencies = [

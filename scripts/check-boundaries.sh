@@ -80,6 +80,17 @@ if [[ $(printf '%s\n' "$export_service_tree" | wc -l | tr -d ' ') != 2 ]] \
   exit 1
 fi
 
+export_durable_tree=$(cargo tree -p agora-export-durable --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$export_durable_tree" | wc -l | tr -d ' ') != 4 ]] \
+  || ! printf '%s\n' "$export_durable_tree" | rg -q 'agora-engine' \
+  || ! printf '%s\n' "$export_durable_tree" | rg -q 'agora-export-service' \
+  || ! printf '%s\n' "$export_durable_tree" | rg -q 'keystone-storage' \
+  || printf '%s\n' "$export_durable_tree" | rg -q 'agora-(service|host|protocol|wire|client|durable)'; then
+  printf '%s\n' "$export_durable_tree" >&2
+  echo 'Agora durable export custody escaped its export-service/storage-port closure' >&2
+  exit 1
+fi
+
 host_tree=$(cargo tree -p agora-host --edges normal --depth 1 --locked --offline)
 if ! printf '%s\n' "$host_tree" | rg -q 'agora-retention-authority-port' \
   || printf '%s\n' "$host_tree" | rg 'agora-client|aegis|chronos|moira|daimon|hermes'; then

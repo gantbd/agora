@@ -1,0 +1,19 @@
+[package]
+name = "agora-export-durable"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "Commit-gated durable owner for independent Agora export custody"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }
+agora-export-service = { path = "../agora-export-service", version = "=0.1.0" }
+keystone-storage = { path = "../../../keystone/crates/keystone-storage", version = "=0.0.1" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

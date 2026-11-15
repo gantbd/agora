@@ -25,6 +25,7 @@ agora-service --> agora-scheduled-publication-port
 agora-service --> agora-federated-publication-port
 agora-retention-authority-port --> agora-engine closed retention values
 agora-export-service --> agora-engine closed export values
+agora-export-durable --> agora-export-service + agora-engine + keystone-storage port
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-observation --> keystone-storage port
 agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem
@@ -240,8 +241,14 @@ owns a bounded exact registry and its own scope-bound, digest-verified canonical
 checkpoint. Admission binds the materialization to caller-supplied current
 engine and policy revisions before mutation; replay, changed-request conflict,
 capacity refusal, and canonical recovery are exact. It does not project source
-records, authorize export, implement SHA-256, publish its checkpoint durably, or
-expose participant protocol. Those remain enclosing trusted-host obligations.
+records, authorize export, implement SHA-256, or expose participant protocol.
+The separate adopted `agora-export-durable` owner publishes that checkpoint
+under its own configured store key and revision line. Only an exact strong
+receipt publishes a new custody result; equal replay does not re-offer storage,
+known refusal restores the prior checkpoint, and store error, indeterminate
+outcome, weak acknowledgement, or invalid receipt fences the live owner until
+fresh recovery. Concrete physical composition and digest qualification remain
+enclosing trusted-host obligations.
 The existing directory adapter also cannot support R107 physical
 reclamation: its v1 atomic replacement unlinks the prior head before a separate
 reopen-validation step. A generational storage profile is required rather than

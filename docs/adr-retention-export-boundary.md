@@ -217,9 +217,12 @@ engine registry and materialization recovery laws with its own capacity and
 checkpoint scope. It binds admission to exact current engine/policy revisions,
 persists canonical request-ordered materializations behind a whole-checkpoint
 digest, and recovers only after revalidating nested chunk and manifest digests.
-Durable publication, a distinct store key, source projection, authorization,
-qualified SHA-256 composition, and export retirement remain open. The
-participant protocol remains free of administrative export commands.
+The separate `agora-export-durable` owner gives that checkpoint its own store
+key and revision line. Exact durable receipts commit custody, equal replay
+suppresses another offer, known refusal rolls back, and unknown or weak outcomes
+fence until fresh recovery. A concrete store composition, source projection,
+authorization, qualified SHA-256 composition, and export retirement remain
+open. The participant protocol remains free of administrative export commands.
 
 The current `agora-storage-directory` adapter is not a reclamation
 implementation. Its v1 compare-exchange renames a new record over the sole
