@@ -149,6 +149,14 @@ struct ReclamationRecordV1 {
     complete: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReclamationCutV1 {
+    PlanPersisted,
+    GenerationUnlinked(usize),
+    DirectorySynced,
+    CompletionPersisted,
+}
+
 impl ReclamationRecordV1 {
     fn key(&self) -> (u64, u64) {
         (
@@ -366,10 +374,23 @@ impl GenerationalDirectoryCheckpointStoreV1 {
     pub fn reclaim<D>(
         &mut self,
         plan: StoreReclamationPlanV1,
-        mut digest: D,
+        digest: D,
     ) -> Result<GenerationalReclamationOutcomeV1, GenerationalReclamationRefusalV1>
     where
         D: FnMut(&[u8]) -> ContentDigestV1,
+    {
+        self.reclaim_with_cut(plan, digest, |_| false)
+    }
+
+    fn reclaim_with_cut<D, C>(
+        &mut self,
+        plan: StoreReclamationPlanV1,
+        mut digest: D,
+        mut cut: C,
+    ) -> Result<GenerationalReclamationOutcomeV1, GenerationalReclamationRefusalV1>
+    where
+        D: FnMut(&[u8]) -> ContentDigestV1,
+        C: FnMut(ReclamationCutV1) -> bool,
     {
         self.check_resources()
             .map_err(|_| GenerationalReclamationRefusalV1::Fenced)?;
@@ -431,21 +452,24 @@ impl GenerationalDirectoryCheckpointStoreV1 {
             candidate.sort_by_key(ReclamationRecordV1::key);
             self.persist_reclamations(&candidate)?;
             self.reclamations = candidate;
+            self.interrupt_reclamation(&mut cut, ReclamationCutV1::PlanPersisted)?;
         }
 
-        for revision in &revisions {
+        for (index, revision) in revisions.iter().enumerate() {
             if self.generation_stamps.contains_key(revision) {
                 if fs::remove_file(self.path.join(generation_name(*revision))).is_err() {
                     self.fenced.set(true);
                     return Err(GenerationalReclamationRefusalV1::OutcomeUnknown);
                 }
                 self.generation_stamps.remove(revision);
+                self.interrupt_reclamation(&mut cut, ReclamationCutV1::GenerationUnlinked(index))?;
             }
         }
         if self.directory.sync_all().is_err() {
             self.fenced.set(true);
             return Err(GenerationalReclamationRefusalV1::OutcomeUnknown);
         }
+        self.interrupt_reclamation(&mut cut, ReclamationCutV1::DirectorySynced)?;
         let mut candidate = self.reclamations.clone();
         let record = candidate
             .iter_mut()
@@ -454,6 +478,7 @@ impl GenerationalDirectoryCheckpointStoreV1 {
         record.complete = true;
         self.persist_reclamations(&candidate)?;
         self.reclamations = candidate;
+        self.interrupt_reclamation(&mut cut, ReclamationCutV1::CompletionPersisted)?;
         Ok(reclamation_outcome(
             &plan,
             GenerationalReclamationApplyV1::Reclaimed,
@@ -462,6 +487,35 @@ impl GenerationalDirectoryCheckpointStoreV1 {
 
     pub fn live_generation_count(&self) -> usize {
         self.generation_stamps.len()
+    }
+
+    fn interrupt_reclamation<C>(
+        &self,
+        cut: &mut C,
+        point: ReclamationCutV1,
+    ) -> Result<(), GenerationalReclamationRefusalV1>
+    where
+        C: FnMut(ReclamationCutV1) -> bool,
+    {
+        if cut(point) {
+            self.fenced.set(true);
+            Err(GenerationalReclamationRefusalV1::OutcomeUnknown)
+        } else {
+            Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    fn reclaim_interrupted_at<D>(
+        &mut self,
+        plan: StoreReclamationPlanV1,
+        digest: D,
+        target: ReclamationCutV1,
+    ) -> Result<GenerationalReclamationOutcomeV1, GenerationalReclamationRefusalV1>
+    where
+        D: FnMut(&[u8]) -> ContentDigestV1,
+    {
+        self.reclaim_with_cut(plan, digest, |point| point == target)
     }
 
     fn check_resources(&self) -> Result<(), GenerationalDirectoryErrorV1> {
@@ -1123,5 +1177,75 @@ mod tests {
         );
         drop(recovered);
         fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn every_durable_reclamation_transition_recovers_on_fresh_open() {
+        for target in [
+            ReclamationCutV1::PlanPersisted,
+            ReclamationCutV1::GenerationUnlinked(0),
+            ReclamationCutV1::GenerationUnlinked(1),
+            ReclamationCutV1::DirectorySynced,
+            ReclamationCutV1::CompletionPersisted,
+        ] {
+            let path = temporary_path();
+            let mut store =
+                GenerationalDirectoryCheckpointStoreV1::create_new(&path, limits()).unwrap();
+            for (expected, value) in [
+                (None, b"zero".as_slice()),
+                (Some(Revision(0)), b"one".as_slice()),
+                (Some(Revision(1)), b"two".as_slice()),
+            ] {
+                assert!(matches!(
+                    store.compare_exchange("owner", expected, value).unwrap(),
+                    CommitOutcome::Committed(_)
+                ));
+            }
+            drop(store);
+
+            let mut store =
+                GenerationalDirectoryCheckpointStoreV1::open_existing(&path, limits()).unwrap();
+            let plan = store.prepare_reclamation(7, 2, digest).unwrap();
+            assert_eq!(
+                store.reclaim_interrupted_at(plan.clone(), digest, target),
+                Err(GenerationalReclamationRefusalV1::OutcomeUnknown),
+                "cut must remain uncertain at {target:?}"
+            );
+            assert_eq!(
+                store.load("owner"),
+                Err(GenerationalDirectoryErrorV1::Fenced),
+                "cut owner must remain fenced at {target:?}"
+            );
+            drop(store);
+
+            let mut recovered =
+                GenerationalDirectoryCheckpointStoreV1::open_existing(&path, limits()).unwrap();
+            assert_eq!(
+                recovered.load("owner").unwrap().unwrap().bytes,
+                b"two".to_vec(),
+                "head must survive at {target:?}"
+            );
+            let expected = if target == ReclamationCutV1::CompletionPersisted {
+                GenerationalReclamationApplyV1::Replay
+            } else {
+                GenerationalReclamationApplyV1::Reclaimed
+            };
+            assert_eq!(
+                recovered.reclaim(plan.clone(), digest).unwrap().apply,
+                expected,
+                "fresh owner must converge at {target:?}"
+            );
+            assert_eq!(recovered.live_generation_count(), 1);
+            drop(recovered);
+
+            let mut replay =
+                GenerationalDirectoryCheckpointStoreV1::open_existing(&path, limits()).unwrap();
+            assert_eq!(
+                replay.reclaim(plan, digest).unwrap().apply,
+                GenerationalReclamationApplyV1::Replay
+            );
+            drop(replay);
+            fs::remove_dir_all(path).unwrap();
+        }
     }
 }

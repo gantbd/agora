@@ -628,10 +628,13 @@ owners close, a fresh owner reopens and validates revision 2, emits a bounded
 digest-bound plan for revisions 0 and 1, persists the plan journal, unlinks only
 those generations, syncs the directory, and returns non-erasure
 `GenerationUnlinked` evidence. Exact replay works both before and after another
-drop/reopen; a later revision again requires a fresh reopen. A partial-unlink
-schedule persists the plan, removes only one generation, terminates the owner,
-and proves a fresh owner resumes the same plan safely. Resource replacement and
-journal corruption fail closed, and a frozen canonical journal fixture plus the
+drop/reopen; a later revision again requires a fresh reopen. Five deterministic
+cuts cover the durable incomplete plan, each of two named unlinks, directory
+synchronization, and the durable completed journal. Every interrupted owner
+returns only outcome-unknown and remains fenced; a fresh owner preserves the
+validated head, resumes or replays the same plan, converges to one generation,
+and replays thereafter. Resource replacement and journal corruption fail
+closed, and a frozen canonical journal fixture plus the
 compatibility mutation gate pin the representation. These facts do not qualify
 hardware power-loss, hostile same-UID mutation, snapshots, backups, remote
 media, provider deletion, or secure erasure.
@@ -875,9 +878,11 @@ retention evidence.
 The generational-directory fault campaign flips every bit of every byte in the
 canonical persisted reclamation journal and requires a fresh owner to refuse
 each mutation before exposing a usable store. The valid journal reopens after
-the campaign, while separate restart evidence resumes a journaled partial
-unlink and returns only directory-synchronized `GenerationUnlinked` evidence.
-This covers the bounded local journal framing/checksum and represented restart
-cut, not malicious same-UID replacement during an operation, storage-hardware
-faults, power loss, backups, provider deletion, or secure erasure.
+the campaign. Separate restart evidence enumerates all five durable reclamation
+state-transition cuts, resumes or replays the journaled plan, and returns only
+directory-synchronized `GenerationUnlinked` evidence. This covers the bounded
+local journal framing/checksum and process-visible semantic transitions, not
+every filesystem syscall, malicious same-UID replacement during an operation,
+storage-hardware faults, power loss, backups, provider deletion, or secure
+erasure.
 

@@ -410,6 +410,13 @@ generations; drops every owner; reopens and digest-validates revision 2; then
 prepares and journals a bounded plan naming revisions 0 and 1 before unlink.
 Both returned facts are exactly `GenerationUnlinked`, exact replay performs no
 second unlink, and a later fresh owner observes only the validated successor.
+Deterministic owner-restart evidence now cuts after the incomplete plan is
+durable, after each of the two named unlinks, after directory synchronization,
+and after the completed journal is durable. The interrupted owner returns only
+`OutcomeUnknown` and stays fenced. A fresh owner preserves revision 2, resumes
+or replays the exact plan, converges to one live generation, and then replays
+without another unlink. These are process-visible state-transition cuts, not
+arbitrary syscall or hardware power-loss injection.
 This composes qualified custody and physical reclamation ordering without
 turning logical retirement into reclamation authority or unlink evidence into
 secure erasure.
@@ -418,8 +425,8 @@ slice on Darwin 25.6.0 arm64 / macOS 26.6.2: the ordinary gate, every
 release-mode workspace target, 10,000 deterministic soak cycles, and 1,000,000
 fixed-seed cases on each of the three fuzz targets completed with unchanged
 tracked bytes. That campaign qualifies the represented private-local path, not
-the still-open class-specific source profiles, federation-copy retention,
-broader process/power-loss/storage-hardware campaigns, or secure erasure.
+the still-open federation source profile, federation-copy retention, arbitrary
+syscall/power-loss/storage-hardware campaigns, or secure erasure.
 The effect-free `agora-export-custody-port` now separates Host from that durable
 implementation. `HostV2` revalidates the administrative session, checks the
 prepared manifest against the current engine and installed-policy revisions,
