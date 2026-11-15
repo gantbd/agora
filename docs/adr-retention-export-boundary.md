@@ -259,6 +259,13 @@ second unlink, and a later fresh owner observes only the validated successor.
 This composes qualified custody and physical reclamation ordering without
 turning logical retirement into reclamation authority or unlink evidence into
 secure erasure.
+Revision `1b48be4ee16d60c37aa74d18b5b8fce72fec6b0a` commit-pins that integrated
+slice on Darwin 25.6.0 arm64 / macOS 26.6.2: the ordinary gate, every
+release-mode workspace target, 10,000 deterministic soak cycles, and 1,000,000
+fixed-seed cases on each of the three fuzz targets completed with unchanged
+tracked bytes. That campaign qualifies the represented private-local path, not
+the still-open class-specific source profiles, federation-copy retention,
+broader process/power-loss/storage-hardware campaigns, or secure erasure.
 The effect-free `agora-export-custody-port` now separates Host from that durable
 implementation. `HostV2` revalidates the administrative session, checks the
 prepared manifest against the current engine and installed-policy revisions,

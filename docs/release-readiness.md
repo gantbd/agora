@@ -181,6 +181,17 @@ not ready for a network service or crates.io release.
   10,000 deterministic soak cycles, and 1,000,000 fixed-seed cases on each of
   the three fuzz targets on Darwin 25.6.0 arm64 / macOS 26.6.2 with unchanged
   tracked bytes afterward;
+- commit-pinned the integrated R107 retention/export slice at revision
+  `1b48be4ee16d60c37aa74d18b5b8fce72fec6b0a` on Darwin 25.6.0 arm64 / macOS
+  26.6.2. The campaign passed the ordinary gate, every release-mode workspace
+  target, 10,000 deterministic soak cycles, and 1,000,000 fixed-seed cases on
+  each of the three fuzz targets with unchanged tracked bytes afterward. The
+  qualified slice includes the private-local generational export-custody path:
+  exact reopen and digest validation precede a journaled plan, only the two
+  named predecessor generations are unlinked, replay performs no second
+  unlink, and a fresh owner selects the one validated successor. This evidence
+  does not qualify class-specific source profiles, federation-copy retention,
+  secure erasure, other storage hardware, or a distributable artifact;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound
