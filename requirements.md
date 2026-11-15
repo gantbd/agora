@@ -828,9 +828,11 @@ composition foundations, and R104 has a qualified Agora context/promotion
 boundary plus an initial closed acknowledgement adapter; the remaining live
 Chronos atomic-admission, concrete delivery-endpoint, and additional schema-
 adapter profiles are tracked explicitly in traceability.
-R105's canonical hello and separate TLS transport substrate are implemented;
-application routing, concurrency/slow-peer/reconnect campaigns, platform and
-produced-artifact evidence, and full-profile qualification remain open.
+R105's canonical hello, separate TLS transport substrate, and authenticated
+single-connection Host-routing composition are implemented and commit-pinned;
+concurrent listener ownership, a concrete credential-authenticator profile,
+slow-peer/reconnect/upgrade campaigns, platform and produced-artifact evidence,
+and full-profile qualification remain open.
 Additional physical durable storage adapters,
 durable event sinks, credential authenticators, network transports, end-to-end
 encryption, federation, delivery acknowledgment, and durable audit are not part

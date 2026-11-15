@@ -1,6 +1,6 @@
 # ADR: remote transport profile
 
-Status: accepted; transport substrate implemented; application composition open
+Status: accepted; transport and single-connection application foundations qualified
 
 Date: 2026-11-14
 
@@ -84,15 +84,23 @@ incarnation rotation, and refusal of unsupported intersections.
 
 Agora Wire now provides the canonical closed-range post-TLS client/server hello,
 two frozen fixtures, fail-closed negotiation tests, and client-SDK reachability.
-The separate `agora-remote-transport` revision `0bcf2ef` provides a TLS-1.3-only
-rustls profile with exact ALPN, disabled tickets/resumption/early data, configured
-server roots, optional required client certificates, exporter agreement,
-bounded framing, deterministic capacity/drain accounting, real-loopback
-positive and negative tests, and exact compatibility/supply/package gates.
+The separate `agora-remote-transport` source revision `58ef35a` provides a
+TLS-1.3-only rustls profile with exact ALPN, disabled tickets/resumption/early
+data, configured server roots, optional required client certificates, exporter
+agreement, bounded framing, deterministic capacity/drain accounting, graceful
+close notification, real-loopback positive and negative tests, and exact
+compatibility/supply/package gates. Revision `b9db6c0` pins its passing gate.
 
-Application authentication and Host routing, per-connection concurrent runtime
-composition, slow-peer and reconnect campaigns, upgrade matrix, platform soak,
-produced artifacts, and commit-pinned full-profile qualification remain open.
+The separately owned `agora-remote-daemon` source revision `9fd83ea` composes
+one negotiated connection with a bounded opaque credential frame, TLS exporter
+and certificate provenance, an injected authenticator, Aegis context, and Host
+V2. It closes the Host session on EOF, refusal, transport failure, or request-
+budget exhaustion and routes human and agent participants through the identical
+path. Revision `42a93c3` pins the passing real TLS/mTLS loopback gate.
+
+A bounded concurrent listener owner, concrete credential authenticator, slow-
+peer and reconnect campaigns, upgrade matrix, platform soak, produced artifacts,
+and commit-pinned full-profile qualification remain open.
 
 ## Nonclaims
 
