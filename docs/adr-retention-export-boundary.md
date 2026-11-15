@@ -476,10 +476,18 @@ commit-pinned gate against Agora
 `3914dfbd0f8de0f7d711e66029918d9a808dc4c5` applies any positive
 `FederationState` bound as one current retained generation, reconstructs no
 prior generation for wider bounds, and makes disabled a byte-inert refusal
-rather than implicit subscription removal. This closes the first exact
-federation-copy source and its one-current-generation application law, not
-subscription removal, physical replica reclamation, authoritative-home
-deletion, remote-copy destruction, or erasure.
+rather than implicit subscription removal. Federation source
+`addde72de97e75a3b58af5117cf6db7a5bb6c3f0`, recorded by
+`5b2c7d4c7568e59bac8bd46919bc6befa89c90f2`, separately closes explicit
+subscription retirement: one canonical active-or-retired owner binds the
+subscriber, room, and exact state revision; successful retirement durably
+replaces the replica payload with a minimal non-reuse tombstone; exact retry
+replays; changed or stale input refuses without mutation; and ambiguous store
+publication fences until fresh recovery. Its retired `FederationState` export
+contains the tombstone and no event or snapshot payload. This closes the first
+exact federation-copy source, its one-current-generation application law, and
+logical subscription retirement, not physical replica-generation reclamation,
+authoritative-home deletion, remote-copy destruction, or erasure.
 
 ## Nonclaims
 

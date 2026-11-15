@@ -213,8 +213,14 @@ not ready for a network service or crates.io release.
   `FederationState` class; it does not qualify replica-policy application,
   subscription removal, physical replica reclamation, or erasure. Follow-up
   source `3914dfbd0f8de0f7d711e66029918d9a808dc4c5` separately qualifies the
-  byte-inert one-current-generation application law; it does not widen those
-  remaining nonclaims;
+  byte-inert one-current-generation application law. Federation source
+  `addde72de97e75a3b58af5117cf6db7a5bb6c3f0`, recorded by
+  `5b2c7d4c7568e59bac8bd46919bc6befa89c90f2`, further qualifies canonical
+  active-or-retired subscription state, durable exact retirement replay and
+  non-reuse, known-refusal preservation, ambiguity fencing, and minimal
+  tombstone-only retired export. Physical replica-generation reclamation,
+  authoritative-home deletion, remote-copy destruction, and erasure remain
+  nonclaims;
 - fixed-seed bounded mutation of canonical service and host recovery records,
   requiring refusal or exact byte-preserving recovery and re-encoding;
 - bounded reaction set transitions and aggregates with participant-bound
