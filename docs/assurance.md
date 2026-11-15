@@ -860,3 +860,15 @@ multi-host serialization, physical-device power-loss behavior, event delivery,
 distributed availability, or orchestrator correctness. Those claims require
 separate adapters and evidence.
 
+The R107 logical-retention campaign checks all 729 complete small policies over
+all six record classes against an independent reference model. A second finite
+campaign checks all 660 distinct two-edge dependency chains rooted in a retained
+record, including cross-class and reverse-ordinal preservation, and requires
+exact retained/discarded sets, per-class counts, frontiers, and deterministic
+replay. Export recovery additionally rejects every single-bit mutation of every
+byte in a representative multi-class materialization, either at canonical
+payload construction or digest-verified recovery. This is bounded engine-level
+counterexample search; it is not a proof of arbitrary graphs, a physical-store
+fault campaign, cryptographic validation of the test digest, or federation-copy
+retention evidence.
+
