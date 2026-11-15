@@ -26,6 +26,13 @@ transport framing/lifecycle, persistence, and runtime policy. The facade does no
 select adapters and does not authenticate credentials itself.
 The same three-package closure exposes the separately typed V2 service and host
 modules without adding another dependency or authority source.
+Administrative retention and exact export follow the trusted-host taxonomy, not
+the remote participant taxonomy. The embedded facade reexports only the
+effect-free retention-authority and export-custody contracts used by `HostV2`.
+It selects neither an authority implementation, digest provider, source
+projection, durable custody owner, nor storage adapter. Export admission and
+retirement therefore remain explicit application composition, while the remote
+client facade and participant Wire remain free of administrative commands.
 
 ## Remote-client distribution
 

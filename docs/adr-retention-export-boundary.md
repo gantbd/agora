@@ -203,8 +203,10 @@ current policy enables that class. Its ordinal is the current engine revision's
 successor, its frontier is exact, and the embedded checkpoint remains independently
 scope-bound and recoverable. Nested checkpoint content is not reclassified as
 room, change, receipt, private, or federation records. Other source projections,
-visibility authorization, concrete provider composition, protocol, and SDK
-exposure remain open.
+visibility authorization and concrete provider composition remain open. The
+trusted embedded SDK names the effect-free retention-authority and
+export-custody contracts; the participant protocol and remote-client SDK remain
+deliberately free of administrative export operations.
 An engine-owned bounded export registry now gives the materialized result exact
 request-identity semantics: equal retry replays the complete manifest and chunk
 bytes, changed materialization conflicts, saturation refuses before mutation,

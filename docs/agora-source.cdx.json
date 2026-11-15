@@ -826,9 +826,11 @@
       "dependsOn": [
         "pkg:cargo/agora-delivery-projection-port@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-export-custody-port@0.1.0",
         "pkg:cargo/agora-federated-publication-port@0.1.0",
         "pkg:cargo/agora-host@0.1.0",
         "pkg:cargo/agora-interaction-port@0.1.0",
+        "pkg:cargo/agora-retention-authority-port@0.1.0",
         "pkg:cargo/agora-scheduled-publication-port@0.1.0",
         "pkg:cargo/agora-service@0.1.0"
       ]

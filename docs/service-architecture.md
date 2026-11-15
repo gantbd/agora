@@ -28,6 +28,7 @@ agora-export-custody-port --> agora-engine closed export values
 agora-export-service --> agora-engine closed export values
 agora-export-durable --> export-custody port + agora-export-service + agora-engine + keystone-storage port
 agora-export-local --> agora-export-durable + agora-export-service + agora-sha256 + agora-storage-directory
+agora-sdk-embedded --> engine + service + host + effect-free trusted composition ports
 agora-durable --> agora-host + agora-service + keystone-storage port
 agora-storage-observation --> keystone-storage port
 agora-storage-directory --> storage-observation port + keystone-storage port + local Unix filesystem

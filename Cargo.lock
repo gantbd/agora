@@ -177,9 +177,11 @@ version = "0.1.0"
 dependencies = [
  "agora-delivery-projection-port",
  "agora-engine",
+ "agora-export-custody-port",
  "agora-federated-publication-port",
  "agora-host",
  "agora-interaction-port",
+ "agora-retention-authority-port",
  "agora-scheduled-publication-port",
  "agora-service",
 ]

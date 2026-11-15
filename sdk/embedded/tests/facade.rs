@@ -1,6 +1,6 @@
 use agora_sdk_embedded::{
-    delivery_projection, engine, federated_publication, host, interaction, scheduled_publication,
-    service,
+    delivery_projection, engine, export_custody, federated_publication, host, interaction,
+    retention_authority, scheduled_publication, service,
 };
 
 struct Verifier;
@@ -116,6 +116,29 @@ fn facade_names_the_trusted_federated_publication_contract() {
     };
     assert_eq!(request.id, id);
     assert_eq!(request.intent.room_id(), "room");
+}
+
+#[test]
+fn facade_names_the_administrative_export_retirement_contract() {
+    let policy_revision = engine::retention::RetentionPolicyRevisionV1::new(3).unwrap();
+    let retirement = engine::retention::ExportRetirementV1 {
+        request: engine::retention::ExportRequestIdV1::new([1; 16]).unwrap(),
+        profile: engine::retention::ExportProfileV1::Administrative,
+        scope: engine::retention::ExportScopeBindingV1::new([2; 32]).unwrap(),
+        source_engine_revision: 8,
+        policy_revision,
+        manifest_digest: engine::retention::ContentDigestV1::new([3; 32]),
+    };
+    let custody = export_custody::ExportCustodyRetirementRequestV1 {
+        current_engine_revision: 8,
+        current_policy_revision: policy_revision,
+        retirement,
+    };
+    let authority = retention_authority::ExportRetirementAuthorityRequestV1 {
+        principal: retention_authority::AdministrativePrincipalBindingV1::new([4; 32]).unwrap(),
+        retirement,
+    };
+    assert_eq!(custody.retirement, authority.retirement);
 }
 
 #[test]

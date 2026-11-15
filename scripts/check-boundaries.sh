@@ -258,12 +258,14 @@ if [[ $(printf '%s\n' "$sha256_tree" | wc -l | tr -d ' ') != 2 ]] \
 fi
 
 embedded_sdk_tree=$(cargo tree -p agora-sdk-embedded --edges normal --depth 1 --locked --offline)
-if [[ $(printf '%s\n' "$embedded_sdk_tree" | wc -l | tr -d ' ') != 8 ]] \
+if [[ $(printf '%s\n' "$embedded_sdk_tree" | wc -l | tr -d ' ') != 10 ]] \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-engine' \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-delivery-projection-port' \
+  || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-export-custody-port' \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-federated-publication-port' \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-host' \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-interaction-port' \
+  || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-retention-authority-port' \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-scheduled-publication-port' \
   || ! printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-service' \
   || printf '%s\n' "$embedded_sdk_tree" | rg -q 'agora-(client|sdk-client)'; then
