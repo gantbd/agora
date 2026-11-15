@@ -895,8 +895,8 @@ receipts, canonically recovers profile 149, and passed the complete gate.
 The additive federated-publication port plus Service, Host, and Durable Host
 composition implement current policy, authenticated actor/time binding, commit
 gating, and later-time replay; revision `2fe8bb0` passed the complete gate.
-Full home-scoped receipt identity, profile-150 recovery, and the three-way port
-certainty result are implemented pending commit-pinned qualification.
+Revision `eaa22b1` commit-pins the passing full home-scoped receipt identity,
+profile-150 recovery, and three-way port certainty result.
 Trust-provider and identity-mapping composition, physical storage, transport
 composition, adversarial campaigns, and integrated qualification remain open.
 Additional physical durable storage adapters,
