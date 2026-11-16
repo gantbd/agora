@@ -43,6 +43,15 @@ requalification remains part of the current release-readiness work.
    a separate adapter: content-minimized observer-bound projection, durable
    exact handoff, current visibility and revocation, endpoint uncertainty, and
    consumer acknowledgment that never mutates Agora read state.
+9. Complete the application/presentation split. `agora-tui` remains a reusable
+   Ratatui component over the public client, with no argument parsing, terminal
+   lifecycle, daemon startup, or process-exit policy. An Agora-owned standalone
+   CLI must be able to select an embedded or remote service and run either that
+   TUI or a bounded headless command. Workbench must reuse the same TUI and
+   client contracts while optionally hosting Agora's service runtime under its
+   own single-process lifecycle; it must not merge Agora authority or state with
+   peer engines. Qualify standalone interactive, standalone headless, Workbench
+   interactive, and Workbench headless journeys against the same protocol laws.
 
 Agent harness selection, prompting, retries, and execution remain out of scope.
 

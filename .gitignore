@@ -3,3 +3,6 @@
 /fuzz/coverage/
 /fuzz/target/
 
+# Local exploratory capability ledger; docs/roadmap.md is authoritative.
+/ROADMAP.production.md
+
