@@ -3,6 +3,10 @@
 #![cfg(unix)]
 #![forbid(unsafe_code)]
 
+mod conversation;
+
+pub use conversation::{ConnectError, LocalAccessError, LocalClientLimits, LocalServicePort};
+
 use agora_client::scheduled::{ScheduledPublicationWireClientV1, ScheduledTransportErrorV1};
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationObservationRefusalV1,
@@ -154,7 +158,7 @@ impl ScheduledPublicationWireClientV1 for ScheduledLocalClientV1 {
     }
 }
 
-fn verify_socket(path: &Path) -> std::io::Result<()> {
+pub(crate) fn verify_socket(path: &Path) -> std::io::Result<()> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.file_type().is_socket()
         || metadata.permissions().mode() & 0o777 != 0o600

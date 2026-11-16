@@ -58,6 +58,20 @@ if printf '%s\n' "$client_tree" | rg 'agora-(engine|service)'; then
   exit 1
 fi
 
+local_client_tree=$(cargo tree -p agora-local-client --edges normal --depth 1 --locked --offline)
+for required in agora-client agora-protocol agora-scheduled-publication-port agora-wire; do
+  if ! printf '%s\n' "$local_client_tree" | rg -q "$required"; then
+    printf '%s\n' "$local_client_tree" >&2
+    echo "Agora local client omits $required" >&2
+    exit 1
+  fi
+done
+if printf '%s\n' "$local_client_tree" | rg 'agora-(engine|service|host|durable|local-transport)|aegis|keystone|tui|workbench'; then
+  printf '%s\n' "$local_client_tree" >&2
+  echo 'Agora local client crossed into authority, runtime, storage, or presentation internals' >&2
+  exit 1
+fi
+
 protocol_tree=$(cargo tree -p agora-protocol --edges normal --depth 2 --locked --offline)
 if printf '%s\n' "$protocol_tree" | rg 'agora-(engine|service|client)'; then
   echo 'Agora protocol crossed into another Agora layer' >&2
