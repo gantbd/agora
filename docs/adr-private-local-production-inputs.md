@@ -1,6 +1,6 @@
 # ADR: Private-local production identity and time inputs
 
-Status: accepted; durable owner factory implemented, standalone process shell open
+Status: accepted; durable owner and drain receipt implemented, standalone entrypoint open
 
 Date: 2026-11-16
 
@@ -88,9 +88,20 @@ service, durability, directory-store, and local-daemon compositions, while
 still rejecting peer engines, Workbench, Aegis internals, Agora wire, and raw
 transport mechanics.
 
+`serve_durable_process_v1` is the shared owner loop for standalone and
+Workbench-hosted execution. An explicit atomic shutdown request wakes a blocked
+accept through the owned endpoint, the owner completes that admitted wakeup,
+irreversibly enters `Draining`, and consumes the daemon into its exact stopped
+health and cleanup receipt. Per-connection authentication, handshake, Host,
+framing, routing, and request refusals do not terminate the owner; ownership,
+transport, durability, fencing, capacity, and invalid lifecycle failures return
+a closed terminal class plus the cleanup receipt. The shutdown request is
+idempotent and supplies no authority or conversation semantics.
+
 ## Remaining work
 
-- add signal/drain and process receipts in an Agora-owned standalone shell;
-- qualify that exact shell standalone and under Workbench lifecycle.
+- add the standalone configuration/entrypoint adapter that maps OS shutdown to
+  the shared explicit drain request;
+- qualify that exact entrypoint standalone and under Workbench lifecycle.
 
 These items are required before claiming a production standalone process.

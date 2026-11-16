@@ -26,7 +26,9 @@ use agora_local_daemon::{
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 use agora_storage_directory::{DirectoryCheckpointStoreV1, DirectoryErrorV1, DirectoryLimitsV1};
 use std::{
+    os::unix::net::UnixStream,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
 
@@ -540,6 +542,106 @@ where
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DurableProcessTerminalV1 {
+    InvalidState,
+    Ownership,
+    Transport,
+    Fenced,
+    Durability,
+    Capacity,
+}
+
+pub struct DurableProcessFailureV1 {
+    pub terminal: DurableProcessTerminalV1,
+    pub stopped: agora_local_daemon::DaemonStoppedV1,
+}
+
+impl std::fmt::Debug for DurableProcessFailureV1 {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DurableProcessFailureV1")
+            .field("terminal", &self.terminal)
+            .field("stopped", &self.stopped)
+            .finish()
+    }
+}
+
+/// Requests shutdown and wakes one blocked private-local accept. Repeated
+/// requests are idempotent; the daemon still owns all drain and cleanup facts.
+pub fn request_durable_process_shutdown_v1(stop: &AtomicBool, socket: impl AsRef<Path>) -> bool {
+    let first = !stop.swap(true, Ordering::AcqRel);
+    let _ = UnixStream::connect(socket);
+    first
+}
+
+/// Serves sequential connections until an explicit shutdown request, then
+/// irreversibly drains and returns the daemon's exact terminal cleanup receipt.
+pub fn serve_durable_process_v1(
+    daemon: DurableCompositionDaemonV1,
+    stop: &AtomicBool,
+) -> Result<agora_local_daemon::DaemonStoppedV1, DurableProcessFailureV1> {
+    serve_durable_process_with_port_v1(daemon, stop)
+}
+
+fn serve_durable_process_with_port_v1<P>(
+    mut daemon: DurableCompositionDaemonWithPortV1<P>,
+    stop: &AtomicBool,
+) -> Result<agora_local_daemon::DaemonStoppedV1, DurableProcessFailureV1>
+where
+    P: ServicePort,
+    AegisVerifierV1<P>: agora_host::ScheduledPrincipalVerifier<Context = AegisContextV1>,
+{
+    loop {
+        if stop.load(Ordering::Acquire) {
+            if !daemon.begin_drain() && !daemon.health().drain_complete() {
+                let stopped = daemon.stop();
+                return Err(DurableProcessFailureV1 {
+                    terminal: DurableProcessTerminalV1::InvalidState,
+                    stopped,
+                });
+            }
+            return Ok(daemon.stop());
+        }
+        match daemon.serve_next() {
+            Ok(())
+            | Err(
+                DaemonErrorV1::Authentication
+                | DaemonErrorV1::Handshake
+                | DaemonErrorV1::Host(_)
+                | DaemonErrorV1::ConnectionRefused
+                | DaemonErrorV1::FrameLimit
+                | DaemonErrorV1::Route
+                | DaemonErrorV1::RequestLimit,
+            ) => {}
+            Err(error) => {
+                let terminal = match error {
+                    DaemonErrorV1::InvalidLimits | DaemonErrorV1::Draining => {
+                        DurableProcessTerminalV1::InvalidState
+                    }
+                    DaemonErrorV1::UnsafeEndpoint
+                    | DaemonErrorV1::LifetimeBusy
+                    | DaemonErrorV1::CrashResidue
+                    | DaemonErrorV1::ResidueMismatch => DurableProcessTerminalV1::Ownership,
+                    DaemonErrorV1::Io(_) => DurableProcessTerminalV1::Transport,
+                    DaemonErrorV1::Fenced => DurableProcessTerminalV1::Fenced,
+                    DaemonErrorV1::Durability => DurableProcessTerminalV1::Durability,
+                    DaemonErrorV1::ReplayEpochExhausted => DurableProcessTerminalV1::Capacity,
+                    DaemonErrorV1::Authentication
+                    | DaemonErrorV1::Handshake
+                    | DaemonErrorV1::Host(_)
+                    | DaemonErrorV1::ConnectionRefused
+                    | DaemonErrorV1::FrameLimit
+                    | DaemonErrorV1::Route
+                    | DaemonErrorV1::RequestLimit => unreachable!("handled connection refusal"),
+                };
+                let stopped = daemon.stop();
+                return Err(DurableProcessFailureV1 { terminal, stopped });
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,7 +650,10 @@ mod tests {
     use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
     use std::fs;
     use std::os::unix::{fs::PermissionsExt, net::UnixListener};
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    };
 
     struct Port {
         reply: Result<ReplyV1, &'static str>,
@@ -906,6 +1011,55 @@ mod tests {
         ));
         assert!(!root.0.join("store").exists());
         assert!(!root.0.join("agora.sock").exists());
+        assert!(!root.0.join("agora.sock.owner.lock").exists());
+    }
+
+    #[test]
+    fn explicit_shutdown_wakes_accept_drains_and_returns_exact_cleanup_receipt() {
+        let root = TempRoot::new();
+        let socket = root.0.join("agora.sock");
+        let bootstrap = BootstrapV1 {
+            principal: ParticipantId::new("alice"),
+            participants: vec![BootstrapParticipantV1 {
+                id: ParticipantId::new("alice"),
+                display_name: "Alice".to_owned(),
+                kind: ParticipantKind::Human,
+            }],
+            rooms: Vec::new(),
+        };
+        let (participant, context, verifier) = authority_parts("alice");
+        let daemon = start_durable_composition_parts_v1(
+            participant,
+            context,
+            verifier,
+            composition_plan(
+                &root,
+                DurableCompositionStartupV1::Create {
+                    bootstrap,
+                    server_incarnation: ServerIncarnationV1::new([0xd4; 16]),
+                },
+            ),
+        )
+        .unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let server_stop = Arc::clone(&stop);
+        let server =
+            std::thread::spawn(move || serve_durable_process_with_port_v1(daemon, &server_stop));
+
+        assert!(request_durable_process_shutdown_v1(&stop, &socket));
+        assert!(!request_durable_process_shutdown_v1(&stop, &socket));
+        let receipt = server.join().unwrap().unwrap();
+        assert_eq!(
+            receipt.prior_lifecycle,
+            agora_local_daemon::DaemonLifecycleV1::Draining
+        );
+        assert_eq!(
+            receipt.health.lifecycle,
+            agora_local_daemon::DaemonLifecycleV1::Stopped
+        );
+        assert_eq!(receipt.health.active_connections, 0);
+        assert_eq!(receipt.cleanup, agora_local_daemon::DaemonCleanupV1::Clean);
+        assert!(!socket.exists());
         assert!(!root.0.join("agora.sock.owner.lock").exists());
     }
 }

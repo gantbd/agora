@@ -60,8 +60,10 @@ requalification remains part of the current release-readiness work.
    are typed, and the concrete provisioner now issues exact conversation or
    scheduled-composition scopes on that session. The application factory now
    qualifies ordered durable create, clean open, and exact endpoint-residue
-   recovery. The standalone signal/drain shell remains before the production
-   process closes.
+   recovery. The shared owner loop now converts explicit idempotent shutdown
+   into irreversible drain and an exact cleanup receipt. A standalone
+   configuration/OS-signal entrypoint and Workbench lifecycle qualification
+   remain before the production process closes.
 
 Agent harness selection, prompting, retries, and execution remain out of scope.
 

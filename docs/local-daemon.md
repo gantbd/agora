@@ -172,7 +172,9 @@ multi-user authentication. `SystemHostClockV1` supplies Unix-epoch milliseconds
 and clamps rollback to a non-regressing process-local sequence. Its initial
 wall-clock read remains trusted, and it makes no durable cross-restart clock
 claim. The complete create/open/residue-recovery durable owner factory now
-lives in `agora-private-local`; the signal/drain process shell remains open.
+lives in `agora-private-local`. Its shared owner loop also turns an explicit
+shutdown wakeup into irreversible drain and a terminal cleanup receipt; the
+standalone OS-signal/configuration entrypoint remains open.
 
 Create-time participant and room policy is not part of this daemon. The
 separate `agora-private-local` application root now builds a bounded fresh
