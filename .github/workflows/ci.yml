@@ -32,7 +32,9 @@ jobs:
         run: brew install ripgrep
       - name: Fetch locked dependencies
         working-directory: agora
-        run: cargo fetch --locked
+        run: |
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path fuzz/Cargo.toml
       - name: Audit current RustSec advisories
         working-directory: agora
         run: |
