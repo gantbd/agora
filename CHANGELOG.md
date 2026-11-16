@@ -8,6 +8,11 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added the owner-client `rooms.create.v2` guard for standalone and Workbench
+  shells. It refuses inexact confirmation before transport, binds all proposed
+  room facts to the expected revision, returns the service receipt, and retains
+  Agora's exact request identity for replay after an unknown outcome.
+
 - Implemented and release-qualified the R101 admission and moderation control
   profile. Trusted Host
   time now drives a kind- and role-neutral minimum message interval across all

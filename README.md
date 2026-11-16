@@ -175,6 +175,11 @@ connection authenticator and clock remain trusted application inputs.
 The V2 client separately fences an outcome-unknown transmission: only the exact
 same command may reuse the retained request identity until a reply resolves it
 or the caller explicitly abandons and accounts for the unresolved request.
+Its `room_command` module adds the selected `rooms.create.v2` application guard:
+the caller must confirm the exact room identifier, name, admission policy and
+current revision before the actor-bound command is offered. Standalone Agora
+and Workbench reuse this helper unchanged; an uncertain reply remains attached
+to the exact client request identity and cannot be replaced by another command.
 
 For authenticated deployments, the host and service also have one combined
 checkpoint and pre-reply gate. Session subject/participant/client/time bindings
