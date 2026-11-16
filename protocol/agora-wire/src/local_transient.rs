@@ -10,6 +10,7 @@ pub enum LocalRouteV1 {
     Conversation,
     Transient,
     Search,
+    Scheduled,
     Control,
 }
 
@@ -106,6 +107,7 @@ pub fn decode_local_routed_frame_v1(
         2 => LocalRouteV1::Transient,
         3 => LocalRouteV1::Control,
         4 => LocalRouteV1::Search,
+        5 => LocalRouteV1::Scheduled,
         _ => return Err(LocalRouteErrorV1::UnknownRoute),
     };
     Ok(LocalRoutedFrameV1 {
@@ -143,5 +145,6 @@ fn route_tag(route: LocalRouteV1) -> u8 {
         LocalRouteV1::Transient => 2,
         LocalRouteV1::Control => 3,
         LocalRouteV1::Search => 4,
+        LocalRouteV1::Scheduled => 5,
     }
 }

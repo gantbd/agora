@@ -10,7 +10,10 @@ use agora_durable::{OperatorRestoreAuthorityV1, OperatorRestoreRequestV1};
 use agora_engine::{CommandV2 as EngineCommand, Engine, Participant, ParticipantKind};
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::HostCheckpointScopeV1;
-use agora_host::{HostLimits, HostRefusal, HostTimeV1, VerifiedSubjectV1};
+use agora_host::{
+    HostLimits, HostRefusal, HostTimeV1, ScheduledHostActionV1, ScheduledPrincipalVerifier,
+    VerifiedSubjectV1,
+};
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 use agora_wire::WireLimits;
 use agora_wire::v2::{WireReplyV2, WireRequestV2, decode_reply_v2, encode_request_v2};
@@ -49,6 +52,73 @@ fn authorized(expires_at: u64) -> ReplyV1 {
         engine: EngineNamespaceV1::Agora,
         action: ActionV1::Submit,
     }))
+}
+
+fn scheduled_authorized(action: ActionV1, expires_at: u64) -> ReplyV1 {
+    ReplyV1::Accepted(OutcomeV1::Authorized(DecisionSummaryV1 {
+        handle: DecisionHandleV1(12),
+        epoch: 3,
+        expires_at,
+        engine: EngineNamespaceV1::Agora,
+        action,
+    }))
+}
+
+#[test]
+fn scheduled_owner_authority_maps_publish_and_observe_to_distinct_actions() {
+    let port = Port::default();
+    port.0.borrow_mut().replies = VecDeque::from([
+        Ok(scheduled_authorized(ActionV1::Execute, 10)),
+        Ok(scheduled_authorized(ActionV1::Observe, 10)),
+        Ok(scheduled_authorized(ActionV1::Submit, 10)),
+    ]);
+    let mut verifier = AegisVerifierV1::new(port.clone(), [0x44; 16]);
+    let context = context("alice", 1);
+    let subject = VerifiedSubjectV1::from_verifier([1; 16]);
+    verifier
+        .authorize_scheduled(
+            subject,
+            "alice",
+            &context,
+            HostTimeV1(2),
+            ScheduledHostActionV1::Publish,
+        )
+        .unwrap();
+    verifier
+        .authorize_scheduled(
+            subject,
+            "alice",
+            &context,
+            HostTimeV1(3),
+            ScheduledHostActionV1::Observe,
+        )
+        .unwrap();
+    assert!(
+        verifier
+            .authorize_scheduled(
+                subject,
+                "alice",
+                &context,
+                HostTimeV1(4),
+                ScheduledHostActionV1::Publish,
+            )
+            .is_err(),
+        "an inexact Submit reply cannot satisfy Execute"
+    );
+    let actions: Vec<ActionV1> = port
+        .0
+        .borrow()
+        .commands
+        .iter()
+        .map(|(_, command)| match command {
+            CommandV1::Authorize { action, .. } => *action,
+            _ => unreachable!(),
+        })
+        .collect();
+    assert_eq!(
+        actions,
+        [ActionV1::Execute, ActionV1::Observe, ActionV1::Execute]
+    );
 }
 
 fn restore_authorized(expires_at: u64) -> ReplyV1 {

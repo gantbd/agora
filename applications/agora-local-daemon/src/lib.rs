@@ -27,19 +27,26 @@ use agora_local_transport::{
 };
 pub use agora_wire::local_handshake::{
     CLIENT_HELLO_BYTES_V1, COLLABORATION_CLIENT_HELLO_BYTES_V1,
-    COLLABORATION_SERVER_HELLO_BYTES_V1, CollaborationServerHelloV1, HandshakeErrorV1,
-    SEARCH_CLIENT_HELLO_BYTES_V1, SEARCH_SERVER_HELLO_BYTES_V1, SERVER_HELLO_BYTES_V1,
-    SearchServerHelloV1, ServerHelloV1, ServerIncarnationV1, decode_client_hello_v1,
-    decode_collaboration_client_hello_v1, decode_collaboration_server_hello_v1,
-    decode_search_client_hello_v1, decode_search_server_hello_v1, decode_server_hello_v1,
-    encode_client_hello_v1, encode_collaboration_client_hello_v1,
-    encode_collaboration_server_hello_v1, encode_search_client_hello_v1,
-    encode_search_server_hello_v1, encode_server_hello_v1,
+    COLLABORATION_SERVER_HELLO_BYTES_V1, COMPOSITION_CLIENT_HELLO_BYTES_V1,
+    COMPOSITION_SERVER_HELLO_BYTES_V1, CollaborationServerHelloV1, CompositionServerHelloV1,
+    HandshakeErrorV1, SEARCH_CLIENT_HELLO_BYTES_V1, SEARCH_SERVER_HELLO_BYTES_V1,
+    SERVER_HELLO_BYTES_V1, SearchServerHelloV1, ServerHelloV1, ServerIncarnationV1,
+    decode_client_hello_v1, decode_collaboration_client_hello_v1,
+    decode_collaboration_server_hello_v1, decode_composition_client_hello_v1,
+    decode_composition_server_hello_v1, decode_search_client_hello_v1,
+    decode_search_server_hello_v1, decode_server_hello_v1, encode_client_hello_v1,
+    encode_collaboration_client_hello_v1, encode_collaboration_server_hello_v1,
+    encode_composition_client_hello_v1, encode_composition_server_hello_v1,
+    encode_search_client_hello_v1, encode_search_server_hello_v1, encode_server_hello_v1,
 };
 pub use agora_wire::local_transient::{
     LOCAL_SESSION_HELLO_BYTES_V1, LocalReplayEpochV1, LocalRouteErrorV1, LocalRouteV1,
     decode_local_routed_frame_v1, decode_local_session_hello_v1, encode_local_routed_frame_v1,
     encode_local_session_hello_v1,
+};
+use agora_wire::scheduled::{
+    ScheduledWireReplyV1, ScheduledWireRequestV1, decode_scheduled_request_v1,
+    encode_scheduled_reply_v1,
 };
 use keystone_storage::CheckpointStore;
 use std::io::{self, Read, Write};
@@ -237,6 +244,15 @@ pub trait DaemonHostV1: sealed::Sealed {
     ) -> Result<Vec<u8>, DaemonHostErrorV1> {
         Err(DaemonHostErrorV1::Host(HostRefusal::ProtocolViolation))
     }
+    fn handle_scheduled_daemon(
+        &mut self,
+        _session: HostSessionIdV2,
+        _frame: &[u8],
+        _context: &AegisContextV1,
+        _now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        Err(DaemonHostErrorV1::Host(HostRefusal::ProtocolViolation))
+    }
     fn close_daemon(&mut self, session: HostSessionIdV2) -> Result<bool, DaemonHostErrorV1>;
 }
 
@@ -247,7 +263,7 @@ impl<P> sealed::Sealed for HostV2<AegisVerifierV1<P>> where
 
 impl<P> DaemonHostV1 for HostV2<AegisVerifierV1<P>>
 where
-    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    AegisVerifierV1<P>: agora_host::ScheduledPrincipalVerifier<Context = AegisContextV1>,
 {
     fn open_daemon(
         &mut self,
@@ -283,6 +299,16 @@ where
     ) -> Result<Vec<u8>, DaemonHostErrorV1> {
         Err(DaemonHostErrorV1::Host(HostRefusal::ProtocolViolation))
     }
+
+    fn handle_scheduled_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        handle_scheduled_host(self, session, frame, context, now)
+    }
 }
 
 impl<P, S> sealed::Sealed for DurableHostV2<AegisVerifierV1<P>, S>
@@ -294,7 +320,7 @@ where
 
 impl<P, S> DaemonHostV1 for DurableHostV2<AegisVerifierV1<P>, S>
 where
-    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    AegisVerifierV1<P>: agora_host::ScheduledPrincipalVerifier<Context = AegisContextV1>,
     S: CheckpointStore,
 {
     fn open_daemon(
@@ -329,6 +355,63 @@ where
     ) -> Result<Vec<u8>, DaemonHostErrorV1> {
         Err(DaemonHostErrorV1::Host(HostRefusal::ProtocolViolation))
     }
+
+    fn handle_scheduled_daemon(
+        &mut self,
+        session: HostSessionIdV2,
+        frame: &[u8],
+        context: &AegisContextV1,
+        now: HostTimeV1,
+    ) -> Result<Vec<u8>, DaemonHostErrorV1> {
+        let request = decode_scheduled_request_v1(
+            frame,
+            self.host()
+                .ok_or(DaemonHostErrorV1::Durability)?
+                .limits()
+                .wire,
+        )
+        .map_err(|_| DaemonHostErrorV1::Host(HostRefusal::ProtocolViolation))?;
+        let reply = match request {
+            ScheduledWireRequestV1::Publish(request) => ScheduledWireReplyV1::Published(
+                durable_value(self.publish_scheduled(session, request, context, now))?,
+            ),
+            ScheduledWireRequestV1::Observe(request) => ScheduledWireReplyV1::Observed(
+                durable_value(self.observe_scheduled(session, request, context, now))?,
+            ),
+        };
+        let limits = self
+            .host()
+            .ok_or(DaemonHostErrorV1::Durability)?
+            .limits()
+            .wire;
+        encode_scheduled_reply_v1(&reply, limits)
+            .map_err(|_| DaemonHostErrorV1::Host(HostRefusal::Unavailable))
+    }
+}
+
+fn handle_scheduled_host<P>(
+    host: &mut HostV2<AegisVerifierV1<P>>,
+    session: HostSessionIdV2,
+    frame: &[u8],
+    context: &AegisContextV1,
+    now: HostTimeV1,
+) -> Result<Vec<u8>, DaemonHostErrorV1>
+where
+    AegisVerifierV1<P>: agora_host::ScheduledPrincipalVerifier<Context = AegisContextV1>,
+{
+    let limits = host.limits().wire;
+    let request = decode_scheduled_request_v1(frame, limits)
+        .map_err(|_| DaemonHostErrorV1::Host(HostRefusal::ProtocolViolation))?;
+    let reply = match request {
+        ScheduledWireRequestV1::Publish(request) => {
+            ScheduledWireReplyV1::Published(host.publish_scheduled(session, request, context, now))
+        }
+        ScheduledWireRequestV1::Observe(request) => {
+            ScheduledWireReplyV1::Observed(host.observe_scheduled(session, request, context, now))
+        }
+    };
+    encode_scheduled_reply_v1(&reply, limits)
+        .map_err(|_| DaemonHostErrorV1::Host(HostRefusal::Unavailable))
 }
 
 impl<P> sealed::Sealed for TransientHostV1<AegisVerifierV1<P>> where
@@ -514,6 +597,7 @@ enum DaemonTransportProfileV1 {
     Conversation,
     Collaboration,
     Search,
+    Composition,
 }
 
 impl<H, A, C> DaemonV1<H, A, C>
@@ -734,6 +818,12 @@ where
                         self.host
                             .handle_search_daemon(session, payload, &context, self.clock.now())
                     }
+                    LocalRouteV1::Scheduled => self.host.handle_scheduled_daemon(
+                        session,
+                        payload,
+                        &context,
+                        self.clock.now(),
+                    ),
                     LocalRouteV1::Control => return Err(DaemonErrorV1::Route),
                 };
                 let reply = match reply {
@@ -812,6 +902,26 @@ where
                 .map_err(|_| DaemonErrorV1::Handshake)?
                 .to_vec()
             }
+            DaemonTransportProfileV1::Composition => {
+                let mut client = [0; COMPOSITION_CLIENT_HELLO_BYTES_V1];
+                stream.read_exact(&mut client).map_err(DaemonErrorV1::Io)?;
+                if decode_composition_client_hello_v1(&client).is_err() {
+                    increment(
+                        &mut self.health.handshake_refused,
+                        &mut self.health.saturated,
+                    );
+                    return Err(DaemonErrorV1::Handshake);
+                }
+                encode_composition_server_hello_v1(
+                    self.server_incarnation,
+                    u32::try_from(self.limits.max_frame_bytes)
+                        .map_err(|_| DaemonErrorV1::Handshake)?,
+                    u32::try_from(self.limits.max_frames_after_connect)
+                        .map_err(|_| DaemonErrorV1::Handshake)?,
+                )
+                .map_err(|_| DaemonErrorV1::Handshake)?
+                .to_vec()
+            }
         };
         stream.write_all(&server).map_err(DaemonErrorV1::Io)?;
         stream.flush().map_err(DaemonErrorV1::Io)
@@ -824,15 +934,28 @@ where
     ) -> Result<(LocalRouteV1, &'a [u8]), DaemonErrorV1> {
         match self.transport_profile {
             DaemonTransportProfileV1::Conversation => Ok((LocalRouteV1::Conversation, frame)),
-            DaemonTransportProfileV1::Collaboration | DaemonTransportProfileV1::Search => {
+            DaemonTransportProfileV1::Collaboration
+            | DaemonTransportProfileV1::Search
+            | DaemonTransportProfileV1::Composition => {
                 let decoded = decode_local_routed_frame_v1(frame, self.limits.max_frame_bytes)
                     .map_err(|_| DaemonErrorV1::Route)?;
                 if decoded.route() == LocalRouteV1::Control
                     || (connect && decoded.route() != LocalRouteV1::Conversation)
                     || (self.transport_profile == DaemonTransportProfileV1::Collaboration
-                        && decoded.route() == LocalRouteV1::Search)
+                        && matches!(
+                            decoded.route(),
+                            LocalRouteV1::Search | LocalRouteV1::Scheduled
+                        ))
                     || (self.transport_profile == DaemonTransportProfileV1::Search
-                        && decoded.route() == LocalRouteV1::Transient)
+                        && matches!(
+                            decoded.route(),
+                            LocalRouteV1::Transient | LocalRouteV1::Scheduled
+                        ))
+                    || (self.transport_profile == DaemonTransportProfileV1::Composition
+                        && matches!(
+                            decoded.route(),
+                            LocalRouteV1::Transient | LocalRouteV1::Search
+                        ))
                 {
                     return Err(DaemonErrorV1::Route);
                 }
@@ -851,7 +974,9 @@ where
             DaemonTransportProfileV1::Conversation => stream
                 .write_frame(payload, self.limits.max_frame_bytes)
                 .map_err(map_transport_error),
-            DaemonTransportProfileV1::Collaboration | DaemonTransportProfileV1::Search => {
+            DaemonTransportProfileV1::Collaboration
+            | DaemonTransportProfileV1::Search
+            | DaemonTransportProfileV1::Composition => {
                 let encoded =
                     encode_local_routed_frame_v1(route, payload, self.limits.max_frame_bytes)
                         .map_err(|_| DaemonErrorV1::FrameLimit)?;
@@ -891,8 +1016,57 @@ where
 
 impl<P, A, C> DaemonV1<HostV2<AegisVerifierV1<P>>, A, C>
 where
-    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    AegisVerifierV1<P>: agora_host::ScheduledPrincipalVerifier<Context = AegisContextV1>,
+    A: AuthenticatorV1,
+    C: HostClockV1,
 {
+    pub fn bind_new_composition(
+        socket_path: impl AsRef<Path>,
+        host: HostV2<AegisVerifierV1<P>>,
+        authenticator: A,
+        clock: C,
+        server_incarnation: ServerIncarnationV1,
+        limits: DaemonLimitsV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        validate_daemon_configuration(server_incarnation, limits)?;
+        let endpoint = LocalEndpointV1::bind_new(socket_path, server_incarnation)
+            .map_err(map_transport_error)?;
+        Self::bind_owned(
+            endpoint,
+            host,
+            authenticator,
+            clock,
+            server_incarnation,
+            limits,
+            DaemonTransportProfileV1::Composition,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn recover_stale_composition(
+        socket_path: impl AsRef<Path>,
+        host: HostV2<AegisVerifierV1<P>>,
+        authenticator: A,
+        clock: C,
+        previous_incarnation: ServerIncarnationV1,
+        next_incarnation: ServerIncarnationV1,
+        limits: DaemonLimitsV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        validate_daemon_configuration(next_incarnation, limits)?;
+        let endpoint =
+            LocalEndpointV1::recover_stale(socket_path, previous_incarnation, next_incarnation)
+                .map_err(map_transport_error)?;
+        Self::bind_owned(
+            endpoint,
+            host,
+            authenticator,
+            clock,
+            next_incarnation,
+            limits,
+            DaemonTransportProfileV1::Composition,
+        )
+    }
+
     pub fn observation(&self) -> DaemonObservationV1 {
         observation(self.health, &self.host)
     }
@@ -1032,9 +1206,58 @@ where
 
 impl<P, S, A, C> DaemonV1<DurableHostV2<AegisVerifierV1<P>, S>, A, C>
 where
-    AegisVerifierV1<P>: PrincipalVerifier<Context = AegisContextV1>,
+    AegisVerifierV1<P>: agora_host::ScheduledPrincipalVerifier<Context = AegisContextV1>,
     S: CheckpointStore,
+    A: AuthenticatorV1,
+    C: HostClockV1,
 {
+    pub fn bind_new_durable_composition(
+        socket_path: impl AsRef<Path>,
+        host: DurableHostV2<AegisVerifierV1<P>, S>,
+        authenticator: A,
+        clock: C,
+        server_incarnation: ServerIncarnationV1,
+        limits: DaemonLimitsV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        validate_daemon_configuration(server_incarnation, limits)?;
+        let endpoint = LocalEndpointV1::bind_new(socket_path, server_incarnation)
+            .map_err(map_transport_error)?;
+        Self::bind_owned(
+            endpoint,
+            host,
+            authenticator,
+            clock,
+            server_incarnation,
+            limits,
+            DaemonTransportProfileV1::Composition,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn recover_stale_durable_composition(
+        socket_path: impl AsRef<Path>,
+        host: DurableHostV2<AegisVerifierV1<P>, S>,
+        authenticator: A,
+        clock: C,
+        previous_incarnation: ServerIncarnationV1,
+        next_incarnation: ServerIncarnationV1,
+        limits: DaemonLimitsV1,
+    ) -> Result<Self, DaemonErrorV1> {
+        validate_daemon_configuration(next_incarnation, limits)?;
+        let endpoint =
+            LocalEndpointV1::recover_stale(socket_path, previous_incarnation, next_incarnation)
+                .map_err(map_transport_error)?;
+        Self::bind_owned(
+            endpoint,
+            host,
+            authenticator,
+            clock,
+            next_incarnation,
+            limits,
+            DaemonTransportProfileV1::Composition,
+        )
+    }
+
     pub fn observation(&self) -> DurableDaemonObservationV1 {
         durable_observation(
             self.health,

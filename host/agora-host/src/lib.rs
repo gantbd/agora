@@ -78,6 +78,25 @@ pub trait PrincipalVerifier {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScheduledHostActionV1 {
+    Publish,
+    Observe,
+}
+
+/// Additional authority required by the trusted scheduled composition facet.
+/// A normal authenticated Host session is necessary but never sufficient.
+pub trait ScheduledPrincipalVerifier: PrincipalVerifier {
+    fn authorize_scheduled(
+        &mut self,
+        subject: VerifiedSubjectV1,
+        participant: &str,
+        context: &Self::Context,
+        now: HostTimeV1,
+        action: ScheduledHostActionV1,
+    ) -> Result<(), Self::Error>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HostLimits {
     pub max_sessions: usize,
     pub max_retired_sessions: usize,

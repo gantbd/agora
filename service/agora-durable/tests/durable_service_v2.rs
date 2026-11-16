@@ -19,7 +19,10 @@ use agora_federated_publication_port::{
 use agora_host::transient::{TransientHostBuildRefusalV1, TransientHostV1};
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
-use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
+use agora_host::{
+    HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, ScheduledHostActionV1,
+    ScheduledPrincipalVerifier, VerifiedSubjectV1,
+};
 use agora_interaction_port::{
     InteractionInvocationIdV1, InteractionPromotionIntentV1, InteractionPromotionRequestV1,
     InteractionSourceV1,
@@ -143,6 +146,26 @@ impl PrincipalVerifier for Verifier {
         participant: &str,
         context: &Self::Context,
         _now: HostTimeV1,
+    ) -> Result<(), Self::Error> {
+        if context.active
+            && participant == "alice"
+            && subject == VerifiedSubjectV1::from_verifier([7; 16])
+        {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl ScheduledPrincipalVerifier for Verifier {
+    fn authorize_scheduled(
+        &mut self,
+        subject: VerifiedSubjectV1,
+        participant: &str,
+        context: &Self::Context,
+        _now: HostTimeV1,
+        _action: ScheduledHostActionV1,
     ) -> Result<(), Self::Error> {
         if context.active
             && participant == "alice"

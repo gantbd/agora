@@ -2,8 +2,9 @@
 
 Status: qualified bounded Unix transport composition V1 with separately selected
 volatile conversation, volatile collaboration, volatile derived search,
-receipt-gated durable conversation, or receipt-gated durable conversation plus
-volatile collaboration.
+receipt-gated durable conversation, receipt-gated durable conversation plus
+volatile collaboration, or trusted scheduled-publication composition over a
+volatile or receipt-gated durable conversation owner.
 
 `agora-local-transport` owns the authority-free outer connection, framing,
 endpoint lifetime, deadlines, and incarnation entropy. `agora-local-daemon`
@@ -198,9 +199,29 @@ a fresh request namespace and replay epoch. Separately, Host checkpoint recovery
 wraps the recovered authority in an empty search runtime and rejects old search
 continuations; an integrated durable-daemon/index recovery owner is not claimed.
 
+The scheduled-publication composition uses fixed-width handshake profile 4 and
+the same actor-bound conversation connect plus replay-epoch control hello. It
+admits only conversation, control, and scheduled route tag `05`; transient and
+search routes refuse. The scheduled codec is closed over publish and retained
+observe. The daemon supplies fresh Host time and the authenticated session to
+the owner, which first revalidates ordinary `Submit` authority and then obtains
+an operation-specific Aegis decision: `Execute` for publish or `Observe` for
+observation. This owner-side enforcement is required even when a calling
+cross-engine adapter has already authorized its own `Dispatch` or
+`InspectAgora` action.
+
+`agora-local-client::ScheduledLocalClientV1` is the public concrete client for
+profile 4. It verifies the endpoint is a mode-0600 single-link Unix socket,
+negotiates the profile, validates the control hello, and classifies failures
+before the scheduled frame as definitely not sent. Failures after the offer are
+outcome-unknown; invalid or wrong-operation replies are never accepted. A real
+directory-store scenario publishes and then observes the retained result across
+two fresh sessions and six committed durable boundaries. This establishes a
+private-local deployed composition, not a remote transport or a Workbench UI.
+
 ## Qualification evidence
 
-The thirteen real-socket scenarios verify private-parent/socket modes and type,
+The real-socket scenarios verify private-parent/socket modes and type,
 canonical incarnation-bound lifetime bytes, live-owner exclusion, distinct
 stale-residue refusal, replacement fencing before authentication, and
 conservative teardown,

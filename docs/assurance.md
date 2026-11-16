@@ -450,7 +450,7 @@ to `Administer`, prebinds key/scope, rejects mismatch without authority I/O,
 erases refusal/expiry/wrong-action/port failure, and retains the accepted
 decision plus Agora revision as non-atomic correlation evidence.
 
-Thirteen real Unix-socket daemon scenarios compose that adapter with Host V2. They
+The real Unix-socket daemon scenarios compose that adapter with Host V2. They
 verify mode-0700 parent enforcement and mode-0600 endpoint creation, Aegis
 authorization on Connect and every later frame, exact pre-authentication
 handshake values, incompatible-profile refusal with zero downstream work, exact
@@ -465,14 +465,15 @@ uniqueness, concurrency, operational drain/crash recovery,
 cross-disconnect replay, and network transport remain
 unqualified. Physical storage is separate and narrowly qualified below.
 
-The fixed-width handshake codec is owned by `agora-wire`, not the daemon. Seven
-canonical fixtures close all three ClientHello/ServerHello pairs and the
-session-control hello; ordinary tests
-reject length, magic, profile, zero-limit, and zero-incarnation drift and require
-exact reconstruction. The client SDK facade constructs and decodes the profile.
-The pinned wire fuzz target now applies exact re-encoding oracles to all seven
-local control decoders, the route envelope, and all complete-frame decoders. This establishes
-closed profile selection and visible server-lifetime evidence, not credential
+The fixed-width handshake codec is owned by `agora-wire`, not the daemon.
+Canonical fixtures close the original three ClientHello/ServerHello pairs and
+the session-control hello; ordinary tests additionally close composition
+profile 4, reject length, magic, profile, zero-limit, and zero-incarnation drift,
+and require exact reconstruction. The client SDK facade constructs and decodes
+the profile.
+The pinned wire fuzz target applies exact re-encoding oracles to its frozen local
+control corpus, the route envelope, and all complete-frame decoders. This
+establishes closed profile selection and visible server-lifetime evidence, not credential
 authentication, compatibility-range negotiation, incarnation provenance,
 resume, or replay safety.
 

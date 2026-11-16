@@ -153,6 +153,7 @@ name = "agora-wire"
 version = "0.1.0"
 dependencies = [
  "agora-protocol",
+ "agora-scheduled-publication-port",
  "keystone-codec",
 ]
 

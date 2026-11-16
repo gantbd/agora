@@ -32,13 +32,15 @@ requalification remains part of the current release-readiness work.
    editing, persistence, agent behavior, and cross-engine transaction claims
    remain outside Agora.
 7. Complete the adopted R102 Chronos scheduled-publication composition after
-   the implemented Agora trusted-port slice:
+   the implemented Agora trusted-port and deployed private-local client slices:
    Chronos owns scheduled objects, clock, cancellation, and temporal execution;
    Agora admits only an authenticated, idempotent publication attempt with
    explicit schedule-origin identity. Close cancellation races, late execution,
    unavailable Agora, and unknown-result recovery without importing tasks or
-   scheduling into Agora. The separate adapter must receipt-gate its canonical
-   intent/allocation/reconciliation journal and expose every cancellation cut.
+   scheduling into Agora. The separate adapter receipt-gates its canonical
+   intent/allocation/reconciliation journal and exposes every cancellation cut;
+   remaining work is live Chronos admission, Workbench attachment, and
+   integrated release/soak qualification rather than another Agora transport.
 8. Implement the adopted R103 Hermes notification-delivery composition through
    a separate adapter: content-minimized observer-bound projection, durable
    exact handoff, current visibility and revocation, endpoint uncertainty, and

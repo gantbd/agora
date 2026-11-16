@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 agora-protocol = { path = "../../protocol/agora-protocol", version = "=0.1.0" }
+agora-scheduled-publication-port = { path = "../../ports/agora-scheduled-publication-port", version = "=0.1.0" }
 
 [dev-dependencies]
 agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }

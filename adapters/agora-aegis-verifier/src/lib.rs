@@ -13,7 +13,10 @@ use aegis_protocol::{
 };
 use agora_durable::{OperatorRestoreAuthorityV1, OperatorRestoreRequestV1};
 use agora_host::v2::persistence::HostCheckpointScopeV1;
-use agora_host::{HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
+use agora_host::{
+    HostTimeV1, PrincipalVerifier, ScheduledHostActionV1, ScheduledPrincipalVerifier,
+    VerifiedSubjectV1,
+};
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct AegisContextV1 {
@@ -114,10 +117,11 @@ impl<P> std::fmt::Debug for AegisVerifierV1<P> {
 }
 
 impl<P: ServicePort> AegisVerifierV1<P> {
-    fn authorize(
+    fn authorize_action(
         &mut self,
         context: &AegisContextV1,
         now: HostTimeV1,
+        action: ActionV1,
     ) -> Result<(), AegisVerifierErrorV1> {
         let reply = self
             .port
@@ -128,14 +132,14 @@ impl<P: ServicePort> AegisVerifierV1<P> {
                     now: now.0,
                     engine: EngineNamespaceV1::Agora,
                     resource: self.resource,
-                    action: ActionV1::Submit,
+                    action,
                 },
             )
             .map_err(|_| AegisVerifierErrorV1::Unavailable)?;
         match reply {
             ReplyV1::Accepted(OutcomeV1::Authorized(decision))
                 if decision.engine == EngineNamespaceV1::Agora
-                    && decision.action == ActionV1::Submit
+                    && decision.action == action
                     && decision.expires_at > now.0 =>
             {
                 Ok(())
@@ -158,7 +162,7 @@ impl<P: ServicePort> PrincipalVerifier for AegisVerifierV1<P> {
         if claimed_participant != context.participant_id {
             return Err(AegisVerifierErrorV1::Unavailable);
         }
-        self.authorize(context, now)?;
+        self.authorize_action(context, now, ActionV1::Submit)?;
         Ok(context.subject)
     }
 
@@ -172,7 +176,30 @@ impl<P: ServicePort> PrincipalVerifier for AegisVerifierV1<P> {
         if subject != context.subject || participant != context.participant_id {
             return Err(AegisVerifierErrorV1::Unavailable);
         }
-        self.authorize(context, now)
+        self.authorize_action(context, now, ActionV1::Submit)
+    }
+}
+
+impl<P: ServicePort> ScheduledPrincipalVerifier for AegisVerifierV1<P> {
+    fn authorize_scheduled(
+        &mut self,
+        subject: VerifiedSubjectV1,
+        participant: &str,
+        context: &Self::Context,
+        now: HostTimeV1,
+        action: ScheduledHostActionV1,
+    ) -> Result<(), Self::Error> {
+        if subject != context.subject || participant != context.participant_id {
+            return Err(AegisVerifierErrorV1::Unavailable);
+        }
+        self.authorize_action(
+            context,
+            now,
+            match action {
+                ScheduledHostActionV1::Publish => ActionV1::Execute,
+                ScheduledHostActionV1::Observe => ActionV1::Observe,
+            },
+        )
     }
 }
 

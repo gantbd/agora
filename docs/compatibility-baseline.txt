@@ -3,6 +3,7 @@
 package|engine/agora-engine/Cargo.toml|agora-engine|0.3.0
 package|adapters/agora-aegis-verifier/Cargo.toml|agora-aegis-verifier|0.1.0
 package|client/agora-client/Cargo.toml|agora-client|0.1.0
+package|client/agora-local-client/Cargo.toml|agora-local-client|0.1.0
 package|service/agora-durable/Cargo.toml|agora-durable|0.1.0
 package|service/agora-export-service/Cargo.toml|agora-export-service|0.1.0
 package|service/agora-export-durable/Cargo.toml|agora-export-durable|0.1.0

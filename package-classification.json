@@ -97,6 +97,14 @@
       "audiences": ["application"],
       "publish": false
     },
+    "agora-local-client": {
+      "path": "client/agora-local-client",
+      "category": "client",
+      "maturity": "adopted",
+      "effect_class": "effectful-adapter",
+      "audiences": ["application", "remote-client"],
+      "publish": false
+    },
     "agora-local-daemon": {
       "path": "applications/agora-local-daemon",
       "category": "application",

@@ -13,6 +13,7 @@ use std::fmt;
 pub mod local_handshake;
 pub mod local_transient;
 pub mod remote_handshake;
+pub mod scheduled;
 pub mod search;
 pub mod transient;
 pub mod v2;

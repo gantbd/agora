@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 agora-protocol = { path = "../agora-protocol", version = "=0.1.0" }
+agora-scheduled-publication-port = { path = "../../ports/agora-scheduled-publication-port", version = "=0.1.0" }
 keystone-codec = { path = "../../../keystone/crates/keystone-codec", version = "=0.0.1" }
 
 [lints.rust]

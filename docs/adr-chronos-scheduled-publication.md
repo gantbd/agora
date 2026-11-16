@@ -1,6 +1,6 @@
 # ADR: Chronos scheduled-publication composition
 
-Status: accepted; Agora retained-observation owner slice implemented, deployed transport open
+Status: accepted; Agora owner and private-local composition transport implemented
 
 Date: 2026-11-14
 
@@ -133,6 +133,32 @@ it must not be generalized to a cache miss. Host revalidation is durably
 committed before either result escapes. Ordinary participant Wire V2 still
 does not expose this facet.
 
+### Deployed private-local composition
+
+Agora's private local daemon exposes the trusted facets through composition
+handshake profile 4 and the dedicated scheduled route. This profile is distinct
+from ordinary participant Wire V2: the session still begins with an
+authenticated actor-bound conversation connect, but only the composition
+profile admits scheduled publish and observe frames. Conversation,
+collaboration, and search profiles reject that route.
+
+The owner does not rely on the caller or adapter to enforce this distinction.
+Opening and revalidating the Host session requires the ordinary Agora `Submit`
+action; each scheduled operation then requires a second, operation-specific
+decision. Publish maps to Aegis `Execute`, while retained observation maps to
+`Observe`. A missing, refused, expired, failed, or mismatched decision fails
+closed and retires the session. Adapter-side `Dispatch` and `InspectAgora`
+authorization remains a separate cross-engine boundary and cannot substitute
+for these owner-side checks.
+
+`ScheduledLocalClientV1` is the public concrete client for this profile. It
+performs endpoint hardening checks, negotiates profile 4, opens the normal
+actor-bound session, validates the replay-epoch control hello, and exposes the
+transport-neutral scheduled client trait. The same client can be selected by a
+standalone process or by Workbench; neither deployment gets a privileged domain
+API. Pre-send failures are distinguishable from post-offer uncertainty, while
+malformed or wrong-operation replies never become success.
+
 ## Consequences
 
 - Both engines retain single-writer authority over their own facts.
@@ -184,7 +210,7 @@ R102 does not provide calendars, recurrence, time zones, reminders, message
 editing, scheduled attachments, scheduled Vellum references, addressing,
 approval, workflow completion, agent execution, atomic cross-engine commits,
 automatic moderation bypass, message retraction, delivery, federation, or a
-network transport. Chronos cancellation is not Agora erasure, and Agora
+remote/network transport. Chronos cancellation is not Agora erasure, and Agora
 acceptance is not proof that every Chronos bookkeeping write succeeded.
 
 ## Implementation status
@@ -193,12 +219,18 @@ Agora now provides the zero-dependency `agora-scheduled-publication-port`, an
 embedded-SDK reexport, actor-bound Service/Host dispatch and observation,
 current Host-time admission, exact keyed replay/conflict, authoritative retained
 absence, and receipt-gated durable Host publication/observation. The contract
-remains absent from ordinary Protocol and Wire V2. Tests cover
+remains absent from ordinary participant Wire V2. The separate scheduled wire
+codec, composition handshake profile 4, scheduled local route, and
+`agora-local-client` expose publish and retained observation only through the
+private-local composition profile. The daemon independently enforces `Execute`
+for publication and `Observe` for observation in addition to ordinary session
+`Submit` authorization. Tests cover
 nonzero opaque identity, content-safe diagnostics, current interval and posting
 restriction enforcement, authenticated actor binding, revocation, exact replay,
-changed-intent conflict, and recovery after an indeterminate committed store
-outcome. A dedicated deployed composition transport and public local client for
-the trusted publish/observe facets remain open.
+changed-intent conflict, recovery after an indeterminate committed store
+outcome, closed profile/route decoding, exact operation authority, transport
+certainty, and real durable Unix publish-then-observe composition through the
+public client.
 
 The separate adapter now has a canonical bounded six-state journal, exact-next
 durable receipt gating, original-allocation conversion, cancellation-cut and
@@ -207,5 +239,6 @@ reconciliation, and adapter-owned late policy. It deliberately does not combine
 Chronos V3 admission with a later V5 eligibility mutation: a newly admitted task
 has default claimable eligibility, so those two calls have a race. Live Chronos
 composition requires a qualified atomic admission-plus-eligibility capability.
-The Chronos workspace currently contains an unrelated uncommitted categorical
-rewrite and was left untouched.
+An actual Workbench host factory/UI attachment and integrated release/soak
+qualification remain separate work. The Chronos workspace currently contains
+an unrelated categorical rewrite and was left untouched.

@@ -2,12 +2,13 @@
 
 use aegis_client::ServicePort;
 use aegis_protocol::{
-    CommandV1, DecisionHandleV1, DecisionSummaryV1, EngineNamespaceV1, OutcomeV1, ReplyV1,
-    SessionHandleV1,
+    ActionV1, CommandV1, DecisionHandleV1, DecisionSummaryV1, EngineNamespaceV1, OutcomeV1,
+    ReplyV1, SessionHandleV1,
 };
 use agora_aegis_verifier::{
     AegisContextV1, AegisOperatorRestoreAuthorityV1, AegisOperatorRestoreContextV1, AegisVerifierV1,
 };
+use agora_client::scheduled::ScheduledPublicationWireClientV1;
 use agora_durable::{
     DurableHostConfigV2, DurableHostPublicationV2, DurableHostV2, DurableTransientHostV1,
     OperatorRestoreAuthorizationV1,
@@ -18,6 +19,7 @@ use agora_host::transient::TransientHostV1;
 use agora_host::v2::HostV2;
 use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
 use agora_host::{HostLimits, HostRefusal, HostTimeV1, VerifiedSubjectV1};
+use agora_local_client::ScheduledLocalClientV1;
 use agora_local_daemon::{
     AuthenticatorV1, COLLABORATION_SERVER_HELLO_BYTES_V1, CollaborationServerHelloV1,
     DaemonCleanupV1, DaemonErrorV1, DaemonLifecycleV1, DaemonLimitsV1, DaemonV1, HostClockV1,
@@ -45,6 +47,10 @@ use agora_protocol::v2::{
     RequestV2, Sha256DigestV1, TopicCollectionFilterV1, TopicCollectionLifecycleV1,
     VellumArtifactMessageTargetV1, VellumArtifactReferenceIdV1, VellumArtifactReferenceV1,
     VellumDocumentTargetV1,
+};
+use agora_scheduled_publication_port::{
+    ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationObservationV1,
+    ScheduledPublicationRequestV1,
 };
 use agora_service::search::port::{
     SearchCursorV1, SearchGenerationV1, SearchHitV1, SearchObservationV1, SearchPageV1,
@@ -221,6 +227,34 @@ fn host(port: Port) -> HostV2<AegisVerifierV1<Port>> {
             )))
             .unwrap();
     }
+    HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        AegisVerifierV1::new(port, [0x55; 16]),
+        HostLimits {
+            max_sessions: 4,
+            max_retired_sessions: 8,
+            wire: wire_limits(),
+        },
+    )
+}
+
+fn scheduled_host(port: Port) -> HostV2<AegisVerifierV1<Port>> {
+    let mut engine = Engine::new();
+    engine
+        .apply(EngineCommand::RegisterParticipant(Participant::new(
+            "alice",
+            "Alice",
+            ParticipantKind::Human,
+        )))
+        .unwrap();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "scheduled-room".into(),
+            name: "Scheduled Room".to_owned(),
+            owner: "alice".into(),
+            admission: agora_engine::AdmissionPolicy::Open,
+        })
+        .unwrap();
     HostV2::new(
         ServiceV2::new(engine, ServiceLimitsV2::default()),
         AegisVerifierV1::new(port, [0x55; 16]),
@@ -1550,6 +1584,78 @@ fn durable_daemon_reopens_conversation_state_through_the_same_transport_profile(
     assert_eq!(physical.physical.commits, physical.durability.committed);
     assert!(!physical.fidelity_lost);
     drop(daemon);
+    fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn public_composition_client_publishes_and_observes_through_durable_daemon() {
+    let path = socket_path();
+    let store_path = path.parent().unwrap().join("scheduled-checkpoint");
+    let store =
+        DirectoryCheckpointStoreV1::create_new(&store_path, DirectoryLimitsV1::default()).unwrap();
+    let port = Port::default();
+    let authority_calls = Arc::clone(&port.calls);
+    let durable = DurableHostV2::initialize(scheduled_host(port), store, durable_config()).unwrap();
+    let daemon = DaemonV1::bind_new_durable_composition(
+        &path,
+        durable,
+        Authentication,
+        Clock(1),
+        incarnation(),
+        daemon_limits(),
+    )
+    .unwrap();
+    let server = thread::spawn(move || {
+        let mut daemon = daemon;
+        let first = daemon.serve_next();
+        let second = daemon.serve_next();
+        (first, second, daemon)
+    });
+
+    let mut client =
+        ScheduledLocalClientV1::new(&path, "alice", wire_limits(), Duration::from_secs(2));
+    let request = ScheduledPublicationRequestV1 {
+        id: ScheduledPublicationIdV1::new([0x42; 16]).unwrap(),
+        intent: ScheduledPublicationIntentV1::new("scheduled-room", 7, "composition message"),
+    };
+    let accepted = client.publish_scheduled(request.clone()).unwrap().unwrap();
+    assert_eq!(accepted.revision, 3);
+    assert_eq!(accepted.message_sequence, 0);
+    assert_eq!(
+        client.observe_scheduled(request).unwrap(),
+        Ok(ScheduledPublicationObservationV1::Accepted(accepted))
+    );
+
+    let (first, second, daemon) = server.join().unwrap();
+    first.unwrap();
+    second.unwrap();
+    let observation = daemon.observation();
+    assert_eq!(
+        observation.durability.committed, 6,
+        "both authenticated session lifecycles and publish/observe are durable"
+    );
+    let actions: Vec<ActionV1> = authority_calls
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, command)| match command {
+            CommandV1::Authorize { action, .. } => *action,
+            _ => unreachable!(),
+        })
+        .collect();
+    assert_eq!(
+        actions,
+        [
+            ActionV1::Submit,
+            ActionV1::Submit,
+            ActionV1::Execute,
+            ActionV1::Submit,
+            ActionV1::Submit,
+            ActionV1::Observe,
+        ]
+    );
+    let stopped = daemon.stop();
+    assert_eq!(stopped.cleanup, DaemonCleanupV1::Clean);
     fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 

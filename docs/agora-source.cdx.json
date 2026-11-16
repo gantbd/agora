@@ -313,6 +313,28 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:cargo/agora-local-client@0.1.0",
+      "name": "agora-local-client",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-local-client@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:cargo/agora-local-daemon@0.1.0",
       "name": "agora-local-daemon",
       "version": "0.1.0",
@@ -692,6 +714,7 @@
       "dependsOn": [
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-scheduled-publication-port@0.1.0",
         "pkg:cargo/agora-service@0.1.0"
       ]
     },
@@ -777,16 +800,28 @@
       "dependsOn": []
     },
     {
+      "ref": "pkg:cargo/agora-local-client@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-client@0.1.0",
+        "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-scheduled-publication-port@0.1.0",
+        "pkg:cargo/agora-wire@0.1.0"
+      ]
+    },
+    {
       "ref": "pkg:cargo/agora-local-daemon@0.1.0",
       "dependsOn": [
         "pkg:cargo/aegis-client@0.1.0",
         "pkg:cargo/aegis-protocol@0.1.0",
         "pkg:cargo/agora-aegis-verifier@0.1.0",
+        "pkg:cargo/agora-client@0.1.0",
         "pkg:cargo/agora-durable@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-host@0.1.0",
+        "pkg:cargo/agora-local-client@0.1.0",
         "pkg:cargo/agora-local-transport@0.1.0",
         "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-scheduled-publication-port@0.1.0",
         "pkg:cargo/agora-service@0.1.0",
         "pkg:cargo/agora-storage-directory@0.1.0",
         "pkg:cargo/agora-wire@0.1.0",
@@ -889,6 +924,7 @@
       "ref": "pkg:cargo/agora-wire@0.1.0",
       "dependsOn": [
         "pkg:cargo/agora-protocol@0.1.0",
+        "pkg:cargo/agora-scheduled-publication-port@0.1.0",
         "pkg:cargo/keystone-codec@0.0.1"
       ]
     },

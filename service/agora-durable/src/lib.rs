@@ -20,7 +20,7 @@ use agora_host::v2::{
     AuthoritativeChangeRetentionHostRefusalV1, HostSessionIdV2, HostV2, OpenReplyV2,
     ReceiptRetirementHostRefusalV1, RetentionPolicyHostRefusalV1,
 };
-use agora_host::{HostRefusal, HostTimeV1, PrincipalVerifier};
+use agora_host::{HostRefusal, HostTimeV1, PrincipalVerifier, ScheduledPrincipalVerifier};
 use agora_interaction_port::{
     InteractionContextRefusalV1, InteractionContextV1, InteractionPromotionAcceptedV1,
     InteractionPromotionRefusalV1, InteractionPromotionRequestV1, InteractionSourceV1,
@@ -1287,7 +1287,10 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
         now: HostTimeV1,
     ) -> DurableHostPublicationV2<
         Result<ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1>,
-    > {
+    >
+    where
+        V: ScheduledPrincipalVerifier,
+    {
         let publication =
             self.publish(|host| host.publish_scheduled(session, request, context, now));
         self.counters.record(&publication);
@@ -1305,7 +1308,10 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
         now: HostTimeV1,
     ) -> DurableHostPublicationV2<
         Result<ScheduledPublicationObservationV1, ScheduledPublicationObservationRefusalV1>,
-    > {
+    >
+    where
+        V: ScheduledPrincipalVerifier,
+    {
         let publication =
             self.publish(|host| host.observe_scheduled(session, request, context, now));
         self.counters.record(&publication);

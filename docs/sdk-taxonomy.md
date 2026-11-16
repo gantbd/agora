@@ -72,6 +72,16 @@ exact-request client; the embedded facade names the authoritative
 engine/service/Host composition. Neither facade merges private saves into
 room-visible pins, adds synchronization policy, or copies referenced payload.
 
+The trusted scheduled-publication surface deliberately does not widen ordinary
+participant Wire V2. `agora-client` names its transport-neutral public client
+trait, while `agora-local-client` is a separately classified concrete client
+for private Unix composition handshake profile 4. It owns socket selection,
+profile/session establishment, framing, and transport-certainty classification;
+it owns no Agora domain authority or retry policy. A standalone shell and
+Workbench can therefore select the same public client without importing the
+daemon or receiving different semantic capabilities. The generic SDK facade
+does not silently select this concrete transport.
+
 ## Laws and evidence
 
 - Neither facade defines domain types, commands, adapters, or runtime behavior.

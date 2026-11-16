@@ -27,7 +27,10 @@ use agora_host::v2::{
     AuthoritativeChangeRetentionHostRefusalV1, ExportHostRefusalV1, ExportRetirementHostRefusalV1,
     HostV2, ReceiptRetirementHostRefusalV1, RetentionPolicyHostRefusalV1,
 };
-use agora_host::{HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, VerifiedSubjectV1};
+use agora_host::{
+    HostLimits, HostRefusal, HostTimeV1, PrincipalVerifier, ScheduledHostActionV1,
+    ScheduledPrincipalVerifier, VerifiedSubjectV1,
+};
 use agora_interaction_port::{
     InteractionContextRefusalV1, InteractionContextV1, InteractionInvocationIdV1,
     InteractionPromotionIntentV1, InteractionPromotionRequestV1, InteractionSourceV1,
@@ -168,6 +171,27 @@ impl PrincipalVerifier for Verifier {
         participant: &str,
         context: &Self::Context,
         _now: HostTimeV1,
+    ) -> Result<(), Self::Error> {
+        self.calls.set(self.calls.get() + 1);
+        if context.active
+            && participant == context.participant
+            && subject == VerifiedSubjectV1::from_verifier([context.subject; 16])
+        {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl ScheduledPrincipalVerifier for Verifier {
+    fn authorize_scheduled(
+        &mut self,
+        subject: VerifiedSubjectV1,
+        participant: &str,
+        context: &Self::Context,
+        _now: HostTimeV1,
+        _action: ScheduledHostActionV1,
     ) -> Result<(), Self::Error> {
         self.calls.set(self.calls.get() + 1);
         if context.active
@@ -386,7 +410,7 @@ fn scheduled_publication_binds_revalidated_session_actor_and_current_host_time()
         Err(ScheduledPublicationRefusalV1::NotAuthorized)
     );
     assert_eq!(host.service().active_client_count(), 0);
-    assert_eq!(calls.get(), 5);
+    assert_eq!(calls.get(), 8);
 }
 
 #[test]

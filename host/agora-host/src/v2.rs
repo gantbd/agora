@@ -1,8 +1,8 @@
 //! Authenticated transport-neutral composition for Agora Wire/Service V2.
 
 use super::{
-    HostLimits, HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier, VerifiedSubjectV1, count,
-    identity_bytes, map_encode,
+    HostLimits, HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier, ScheduledHostActionV1,
+    ScheduledPrincipalVerifier, VerifiedSubjectV1, count, identity_bytes, map_encode,
 };
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
@@ -187,6 +187,10 @@ impl<V: PrincipalVerifier> HostV2<V> {
         self.usage
     }
 
+    pub const fn limits(&self) -> HostLimits {
+        self.limits
+    }
+
     pub fn open(
         &mut self,
         frame: &[u8],
@@ -290,10 +294,27 @@ impl<V: PrincipalVerifier> HostV2<V> {
         request: ScheduledPublicationRequestV1,
         context: &V::Context,
         now: HostTimeV1,
-    ) -> Result<ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1> {
+    ) -> Result<ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1>
+    where
+        V: ScheduledPrincipalVerifier,
+    {
         let session = self
             .authorize_session(session_id, context, now)
             .map_err(|_| ScheduledPublicationRefusalV1::NotAuthorized)?;
+        if self
+            .verifier
+            .authorize_scheduled(
+                session.subject,
+                &session.participant,
+                context,
+                now,
+                ScheduledHostActionV1::Publish,
+            )
+            .is_err()
+        {
+            self.retire(session_id);
+            return Err(ScheduledPublicationRefusalV1::NotAuthorized);
+        }
         self.service
             .publish_scheduled_at(session.client, request, now.0)
     }
@@ -306,10 +327,27 @@ impl<V: PrincipalVerifier> HostV2<V> {
         request: ScheduledPublicationRequestV1,
         context: &V::Context,
         now: HostTimeV1,
-    ) -> Result<ScheduledPublicationObservationV1, ScheduledPublicationObservationRefusalV1> {
+    ) -> Result<ScheduledPublicationObservationV1, ScheduledPublicationObservationRefusalV1>
+    where
+        V: ScheduledPrincipalVerifier,
+    {
         let session = self
             .authorize_session(session_id, context, now)
             .map_err(|_| ScheduledPublicationObservationRefusalV1::NotAuthorized)?;
+        if self
+            .verifier
+            .authorize_scheduled(
+                session.subject,
+                &session.participant,
+                context,
+                now,
+                ScheduledHostActionV1::Observe,
+            )
+            .is_err()
+        {
+            self.retire(session_id);
+            return Err(ScheduledPublicationObservationRefusalV1::NotAuthorized);
+        }
         self.service.observe_scheduled(session.client, request)
     }
 

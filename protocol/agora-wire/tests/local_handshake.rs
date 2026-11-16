@@ -1,11 +1,42 @@
 use agora_wire::local_handshake::{
     HandshakeErrorV1, ServerIncarnationV1, decode_client_hello_v1,
     decode_collaboration_client_hello_v1, decode_collaboration_server_hello_v1,
+    decode_composition_client_hello_v1, decode_composition_server_hello_v1,
     decode_search_client_hello_v1, decode_search_server_hello_v1, decode_server_hello_v1,
     encode_client_hello_v1, encode_collaboration_client_hello_v1,
-    encode_collaboration_server_hello_v1, encode_search_client_hello_v1,
+    encode_collaboration_server_hello_v1, encode_composition_client_hello_v1,
+    encode_composition_server_hello_v1, encode_search_client_hello_v1,
     encode_search_server_hello_v1, encode_server_hello_v1,
 };
+
+#[test]
+fn composition_handshake_is_distinct_and_advertises_only_scheduled_profile() {
+    let client = encode_composition_client_hello_v1();
+    assert_eq!(decode_composition_client_hello_v1(&client), Ok(()));
+    assert_eq!(
+        decode_search_client_hello_v1(&client),
+        Err(HandshakeErrorV1::Magic)
+    );
+    let incarnation = ServerIncarnationV1::new([0x91; 16]);
+    let server = encode_composition_server_hello_v1(incarnation, 8_192, 8).unwrap();
+    let decoded = decode_composition_server_hello_v1(&server).unwrap();
+    assert_eq!(decoded.max_frame_bytes(), 8_192);
+    assert_eq!(decoded.max_frames_after_connect(), 8);
+    assert_eq!(decoded.server_incarnation(), incarnation);
+    assert!(decoded.supports_capability_discovery());
+    assert!(decoded.supports_scheduled_publication());
+    assert!(!format!("{decoded:?}").contains("91"));
+    assert_eq!(
+        decode_composition_server_hello_v1(&server[..41]),
+        Err(HandshakeErrorV1::Length)
+    );
+    let mut changed = server;
+    changed[12..14].copy_from_slice(&2_u16.to_be_bytes());
+    assert_eq!(
+        decode_composition_server_hello_v1(&changed),
+        Err(HandshakeErrorV1::Profile)
+    );
+}
 
 fn fixture(input: &str) -> Vec<u8> {
     let compact: String = input
