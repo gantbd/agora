@@ -1,6 +1,6 @@
 # ADR: Chronos scheduled-publication composition
 
-Status: accepted; Agora trusted-port slice implemented, adapter open
+Status: accepted; Agora retained-observation owner slice implemented, deployed transport open
 
 Date: 2026-11-14
 
@@ -123,6 +123,16 @@ grants, or message content into diagnostics. The initial room event does not
 publish Chronos task identity to room members. A future visible “scheduled”
 badge requires a separately versioned privacy and federation contract.
 
+The trusted scheduled-publication contract also has a separate read-only
+observation facet. It accepts the exact publication identity and canonical
+intent, binds the current authenticated actor, and returns the retained
+acceptance or authoritative absence without offering a message. `Absent` is a
+valid owner fact because Agora never evicts accepted publication receipts and
+backpressures before message mutation when the bounded receipt index is full;
+it must not be generalized to a cache miss. Host revalidation is durably
+committed before either result escapes. Ordinary participant Wire V2 still
+does not expose this facet.
+
 ## Consequences
 
 - Both engines retain single-writer authority over their own facts.
@@ -180,13 +190,15 @@ acceptance is not proof that every Chronos bookkeeping write succeeded.
 ## Implementation status
 
 Agora now provides the zero-dependency `agora-scheduled-publication-port`, an
-embedded-SDK reexport, actor-bound Service/Host dispatch, current Host-time
-admission, exact keyed replay/conflict, and receipt-gated durable Host
-publication. The contract remains absent from Protocol and Wire V2. Tests cover
+embedded-SDK reexport, actor-bound Service/Host dispatch and observation,
+current Host-time admission, exact keyed replay/conflict, authoritative retained
+absence, and receipt-gated durable Host publication/observation. The contract
+remains absent from ordinary Protocol and Wire V2. Tests cover
 nonzero opaque identity, content-safe diagnostics, current interval and posting
 restriction enforcement, authenticated actor binding, revocation, exact replay,
 changed-intent conflict, and recovery after an indeterminate committed store
-outcome. Cross-engine admission/cancellation and Aegis composition remain open.
+outcome. A dedicated deployed composition transport and public local client for
+the trusted publish/observe facets remain open.
 
 The separate adapter now has a canonical bounded six-state journal, exact-next
 durable receipt gating, original-allocation conversion, cancellation-cut and

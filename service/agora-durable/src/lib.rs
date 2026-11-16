@@ -31,7 +31,9 @@ use agora_retention_authority_port::{
     RetentionPolicyV1,
 };
 use agora_scheduled_publication_port::{
-    ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
+    ScheduledPublicationAcceptedV1, ScheduledPublicationObservationRefusalV1,
+    ScheduledPublicationObservationV1, ScheduledPublicationRefusalV1,
+    ScheduledPublicationRequestV1,
 };
 use agora_service::transient::TransientLimitsV1;
 use agora_service::typing::TypingLimitsV1;
@@ -1288,6 +1290,24 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
     > {
         let publication =
             self.publish(|host| host.publish_scheduled(session, request, context, now));
+        self.counters.record(&publication);
+        publication
+    }
+
+    /// Revalidates and reads retained Agora publication evidence. The result
+    /// escapes only after any verification-driven session retirement is
+    /// durably committed.
+    pub fn observe_scheduled(
+        &mut self,
+        session: HostSessionIdV2,
+        request: ScheduledPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<
+        Result<ScheduledPublicationObservationV1, ScheduledPublicationObservationRefusalV1>,
+    > {
+        let publication =
+            self.publish(|host| host.observe_scheduled(session, request, context, now));
         self.counters.record(&publication);
         publication
     }

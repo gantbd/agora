@@ -41,7 +41,8 @@ use agora_retention_authority_port::{
     RetentionPolicyRevisionV1,
 };
 use agora_scheduled_publication_port::{
-    ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationRequestV1,
+    ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationObservationV1,
+    ScheduledPublicationRequestV1,
 };
 use agora_service::transient::TransientLimitsV1;
 use agora_service::typing::TypingLimitsV1;
@@ -1409,13 +1410,28 @@ fn scheduled_publication_is_commit_gated_and_reconciles_after_unknown_outcome() 
             DurableEvidenceV2::PreviouslyCommitted {
                 revision: Revision(3),
             },
-    } = recovered.publish_scheduled(session, request, &context, HostTimeV1(3))
+    } = recovered.publish_scheduled(session, request.clone(), &context, HostTimeV1(3))
     else {
         panic!("exact retry must resolve the committed publication");
     };
     assert_eq!(accepted.revision, 3);
     assert_eq!(accepted.message_sequence, 0);
-    assert_eq!(store.commit_calls(), 4, "exact retry is storage-inert");
+    let observation = recovered.observe_scheduled(session, request, &context, HostTimeV1(4));
+    let DurableHostPublicationV2::Published {
+        value: Ok(ScheduledPublicationObservationV1::Accepted(observed)),
+        evidence: DurableEvidenceV2::Committed {
+            revision: Revision(4),
+        },
+    } = observation
+    else {
+        panic!("retained observation expected: {observation:?}");
+    };
+    assert_eq!(observed, accepted);
+    assert_eq!(
+        store.commit_calls(),
+        5,
+        "observation commits revalidation before evidence escapes"
+    );
 }
 
 #[test]

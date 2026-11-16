@@ -27,7 +27,9 @@ use agora_retention_authority_port::{
     RecordClassV1, RetentionAuthorityPortV1, RetentionPolicyRevisionV1, RetentionPolicyV1,
 };
 use agora_scheduled_publication_port::{
-    ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
+    ScheduledPublicationAcceptedV1, ScheduledPublicationObservationRefusalV1,
+    ScheduledPublicationObservationV1, ScheduledPublicationRefusalV1,
+    ScheduledPublicationRequestV1,
 };
 use agora_service::v2::{
     AuthoritativeChangeRetentionServiceRefusalV1, ReceiptRetentionRefusalV1,
@@ -294,6 +296,21 @@ impl<V: PrincipalVerifier> HostV2<V> {
             .map_err(|_| ScheduledPublicationRefusalV1::NotAuthorized)?;
         self.service
             .publish_scheduled_at(session.client, request, now.0)
+    }
+
+    /// Trusted read-only companion to scheduled publication. Revalidation is
+    /// still required because the retained identity is actor-bound evidence.
+    pub fn observe_scheduled(
+        &mut self,
+        session_id: HostSessionIdV2,
+        request: ScheduledPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<ScheduledPublicationObservationV1, ScheduledPublicationObservationRefusalV1> {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| ScheduledPublicationObservationRefusalV1::NotAuthorized)?;
+        self.service.observe_scheduled(session.client, request)
     }
 
     /// Trusted transport-neutral publication path for a configured federation

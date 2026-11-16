@@ -72,7 +72,9 @@ use agora_protocol::v2::{
     VellumArtifactReferenceIdV1, VellumArtifactReferenceV1, VellumDocumentTargetV1,
 };
 use agora_scheduled_publication_port::{
-    ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
+    ScheduledPublicationAcceptedV1, ScheduledPublicationObservationRefusalV1,
+    ScheduledPublicationObservationV1, ScheduledPublicationRefusalV1,
+    ScheduledPublicationRequestV1,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -624,6 +626,51 @@ impl ServiceV2 {
             revision: transition.revision.0,
             message_sequence: sequence,
         })
+    }
+
+    /// Reads Agora's retained result for one exact actor-bound scheduled
+    /// publication identity without offering a new message.
+    pub fn observe_scheduled(
+        &self,
+        client: ClientIdV2,
+        request: ScheduledPublicationRequestV1,
+    ) -> Result<ScheduledPublicationObservationV1, ScheduledPublicationObservationRefusalV1> {
+        let participant = self
+            .clients
+            .get(&client)
+            .cloned()
+            .ok_or(ScheduledPublicationObservationRefusalV1::NotAuthorized)?;
+        if !valid_text(request.intent.room_id(), self.limits.max_room_id_bytes)
+            || !valid_text(request.intent.body(), self.limits.max_message_body_bytes)
+        {
+            return Err(ScheduledPublicationObservationRefusalV1::InvalidInput);
+        }
+        let command = PublicationCommandV2::new(
+            self.engine.revision(),
+            PublicationKeyV2::namespaced(PublicationDomainV2::Scheduled, request.id.into_bytes()),
+            RoomId::new(request.intent.room_id()),
+            participant,
+            agora_engine::LogicalTime(request.intent.logical_time()),
+            request.intent.body(),
+        );
+        match self.engine.replay_publication(&command) {
+            Ok(Some(transition)) => {
+                let EngineOutcome::MessageAccepted { sequence, .. } = transition.outcome else {
+                    return Err(ScheduledPublicationObservationRefusalV1::Unavailable);
+                };
+                Ok(ScheduledPublicationObservationV1::Accepted(
+                    ScheduledPublicationAcceptedV1 {
+                        revision: transition.revision.0,
+                        message_sequence: sequence,
+                    },
+                ))
+            }
+            Ok(None) => Ok(ScheduledPublicationObservationV1::Absent),
+            Err(PublicationRefusalV2::IdempotencyConflict) => {
+                Err(ScheduledPublicationObservationRefusalV1::Conflict)
+            }
+            Err(_) => Err(ScheduledPublicationObservationRefusalV1::Unavailable),
+        }
     }
 
     /// Trusted actor-bound home publication path used by federation adapters.

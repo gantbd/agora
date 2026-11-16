@@ -107,6 +107,26 @@ pub enum ScheduledPublicationRefusalV1 {
     Exhausted,
 }
 
+/// Agora-owned retained evidence for one exact actor-bound publication offer.
+///
+/// `Absent` is authoritative only because the owning Agora service durably
+/// retains every accepted scheduled-publication identity and backpressures
+/// before mutation when that bounded index is full. It is not a generic
+/// cache-miss classification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScheduledPublicationObservationV1 {
+    Accepted(ScheduledPublicationAcceptedV1),
+    Absent,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScheduledPublicationObservationRefusalV1 {
+    InvalidInput,
+    NotAuthorized,
+    Conflict,
+    Unavailable,
+}
+
 /// A configured trusted endpoint. Implementations capture authentication and
 /// clock context; neither can be asserted by the scheduling caller.
 pub trait ScheduledPublicationPortV1 {
@@ -114,6 +134,16 @@ pub trait ScheduledPublicationPortV1 {
         &mut self,
         request: ScheduledPublicationRequestV1,
     ) -> Result<ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1>;
+}
+
+/// Read-only companion to [`ScheduledPublicationPortV1`]. Implementations
+/// capture the authenticated actor; callers cannot observe another actor's
+/// publication identity by supplying an author.
+pub trait ScheduledPublicationObservationPortV1 {
+    fn observe_scheduled(
+        &mut self,
+        request: ScheduledPublicationRequestV1,
+    ) -> Result<ScheduledPublicationObservationV1, ScheduledPublicationObservationRefusalV1>;
 }
 
 #[cfg(test)]

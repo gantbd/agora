@@ -46,8 +46,8 @@ use agora_retention_authority_port::{
     ReceiptRetirementAuthorityRequestV1, RetentionAuthorityPortV1, RetentionPolicyRevisionV1,
 };
 use agora_scheduled_publication_port::{
-    ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationRefusalV1,
-    ScheduledPublicationRequestV1,
+    ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationObservationV1,
+    ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
 };
 use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
 use agora_service::v2::{RetentionPolicyInstallV1, ServiceLimitsV2, ServiceV2};
@@ -360,6 +360,18 @@ fn scheduled_publication_binds_revalidated_session_actor_and_current_host_time()
         host.publish_scheduled(session, request, &context, HostTimeV1(3)),
         Ok(accepted)
     );
+    assert_eq!(
+        host.observe_scheduled(
+            session,
+            ScheduledPublicationRequestV1 {
+                id: ScheduledPublicationIdV1::new([3; 16]).unwrap(),
+                intent: ScheduledPublicationIntentV1::new("room", 10, "scheduled"),
+            },
+            &context,
+            HostTimeV1(3),
+        ),
+        Ok(ScheduledPublicationObservationV1::Accepted(accepted))
+    );
     context.active = false;
     assert_eq!(
         host.publish_scheduled(
@@ -374,7 +386,7 @@ fn scheduled_publication_binds_revalidated_session_actor_and_current_host_time()
         Err(ScheduledPublicationRefusalV1::NotAuthorized)
     );
     assert_eq!(host.service().active_client_count(), 0);
-    assert_eq!(calls.get(), 4);
+    assert_eq!(calls.get(), 5);
 }
 
 #[test]

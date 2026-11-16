@@ -6,8 +6,9 @@ use agora_engine::{
 };
 use agora_protocol::v2::{CommandV2, ReplyV2, RequestIdV2, RequestV2};
 use agora_scheduled_publication_port::{
-    ScheduledPublicationIdV1, ScheduledPublicationIntentV1, ScheduledPublicationRefusalV1,
-    ScheduledPublicationRequestV1,
+    ScheduledPublicationIdV1, ScheduledPublicationIntentV1,
+    ScheduledPublicationObservationRefusalV1, ScheduledPublicationObservationV1,
+    ScheduledPublicationRefusalV1, ScheduledPublicationRequestV1,
 };
 use agora_service::v2::{ServiceLimitsV2, ServiceV2};
 
@@ -93,6 +94,36 @@ fn publication_is_actor_bound_exactly_replayable_and_conflict_safe() {
             1_002
         ),
         Err(ScheduledPublicationRefusalV1::NotAuthorized)
+    );
+}
+
+#[test]
+fn retained_observation_is_read_only_actor_bound_and_authoritative() {
+    let mut service = setup();
+    let agent = service.connect("agent").unwrap();
+    let human = service.connect("human").unwrap();
+    let request = scheduled(7, "observed");
+
+    assert_eq!(
+        service.observe_scheduled(agent, request.clone()),
+        Ok(ScheduledPublicationObservationV1::Absent)
+    );
+    let accepted = service
+        .publish_scheduled_at(agent, request.clone(), 1_000)
+        .unwrap();
+    let revision = service.engine().revision();
+    assert_eq!(
+        service.observe_scheduled(agent, request.clone()),
+        Ok(ScheduledPublicationObservationV1::Accepted(accepted))
+    );
+    assert_eq!(service.engine().revision(), revision);
+    assert_eq!(
+        service.observe_scheduled(agent, scheduled(7, "changed")),
+        Err(ScheduledPublicationObservationRefusalV1::Conflict)
+    );
+    assert_eq!(
+        service.observe_scheduled(human, request),
+        Err(ScheduledPublicationObservationRefusalV1::Conflict)
     );
 }
 
