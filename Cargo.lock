@@ -185,8 +185,12 @@ dependencies = [
  "aegis-local-client",
  "aegis-protocol",
  "agora-aegis-verifier",
+ "agora-durable",
  "agora-engine",
  "agora-host",
+ "agora-local-daemon",
+ "agora-service",
+ "agora-storage-directory",
 ]
 
 [[package]]

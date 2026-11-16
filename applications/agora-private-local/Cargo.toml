@@ -12,8 +12,12 @@ aegis-client = { path = "../../../aegis/crates/aegis-client", version = "=0.1.0"
 aegis-local-client = { path = "../../../aegis/crates/aegis-local-client", version = "=0.1.0" }
 aegis-protocol = { path = "../../../aegis/crates/aegis-protocol", version = "=0.1.0" }
 agora-aegis-verifier = { path = "../../adapters/agora-aegis-verifier", version = "=0.1.0" }
+agora-durable = { path = "../../service/agora-durable", version = "=0.1.0" }
 agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }
 agora-host = { path = "../../host/agora-host", version = "=0.1.0" }
+agora-local-daemon = { path = "../agora-local-daemon", version = "=0.1.0" }
+agora-service = { path = "../../service/agora-service", version = "=0.1.0" }
+agora-storage-directory = { path = "../../adapters/agora-storage-directory", version = "=0.1.0" }
 
 [lints.rust]
 unsafe_code = "forbid"

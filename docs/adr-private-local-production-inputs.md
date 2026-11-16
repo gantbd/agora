@@ -1,6 +1,6 @@
 # ADR: Private-local production identity and time inputs
 
-Status: accepted; authority/bootstrap inputs implemented, durable process factory open
+Status: accepted; durable owner factory implemented, standalone process shell open
 
 Date: 2026-11-16
 
@@ -74,10 +74,23 @@ credential mapping, epoch discovery, and clock/lifetime policy remain deployment
 inputs. The dependency gate rejects Aegis engine, Host, service, daemon, or
 credential-owner imports.
 
+`start_durable_composition_v1` closes the owner-factory boundary. One explicit
+plan selects create, clean open, or exact stale-endpoint recovery. Create binds
+the connected authority participant to the bootstrap principal, builds the
+bounded engine, creates and commits the directory-backed durable Host, and only
+then publishes the endpoint. Open recovers the same durable Host before binding
+a new endpoint. Residue recovery additionally requires the exact prior and
+distinct next server incarnations and delegates the locked lifetime rotation to
+the qualified local transport. All three modes use the production
+non-regressing clock and the same public Aegis connection; paths and policy
+remain explicit deployment inputs. The application boundary may import Agora's
+service, durability, directory-store, and local-daemon compositions, while
+still rejecting peer engines, Workbench, Aegis internals, Agora wire, and raw
+transport mechanics.
+
 ## Remaining work
 
-- select create/open durable-store and endpoint-residue recovery behavior;
 - add signal/drain and process receipts in an Agora-owned standalone shell;
 - qualify that exact shell standalone and under Workbench lifecycle.
 
-These items are required before claiming a production durable owner factory.
+These items are required before claiming a production standalone process.

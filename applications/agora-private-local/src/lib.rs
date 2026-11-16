@@ -13,12 +13,22 @@ use aegis_protocol::{
     SessionHandleV1,
 };
 use agora_aegis_verifier::{AegisContextV1, AegisVerifierV1};
+use agora_durable::{DurableHostConfigV2, DurableHostStartErrorV2, DurableHostV2};
 use agora_engine::{
     AdmissionPolicy, CommandV2, Engine, Limits, Participant, ParticipantId, ParticipantKind,
     Refusal, RoomId,
 };
-use agora_host::VerifiedSubjectV1;
-use std::{path::Path, time::Duration};
+use agora_host::{HostLimits, VerifiedSubjectV1, v2::HostV2};
+use agora_local_daemon::{
+    DaemonErrorV1, DaemonLimitsV1, DaemonV1, PrivateEndpointAuthenticatorV1, ServerIncarnationV1,
+    SystemHostClockStartErrorV1, SystemHostClockV1,
+};
+use agora_service::v2::{ServiceLimitsV2, ServiceV2};
+use agora_storage_directory::{DirectoryCheckpointStoreV1, DirectoryErrorV1, DirectoryLimitsV1};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BootstrapParticipantV1 {
@@ -285,11 +295,16 @@ impl SessionGrantSelectorV1 for IssueAgoraGrantV1 {
 /// One live public Aegis connection plus the exact Agora context bound to its
 /// server-selected session and deployment-selected session-local grant.
 pub struct ConnectedAuthorityV1 {
+    participant: ParticipantId,
     context: AegisContextV1,
     verifier: AegisVerifierV1<UnixPort>,
 }
 
 impl ConnectedAuthorityV1 {
+    pub const fn participant(&self) -> &ParticipantId {
+        &self.participant
+    }
+
     pub fn into_parts(self) -> (AegisContextV1, AegisVerifierV1<UnixPort>) {
         (self.context, self.verifier)
     }
@@ -332,15 +347,208 @@ pub fn connect_authority_v1<G: SessionGrantSelectorV1>(
         grant,
     );
     Ok(ConnectedAuthorityV1 {
+        participant: selection.participant,
         context,
         verifier: AegisVerifierV1::new(port, selection.resource),
     })
+}
+
+pub enum DurableCompositionStartupV1 {
+    Create {
+        bootstrap: BootstrapV1,
+        server_incarnation: ServerIncarnationV1,
+    },
+    Open {
+        server_incarnation: ServerIncarnationV1,
+    },
+    RecoverResidue {
+        previous_incarnation: ServerIncarnationV1,
+        next_incarnation: ServerIncarnationV1,
+    },
+}
+
+impl std::fmt::Debug for DurableCompositionStartupV1 {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Create { .. } => formatter.write_str("Create(<redacted>)"),
+            Self::Open { .. } => formatter.write_str("Open(<redacted>)"),
+            Self::RecoverResidue { .. } => formatter.write_str("RecoverResidue(<redacted>)"),
+        }
+    }
+}
+
+pub struct DurableCompositionPlanV1 {
+    pub store_path: PathBuf,
+    pub socket_path: PathBuf,
+    pub directory_limits: DirectoryLimitsV1,
+    pub engine_limits: Limits,
+    pub service_limits: ServiceLimitsV2,
+    pub host_limits: HostLimits,
+    pub durable: DurableHostConfigV2,
+    pub daemon_limits: DaemonLimitsV1,
+    pub startup: DurableCompositionStartupV1,
+}
+
+impl std::fmt::Debug for DurableCompositionPlanV1 {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DurableCompositionPlanV1")
+            .field("paths", &"<redacted>")
+            .field("directory_limits", &self.directory_limits)
+            .field("engine_limits", &self.engine_limits)
+            .field("service_limits", &self.service_limits)
+            .field("host_limits", &self.host_limits)
+            .field("durable", &self.durable)
+            .field("daemon_limits", &self.daemon_limits)
+            .field("startup", &self.startup)
+            .finish()
+    }
+}
+
+pub enum DurableCompositionStartErrorV1 {
+    PrincipalMismatch,
+    Bootstrap(BootstrapRefusalV1),
+    Clock(SystemHostClockStartErrorV1),
+    Store(DirectoryErrorV1),
+    Durable(DurableHostStartErrorV2),
+    Daemon(DaemonErrorV1),
+}
+
+impl std::fmt::Debug for DurableCompositionStartErrorV1 {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PrincipalMismatch => formatter.write_str("PrincipalMismatch"),
+            Self::Bootstrap(refusal) => formatter.debug_tuple("Bootstrap").field(refusal).finish(),
+            Self::Clock(error) => formatter.debug_tuple("Clock").field(error).finish(),
+            Self::Store(error) => formatter.debug_tuple("Store").field(error).finish(),
+            Self::Durable(error) => formatter.debug_tuple("Durable").field(error).finish(),
+            Self::Daemon(error) => formatter.debug_tuple("Daemon").field(error).finish(),
+        }
+    }
+}
+
+type DurableCompositionDaemonWithPortV1<P> = DaemonV1<
+    DurableHostV2<AegisVerifierV1<P>, DirectoryCheckpointStoreV1>,
+    PrivateEndpointAuthenticatorV1,
+    SystemHostClockV1,
+>;
+
+pub type DurableCompositionDaemonV1 = DurableCompositionDaemonWithPortV1<UnixPort>;
+
+/// Starts the production private-local durable composition in an explicit
+/// create, clean-open, or exact-residue-recovery mode. Workbench may supervise
+/// the returned owner but does not interpret any of these deployment inputs.
+pub fn start_durable_composition_v1(
+    authority: ConnectedAuthorityV1,
+    plan: DurableCompositionPlanV1,
+) -> Result<DurableCompositionDaemonV1, DurableCompositionStartErrorV1> {
+    let ConnectedAuthorityV1 {
+        participant,
+        context,
+        verifier,
+    } = authority;
+    start_durable_composition_parts_v1(participant, context, verifier, plan)
+}
+
+fn start_durable_composition_parts_v1<P>(
+    participant: ParticipantId,
+    context: AegisContextV1,
+    verifier: AegisVerifierV1<P>,
+    plan: DurableCompositionPlanV1,
+) -> Result<DurableCompositionDaemonWithPortV1<P>, DurableCompositionStartErrorV1>
+where
+    AegisVerifierV1<P>: agora_host::ScheduledPrincipalVerifier<Context = AegisContextV1>,
+{
+    let DurableCompositionPlanV1 {
+        store_path,
+        socket_path,
+        directory_limits,
+        engine_limits,
+        service_limits,
+        host_limits,
+        durable,
+        daemon_limits,
+        startup,
+    } = plan;
+    let clock = SystemHostClockV1::try_new().map_err(DurableCompositionStartErrorV1::Clock)?;
+    let authenticator = PrivateEndpointAuthenticatorV1::new(context);
+
+    match startup {
+        DurableCompositionStartupV1::Create {
+            bootstrap,
+            server_incarnation,
+        } => {
+            if bootstrap.principal != participant {
+                return Err(DurableCompositionStartErrorV1::PrincipalMismatch);
+            }
+            let engine = bootstrap
+                .build_engine(engine_limits)
+                .map_err(DurableCompositionStartErrorV1::Bootstrap)?;
+            let host = HostV2::new(
+                ServiceV2::new(engine, service_limits),
+                verifier,
+                host_limits,
+            );
+            let store = DirectoryCheckpointStoreV1::create_new(store_path, directory_limits)
+                .map_err(DurableCompositionStartErrorV1::Store)?;
+            let durable = DurableHostV2::initialize(host, store, durable)
+                .map_err(DurableCompositionStartErrorV1::Durable)?;
+            DaemonV1::bind_new_durable_composition(
+                socket_path,
+                durable,
+                authenticator,
+                clock,
+                server_incarnation,
+                daemon_limits,
+            )
+            .map_err(DurableCompositionStartErrorV1::Daemon)
+        }
+        DurableCompositionStartupV1::Open { server_incarnation } => {
+            let store = DirectoryCheckpointStoreV1::open_existing(store_path, directory_limits)
+                .map_err(DurableCompositionStartErrorV1::Store)?;
+            let durable = DurableHostV2::recover(store, durable, verifier)
+                .map_err(DurableCompositionStartErrorV1::Durable)?;
+            DaemonV1::bind_new_durable_composition(
+                socket_path,
+                durable,
+                authenticator,
+                clock,
+                server_incarnation,
+                daemon_limits,
+            )
+            .map_err(DurableCompositionStartErrorV1::Daemon)
+        }
+        DurableCompositionStartupV1::RecoverResidue {
+            previous_incarnation,
+            next_incarnation,
+        } => {
+            let store = DirectoryCheckpointStoreV1::open_existing(store_path, directory_limits)
+                .map_err(DurableCompositionStartErrorV1::Store)?;
+            let durable = DurableHostV2::recover(store, durable, verifier)
+                .map_err(DurableCompositionStartErrorV1::Durable)?;
+            DaemonV1::recover_stale_durable_composition(
+                socket_path,
+                durable,
+                authenticator,
+                clock,
+                previous_incarnation,
+                next_incarnation,
+                daemon_limits,
+            )
+            .map_err(DurableCompositionStartErrorV1::Daemon)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use aegis_protocol::{CommandV1, GrantSummaryV1};
+    use agora_host::v2::persistence::{HostCheckpointScopeV1, HostRecoveryLimitsV2};
+    use agora_service::v2::persistence::ServiceRecoveryLimitsV2;
+    use std::fs;
+    use std::os::unix::{fs::PermissionsExt, net::UnixListener};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     struct Port {
         reply: Result<ReplyV1, &'static str>,
@@ -356,7 +564,7 @@ mod tests {
         }
     }
 
-    impl ServicePort for &mut Port {
+    impl ServicePort for Port {
         type Error = &'static str;
 
         fn execute(
@@ -378,6 +586,87 @@ mod tests {
             scope_count: 1,
             delegation_depth: 0,
         }))
+    }
+
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+
+    struct TempRoot(PathBuf);
+
+    impl TempRoot {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "agora-private-local-{}-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+                NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&path).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TempRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn durable_config() -> DurableHostConfigV2 {
+        const MAXIMUM: usize = 1 << 20;
+        DurableHostConfigV2::new(
+            "agora-private-local-host",
+            HostCheckpointScopeV1::new([0x41; 16]),
+            MAXIMUM,
+            HostRecoveryLimitsV2 {
+                max_snapshot_bytes: MAXIMUM,
+                max_service_snapshot_bytes: MAXIMUM,
+                maximum_host_limits: HostLimits::default(),
+                service: ServiceRecoveryLimitsV2 {
+                    max_snapshot_bytes: MAXIMUM,
+                    max_engine_snapshot_bytes: MAXIMUM,
+                    maximum_service_limits: ServiceLimitsV2::default(),
+                    maximum_engine_limits: Limits::default(),
+                },
+            },
+        )
+    }
+
+    fn composition_plan(
+        root: &TempRoot,
+        startup: DurableCompositionStartupV1,
+    ) -> DurableCompositionPlanV1 {
+        DurableCompositionPlanV1 {
+            store_path: root.0.join("store"),
+            socket_path: root.0.join("agora.sock"),
+            directory_limits: DirectoryLimitsV1::default(),
+            engine_limits: Limits::default(),
+            service_limits: ServiceLimitsV2::default(),
+            host_limits: HostLimits::default(),
+            durable: durable_config(),
+            daemon_limits: DaemonLimitsV1::default(),
+            startup,
+        }
+    }
+
+    fn authority_parts(
+        participant: &str,
+    ) -> (ParticipantId, AegisContextV1, AegisVerifierV1<Port>) {
+        (
+            ParticipantId::new(participant),
+            AegisContextV1::new(
+                participant,
+                VerifiedSubjectV1::from_verifier([0x31; 16]),
+                SessionHandleV1(7),
+                GrantHandleV1(9),
+            ),
+            AegisVerifierV1::new(
+                Port::returning(ReplyV1::Refused(RefusalV1::NotAuthorized)),
+                [0x51; 16],
+            ),
+        )
     }
 
     #[test]
@@ -464,5 +753,159 @@ mod tests {
         let rendered = format!("{error:?}");
         assert!(matches!(error, IssueAgoraGrantErrorV1::Transport(_)));
         assert!(!rendered.contains("private transport detail"));
+    }
+
+    #[test]
+    fn durable_factory_creates_opens_and_rotates_exact_endpoint_residue() {
+        let root = TempRoot::new();
+        let first = ServerIncarnationV1::new([0xa1; 16]);
+        let second = ServerIncarnationV1::new([0xb2; 16]);
+        let bootstrap = BootstrapV1 {
+            principal: ParticipantId::new("alice"),
+            participants: vec![BootstrapParticipantV1 {
+                id: ParticipantId::new("alice"),
+                display_name: "Alice".to_owned(),
+                kind: ParticipantKind::Human,
+            }],
+            rooms: vec![BootstrapRoomV1 {
+                id: RoomId::new("general"),
+                name: "General".to_owned(),
+                owner: ParticipantId::new("alice"),
+                admission: AdmissionPolicy::InviteOnly,
+            }],
+        };
+        let (participant, context, verifier) = authority_parts("alice");
+        let daemon = start_durable_composition_parts_v1(
+            participant,
+            context,
+            verifier,
+            composition_plan(
+                &root,
+                DurableCompositionStartupV1::Create {
+                    bootstrap,
+                    server_incarnation: first,
+                },
+            ),
+        )
+        .unwrap();
+        assert!(daemon.health().ready());
+        assert!(
+            daemon
+                .host()
+                .host()
+                .unwrap()
+                .service()
+                .engine()
+                .room(&RoomId::new("general"))
+                .is_some()
+        );
+        assert_eq!(
+            daemon.stop().cleanup,
+            agora_local_daemon::DaemonCleanupV1::Clean
+        );
+
+        let (participant, context, verifier) = authority_parts("alice");
+        let reopened = start_durable_composition_parts_v1(
+            participant,
+            context,
+            verifier,
+            composition_plan(
+                &root,
+                DurableCompositionStartupV1::Open {
+                    server_incarnation: second,
+                },
+            ),
+        )
+        .unwrap();
+        assert!(
+            reopened
+                .host()
+                .host()
+                .unwrap()
+                .service()
+                .engine()
+                .room(&RoomId::new("general"))
+                .is_some()
+        );
+        assert_eq!(
+            reopened.stop().cleanup,
+            agora_local_daemon::DaemonCleanupV1::Clean
+        );
+
+        let socket = root.0.join("agora.sock");
+        let stale = UnixListener::bind(&socket).unwrap();
+        fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap();
+        drop(stale);
+        let lifetime = root.0.join("agora.sock.owner.lock");
+        let mut record = b"AGORALF1".to_vec();
+        record.extend_from_slice(&second.as_bytes());
+        fs::write(&lifetime, record).unwrap();
+        fs::set_permissions(&lifetime, fs::Permissions::from_mode(0o600)).unwrap();
+
+        let third = ServerIncarnationV1::new([0xc3; 16]);
+        let (participant, context, verifier) = authority_parts("alice");
+        let recovered = start_durable_composition_parts_v1(
+            participant,
+            context,
+            verifier,
+            composition_plan(
+                &root,
+                DurableCompositionStartupV1::RecoverResidue {
+                    previous_incarnation: second,
+                    next_incarnation: third,
+                },
+            ),
+        )
+        .unwrap();
+        assert!(recovered.health().ready());
+        assert!(
+            recovered
+                .host()
+                .host()
+                .unwrap()
+                .service()
+                .engine()
+                .room(&RoomId::new("general"))
+                .is_some()
+        );
+        assert_eq!(
+            recovered.stop().cleanup,
+            agora_local_daemon::DaemonCleanupV1::Clean
+        );
+    }
+
+    #[test]
+    fn durable_create_refuses_authority_principal_mismatch_before_store_or_endpoint() {
+        let root = TempRoot::new();
+        let bootstrap = BootstrapV1 {
+            principal: ParticipantId::new("alice"),
+            participants: vec![BootstrapParticipantV1 {
+                id: ParticipantId::new("alice"),
+                display_name: "Alice".to_owned(),
+                kind: ParticipantKind::Human,
+            }],
+            rooms: Vec::new(),
+        };
+        let (participant, context, verifier) = authority_parts("bob");
+        let result = start_durable_composition_parts_v1(
+            participant,
+            context,
+            verifier,
+            composition_plan(
+                &root,
+                DurableCompositionStartupV1::Create {
+                    bootstrap,
+                    server_incarnation: ServerIncarnationV1::new([0xa1; 16]),
+                },
+            ),
+        );
+
+        assert!(matches!(
+            result,
+            Err(DurableCompositionStartErrorV1::PrincipalMismatch)
+        ));
+        assert!(!root.0.join("store").exists());
+        assert!(!root.0.join("agora.sock").exists());
+        assert!(!root.0.join("agora.sock.owner.lock").exists());
     }
 }

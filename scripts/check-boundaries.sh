@@ -169,16 +169,20 @@ if [[ $(printf '%s\n' "$local_daemon_tree" | wc -l | tr -d ' ') != 7 ]] \
 fi
 
 private_local_tree=$(cargo tree -p agora-private-local --edges normal --depth 1 --locked --offline)
-if [[ $(printf '%s\n' "$private_local_tree" | wc -l | tr -d ' ') != 7 ]] \
+if [[ $(printf '%s\n' "$private_local_tree" | wc -l | tr -d ' ') != 11 ]] \
   || ! printf '%s\n' "$private_local_tree" | rg -q 'aegis-client' \
   || ! printf '%s\n' "$private_local_tree" | rg -q 'aegis-local-client' \
   || ! printf '%s\n' "$private_local_tree" | rg -q 'aegis-protocol' \
   || ! printf '%s\n' "$private_local_tree" | rg -q 'agora-aegis-verifier' \
   || ! printf '%s\n' "$private_local_tree" | rg -q 'agora-engine' \
   || ! printf '%s\n' "$private_local_tree" | rg -q 'agora-host' \
-  || printf '%s\n' "$private_local_tree" | rg -q 'aegis-(authority|host|service|wire|local-daemon)|chronos|moira|daimon|hermes|workbench|agora-(client|service|wire|durable|storage|transport)'; then
+  || ! printf '%s\n' "$private_local_tree" | rg -q 'agora-durable' \
+  || ! printf '%s\n' "$private_local_tree" | rg -q 'agora-local-daemon' \
+  || ! printf '%s\n' "$private_local_tree" | rg -q 'agora-service' \
+  || ! printf '%s\n' "$private_local_tree" | rg -q 'agora-storage-directory' \
+  || printf '%s\n' "$private_local_tree" | rg -q 'aegis-(authority|host|service|wire|local-daemon)|chronos|moira|daimon|hermes|workbench|agora-(client|wire|transport)'; then
   printf '%s\n' "$private_local_tree" >&2
-  echo 'Agora private-local composition escaped its bootstrap/public-Aegis-client closure' >&2
+  echo 'Agora private-local composition escaped its durable bootstrap/public-Aegis-client closure' >&2
   exit 1
 fi
 

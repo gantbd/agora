@@ -171,16 +171,17 @@ every connection admitted by the hardened endpoint to one deployment-supplied
 multi-user authentication. `SystemHostClockV1` supplies Unix-epoch milliseconds
 and clamps rollback to a non-regressing process-local sequence. Its initial
 wall-clock read remains trusted, and it makes no durable cross-restart clock
-claim. The complete create/open durable process factory is still governed by
-`adr-private-local-production-inputs.md` and remains open.
+claim. The complete create/open/residue-recovery durable owner factory now
+lives in `agora-private-local`; the signal/drain process shell remains open.
 
 Create-time participant and room policy is not part of this daemon. The
 separate `agora-private-local` application root now builds a bounded fresh
 engine before endpoint publication and can issue one exact session-local Aegis
 grant for either conversation or scheduled composition. Deployment still owns
 the administrator credential mapping, authority epoch, grant lifetime, opaque
-subject, and resource. Later factory slices compose those results with this
-daemon without moving bootstrap or grant policy into the transport boundary.
+subject, and resource. The application factory composes those results with this
+daemon for new stores, clean reopen, and exact stale endpoint rotation without
+moving bootstrap or grant policy into the transport boundary.
 
 The handshake selects one exact protocol profile; it is not version-range or
 feature negotiation. Its configured incarnation is not authenticated; the
