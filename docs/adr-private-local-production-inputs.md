@@ -58,14 +58,19 @@ selected principal, a bounded participant list, and a bounded initial room
 list are applied to a fresh engine before any durable owner or endpoint can be
 published. Engine validation remains authoritative; a refusal identifies the
 exact participant or room step and returns no partially initialized engine.
-The package currently has an engine-only production dependency, so this
-bootstrap work cannot silently acquire Aegis, storage, transport, or Workbench
-effects.
+The same application now connects through the extracted public
+`aegis-local-client`, refuses a participant different from the bootstrap
+principal before socket I/O, and invokes a deployment-owned
+`SessionGrantSelectorV1` only after Aegis selects the live service session. The
+selector provisions or chooses the grant on that exact connection; the caller
+still explicitly supplies the resource and opaque verified subject. Agora owns
+neither grant issuance policy nor credential mapping, and the dependency gate
+rejects Aegis engine, Host, service, daemon, or credential-owner imports.
 
 ## Remaining work
 
-- connect the public Aegis Unix client and bind its returned session to one
-  explicitly selected Agora grant/resource;
+- supply and qualify the deployment's concrete same-session grant provisioning
+  policy through `SessionGrantSelectorV1`;
 - select create/open durable-store and endpoint-residue recovery behavior;
 - add signal/drain and process receipts in an Agora-owned standalone shell;
 - qualify that exact shell standalone and under Workbench lifecycle.

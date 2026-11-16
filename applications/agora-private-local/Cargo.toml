@@ -8,7 +8,11 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
+aegis-local-client = { path = "../../../aegis/crates/aegis-local-client", version = "=0.1.0" }
+aegis-protocol = { path = "../../../aegis/crates/aegis-protocol", version = "=0.1.0" }
+agora-aegis-verifier = { path = "../../adapters/agora-aegis-verifier", version = "=0.1.0" }
 agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }
+agora-host = { path = "../../host/agora-host", version = "=0.1.0" }
 
 [lints.rust]
 unsafe_code = "forbid"

@@ -56,8 +56,10 @@ requalification remains part of the current release-readiness work.
    interactive, and Workbench headless journeys against the same protocol laws.
    The single-principal private-endpoint authenticator and non-regressing system
    clock and bounded fresh-engine bootstrap are now Agora-owned production
-   inputs; public Aegis Unix session/grant selection, durable create/open recovery, and the
-   standalone process shell remain before the production owner factory closes.
+   inputs. Public Aegis Unix connection and same-session grant/resource selection
+   are typed; a concrete deployment grant provisioner, durable create/open
+   recovery, and the standalone process shell remain before the production
+   owner factory closes.
 
 Agent harness selection, prompting, retries, and execution remain out of scope.
 

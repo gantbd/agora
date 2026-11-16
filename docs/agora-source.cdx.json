@@ -27,10 +27,54 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:cargo/aegis-local-client@0.1.0",
+      "name": "aegis-local-client",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/aegis-local-client@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:cargo/aegis-protocol@0.1.0",
       "name": "aegis-protocol",
       "version": "0.1.0",
       "purl": "pkg:cargo/aegis-protocol@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/aegis-wire@0.1.0",
+      "name": "aegis-wire",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/aegis-wire@0.1.0",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -716,8 +760,22 @@
       ]
     },
     {
+      "ref": "pkg:cargo/aegis-local-client@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/aegis-client@0.1.0",
+        "pkg:cargo/aegis-protocol@0.1.0",
+        "pkg:cargo/aegis-wire@0.1.0"
+      ]
+    },
+    {
       "ref": "pkg:cargo/aegis-protocol@0.1.0",
       "dependsOn": []
+    },
+    {
+      "ref": "pkg:cargo/aegis-wire@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/aegis-protocol@0.1.0"
+      ]
     },
     {
       "ref": "pkg:cargo/agora-aegis-verifier@0.1.0",
@@ -859,7 +917,11 @@
     {
       "ref": "pkg:cargo/agora-private-local@0.1.0",
       "dependsOn": [
-        "pkg:cargo/agora-engine@0.3.0"
+        "pkg:cargo/aegis-local-client@0.1.0",
+        "pkg:cargo/aegis-protocol@0.1.0",
+        "pkg:cargo/agora-aegis-verifier@0.1.0",
+        "pkg:cargo/agora-engine@0.3.0",
+        "pkg:cargo/agora-host@0.1.0"
       ]
     },
     {
