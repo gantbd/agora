@@ -1,6 +1,6 @@
 # ADR: Private-local production identity and time inputs
 
-Status: accepted; single-principal inputs implemented, durable process factory open
+Status: accepted; single-principal inputs and bounded bootstrap implemented, durable process factory open
 
 Date: 2026-11-16
 
@@ -52,10 +52,18 @@ The same factory and public client must remain usable without Workbench. A
 single endpoint selects one exact handshake profile; ordinary participant and
 trusted scheduled-composition profiles are not silently multiplexed.
 
+`agora-private-local` is the Agora-owned standalone application root for these
+deployment choices. Its first adopted boundary is `BootstrapV1`: one explicitly
+selected principal, a bounded participant list, and a bounded initial room
+list are applied to a fresh engine before any durable owner or endpoint can be
+published. Engine validation remains authoritative; a refusal identifies the
+exact participant or room step and returns no partially initialized engine.
+The package currently has an engine-only production dependency, so this
+bootstrap work cannot silently acquire Aegis, storage, transport, or Workbench
+effects.
+
 ## Remaining work
 
-- define bounded create-time participant/room bootstrap or an independently
-  authorized administrative bootstrap path;
 - connect the public Aegis Unix client and bind its returned session to one
   explicitly selected Agora grant/resource;
 - select create/open durable-store and endpoint-residue recovery behavior;

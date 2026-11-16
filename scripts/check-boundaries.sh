@@ -168,6 +168,15 @@ if [[ $(printf '%s\n' "$local_daemon_tree" | wc -l | tr -d ' ') != 7 ]] \
   exit 1
 fi
 
+private_local_tree=$(cargo tree -p agora-private-local --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$private_local_tree" | wc -l | tr -d ' ') != 2 ]] \
+  || ! printf '%s\n' "$private_local_tree" | rg -q 'agora-engine' \
+  || printf '%s\n' "$private_local_tree" | rg -q 'aegis|chronos|moira|daimon|hermes|workbench|agora-(client|service|host|wire|durable|storage|transport)'; then
+  printf '%s\n' "$private_local_tree" >&2
+  echo 'Agora private-local bootstrap escaped its engine-only initial closure' >&2
+  exit 1
+fi
+
 observation_tree=$(cargo tree -p agora-storage-observation --edges normal --depth 1 --locked --offline)
 if [[ $(printf '%s\n' "$observation_tree" | wc -l | tr -d ' ') != 2 ]] \
   || ! printf '%s\n' "$observation_tree" | rg -q 'keystone-storage'; then

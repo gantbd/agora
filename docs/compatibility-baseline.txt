@@ -15,6 +15,7 @@ package|ports/agora-retention-authority-port/Cargo.toml|agora-retention-authorit
 package|host/agora-host/Cargo.toml|agora-host|0.1.0
 package|applications/agora-export-local/Cargo.toml|agora-export-local|0.1.0
 package|applications/agora-local-daemon/Cargo.toml|agora-local-daemon|0.1.0
+package|applications/agora-private-local/Cargo.toml|agora-private-local|0.1.0
 package|transport/agora-local-transport/Cargo.toml|agora-local-transport|0.1.0
 package|protocol/agora-protocol/Cargo.toml|agora-protocol|0.1.0
 package|adapters/agora-search-memory/Cargo.toml|agora-search-memory|0.1.0

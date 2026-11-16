@@ -174,6 +174,11 @@ wall-clock read remains trusted, and it makes no durable cross-restart clock
 claim. The complete create/open durable process factory is still governed by
 `adr-private-local-production-inputs.md` and remains open.
 
+Create-time participant and room policy is not part of this daemon. The
+separate `agora-private-local` application root now builds a bounded fresh
+engine before endpoint publication; later factory slices compose that result
+with this daemon without moving bootstrap policy into the transport boundary.
+
 The handshake selects one exact protocol profile; it is not version-range or
 feature negotiation. Its configured incarnation is not authenticated; the
 lifetime record binds that value to one exclusive live endpoint but does not

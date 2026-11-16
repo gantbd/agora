@@ -55,8 +55,8 @@ requalification remains part of the current release-readiness work.
    peer engines. Qualify standalone interactive, standalone headless, Workbench
    interactive, and Workbench headless journeys against the same protocol laws.
    The single-principal private-endpoint authenticator and non-regressing system
-   clock are now Agora-owned production inputs; bounded bootstrap, public Aegis
-   Unix session/grant selection, durable create/open recovery, and the
+   clock and bounded fresh-engine bootstrap are now Agora-owned production
+   inputs; public Aegis Unix session/grant selection, durable create/open recovery, and the
    standalone process shell remain before the production owner factory closes.
 
 Agent harness selection, prompting, retries, and execution remain out of scope.

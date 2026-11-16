@@ -162,6 +162,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "agora-private-local"
+version = "0.1.0"
+dependencies = [
+ "agora-engine",
+]
+
+[[package]]
 name = "agora-protocol"
 version = "0.1.0"
 

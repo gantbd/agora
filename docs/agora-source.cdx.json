@@ -379,6 +379,28 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:cargo/agora-private-local@0.1.0",
+      "name": "agora-private-local",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-private-local@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:cargo/agora-protocol@0.1.0",
       "name": "agora-protocol",
       "version": "0.1.0",
@@ -832,6 +854,12 @@
       "ref": "pkg:cargo/agora-local-transport@0.1.0",
       "dependsOn": [
         "pkg:cargo/agora-wire@0.1.0"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/agora-private-local@0.1.0",
+      "dependsOn": [
+        "pkg:cargo/agora-engine@0.3.0"
       ]
     },
     {

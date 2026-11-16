@@ -210,6 +210,9 @@ The repository also contains an initial layered operational profile:
   Aegis-authorized conversation, transient collaboration, or durable Host V2
   ownership and owns the explicit ordered operator-restore procedure, including
   real inter-step and intra-rotation process cuts with exact retry;
+- `agora-private-local` owns standalone deployment policy, beginning with an
+  adopted bounded participant/room bootstrap that produces a fresh engine
+  before durability or endpoint publication;
 - `agora-client` owns a monotone request namespace over an abstract service port.
 
 These crates add no credential authentication, network transport, durable

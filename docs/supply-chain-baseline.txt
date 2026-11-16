@@ -16,6 +16,7 @@ component|agora-interaction-port|0.1.0
 component|agora-local-client|0.1.0
 component|agora-retention-authority-port|0.1.0
 component|agora-local-daemon|0.1.0
+component|agora-private-local|0.1.0
 component|agora-local-transport|0.1.0
 component|agora-protocol|0.1.0
 component|agora-search-memory|0.1.0

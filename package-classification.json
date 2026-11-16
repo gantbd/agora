@@ -113,6 +113,14 @@
       "audiences": ["application"],
       "publish": false
     },
+    "agora-private-local": {
+      "path": "applications/agora-private-local",
+      "category": "application",
+      "maturity": "adopted",
+      "effect_class": "composition-root",
+      "audiences": ["application"],
+      "publish": false
+    },
     "agora-local-transport": {
       "path": "transport/agora-local-transport",
       "category": "transport",

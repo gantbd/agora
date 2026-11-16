@@ -25,6 +25,7 @@ members = [
     "adapters/agora-storage-directory",
     "transport/agora-local-transport",
     "applications/agora-local-daemon",
+    "applications/agora-private-local",
     "applications/agora-export-local",
     "sdk/embedded",
     "sdk/client",
