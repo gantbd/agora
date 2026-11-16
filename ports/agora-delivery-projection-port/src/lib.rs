@@ -31,6 +31,10 @@ pub enum DeliveryProjectionV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeliveryProjectionRefusalV1 {
     NotAuthorized,
+    /// The configured projection owner could not return a trustworthy result.
+    /// This includes transport and protocol failure at a public-client adapter;
+    /// it never means that the source was not visible.
+    Unavailable,
 }
 
 /// Configured observer-bound projection. Calling this port never acknowledges

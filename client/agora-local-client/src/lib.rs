@@ -8,6 +8,9 @@ mod conversation;
 pub use conversation::{ConnectError, LocalAccessError, LocalClientLimits, LocalServicePort};
 
 use agora_client::scheduled::{ScheduledPublicationWireClientV1, ScheduledTransportErrorV1};
+use agora_delivery_projection_port::{
+    DeliveryProjectionPortV1, DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
+};
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationObservationRefusalV1,
     ScheduledPublicationObservationV1, ScheduledPublicationRefusalV1,
@@ -140,7 +143,9 @@ impl ScheduledPublicationWireClientV1 for ScheduledLocalClientV1 {
     {
         match self.call(ScheduledWireRequestV1::Publish(request))? {
             ScheduledWireReplyV1::Published(result) => Ok(result),
-            ScheduledWireReplyV1::Observed(_) => Err(LocalCallErrorV1::InvalidResponse),
+            ScheduledWireReplyV1::Observed(_) | ScheduledWireReplyV1::DeliveryProjected(_) => {
+                Err(LocalCallErrorV1::InvalidResponse)
+            }
         }
     }
 
@@ -153,7 +158,23 @@ impl ScheduledPublicationWireClientV1 for ScheduledLocalClientV1 {
     > {
         match self.call(ScheduledWireRequestV1::Observe(request))? {
             ScheduledWireReplyV1::Observed(result) => Ok(result),
-            ScheduledWireReplyV1::Published(_) => Err(LocalCallErrorV1::InvalidResponse),
+            ScheduledWireReplyV1::Published(_) | ScheduledWireReplyV1::DeliveryProjected(_) => {
+                Err(LocalCallErrorV1::InvalidResponse)
+            }
+        }
+    }
+}
+
+impl DeliveryProjectionPortV1 for ScheduledLocalClientV1 {
+    fn project(
+        &mut self,
+        source: DeliverySourceV1,
+    ) -> Result<DeliveryProjectionV1, DeliveryProjectionRefusalV1> {
+        match self.call(ScheduledWireRequestV1::ProjectDelivery(source)) {
+            Ok(ScheduledWireReplyV1::DeliveryProjected(result)) => result,
+            Ok(ScheduledWireReplyV1::Published(_) | ScheduledWireReplyV1::Observed(_)) | Err(_) => {
+                Err(DeliveryProjectionRefusalV1::Unavailable)
+            }
         }
     }
 }

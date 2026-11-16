@@ -7,6 +7,10 @@ use super::{
     WireDecodeError, WireEncodeError, WireLimits, decoder, encode, finish_decode, read_text,
     read_u8, read_u64,
 };
+use agora_delivery_projection_port::{
+    DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1, WakeClassV1,
+    WakeProjectionV1,
+};
 use agora_scheduled_publication_port::{
     ScheduledPublicationAcceptedV1, ScheduledPublicationIdV1, ScheduledPublicationIntentV1,
     ScheduledPublicationObservationRefusalV1, ScheduledPublicationObservationV1,
@@ -16,13 +20,16 @@ use agora_scheduled_publication_port::{
 const VERSION_V1: u8 = 1;
 const PUBLISH: u8 = 1;
 const OBSERVE: u8 = 2;
+const PROJECT_DELIVERY: u8 = 3;
 const PUBLISHED: u8 = 0x81;
 const OBSERVED: u8 = 0x82;
+const DELIVERY_PROJECTED: u8 = 0x83;
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum ScheduledWireRequestV1 {
     Publish(ScheduledPublicationRequestV1),
     Observe(ScheduledPublicationRequestV1),
+    ProjectDelivery(DeliverySourceV1),
 }
 
 impl std::fmt::Debug for ScheduledWireRequestV1 {
@@ -30,6 +37,10 @@ impl std::fmt::Debug for ScheduledWireRequestV1 {
         match self {
             Self::Publish(request) => formatter.debug_tuple("Publish").field(request).finish(),
             Self::Observe(request) => formatter.debug_tuple("Observe").field(request).finish(),
+            Self::ProjectDelivery(source) => formatter
+                .debug_tuple("ProjectDelivery")
+                .field(source)
+                .finish(),
         }
     }
 }
@@ -38,6 +49,7 @@ impl std::fmt::Debug for ScheduledWireRequestV1 {
 pub enum ScheduledWireReplyV1 {
     Published(Result<ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1>),
     Observed(Result<ScheduledPublicationObservationV1, ScheduledPublicationObservationRefusalV1>),
+    DeliveryProjected(Result<DeliveryProjectionV1, DeliveryProjectionRefusalV1>),
 }
 
 pub fn encode_scheduled_request_v1(
@@ -55,6 +67,10 @@ pub fn encode_scheduled_request_v1(
                 sink.u8(OBSERVE)?;
                 encode_request(sink, request)
             }
+            ScheduledWireRequestV1::ProjectDelivery(source) => {
+                sink.u8(PROJECT_DELIVERY)?;
+                sink.u64(source.event_sequence)
+            }
         }
     })
 }
@@ -68,6 +84,9 @@ pub fn decode_scheduled_request_v1(
     let request = match read_u8(&mut decoder)? {
         PUBLISH => ScheduledWireRequestV1::Publish(decode_request(&mut decoder)?),
         OBSERVE => ScheduledWireRequestV1::Observe(decode_request(&mut decoder)?),
+        PROJECT_DELIVERY => ScheduledWireRequestV1::ProjectDelivery(DeliverySourceV1 {
+            event_sequence: read_u64(&mut decoder)?,
+        }),
         _ => return Err(WireDecodeError::UnknownTag),
     };
     finish_decode(&decoder)?;
@@ -89,6 +108,10 @@ pub fn encode_scheduled_reply_v1(
                 sink.u8(OBSERVED)?;
                 encode_observation_result(sink, *result)
             }
+            ScheduledWireReplyV1::DeliveryProjected(result) => {
+                sink.u8(DELIVERY_PROJECTED)?;
+                encode_delivery_projection_result(sink, *result)
+            }
         }
     })
 }
@@ -102,10 +125,64 @@ pub fn decode_scheduled_reply_v1(
     let reply = match read_u8(&mut decoder)? {
         PUBLISHED => ScheduledWireReplyV1::Published(decode_publication_result(&mut decoder)?),
         OBSERVED => ScheduledWireReplyV1::Observed(decode_observation_result(&mut decoder)?),
+        DELIVERY_PROJECTED => ScheduledWireReplyV1::DeliveryProjected(
+            decode_delivery_projection_result(&mut decoder)?,
+        ),
         _ => return Err(WireDecodeError::UnknownTag),
     };
     finish_decode(&decoder)?;
     Ok(reply)
+}
+
+fn encode_delivery_projection_result(
+    sink: &mut dyn super::Sink,
+    result: Result<DeliveryProjectionV1, DeliveryProjectionRefusalV1>,
+) -> Result<(), WireEncodeError> {
+    match result {
+        Ok(DeliveryProjectionV1::Visible(wake)) => {
+            sink.u8(1)?;
+            sink.u64(wake.source.event_sequence)?;
+            match wake.class {
+                WakeClassV1::ConversationActivity => sink.u8(1),
+            }
+        }
+        Ok(DeliveryProjectionV1::NotVisible) => sink.u8(2),
+        Ok(DeliveryProjectionV1::Gap { retained_from }) => {
+            sink.u8(3)?;
+            sink.u64(retained_from)
+        }
+        Ok(DeliveryProjectionV1::Unavailable) => sink.u8(4),
+        Err(DeliveryProjectionRefusalV1::NotAuthorized) => sink.u8(5),
+        Err(DeliveryProjectionRefusalV1::Unavailable) => sink.u8(6),
+    }
+}
+
+fn decode_delivery_projection_result(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<Result<DeliveryProjectionV1, DeliveryProjectionRefusalV1>, WireDecodeError> {
+    Ok(match read_u8(decoder)? {
+        1 => {
+            let source = DeliverySourceV1 {
+                event_sequence: read_u64(decoder)?,
+            };
+            let class = match read_u8(decoder)? {
+                1 => WakeClassV1::ConversationActivity,
+                _ => return Err(WireDecodeError::UnknownTag),
+            };
+            Ok(DeliveryProjectionV1::Visible(WakeProjectionV1 {
+                source,
+                class,
+            }))
+        }
+        2 => Ok(DeliveryProjectionV1::NotVisible),
+        3 => Ok(DeliveryProjectionV1::Gap {
+            retained_from: read_u64(decoder)?,
+        }),
+        4 => Ok(DeliveryProjectionV1::Unavailable),
+        5 => Err(DeliveryProjectionRefusalV1::NotAuthorized),
+        6 => Err(DeliveryProjectionRefusalV1::Unavailable),
+        _ => return Err(WireDecodeError::UnknownTag),
+    })
 }
 
 fn encode_request(

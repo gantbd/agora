@@ -30,6 +30,7 @@ fn scheduled_requests_are_closed_bounded_and_content_safe() {
     for request in [
         ScheduledWireRequestV1::Publish(request()),
         ScheduledWireRequestV1::Observe(request()),
+        ScheduledWireRequestV1::ProjectDelivery(DeliverySourceV1 { event_sequence: 41 }),
     ] {
         let bytes = encode_scheduled_request_v1(&request, limits()).unwrap();
         assert_eq!(decode_scheduled_request_v1(&bytes, limits()), Ok(request));
@@ -59,9 +60,24 @@ fn scheduled_replies_round_trip_every_semantic_class() {
         ScheduledWireReplyV1::Observed(Ok(ScheduledPublicationObservationV1::Accepted(accepted))),
         ScheduledWireReplyV1::Observed(Ok(ScheduledPublicationObservationV1::Absent)),
         ScheduledWireReplyV1::Observed(Err(ScheduledPublicationObservationRefusalV1::Conflict)),
+        ScheduledWireReplyV1::DeliveryProjected(Ok(DeliveryProjectionV1::Visible(
+            WakeProjectionV1 {
+                source: DeliverySourceV1 { event_sequence: 41 },
+                class: WakeClassV1::ConversationActivity,
+            },
+        ))),
+        ScheduledWireReplyV1::DeliveryProjected(Ok(DeliveryProjectionV1::NotVisible)),
+        ScheduledWireReplyV1::DeliveryProjected(Ok(DeliveryProjectionV1::Gap { retained_from: 9 })),
+        ScheduledWireReplyV1::DeliveryProjected(Ok(DeliveryProjectionV1::Unavailable)),
+        ScheduledWireReplyV1::DeliveryProjected(Err(DeliveryProjectionRefusalV1::NotAuthorized)),
+        ScheduledWireReplyV1::DeliveryProjected(Err(DeliveryProjectionRefusalV1::Unavailable)),
     ];
     for reply in replies {
         let bytes = encode_scheduled_reply_v1(&reply, limits()).unwrap();
         assert_eq!(decode_scheduled_reply_v1(&bytes, limits()), Ok(reply));
     }
 }
+use agora_delivery_projection_port::{
+    DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1, WakeClassV1,
+    WakeProjectionV1,
+};

@@ -465,6 +465,11 @@ where
             ScheduledWireRequestV1::Observe(request) => ScheduledWireReplyV1::Observed(
                 durable_value(self.observe_scheduled(session, request, context, now))?,
             ),
+            ScheduledWireRequestV1::ProjectDelivery(source) => {
+                ScheduledWireReplyV1::DeliveryProjected(durable_value(
+                    self.project_delivery(session, source, context, now),
+                )?)
+            }
         };
         let limits = self
             .host()
@@ -496,6 +501,9 @@ where
         ScheduledWireRequestV1::Observe(request) => {
             ScheduledWireReplyV1::Observed(host.observe_scheduled(session, request, context, now))
         }
+        ScheduledWireRequestV1::ProjectDelivery(source) => ScheduledWireReplyV1::DeliveryProjected(
+            host.project_delivery(session, source, context, now),
+        ),
     };
     encode_scheduled_reply_v1(&reply, limits)
         .map_err(|_| DaemonHostErrorV1::Host(HostRefusal::Unavailable))

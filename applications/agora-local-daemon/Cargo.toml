@@ -20,6 +20,7 @@ aegis-client = { path = "../../../aegis/crates/aegis-client", version = "=0.1.0"
 aegis-protocol = { path = "../../../aegis/crates/aegis-protocol", version = "=0.1.0" }
 agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }
 agora-client = { path = "../../client/agora-client", version = "=0.1.0" }
+agora-delivery-projection-port = { path = "../../ports/agora-delivery-projection-port", version = "=0.1.0" }
 agora-local-client = { path = "../../client/agora-local-client", version = "=0.1.0" }
 agora-protocol = { path = "../../protocol/agora-protocol", version = "=0.1.0" }
 agora-scheduled-publication-port = { path = "../../ports/agora-scheduled-publication-port", version = "=0.1.0" }

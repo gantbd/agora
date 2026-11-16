@@ -8,6 +8,12 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Exposed Agora's existing content-minimized delivery projection through the
+  composition-only public local client and durable daemon. The additive wire
+  operation preserves current participant revalidation, explicit gap and
+  visibility states, and fail-closed transport unavailability without adding
+  delivery, acknowledgement, endpoint, or Hermes policy to Agora.
+
 - Added the owner-client `rooms.create.v2` guard for standalone and Workbench
   shells. It refuses inexact confirmation before transport, binds all proposed
   room facts to the expected revision, returns the service receipt, and retains

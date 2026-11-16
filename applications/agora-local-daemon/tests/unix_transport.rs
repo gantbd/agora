@@ -9,6 +9,9 @@ use agora_aegis_verifier::{
     AegisContextV1, AegisOperatorRestoreAuthorityV1, AegisOperatorRestoreContextV1, AegisVerifierV1,
 };
 use agora_client::scheduled::ScheduledPublicationWireClientV1;
+use agora_delivery_projection_port::{
+    DeliveryProjectionPortV1, DeliveryProjectionV1, DeliverySourceV1, WakeClassV1, WakeProjectionV1,
+};
 use agora_durable::{
     DurableHostConfigV2, DurableHostPublicationV2, DurableHostV2, DurableTransientHostV1,
     OperatorRestoreAuthorizationV1,
@@ -1588,7 +1591,7 @@ fn durable_daemon_reopens_conversation_state_through_the_same_transport_profile(
 }
 
 #[test]
-fn public_composition_client_publishes_and_observes_through_durable_daemon() {
+fn public_composition_client_publishes_observes_and_projects_through_durable_daemon() {
     let path = socket_path();
     let store_path = path.parent().unwrap().join("scheduled-checkpoint");
     let store =
@@ -1609,7 +1612,8 @@ fn public_composition_client_publishes_and_observes_through_durable_daemon() {
         let mut daemon = daemon;
         let first = daemon.serve_next();
         let second = daemon.serve_next();
-        (first, second, daemon)
+        let third = daemon.serve_next();
+        (first, second, third, daemon)
     });
 
     let mut client =
@@ -1625,14 +1629,23 @@ fn public_composition_client_publishes_and_observes_through_durable_daemon() {
         client.observe_scheduled(request).unwrap(),
         Ok(ScheduledPublicationObservationV1::Accepted(accepted))
     );
+    let source = DeliverySourceV1 { event_sequence: 2 };
+    assert_eq!(
+        client.project(source),
+        Ok(DeliveryProjectionV1::Visible(WakeProjectionV1 {
+            source,
+            class: WakeClassV1::ConversationActivity,
+        }))
+    );
 
-    let (first, second, daemon) = server.join().unwrap();
+    let (first, second, third, daemon) = server.join().unwrap();
     first.unwrap();
     second.unwrap();
+    third.unwrap();
     let observation = daemon.observation();
     assert_eq!(
-        observation.durability.committed, 6,
-        "both authenticated session lifecycles and publish/observe are durable"
+        observation.durability.committed, 9,
+        "all authenticated session lifecycles and publish/observe/project are durable"
     );
     let actions: Vec<ActionV1> = authority_calls
         .lock()
@@ -1652,6 +1665,8 @@ fn public_composition_client_publishes_and_observes_through_durable_daemon() {
             ActionV1::Submit,
             ActionV1::Submit,
             ActionV1::Observe,
+            ActionV1::Submit,
+            ActionV1::Submit,
         ]
     );
     let stopped = daemon.stop();

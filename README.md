@@ -47,6 +47,15 @@ event. Delivery acknowledgment drains only the lossless/backpressured outbox;
 bounded change-journal eviction alone creates a pull-feed retention gap. Both
 suffixes and their distinct edges survive canonical recovery.
 
+The composition-only local profile also exposes the existing content-minimized
+delivery projection through `ScheduledLocalClientV1`. It reuses the same
+authenticated participant session and durable owner as scheduled publication,
+returns only event sequence plus the closed wake class, and reports current
+visibility, retention gaps, owner unavailability, and authorization refusal
+without exposing room or message content. Public-client transport or protocol
+failure fails closed as projection unavailability; it is never interpreted as
+evidence that an event was not visible.
+
 An opt-in standalone fuzz profile drives all public wire decoders and the three
 semantic checkpoint layers under pinned cargo-fuzz, nightly, libFuzzer, corpus,
 and campaign bounds. The stable offline gate verifies that contract and exact
