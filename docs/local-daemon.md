@@ -174,7 +174,9 @@ wall-clock read remains trusted, and it makes no durable cross-restart clock
 claim. The complete create/open/residue-recovery durable owner factory now
 lives in `agora-private-local`. Its shared owner loop also turns an explicit
 shutdown wakeup into irreversible drain and a terminal cleanup receipt; the
-standalone OS-signal/configuration entrypoint remains open.
+standalone bounded configuration and POSIX signal wrapper reuse that exact
+owner. Real Aegis/Agora standalone and Workbench process qualification remain
+open.
 
 Create-time participant and room policy is not part of this daemon. The
 separate `agora-private-local` application root now builds a bounded fresh

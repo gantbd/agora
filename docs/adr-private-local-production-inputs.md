@@ -1,6 +1,6 @@
 # ADR: Private-local production identity and time inputs
 
-Status: accepted; durable owner and drain receipt implemented, standalone entrypoint open
+Status: accepted; standalone entrypoint implemented, hosted qualification open
 
 Date: 2026-11-16
 
@@ -98,10 +98,17 @@ transport, durability, fencing, capacity, and invalid lifecycle failures return
 a closed terminal class plus the cleanup receipt. The shutdown request is
 idempotent and supplies no authority or conversation semantics.
 
+The `agora-private-local` binary supplies a bounded closed `key=value`
+configuration for the first single-principal/one-room create profile plus clean
+open and exact residue recovery. Stdin is the universal shutdown-control pipe;
+Workbench may retain it directly. The adjacent POSIX wrapper maps SIGINT and
+SIGTERM to the same byte request and preserves the child's exit status and JSON
+cleanup receipt. Configuration parsing, signal translation, and the owner loop
+are independently qualified without introducing registry dependencies.
+
 ## Remaining work
 
-- add the standalone configuration/entrypoint adapter that maps OS shutdown to
-  the shared explicit drain request;
-- qualify that exact entrypoint standalone and under Workbench lifecycle.
+- qualify the exact binary against real Aegis and Agora clients standalone and
+  under Workbench-owned process lifecycle.
 
 These items are required before claiming a production standalone process.

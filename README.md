@@ -214,7 +214,8 @@ The repository also contains an initial layered operational profile:
   adopted bounded participant/room bootstrap and public-Aegis connection with
   exact same-session grant provisioning for conversation or scheduled
   composition, plus ordered durable create/open and exact endpoint-residue
-  recovery before publication and an explicit drain/cleanup owner loop;
+  recovery before publication, an explicit drain/cleanup owner loop, and a
+  bounded standalone configuration/signal entrypoint;
 - `agora-client` owns a monotone request namespace over an abstract service port.
 
 These crates add no credential authentication, network transport, durable
