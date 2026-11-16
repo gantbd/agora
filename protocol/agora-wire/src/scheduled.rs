@@ -4,8 +4,13 @@
 //! transport. It is not part of ordinary participant Wire V2.
 
 use super::{
-    WireDecodeError, WireEncodeError, WireLimits, decoder, encode, finish_decode, read_text,
-    read_u8, read_u64,
+    WireDecodeError, WireEncodeError, WireLimits, decoder, encode, finish_decode, read_list,
+    read_text, read_u8, read_u64,
+};
+use agora_actor_publication_port::{
+    ActorPublicationAcceptedV1, ActorPublicationIdV1, ActorPublicationIntentV1,
+    ActorPublicationObservationRefusalV1, ActorPublicationObservationV1, ActorPublicationRefusalV1,
+    ActorPublicationRequestV1,
 };
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1, WakeClassV1,
@@ -21,15 +26,21 @@ const VERSION_V1: u8 = 1;
 const PUBLISH: u8 = 1;
 const OBSERVE: u8 = 2;
 const PROJECT_DELIVERY: u8 = 3;
+const PUBLISH_ACTOR: u8 = 4;
+const OBSERVE_ACTOR: u8 = 5;
 const PUBLISHED: u8 = 0x81;
 const OBSERVED: u8 = 0x82;
 const DELIVERY_PROJECTED: u8 = 0x83;
+const ACTOR_PUBLISHED: u8 = 0x84;
+const ACTOR_OBSERVED: u8 = 0x85;
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum ScheduledWireRequestV1 {
     Publish(ScheduledPublicationRequestV1),
     Observe(ScheduledPublicationRequestV1),
     ProjectDelivery(DeliverySourceV1),
+    PublishActor(ActorPublicationRequestV1),
+    ObserveActor(ActorPublicationRequestV1),
 }
 
 impl std::fmt::Debug for ScheduledWireRequestV1 {
@@ -41,6 +52,14 @@ impl std::fmt::Debug for ScheduledWireRequestV1 {
                 .debug_tuple("ProjectDelivery")
                 .field(source)
                 .finish(),
+            Self::PublishActor(request) => formatter
+                .debug_tuple("PublishActor")
+                .field(request)
+                .finish(),
+            Self::ObserveActor(request) => formatter
+                .debug_tuple("ObserveActor")
+                .field(request)
+                .finish(),
         }
     }
 }
@@ -50,6 +69,8 @@ pub enum ScheduledWireReplyV1 {
     Published(Result<ScheduledPublicationAcceptedV1, ScheduledPublicationRefusalV1>),
     Observed(Result<ScheduledPublicationObservationV1, ScheduledPublicationObservationRefusalV1>),
     DeliveryProjected(Result<DeliveryProjectionV1, DeliveryProjectionRefusalV1>),
+    ActorPublished(Result<ActorPublicationAcceptedV1, ActorPublicationRefusalV1>),
+    ActorObserved(Result<ActorPublicationObservationV1, ActorPublicationObservationRefusalV1>),
 }
 
 pub fn encode_scheduled_request_v1(
@@ -71,6 +92,14 @@ pub fn encode_scheduled_request_v1(
                 sink.u8(PROJECT_DELIVERY)?;
                 sink.u64(source.event_sequence)
             }
+            ScheduledWireRequestV1::PublishActor(request) => {
+                sink.u8(PUBLISH_ACTOR)?;
+                encode_actor_request(sink, request)
+            }
+            ScheduledWireRequestV1::ObserveActor(request) => {
+                sink.u8(OBSERVE_ACTOR)?;
+                encode_actor_request(sink, request)
+            }
         }
     })
 }
@@ -87,6 +116,12 @@ pub fn decode_scheduled_request_v1(
         PROJECT_DELIVERY => ScheduledWireRequestV1::ProjectDelivery(DeliverySourceV1 {
             event_sequence: read_u64(&mut decoder)?,
         }),
+        PUBLISH_ACTOR => {
+            ScheduledWireRequestV1::PublishActor(decode_actor_request(&mut decoder, limits)?)
+        }
+        OBSERVE_ACTOR => {
+            ScheduledWireRequestV1::ObserveActor(decode_actor_request(&mut decoder, limits)?)
+        }
         _ => return Err(WireDecodeError::UnknownTag),
     };
     finish_decode(&decoder)?;
@@ -112,6 +147,14 @@ pub fn encode_scheduled_reply_v1(
                 sink.u8(DELIVERY_PROJECTED)?;
                 encode_delivery_projection_result(sink, *result)
             }
+            ScheduledWireReplyV1::ActorPublished(result) => {
+                sink.u8(ACTOR_PUBLISHED)?;
+                encode_actor_publication_result(sink, *result)
+            }
+            ScheduledWireReplyV1::ActorObserved(result) => {
+                sink.u8(ACTOR_OBSERVED)?;
+                encode_actor_observation_result(sink, *result)
+            }
         }
     })
 }
@@ -128,6 +171,12 @@ pub fn decode_scheduled_reply_v1(
         DELIVERY_PROJECTED => ScheduledWireReplyV1::DeliveryProjected(
             decode_delivery_projection_result(&mut decoder)?,
         ),
+        ACTOR_PUBLISHED => {
+            ScheduledWireReplyV1::ActorPublished(decode_actor_publication_result(&mut decoder)?)
+        }
+        ACTOR_OBSERVED => {
+            ScheduledWireReplyV1::ActorObserved(decode_actor_observation_result(&mut decoder)?)
+        }
         _ => return Err(WireDecodeError::UnknownTag),
     };
     finish_decode(&decoder)?;
@@ -313,4 +362,156 @@ fn read_version(decoder: &mut keystone_codec::Decoder<'_>) -> Result<(), WireDec
         return Err(WireDecodeError::UnsupportedVersion);
     }
     Ok(())
+}
+
+fn encode_actor_request(
+    sink: &mut dyn super::Sink,
+    request: &ActorPublicationRequestV1,
+) -> Result<(), WireEncodeError> {
+    for byte in request.id.into_bytes() {
+        sink.u8(byte)?;
+    }
+    sink.text(request.intent.room_id())?;
+    sink.u64(request.intent.expected_revision())?;
+    sink.u64(request.intent.logical_time())?;
+    sink.text(request.intent.body())?;
+    sink.list(request.intent.addressed_to().len())?;
+    for participant in request.intent.addressed_to() {
+        sink.text(participant)?;
+    }
+    Ok(())
+}
+
+fn decode_actor_request(
+    decoder: &mut keystone_codec::Decoder<'_>,
+    limits: WireLimits,
+) -> Result<ActorPublicationRequestV1, WireDecodeError> {
+    let mut id = [0; 16];
+    for byte in &mut id {
+        *byte = read_u8(decoder)?;
+    }
+    let room = read_text(decoder)?;
+    let expected_revision = read_u64(decoder)?;
+    let logical_time = read_u64(decoder)?;
+    let body = read_text(decoder)?;
+    let count = read_list(decoder, limits)?;
+    let mut addressed_to = Vec::new();
+    addressed_to
+        .try_reserve_exact(count)
+        .map_err(|_| WireDecodeError::Capacity)?;
+    for _ in 0..count {
+        addressed_to.push(read_text(decoder)?);
+    }
+    Ok(ActorPublicationRequestV1 {
+        id: ActorPublicationIdV1::new(id).map_err(|_| WireDecodeError::Malformed)?,
+        intent: ActorPublicationIntentV1::new(
+            room,
+            expected_revision,
+            logical_time,
+            body,
+            addressed_to,
+        ),
+    })
+}
+
+fn encode_actor_accepted(
+    sink: &mut dyn super::Sink,
+    accepted: ActorPublicationAcceptedV1,
+) -> Result<(), WireEncodeError> {
+    sink.u64(accepted.revision)?;
+    for byte in accepted.message_id {
+        sink.u8(byte)?;
+    }
+    sink.u64(accepted.message_sequence)
+}
+
+fn decode_actor_accepted(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<ActorPublicationAcceptedV1, WireDecodeError> {
+    let revision = read_u64(decoder)?;
+    let mut message_id = [0; 16];
+    for byte in &mut message_id {
+        *byte = read_u8(decoder)?;
+    }
+    Ok(ActorPublicationAcceptedV1 {
+        revision,
+        message_id,
+        message_sequence: read_u64(decoder)?,
+    })
+}
+
+fn encode_actor_publication_result(
+    sink: &mut dyn super::Sink,
+    result: Result<ActorPublicationAcceptedV1, ActorPublicationRefusalV1>,
+) -> Result<(), WireEncodeError> {
+    match result {
+        Ok(accepted) => {
+            sink.u8(1)?;
+            encode_actor_accepted(sink, accepted)
+        }
+        Err(ActorPublicationRefusalV1::InvalidInput) => sink.u8(2),
+        Err(ActorPublicationRefusalV1::NotAuthorized) => sink.u8(3),
+        Err(ActorPublicationRefusalV1::AdmissionDeferred { retry_after_ms }) => {
+            sink.u8(4)?;
+            sink.u64(retry_after_ms)
+        }
+        Err(ActorPublicationRefusalV1::Capacity) => sink.u8(5),
+        Err(ActorPublicationRefusalV1::Conflict) => sink.u8(6),
+        Err(ActorPublicationRefusalV1::Unavailable) => sink.u8(7),
+        Err(ActorPublicationRefusalV1::Exhausted) => sink.u8(8),
+    }
+}
+
+fn decode_actor_publication_result(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<Result<ActorPublicationAcceptedV1, ActorPublicationRefusalV1>, WireDecodeError> {
+    Ok(match read_u8(decoder)? {
+        1 => Ok(decode_actor_accepted(decoder)?),
+        2 => Err(ActorPublicationRefusalV1::InvalidInput),
+        3 => Err(ActorPublicationRefusalV1::NotAuthorized),
+        4 => Err(ActorPublicationRefusalV1::AdmissionDeferred {
+            retry_after_ms: read_u64(decoder)?,
+        }),
+        5 => Err(ActorPublicationRefusalV1::Capacity),
+        6 => Err(ActorPublicationRefusalV1::Conflict),
+        7 => Err(ActorPublicationRefusalV1::Unavailable),
+        8 => Err(ActorPublicationRefusalV1::Exhausted),
+        _ => return Err(WireDecodeError::UnknownTag),
+    })
+}
+
+fn encode_actor_observation_result(
+    sink: &mut dyn super::Sink,
+    result: Result<ActorPublicationObservationV1, ActorPublicationObservationRefusalV1>,
+) -> Result<(), WireEncodeError> {
+    match result {
+        Ok(ActorPublicationObservationV1::Accepted(accepted)) => {
+            sink.u8(1)?;
+            encode_actor_accepted(sink, accepted)
+        }
+        Ok(ActorPublicationObservationV1::Absent) => sink.u8(2),
+        Err(ActorPublicationObservationRefusalV1::InvalidInput) => sink.u8(3),
+        Err(ActorPublicationObservationRefusalV1::NotAuthorized) => sink.u8(4),
+        Err(ActorPublicationObservationRefusalV1::Conflict) => sink.u8(5),
+        Err(ActorPublicationObservationRefusalV1::Unavailable) => sink.u8(6),
+    }
+}
+
+fn decode_actor_observation_result(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<
+    Result<ActorPublicationObservationV1, ActorPublicationObservationRefusalV1>,
+    WireDecodeError,
+> {
+    Ok(match read_u8(decoder)? {
+        1 => Ok(ActorPublicationObservationV1::Accepted(
+            decode_actor_accepted(decoder)?,
+        )),
+        2 => Ok(ActorPublicationObservationV1::Absent),
+        3 => Err(ActorPublicationObservationRefusalV1::InvalidInput),
+        4 => Err(ActorPublicationObservationRefusalV1::NotAuthorized),
+        5 => Err(ActorPublicationObservationRefusalV1::Conflict),
+        6 => Err(ActorPublicationObservationRefusalV1::Unavailable),
+        _ => return Err(WireDecodeError::UnknownTag),
+    })
 }

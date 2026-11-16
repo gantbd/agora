@@ -1,8 +1,13 @@
 //! Authenticated transport-neutral composition for Agora Wire/Service V2.
 
 use super::{
-    HostLimits, HostRefusal, HostTimeV1, HostUsage, PrincipalVerifier, ScheduledHostActionV1,
-    ScheduledPrincipalVerifier, VerifiedSubjectV1, count, identity_bytes, map_encode,
+    ActorHostActionV1, ActorPrincipalVerifier, HostLimits, HostRefusal, HostTimeV1, HostUsage,
+    PrincipalVerifier, ScheduledHostActionV1, ScheduledPrincipalVerifier, VerifiedSubjectV1, count,
+    identity_bytes, map_encode,
+};
+use agora_actor_publication_port::{
+    ActorPublicationAcceptedV1, ActorPublicationObservationRefusalV1,
+    ActorPublicationObservationV1, ActorPublicationRefusalV1, ActorPublicationRequestV1,
 };
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
@@ -349,6 +354,70 @@ impl<V: PrincipalVerifier> HostV2<V> {
             return Err(ScheduledPublicationObservationRefusalV1::NotAuthorized);
         }
         self.service.observe_scheduled(session.client, request)
+    }
+
+    /// Publishes one exact operation as the authenticated session actor after
+    /// fresh Execute authorization. Caller-supplied author identity is absent.
+    pub fn publish_actor(
+        &mut self,
+        session_id: HostSessionIdV2,
+        request: ActorPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<ActorPublicationAcceptedV1, ActorPublicationRefusalV1>
+    where
+        V: ActorPrincipalVerifier,
+    {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| ActorPublicationRefusalV1::NotAuthorized)?;
+        if self
+            .verifier
+            .authorize_actor(
+                session.subject,
+                &session.participant,
+                context,
+                now,
+                ActorHostActionV1::Publish,
+            )
+            .is_err()
+        {
+            self.retire(session_id);
+            return Err(ActorPublicationRefusalV1::NotAuthorized);
+        }
+        self.service
+            .publish_actor_at(session.client, request, now.0)
+    }
+
+    /// Observes one exact retained operation after fresh Observe authorization.
+    pub fn observe_actor(
+        &mut self,
+        session_id: HostSessionIdV2,
+        request: ActorPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<ActorPublicationObservationV1, ActorPublicationObservationRefusalV1>
+    where
+        V: ActorPrincipalVerifier,
+    {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| ActorPublicationObservationRefusalV1::NotAuthorized)?;
+        if self
+            .verifier
+            .authorize_actor(
+                session.subject,
+                &session.participant,
+                context,
+                now,
+                ActorHostActionV1::Observe,
+            )
+            .is_err()
+        {
+            self.retire(session_id);
+            return Err(ActorPublicationObservationRefusalV1::NotAuthorized);
+        }
+        self.service.observe_actor(session.client, request)
     }
 
     /// Trusted transport-neutral publication path for a configured federation

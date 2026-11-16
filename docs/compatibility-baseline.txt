@@ -7,6 +7,7 @@ package|client/agora-local-client/Cargo.toml|agora-local-client|0.1.0
 package|service/agora-durable/Cargo.toml|agora-durable|0.1.0
 package|service/agora-export-service/Cargo.toml|agora-export-service|0.1.0
 package|service/agora-export-durable/Cargo.toml|agora-export-durable|0.1.0
+package|ports/agora-actor-publication-port/Cargo.toml|agora-actor-publication-port|0.1.0
 package|ports/agora-delivery-projection-port/Cargo.toml|agora-delivery-projection-port|0.1.0
 package|ports/agora-export-custody-port/Cargo.toml|agora-export-custody-port|0.1.0
 package|ports/agora-federated-publication-port/Cargo.toml|agora-federated-publication-port|0.1.0

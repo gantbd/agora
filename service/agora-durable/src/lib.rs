@@ -5,6 +5,10 @@
 //! restores the pre-offer checkpoint. An indeterminate or weak acknowledgement
 //! fences the owner and suppresses the semantic reply.
 
+use agora_actor_publication_port::{
+    ActorPublicationAcceptedV1, ActorPublicationObservationRefusalV1,
+    ActorPublicationObservationV1, ActorPublicationRefusalV1, ActorPublicationRequestV1,
+};
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
 };
@@ -1314,6 +1318,41 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
     {
         let publication =
             self.publish(|host| host.observe_scheduled(session, request, context, now));
+        self.counters.record(&publication);
+        publication
+    }
+
+    /// Commit-gates one actor publication and its semantic receipt.
+    pub fn publish_actor(
+        &mut self,
+        session: HostSessionIdV2,
+        request: ActorPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<Result<ActorPublicationAcceptedV1, ActorPublicationRefusalV1>>
+    where
+        V: agora_host::ActorPrincipalVerifier,
+    {
+        let publication = self.publish(|host| host.publish_actor(session, request, context, now));
+        self.counters.record(&publication);
+        publication
+    }
+
+    /// Commit-gates any verifier-driven retirement while reading actor
+    /// publication evidence.
+    pub fn observe_actor(
+        &mut self,
+        session: HostSessionIdV2,
+        request: ActorPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<
+        Result<ActorPublicationObservationV1, ActorPublicationObservationRefusalV1>,
+    >
+    where
+        V: agora_host::ActorPrincipalVerifier,
+    {
+        let publication = self.publish(|host| host.observe_actor(session, request, context, now));
         self.counters.record(&publication);
         publication
     }

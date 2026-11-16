@@ -97,6 +97,50 @@ pub trait ScheduledPrincipalVerifier: PrincipalVerifier {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ActorHostActionV1 {
+    Publish,
+    Observe,
+}
+
+/// Authority facet for caller-stable actor publication. Authentication alone
+/// is insufficient; publish and retained observation are distinct actions.
+pub trait ActorPrincipalVerifier: PrincipalVerifier {
+    fn authorize_actor(
+        &mut self,
+        subject: VerifiedSubjectV1,
+        participant: &str,
+        context: &Self::Context,
+        now: HostTimeV1,
+        action: ActorHostActionV1,
+    ) -> Result<(), Self::Error>;
+}
+
+/// Existing deployments select the same Execute/Observe grants for scheduled
+/// and actor publication. This adapter preserves that mapping without putting
+/// scheduler vocabulary in the actor-facing port.
+impl<T: ScheduledPrincipalVerifier> ActorPrincipalVerifier for T {
+    fn authorize_actor(
+        &mut self,
+        subject: VerifiedSubjectV1,
+        participant: &str,
+        context: &Self::Context,
+        now: HostTimeV1,
+        action: ActorHostActionV1,
+    ) -> Result<(), Self::Error> {
+        self.authorize_scheduled(
+            subject,
+            participant,
+            context,
+            now,
+            match action {
+                ActorHostActionV1::Publish => ScheduledHostActionV1::Publish,
+                ActorHostActionV1::Observe => ScheduledHostActionV1::Observe,
+            },
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HostLimits {
     pub max_sessions: usize,
     pub max_retired_sessions: usize,

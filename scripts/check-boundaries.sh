@@ -59,7 +59,7 @@ if printf '%s\n' "$client_tree" | rg 'agora-(engine|service)'; then
 fi
 
 local_client_tree=$(cargo tree -p agora-local-client --edges normal --depth 1 --locked --offline)
-for required in agora-client agora-protocol agora-scheduled-publication-port agora-wire; do
+for required in agora-actor-publication-port agora-client agora-protocol agora-scheduled-publication-port agora-wire; do
   if ! printf '%s\n' "$local_client_tree" | rg -q "$required"; then
     printf '%s\n' "$local_client_tree" >&2
     echo "Agora local client omits $required" >&2
@@ -230,6 +230,13 @@ scheduled_publication_port_tree=$(cargo tree -p agora-scheduled-publication-port
 if [[ $(printf '%s\n' "$scheduled_publication_port_tree" | wc -l | tr -d ' ') != 1 ]]; then
   printf '%s\n' "$scheduled_publication_port_tree" >&2
   echo 'Agora scheduled-publication port gained a normal dependency' >&2
+  exit 1
+fi
+
+actor_publication_port_tree=$(cargo tree -p agora-actor-publication-port --edges normal --depth 1 --locked --offline)
+if [[ $(printf '%s\n' "$actor_publication_port_tree" | wc -l | tr -d ' ') != 1 ]]; then
+  printf '%s\n' "$actor_publication_port_tree" >&2
+  echo 'Agora actor-publication port gained a normal dependency' >&2
   exit 1
 fi
 

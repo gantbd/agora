@@ -8,6 +8,7 @@ description = "Receipt-gated durable Agora service owner"
 publish = false
 
 [dependencies]
+agora-actor-publication-port = { path = "../../ports/agora-actor-publication-port", version = "=0.1.0" }
 agora-delivery-projection-port = { path = "../../ports/agora-delivery-projection-port", version = "=0.1.0" }
 agora-federated-publication-port = { path = "../../ports/agora-federated-publication-port", version = "=0.1.0" }
 agora-host = { path = "../../host/agora-host", version = "=0.1.0" }

@@ -1,6 +1,14 @@
 {
   "schema": 1,
   "packages": {
+    "agora-actor-publication-port": {
+      "path": "ports/agora-actor-publication-port",
+      "category": "port",
+      "maturity": "adopted",
+      "effect_class": "pure",
+      "audiences": ["service", "trusted-host"],
+      "publish": false
+    },
     "agora-aegis-verifier": {
       "path": "adapters/agora-aegis-verifier",
       "category": "adapter",

@@ -1,5 +1,9 @@
 //! Serialized volatile implementation of Agora Protocol V2.
 
+use agora_actor_publication_port::{
+    ActorPublicationAcceptedV1, ActorPublicationObservationRefusalV1,
+    ActorPublicationObservationV1, ActorPublicationRefusalV1, ActorPublicationRequestV1,
+};
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1, WakeClassV1,
     WakeProjectionV1,
@@ -670,6 +674,88 @@ impl ServiceV2 {
                 Err(ScheduledPublicationObservationRefusalV1::Conflict)
             }
             Err(_) => Err(ScheduledPublicationObservationRefusalV1::Unavailable),
+        }
+    }
+
+    /// Publishes one exact caller-stable operation as the current authenticated
+    /// actor. Unlike the scheduler profile, the caller's optimistic revision
+    /// and canonical addressed-recipient set are part of replay identity.
+    pub fn publish_actor_at(
+        &mut self,
+        client: ClientIdV2,
+        request: ActorPublicationRequestV1,
+        instant_ms: u64,
+    ) -> Result<ActorPublicationAcceptedV1, ActorPublicationRefusalV1> {
+        let participant = self
+            .clients
+            .get(&client)
+            .cloned()
+            .ok_or(ActorPublicationRefusalV1::NotAuthorized)?;
+        if !valid_actor_request(&request, self.limits) {
+            return Err(ActorPublicationRefusalV1::InvalidInput);
+        }
+        let room = RoomId::new(request.intent.room_id());
+        let command = PublicationCommandV2::new_addressed(
+            Revision(request.intent.expected_revision()),
+            PublicationKeyV2::namespaced(PublicationDomainV2::Actor, request.id.into_bytes()),
+            room.clone(),
+            participant,
+            agora_engine::LogicalTime(request.intent.logical_time()),
+            request.intent.body(),
+            request
+                .intent
+                .addressed_to()
+                .iter()
+                .map(ParticipantId::new)
+                .collect(),
+        );
+        let transition = self
+            .engine
+            .publish_at_instant(command, instant_ms)
+            .map_err(map_actor_publication_refusal)?;
+        self.enforce_authoritative_change_retention();
+        actor_accepted(&self.engine, &room, transition)
+    }
+
+    /// Reads retained evidence for an exact actor publication without offering
+    /// a new mutation. Absence is authoritative for this bounded owner index.
+    pub fn observe_actor(
+        &self,
+        client: ClientIdV2,
+        request: ActorPublicationRequestV1,
+    ) -> Result<ActorPublicationObservationV1, ActorPublicationObservationRefusalV1> {
+        let participant = self
+            .clients
+            .get(&client)
+            .cloned()
+            .ok_or(ActorPublicationObservationRefusalV1::NotAuthorized)?;
+        if !valid_actor_request(&request, self.limits) {
+            return Err(ActorPublicationObservationRefusalV1::InvalidInput);
+        }
+        let room = RoomId::new(request.intent.room_id());
+        let command = PublicationCommandV2::new_addressed(
+            Revision(request.intent.expected_revision()),
+            PublicationKeyV2::namespaced(PublicationDomainV2::Actor, request.id.into_bytes()),
+            room.clone(),
+            participant,
+            agora_engine::LogicalTime(request.intent.logical_time()),
+            request.intent.body(),
+            request
+                .intent
+                .addressed_to()
+                .iter()
+                .map(ParticipantId::new)
+                .collect(),
+        );
+        match self.engine.replay_publication(&command) {
+            Ok(Some(transition)) => actor_accepted(&self.engine, &room, transition)
+                .map(ActorPublicationObservationV1::Accepted)
+                .map_err(|_| ActorPublicationObservationRefusalV1::Unavailable),
+            Ok(None) => Ok(ActorPublicationObservationV1::Absent),
+            Err(PublicationRefusalV2::IdempotencyConflict) => {
+                Err(ActorPublicationObservationRefusalV1::Conflict)
+            }
+            Err(_) => Err(ActorPublicationObservationRefusalV1::Unavailable),
         }
     }
 
@@ -5943,6 +6029,49 @@ fn map_scheduled_publication_refusal(
             | EngineRefusal::RevisionConflict { .. },
         ) => ScheduledPublicationRefusalV1::Unavailable,
         PublicationRefusalV2::Core(_) => ScheduledPublicationRefusalV1::InvalidInput,
+    }
+}
+
+fn valid_actor_request(request: &ActorPublicationRequestV1, limits: ServiceLimitsV2) -> bool {
+    valid_text(request.intent.room_id(), limits.max_room_id_bytes)
+        && valid_text(request.intent.body(), limits.max_message_body_bytes)
+        && request.intent.addressed_to().len() <= limits.max_addressed_participants
+        && request
+            .intent
+            .addressed_to()
+            .iter()
+            .all(|participant| valid_text(participant, limits.max_participant_id_bytes))
+}
+
+fn actor_accepted(
+    engine: &Engine,
+    room: &RoomId,
+    transition: agora_engine::TransitionV2,
+) -> Result<ActorPublicationAcceptedV1, ActorPublicationRefusalV1> {
+    let EngineOutcome::MessageAccepted { sequence, .. } = transition.outcome else {
+        return Err(ActorPublicationRefusalV1::Unavailable);
+    };
+    let message_id = engine
+        .message_id_for_sequence(room, sequence)
+        .ok_or(ActorPublicationRefusalV1::Unavailable)?;
+    Ok(ActorPublicationAcceptedV1 {
+        revision: transition.revision.0,
+        message_id: message_id.into_bytes(),
+        message_sequence: sequence,
+    })
+}
+
+fn map_actor_publication_refusal(refusal: PublicationRefusalV2) -> ActorPublicationRefusalV1 {
+    match map_scheduled_publication_refusal(refusal) {
+        ScheduledPublicationRefusalV1::InvalidInput => ActorPublicationRefusalV1::InvalidInput,
+        ScheduledPublicationRefusalV1::NotAuthorized => ActorPublicationRefusalV1::NotAuthorized,
+        ScheduledPublicationRefusalV1::AdmissionDeferred { retry_after_ms } => {
+            ActorPublicationRefusalV1::AdmissionDeferred { retry_after_ms }
+        }
+        ScheduledPublicationRefusalV1::Capacity => ActorPublicationRefusalV1::Capacity,
+        ScheduledPublicationRefusalV1::Conflict => ActorPublicationRefusalV1::Conflict,
+        ScheduledPublicationRefusalV1::Unavailable => ActorPublicationRefusalV1::Unavailable,
+        ScheduledPublicationRefusalV1::Exhausted => ActorPublicationRefusalV1::Exhausted,
     }
 }
 

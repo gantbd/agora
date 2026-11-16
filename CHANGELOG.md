@@ -8,6 +8,13 @@ follow Semantic Versioning once a public release contract is selected.
 
 ### Added
 
+- Added an actor-bound durable publication profile for process-separated
+  workflow responses. A stable operation now retains exact revision, logical
+  time, body, and addressed recipients across client reconnect and owner
+  recovery, while the Host supplies author and admission time and separately
+  authorizes publication and observation. Engine checkpoint profile 152 adds
+  backward-compatible addressed-publication receipt recovery.
+
 - Exposed Agora's existing content-minimized delivery projection through the
   composition-only public local client and durable daemon. The additive wire
   operation preserves current participant revalidation, explicit gap and

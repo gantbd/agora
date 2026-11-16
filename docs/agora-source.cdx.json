@@ -93,6 +93,28 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:cargo/agora-actor-publication-port@0.1.0",
+      "name": "agora-actor-publication-port",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/agora-actor-publication-port@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agora:source-kind",
+          "value": "local-path"
+        },
+        {
+          "name": "agora:publication",
+          "value": "denied"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:cargo/agora-aegis-verifier@0.1.0",
       "name": "agora-aegis-verifier",
       "version": "0.1.0",
@@ -778,6 +800,10 @@
       ]
     },
     {
+      "ref": "pkg:cargo/agora-actor-publication-port@0.1.0",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:cargo/agora-aegis-verifier@0.1.0",
       "dependsOn": [
         "pkg:cargo/aegis-client@0.1.0",
@@ -805,6 +831,7 @@
     {
       "ref": "pkg:cargo/agora-durable@0.1.0",
       "dependsOn": [
+        "pkg:cargo/agora-actor-publication-port@0.1.0",
         "pkg:cargo/agora-delivery-projection-port@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-federated-publication-port@0.1.0",
@@ -863,6 +890,7 @@
     {
       "ref": "pkg:cargo/agora-host@0.1.0",
       "dependsOn": [
+        "pkg:cargo/agora-actor-publication-port@0.1.0",
         "pkg:cargo/agora-delivery-projection-port@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-export-custody-port@0.1.0",
@@ -882,7 +910,9 @@
     {
       "ref": "pkg:cargo/agora-local-client@0.1.0",
       "dependsOn": [
+        "pkg:cargo/agora-actor-publication-port@0.1.0",
         "pkg:cargo/agora-client@0.1.0",
+        "pkg:cargo/agora-delivery-projection-port@0.1.0",
         "pkg:cargo/agora-protocol@0.1.0",
         "pkg:cargo/agora-scheduled-publication-port@0.1.0",
         "pkg:cargo/agora-wire@0.1.0"
@@ -893,8 +923,10 @@
       "dependsOn": [
         "pkg:cargo/aegis-client@0.1.0",
         "pkg:cargo/aegis-protocol@0.1.0",
+        "pkg:cargo/agora-actor-publication-port@0.1.0",
         "pkg:cargo/agora-aegis-verifier@0.1.0",
         "pkg:cargo/agora-client@0.1.0",
+        "pkg:cargo/agora-delivery-projection-port@0.1.0",
         "pkg:cargo/agora-durable@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-host@0.1.0",
@@ -978,6 +1010,7 @@
     {
       "ref": "pkg:cargo/agora-service@0.1.0",
       "dependsOn": [
+        "pkg:cargo/agora-actor-publication-port@0.1.0",
         "pkg:cargo/agora-delivery-projection-port@0.1.0",
         "pkg:cargo/agora-engine@0.3.0",
         "pkg:cargo/agora-federated-publication-port@0.1.0",
@@ -1018,6 +1051,8 @@
     {
       "ref": "pkg:cargo/agora-wire@0.1.0",
       "dependsOn": [
+        "pkg:cargo/agora-actor-publication-port@0.1.0",
+        "pkg:cargo/agora-delivery-projection-port@0.1.0",
         "pkg:cargo/agora-protocol@0.1.0",
         "pkg:cargo/agora-scheduled-publication-port@0.1.0",
         "pkg:cargo/keystone-codec@0.0.1"

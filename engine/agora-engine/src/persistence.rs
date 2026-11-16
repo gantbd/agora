@@ -2409,6 +2409,14 @@ fn insert<K: Ord, V>(map: &mut BTreeMap<K, V>, key: K, value: V) -> Result<(), C
     Ok(())
 }
 
+fn read_bool(reader: &mut Reader<'_>) -> Result<bool, CheckpointError> {
+    match reader.byte()? {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(CheckpointError::NonCanonical),
+    }
+}
+
 impl Engine {
     pub fn prepare_checkpoint(
         &self,
@@ -2435,6 +2443,10 @@ impl Engine {
             .publications
             .keys()
             .any(|key| matches!(key.identity, PublicationIdentityV2::Federated { .. }));
+        let include_publication_addressing = self
+            .publications
+            .values()
+            .any(|record| !record.addressed_to.is_empty());
         let include_private_state_identity = self.private_state_revision.is_some();
         w.raw(b"AGORACP\0")?;
         let feature_bits = u8::from(include_vellum_artifacts)
@@ -2442,7 +2454,30 @@ impl Engine {
             + (u8::from(include_attention_preferences) * 4)
             + (u8::from(include_private_saves) * 8)
             + (u8::from(include_shared_pins) * 16);
-        if include_private_state_identity {
+        if include_publication_addressing {
+            w.byte(152)?;
+            w.byte(
+                feature_bits
+                    | (u8::from(include_polls) << 5)
+                    | (u8::from(include_admission_control) << 6)
+                    | 0x80,
+            )?;
+            w.byte(u8::from(include_message_reports))?;
+            w.byte(u8::from(include_publication_domains))?;
+            w.byte(u8::from(include_scoped_federation))?;
+            w.byte(if include_private_state_identity { 1 } else { 0 })?;
+            if include_private_state_identity {
+                w.byte(if self.private_state_revision_exhausted {
+                    2
+                } else {
+                    1
+                })?;
+                w.number(
+                    self.private_state_revision
+                        .ok_or(CheckpointError::Invalid)?,
+                )?;
+            }
+        } else if include_private_state_identity {
             w.byte(151)?;
             w.byte(
                 feature_bits
@@ -2744,6 +2779,12 @@ impl Engine {
             w.text(p.author.as_str())?;
             w.number(p.at.0)?;
             w.text(&p.body)?;
+            if include_publication_addressing {
+                w.count(p.addressed_to.len())?;
+                for participant in &p.addressed_to {
+                    w.text(participant.as_str())?;
+                }
+            }
             w.number(p.transition.revision.0)?;
             w.number(p.transition.event_sequence.0)?;
             let OutcomeV2::MessageAccepted { room_id, sequence } = &p.transition.outcome else {
@@ -2785,12 +2826,13 @@ impl Engine {
             has_message_reports,
             has_publication_domains,
             has_scoped_federation,
+            has_publication_addressing,
             private_state_identity,
         ) = match profile {
-            20..=51 => (profile - 20, false, false, false, false, false, None),
-            52..=83 => (profile - 52, true, false, false, false, false, None),
-            84..=115 => (profile - 84, false, true, false, false, false, None),
-            116..=147 => (profile - 116, true, true, false, false, false, None),
+            20..=51 => (profile - 20, false, false, false, false, false, false, None),
+            52..=83 => (profile - 52, true, false, false, false, false, false, None),
+            84..=115 => (profile - 84, false, true, false, false, false, false, None),
+            116..=147 => (profile - 116, true, true, false, false, false, false, None),
             148 => {
                 let extended = r.byte()?;
                 if extended & 0x80 == 0 {
@@ -2801,6 +2843,7 @@ impl Engine {
                     extended & 0x20 != 0,
                     extended & 0x40 != 0,
                     true,
+                    false,
                     false,
                     false,
                     None,
@@ -2823,6 +2866,7 @@ impl Engine {
                     has_message_reports,
                     true,
                     false,
+                    false,
                     None,
                 )
             }
@@ -2843,6 +2887,7 @@ impl Engine {
                     has_message_reports,
                     true,
                     true,
+                    false,
                     None,
                 )
             }
@@ -2885,7 +2930,46 @@ impl Engine {
                     has_message_reports,
                     has_publication_domains,
                     has_scoped_federation,
+                    false,
                     Some((revision, exhausted)),
+                )
+            }
+            152 => {
+                let extended = r.byte()?;
+                if extended & 0x80 == 0 {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                let has_message_reports = read_bool(&mut r)?;
+                let has_publication_domains = read_bool(&mut r)?;
+                let has_scoped_federation = read_bool(&mut r)?;
+                if has_scoped_federation && !has_publication_domains {
+                    return Err(CheckpointError::NonCanonical);
+                }
+                let private_state_identity = match r.byte()? {
+                    0 => None,
+                    1 => {
+                        let exhausted = match r.byte()? {
+                            1 => false,
+                            2 => true,
+                            _ => return Err(CheckpointError::NonCanonical),
+                        };
+                        let revision = r.number()?;
+                        if revision == 0 || (exhausted && revision != u64::MAX) {
+                            return Err(CheckpointError::Invalid);
+                        }
+                        Some((revision, exhausted))
+                    }
+                    _ => return Err(CheckpointError::NonCanonical),
+                };
+                (
+                    extended & 0x1f,
+                    extended & 0x20 != 0,
+                    extended & 0x40 != 0,
+                    has_message_reports,
+                    has_publication_domains,
+                    has_scoped_federation,
+                    true,
+                    private_state_identity,
                 )
             }
             _ => return Err(CheckpointError::Profile),
@@ -3412,6 +3496,19 @@ impl Engine {
             let author = r.participant(l)?;
             let at = LogicalTime(r.number()?);
             let body = r.text(l.max_message_body_bytes)?;
+            let addressed_to = if has_publication_addressing {
+                let count = r.count(l.max_addressed_participants_per_message)?;
+                let mut addressed = Vec::new();
+                addressed
+                    .try_reserve_exact(count)
+                    .map_err(|_| CheckpointError::Capacity)?;
+                for _ in 0..count {
+                    addressed.push(r.participant(l)?);
+                }
+                addressed
+            } else {
+                Vec::new()
+            };
             let revision = Revision(r.number()?);
             let event_sequence = EventSequence(r.number()?);
             let outcome = OutcomeV2::MessageAccepted {
@@ -3426,6 +3523,7 @@ impl Engine {
                     author,
                     at,
                     body,
+                    addressed_to,
                     transition: TransitionV2 {
                         revision,
                         event_sequence,
@@ -3506,8 +3604,13 @@ impl Engine {
             .publications
             .keys()
             .any(|key| matches!(key.identity, PublicationIdentityV2::Federated { .. }));
+        let actual_publication_addressing = e
+            .publications
+            .values()
+            .any(|record| !record.addressed_to.is_empty());
         if has_publication_domains != actual_publication_domains
             || has_scoped_federation != actual_scoped_federation
+            || has_publication_addressing != actual_publication_addressing
         {
             return Err(CheckpointError::NonCanonical);
         }
@@ -4807,7 +4910,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
             true,
         )?;
         if e.message(room_id, *sequence).is_some_and(|message| {
-            !message.addressed_to.is_empty() || message.reply_to_root.is_some()
+            message.addressed_to != p.addressed_to || message.reply_to_root.is_some()
         }) {
             return Err(CheckpointError::Invalid);
         }
@@ -4841,7 +4944,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                 || message.author != p.author
                 || message.at != p.at
                 || (!message.is_withdrawn() && message.body != p.body)
-                || !message.addressed_to.is_empty()
+                || message.addressed_to != p.addressed_to
             {
                 return Err(CheckpointError::Invalid);
             }
@@ -4878,7 +4981,7 @@ fn validate(e: &Engine) -> Result<(), CheckpointError> {
                 || message.author != p.author
                 || message.at != p.at
                 || (!message.is_withdrawn() && message.body != p.body)
-                || !message.addressed_to.is_empty()
+                || message.addressed_to != p.addressed_to
             {
                 return Err(CheckpointError::Invalid);
             }

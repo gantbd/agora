@@ -56,6 +56,16 @@ without exposing room or message content. Public-client transport or protocol
 failure fails closed as projection unavailability; it is never interpreted as
 evidence that an event was not visible.
 
+The same composition transport now carries a separate actor-publication
+profile for workflow responses. It binds a caller-stable operation identity to
+the exact optimistic revision, logical time, body, and canonical addressed
+recipient set while deriving the author from the authenticated session and the
+admission instant from the Host. Publish and retained observation require fresh
+Execute and Observe authority respectively. Exact accepted evidence survives
+client disconnect and daemon recovery; a changed offer conflicts. This profile
+does not reconnect an ordinary participant client identity or grant workflow,
+retry, scheduling, Vellum, or distributed-transaction authority to Agora.
+
 An opt-in standalone fuzz profile drives all public wire decoders and the three
 semantic checkpoint layers under pinned cargo-fuzz, nightly, libFuzzer, corpus,
 and campaign bounds. The stable offline gate verifies that contract and exact

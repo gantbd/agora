@@ -8,6 +8,7 @@ description = "Public local Unix client for Agora composition profiles"
 publish = false
 
 [dependencies]
+agora-actor-publication-port = { path = "../../ports/agora-actor-publication-port", version = "=0.1.0" }
 agora-client = { path = "../agora-client", version = "=0.1.0" }
 agora-delivery-projection-port = { path = "../../ports/agora-delivery-projection-port", version = "=0.1.0" }
 agora-protocol = { path = "../../protocol/agora-protocol", version = "=0.1.0" }

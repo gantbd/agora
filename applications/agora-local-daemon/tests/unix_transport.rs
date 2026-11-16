@@ -5,6 +5,10 @@ use aegis_protocol::{
     ActionV1, CommandV1, DecisionHandleV1, DecisionSummaryV1, EngineNamespaceV1, OutcomeV1,
     ReplyV1, SessionHandleV1,
 };
+use agora_actor_publication_port::{
+    ActorPublicationIdV1, ActorPublicationIntentV1, ActorPublicationObservationV1,
+    ActorPublicationRequestV1, ActorPublicationWireClientV1,
+};
 use agora_aegis_verifier::{
     AegisContextV1, AegisOperatorRestoreAuthorityV1, AegisOperatorRestoreContextV1, AegisVerifierV1,
 };
@@ -1613,7 +1617,9 @@ fn public_composition_client_publishes_observes_and_projects_through_durable_dae
         let first = daemon.serve_next();
         let second = daemon.serve_next();
         let third = daemon.serve_next();
-        (first, second, third, daemon)
+        let fourth = daemon.serve_next();
+        let fifth = daemon.serve_next();
+        (first, second, third, fourth, fifth, daemon)
     });
 
     let mut client =
@@ -1637,14 +1643,36 @@ fn public_composition_client_publishes_observes_and_projects_through_durable_dae
             class: WakeClassV1::ConversationActivity,
         }))
     );
+    let actor_request = ActorPublicationRequestV1 {
+        id: ActorPublicationIdV1::new([0x43; 16]).unwrap(),
+        intent: ActorPublicationIntentV1::new(
+            "scheduled-room",
+            3,
+            8,
+            "actor response",
+            vec!["alice".into()],
+        ),
+    };
+    let actor_accepted = client
+        .publish_actor_wire(actor_request.clone())
+        .unwrap()
+        .unwrap();
+    assert_eq!(actor_accepted.revision, 4);
+    assert_eq!(actor_accepted.message_sequence, 1);
+    assert_eq!(
+        client.observe_actor_wire(actor_request).unwrap(),
+        Ok(ActorPublicationObservationV1::Accepted(actor_accepted))
+    );
 
-    let (first, second, third, daemon) = server.join().unwrap();
+    let (first, second, third, fourth, fifth, daemon) = server.join().unwrap();
     first.unwrap();
     second.unwrap();
     third.unwrap();
+    fourth.unwrap();
+    fifth.unwrap();
     let observation = daemon.observation();
     assert_eq!(
-        observation.durability.committed, 9,
+        observation.durability.committed, 15,
         "all authenticated session lifecycles and publish/observe/project are durable"
     );
     let actions: Vec<ActionV1> = authority_calls
@@ -1667,6 +1695,12 @@ fn public_composition_client_publishes_observes_and_projects_through_durable_dae
             ActionV1::Observe,
             ActionV1::Submit,
             ActionV1::Submit,
+            ActionV1::Submit,
+            ActionV1::Submit,
+            ActionV1::Execute,
+            ActionV1::Submit,
+            ActionV1::Submit,
+            ActionV1::Observe,
         ]
     );
     let stopped = daemon.stop();

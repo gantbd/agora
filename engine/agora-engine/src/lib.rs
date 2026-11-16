@@ -2935,6 +2935,8 @@ pub enum PublicationDomainV2 {
     Scheduled = 1,
     Interaction = 2,
     Federation = 3,
+    /// Authenticated actor publication with caller-stable operation identity.
+    Actor = 4,
 }
 
 impl PublicationDomainV2 {
@@ -2944,6 +2946,7 @@ impl PublicationDomainV2 {
             1 => Some(Self::Scheduled),
             2 => Some(Self::Interaction),
             3 => Some(Self::Federation),
+            4 => Some(Self::Actor),
             _ => None,
         }
     }
@@ -3024,6 +3027,7 @@ pub struct PublicationCommandV2 {
     author: ParticipantId,
     at: LogicalTime,
     body: String,
+    addressed_to: Vec<ParticipantId>,
 }
 
 impl PublicationCommandV2 {
@@ -3042,6 +3046,29 @@ impl PublicationCommandV2 {
             author,
             at,
             body: body.into(),
+            addressed_to: Vec::new(),
+        }
+    }
+
+    /// Constructs one replay-safe addressed publication. Recipients remain
+    /// part of the exact retained offer and cannot be changed on replay.
+    pub fn new_addressed(
+        expected_revision: Revision,
+        key: PublicationKeyV2,
+        room_id: RoomId,
+        author: ParticipantId,
+        at: LogicalTime,
+        body: impl Into<String>,
+        addressed_to: Vec<ParticipantId>,
+    ) -> Self {
+        Self {
+            expected_revision,
+            key,
+            room_id,
+            author,
+            at,
+            body: body.into(),
+            addressed_to,
         }
     }
 }
@@ -3056,6 +3083,7 @@ impl fmt::Debug for PublicationCommandV2 {
             .field("author", &self.author)
             .field("at", &self.at)
             .field("body_bytes", &self.body.len())
+            .field("addressed_count", &self.addressed_to.len())
             .finish()
     }
 }
@@ -3332,6 +3360,7 @@ struct PublicationRecordV2 {
     author: ParticipantId,
     at: LogicalTime,
     body: String,
+    addressed_to: Vec<ParticipantId>,
     transition: TransitionV2,
 }
 
@@ -3343,6 +3372,7 @@ impl fmt::Debug for PublicationRecordV2 {
             .field("author", &self.author)
             .field("at", &self.at)
             .field("body_bytes", &self.body.len())
+            .field("addressed_count", &self.addressed_to.len())
             .field("transition", &self.transition)
             .finish()
     }
@@ -3356,6 +3386,7 @@ fn publication_offer_matches(
     existing.room_id == command.room_id
         && existing.author == command.author
         && existing.body == command.body
+        && existing.addressed_to == command.addressed_to
         && (existing.at == command.at
             || (exact_key && command.key.domain() == PublicationDomainV2::Federation))
 }
@@ -3563,6 +3594,14 @@ impl Engine {
             .checked_sub(room.messages.len() as u64)?;
         let index: usize = sequence.checked_sub(start)?.try_into().ok()?;
         room.messages.get(index).filter(|m| m.sequence == sequence)
+    }
+
+    /// Reconstructs the stable identity for an accepted room sequence even
+    /// after the corresponding message body has left retained history.
+    pub fn message_id_for_sequence(&self, id: &RoomId, sequence: u64) -> Option<MessageId> {
+        let room = self.rooms.get(id)?;
+        (sequence < room.next_message_sequence)
+            .then(|| MessageId::allocated(room.message_identity_incarnation, sequence))
     }
 
     /// Finds a retained message by stable identity without interpreting its
@@ -5448,14 +5487,25 @@ impl Engine {
             author: command.author.clone(),
             at: command.at,
             body: command.body.clone(),
+            addressed_to: command.addressed_to.clone(),
             transition: self.apply_revisioned_with_admission_time(
                 RevisionedCommandV2 {
                     expected_revision: command.expected_revision,
-                    command: CommandV2::Speak {
-                        room_id: command.room_id,
-                        author: command.author,
-                        at: command.at,
-                        body: command.body,
+                    command: if command.addressed_to.is_empty() {
+                        CommandV2::Speak {
+                            room_id: command.room_id,
+                            author: command.author,
+                            at: command.at,
+                            body: command.body,
+                        }
+                    } else {
+                        CommandV2::SpeakAddressed {
+                            room_id: command.room_id,
+                            author: command.author,
+                            at: command.at,
+                            body: command.body,
+                            addressed_to: command.addressed_to,
+                        }
                     },
                 },
                 admission_time,

@@ -162,6 +162,36 @@ fn scoped_federation_receipts_select_profile_150_and_recover_exactly() {
     );
 }
 
+#[test]
+fn addressed_publication_receipts_select_profile_152_and_recover_exactly() {
+    let mut engine = configured();
+    let publication = PublicationCommandV2::new_addressed(
+        engine.revision(),
+        PublicationKeyV2::namespaced(PublicationDomainV2::Scheduled, [0x71; 16]),
+        "room".into(),
+        "agent".into(),
+        LogicalTime(13),
+        "addressed",
+        vec!["human".into()],
+    );
+    let first = engine.publish(publication.clone()).unwrap();
+    let checkpoint = engine.prepare_checkpoint(65_536).unwrap();
+    assert_eq!(checkpoint.bytes()[8], 152);
+    let mut recovered = recover(checkpoint.bytes());
+    assert_eq!(recovered.publish(publication).unwrap(), first);
+    assert_eq!(
+        recovered.prepare_checkpoint(65_536).unwrap().bytes(),
+        checkpoint.bytes()
+    );
+    assert_eq!(
+        recovered
+            .message(&RoomId::from("room"), 0)
+            .unwrap()
+            .addressed_to(),
+        [ParticipantId::from("human")]
+    );
+}
+
 fn decode_hex(text: &str) -> Vec<u8> {
     text.trim()
         .as_bytes()
@@ -208,7 +238,7 @@ fn namespaced_publication_checkpoint_refuses_unknown_domain_and_metadata_tags() 
         .position(|window| window == marker)
         .unwrap();
     let mut invalid_domain = checkpoint.bytes().to_vec();
-    invalid_domain[position] = 4;
+    invalid_domain[position] = 5;
     assert_eq!(
         Engine::recover_checkpoint(
             &invalid_domain,

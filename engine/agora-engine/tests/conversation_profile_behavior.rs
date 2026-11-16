@@ -302,7 +302,7 @@ fn peer_profile_and_original_cohort_recover_canonically() {
     );
 
     let mut malformed = checkpoint.bytes().to_vec();
-    malformed[8] = 152;
+    malformed[8] = 153;
     assert!(matches!(
         Engine::recover_checkpoint(
             &malformed,

@@ -16,6 +16,7 @@ agora-wire = { path = "../../protocol/agora-wire", version = "=0.1.0" }
 keystone-storage = { path = "../../../keystone/crates/keystone-storage", version = "=0.0.1" }
 
 [dev-dependencies]
+agora-actor-publication-port = { path = "../../ports/agora-actor-publication-port", version = "=0.1.0" }
 aegis-client = { path = "../../../aegis/crates/aegis-client", version = "=0.1.0" }
 aegis-protocol = { path = "../../../aegis/crates/aegis-protocol", version = "=0.1.0" }
 agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }

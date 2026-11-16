@@ -18,10 +18,10 @@ entries and requires every path to occupy its declared category directory.
 | --- | --- | --- |
 | Engine | `agora-engine` | Pure authoritative conversation state and transitions |
 | Protocol | `agora-protocol`, `agora-wire` | Closed values and canonical bounded frames |
-| Client | `agora-client`, `agora-local-client` | Transport-neutral request identity and uncertainty; concrete hardened private-local standalone and routed-composition clients for conversation and scheduled-publication profiles |
+| Client | `agora-client`, `agora-local-client` | Transport-neutral request identity and uncertainty; concrete hardened private-local standalone and routed-composition clients for conversation, scheduled-publication, delivery-projection, and actor-publication profiles |
 | Service | `agora-service`, `agora-export-service`, `agora-export-durable`, `agora-durable` | Conversation serialization, independent export custody, replay, persistence gating and recovery |
 | Host | `agora-host` | Verified principal/context binding and external ports |
-| Port | `agora-delivery-projection-port`, `agora-export-custody-port`, `agora-federated-publication-port`, `agora-interaction-port`, `agora-retention-authority-port`, `agora-scheduled-publication-port`, `agora-search-port`, `agora-storage-observation` | Effect-free outbound and trusted integration contracts |
+| Port | `agora-actor-publication-port`, `agora-delivery-projection-port`, `agora-export-custody-port`, `agora-federated-publication-port`, `agora-interaction-port`, `agora-retention-authority-port`, `agora-scheduled-publication-port`, `agora-search-port`, `agora-storage-observation` | Effect-free outbound and trusted integration contracts |
 | Adapter | `agora-aegis-verifier`, `agora-search-memory`, `agora-sha256`, `agora-storage-directory` | Concrete or reference interpretations of ports and named pure provider profiles |
 | Transport | `agora-local-transport` | Authority-free Unix endpoint, stream, framing, lifetime, and entropy mechanics |
 | Application | `agora-export-local`, `agora-local-daemon`, `agora-private-local` | Separate private-local export composition; daemon transport/Host composition; standalone deployment policy for bounded initial state, exact public-Aegis grant provisioning, durable create/open/residue recovery, and explicit drain receipts |

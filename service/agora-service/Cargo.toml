@@ -8,6 +8,7 @@ description = "Bounded serialized in-process service for Agora"
 publish = false
 
 [dependencies]
+agora-actor-publication-port = { path = "../../ports/agora-actor-publication-port", version = "=0.1.0" }
 agora-engine = { path = "../../engine/agora-engine", version = "=0.3.0" }
 agora-delivery-projection-port = { path = "../../ports/agora-delivery-projection-port", version = "=0.1.0" }
 agora-federated-publication-port = { path = "../../ports/agora-federated-publication-port", version = "=0.1.0" }

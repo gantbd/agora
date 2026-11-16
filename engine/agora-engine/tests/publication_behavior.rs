@@ -219,3 +219,35 @@ fn publication_debug_surfaces_redact_message_content_and_keys() {
     assert!(!debug.contains("136"));
     assert!(debug.contains("body_bytes"));
 }
+
+#[test]
+fn addressed_publication_replay_binds_canonical_recipients() {
+    let mut engine = setup(Limits::default());
+    let command = PublicationCommandV2::new_addressed(
+        engine.revision(),
+        PublicationKeyV2::namespaced(PublicationDomainV2::Scheduled, [0x91; 16]),
+        RoomId::from("room"),
+        ParticipantId::from("agent"),
+        LogicalTime(21),
+        "private answer",
+        vec![ParticipantId::from("human")],
+    );
+    let first = engine.publish(command.clone()).unwrap();
+    assert_eq!(engine.publish(command).unwrap(), first);
+    let message = engine.message(&RoomId::from("room"), 0).unwrap();
+    assert_eq!(message.addressed_to(), [ParticipantId::from("human")]);
+
+    let changed = PublicationCommandV2::new_addressed(
+        engine.revision(),
+        PublicationKeyV2::namespaced(PublicationDomainV2::Scheduled, [0x91; 16]),
+        RoomId::from("room"),
+        ParticipantId::from("agent"),
+        LogicalTime(21),
+        "private answer",
+        Vec::new(),
+    );
+    assert_eq!(
+        engine.publish(changed),
+        Err(PublicationRefusalV2::IdempotencyConflict)
+    );
+}

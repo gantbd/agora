@@ -7,6 +7,11 @@ mod conversation;
 
 pub use conversation::{ConnectError, LocalAccessError, LocalClientLimits, LocalServicePort};
 
+use agora_actor_publication_port::{
+    ActorPublicationAcceptedV1, ActorPublicationObservationRefusalV1,
+    ActorPublicationObservationV1, ActorPublicationRefusalV1, ActorPublicationRequestV1,
+    ActorPublicationWireClientV1,
+};
 use agora_client::scheduled::{ScheduledPublicationWireClientV1, ScheduledTransportErrorV1};
 use agora_delivery_projection_port::{
     DeliveryProjectionPortV1, DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
@@ -143,9 +148,10 @@ impl ScheduledPublicationWireClientV1 for ScheduledLocalClientV1 {
     {
         match self.call(ScheduledWireRequestV1::Publish(request))? {
             ScheduledWireReplyV1::Published(result) => Ok(result),
-            ScheduledWireReplyV1::Observed(_) | ScheduledWireReplyV1::DeliveryProjected(_) => {
-                Err(LocalCallErrorV1::InvalidResponse)
-            }
+            ScheduledWireReplyV1::Observed(_)
+            | ScheduledWireReplyV1::DeliveryProjected(_)
+            | ScheduledWireReplyV1::ActorPublished(_)
+            | ScheduledWireReplyV1::ActorObserved(_) => Err(LocalCallErrorV1::InvalidResponse),
         }
     }
 
@@ -158,9 +164,10 @@ impl ScheduledPublicationWireClientV1 for ScheduledLocalClientV1 {
     > {
         match self.call(ScheduledWireRequestV1::Observe(request))? {
             ScheduledWireReplyV1::Observed(result) => Ok(result),
-            ScheduledWireReplyV1::Published(_) | ScheduledWireReplyV1::DeliveryProjected(_) => {
-                Err(LocalCallErrorV1::InvalidResponse)
-            }
+            ScheduledWireReplyV1::Published(_)
+            | ScheduledWireReplyV1::DeliveryProjected(_)
+            | ScheduledWireReplyV1::ActorPublished(_)
+            | ScheduledWireReplyV1::ActorObserved(_) => Err(LocalCallErrorV1::InvalidResponse),
         }
     }
 }
@@ -172,9 +179,40 @@ impl DeliveryProjectionPortV1 for ScheduledLocalClientV1 {
     ) -> Result<DeliveryProjectionV1, DeliveryProjectionRefusalV1> {
         match self.call(ScheduledWireRequestV1::ProjectDelivery(source)) {
             Ok(ScheduledWireReplyV1::DeliveryProjected(result)) => result,
-            Ok(ScheduledWireReplyV1::Published(_) | ScheduledWireReplyV1::Observed(_)) | Err(_) => {
-                Err(DeliveryProjectionRefusalV1::Unavailable)
-            }
+            Ok(
+                ScheduledWireReplyV1::Published(_)
+                | ScheduledWireReplyV1::Observed(_)
+                | ScheduledWireReplyV1::ActorPublished(_)
+                | ScheduledWireReplyV1::ActorObserved(_),
+            )
+            | Err(_) => Err(DeliveryProjectionRefusalV1::Unavailable),
+        }
+    }
+}
+
+impl ActorPublicationWireClientV1 for ScheduledLocalClientV1 {
+    type Error = LocalCallErrorV1;
+
+    fn publish_actor_wire(
+        &mut self,
+        request: ActorPublicationRequestV1,
+    ) -> Result<Result<ActorPublicationAcceptedV1, ActorPublicationRefusalV1>, Self::Error> {
+        match self.call(ScheduledWireRequestV1::PublishActor(request))? {
+            ScheduledWireReplyV1::ActorPublished(result) => Ok(result),
+            _ => Err(LocalCallErrorV1::InvalidResponse),
+        }
+    }
+
+    fn observe_actor_wire(
+        &mut self,
+        request: ActorPublicationRequestV1,
+    ) -> Result<
+        Result<ActorPublicationObservationV1, ActorPublicationObservationRefusalV1>,
+        Self::Error,
+    > {
+        match self.call(ScheduledWireRequestV1::ObserveActor(request))? {
+            ScheduledWireReplyV1::ActorObserved(result) => Ok(result),
+            _ => Err(LocalCallErrorV1::InvalidResponse),
         }
     }
 }

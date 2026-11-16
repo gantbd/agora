@@ -8,6 +8,7 @@ description = "Canonical bounded wire encoding for Agora protocol V1"
 publish = false
 
 [dependencies]
+agora-actor-publication-port = { path = "../../ports/agora-actor-publication-port", version = "=0.1.0" }
 agora-delivery-projection-port = { path = "../../ports/agora-delivery-projection-port", version = "=0.1.0" }
 agora-protocol = { path = "../agora-protocol", version = "=0.1.0" }
 agora-scheduled-publication-port = { path = "../../ports/agora-scheduled-publication-port", version = "=0.1.0" }
