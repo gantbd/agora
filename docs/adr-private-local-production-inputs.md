@@ -1,6 +1,6 @@
 # ADR: Private-local production identity and time inputs
 
-Status: accepted; single-principal inputs and bounded bootstrap implemented, durable process factory open
+Status: accepted; authority/bootstrap inputs implemented, durable process factory open
 
 Date: 2026-11-16
 
@@ -62,15 +62,20 @@ The same application now connects through the extracted public
 `aegis-local-client`, refuses a participant different from the bootstrap
 principal before socket I/O, and invokes a deployment-owned
 `SessionGrantSelectorV1` only after Aegis selects the live service session. The
-selector provisions or chooses the grant on that exact connection; the caller
-still explicitly supplies the resource and opaque verified subject. Agora owns
-neither grant issuance policy nor credential mapping, and the dependency gate
-rejects Aegis engine, Host, service, daemon, or credential-owner imports.
+selector provisions or chooses the grant on that exact connection and receives
+the same resource later bound to the verifier. `IssueAgoraGrantV1` is the first
+concrete deployment profile: it requires an administrator-mapped Aegis
+connection, explicit current epoch and bounded lifetime, and issues exactly one
+nondelegated scope. The conversation profile grants only `Submit`; scheduled
+composition adds only `Execute` and `Observe`. Expired input refuses before
+authority I/O, and every returned grant field is checked before publication.
+The caller still explicitly supplies the resource and opaque verified subject;
+credential mapping, epoch discovery, and clock/lifetime policy remain deployment
+inputs. The dependency gate rejects Aegis engine, Host, service, daemon, or
+credential-owner imports.
 
 ## Remaining work
 
-- supply and qualify the deployment's concrete same-session grant provisioning
-  policy through `SessionGrantSelectorV1`;
 - select create/open durable-store and endpoint-residue recovery behavior;
 - add signal/drain and process receipts in an Agora-owned standalone shell;
 - qualify that exact shell standalone and under Workbench lifecycle.

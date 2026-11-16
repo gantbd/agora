@@ -105,6 +105,7 @@ fn authority_participant_mismatch_refuses_before_socket_io() {
             &mut self,
             _session: SessionHandleV1,
             _port: &mut UnixPort,
+            _resource: [u8; 16],
         ) -> Result<GrantHandleV1, Self::Error> {
             panic!("selector must not run before principal validation")
         }

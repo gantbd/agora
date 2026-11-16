@@ -169,7 +169,8 @@ if [[ $(printf '%s\n' "$local_daemon_tree" | wc -l | tr -d ' ') != 7 ]] \
 fi
 
 private_local_tree=$(cargo tree -p agora-private-local --edges normal --depth 1 --locked --offline)
-if [[ $(printf '%s\n' "$private_local_tree" | wc -l | tr -d ' ') != 6 ]] \
+if [[ $(printf '%s\n' "$private_local_tree" | wc -l | tr -d ' ') != 7 ]] \
+  || ! printf '%s\n' "$private_local_tree" | rg -q 'aegis-client' \
   || ! printf '%s\n' "$private_local_tree" | rg -q 'aegis-local-client' \
   || ! printf '%s\n' "$private_local_tree" | rg -q 'aegis-protocol' \
   || ! printf '%s\n' "$private_local_tree" | rg -q 'agora-aegis-verifier' \

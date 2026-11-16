@@ -176,8 +176,11 @@ claim. The complete create/open durable process factory is still governed by
 
 Create-time participant and room policy is not part of this daemon. The
 separate `agora-private-local` application root now builds a bounded fresh
-engine before endpoint publication; later factory slices compose that result
-with this daemon without moving bootstrap policy into the transport boundary.
+engine before endpoint publication and can issue one exact session-local Aegis
+grant for either conversation or scheduled composition. Deployment still owns
+the administrator credential mapping, authority epoch, grant lifetime, opaque
+subject, and resource. Later factory slices compose those results with this
+daemon without moving bootstrap or grant policy into the transport boundary.
 
 The handshake selects one exact protocol profile; it is not version-range or
 feature negotiation. Its configured incarnation is not authenticated; the

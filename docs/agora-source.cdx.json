@@ -917,6 +917,7 @@
     {
       "ref": "pkg:cargo/agora-private-local@0.1.0",
       "dependsOn": [
+        "pkg:cargo/aegis-client@0.1.0",
         "pkg:cargo/aegis-local-client@0.1.0",
         "pkg:cargo/aegis-protocol@0.1.0",
         "pkg:cargo/agora-aegis-verifier@0.1.0",

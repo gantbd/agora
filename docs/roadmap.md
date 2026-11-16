@@ -57,9 +57,10 @@ requalification remains part of the current release-readiness work.
    The single-principal private-endpoint authenticator and non-regressing system
    clock and bounded fresh-engine bootstrap are now Agora-owned production
    inputs. Public Aegis Unix connection and same-session grant/resource selection
-   are typed; a concrete deployment grant provisioner, durable create/open
-   recovery, and the standalone process shell remain before the production
-   owner factory closes.
+   are typed, and the concrete provisioner now issues exact conversation or
+   scheduled-composition scopes on that session. Durable create/open recovery
+   and the standalone process shell remain before the production owner factory
+   closes.
 
 Agent harness selection, prompting, retries, and execution remain out of scope.
 

@@ -212,8 +212,8 @@ The repository also contains an initial layered operational profile:
   real inter-step and intra-rotation process cuts with exact retry;
 - `agora-private-local` owns standalone deployment policy, beginning with an
   adopted bounded participant/room bootstrap and public-Aegis connection with
-  deployment-owned same-session grant selection before durability or endpoint
-  publication;
+  exact same-session grant provisioning for conversation or scheduled
+  composition before durability or endpoint publication;
 - `agora-client` owns a monotone request namespace over an abstract service port.
 
 These crates add no credential authentication, network transport, durable
