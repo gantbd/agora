@@ -603,7 +603,11 @@ where
             }
             return Ok(daemon.stop());
         }
-        match daemon.serve_next() {
+        let served = daemon.serve_next();
+        if stop.load(Ordering::Acquire) {
+            continue;
+        }
+        match served {
             Ok(())
             | Err(
                 DaemonErrorV1::Authentication
