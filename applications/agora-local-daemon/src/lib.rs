@@ -52,7 +52,7 @@ use keystone_storage::CheckpointStore;
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub trait AuthenticatorV1 {
     type Error;
@@ -61,6 +61,93 @@ pub trait AuthenticatorV1 {
 
 pub trait HostClockV1 {
     fn now(&mut self) -> HostTimeV1;
+}
+
+/// Single-principal authentication for the qualified private-parent endpoint.
+///
+/// The endpoint's mode-0700 parent, mode-0600 socket, pinned ownership, and
+/// trusted same-UID process boundary are the credential mechanism. Every
+/// accepted connection is therefore bound to the same deployment-selected
+/// participant, verified subject, Aegis session, and grant. This profile does
+/// not inspect account names or claim multi-user peer authentication.
+#[derive(Clone, Eq, PartialEq)]
+pub struct PrivateEndpointAuthenticatorV1 {
+    context: AegisContextV1,
+}
+
+impl PrivateEndpointAuthenticatorV1 {
+    pub const fn new(context: AegisContextV1) -> Self {
+        Self { context }
+    }
+}
+
+impl std::fmt::Debug for PrivateEndpointAuthenticatorV1 {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PrivateEndpointAuthenticatorV1")
+            .field("context", &"<redacted>")
+            .finish()
+    }
+}
+
+impl AuthenticatorV1 for PrivateEndpointAuthenticatorV1 {
+    type Error = std::convert::Infallible;
+
+    fn authenticate(&mut self, _stream: &UnixStream) -> Result<AegisContextV1, Self::Error> {
+        Ok(self.context.clone())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SystemHostClockStartErrorV1 {
+    BeforeUnixEpoch,
+}
+
+/// Milliseconds since the Unix epoch, clamped to a non-regressing process-local
+/// sequence. Wall-clock rollback never grants older admission or Aegis time;
+/// failure to read a later wall-clock value retains the last trusted value.
+pub struct SystemHostClockV1 {
+    last: u64,
+}
+
+impl SystemHostClockV1 {
+    pub fn try_new() -> Result<Self, SystemHostClockStartErrorV1> {
+        let last = system_unix_epoch_millis()?;
+        Ok(Self { last })
+    }
+
+    pub const fn last(&self) -> HostTimeV1 {
+        HostTimeV1(self.last)
+    }
+}
+
+impl std::fmt::Debug for SystemHostClockV1 {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SystemHostClockV1")
+            .field("last", &self.last)
+            .finish()
+    }
+}
+
+impl HostClockV1 for SystemHostClockV1 {
+    fn now(&mut self) -> HostTimeV1 {
+        if let Ok(candidate) = system_unix_epoch_millis() {
+            self.last = non_regressing(self.last, candidate);
+        }
+        HostTimeV1(self.last)
+    }
+}
+
+fn system_unix_epoch_millis() -> Result<u64, SystemHostClockStartErrorV1> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| SystemHostClockStartErrorV1::BeforeUnixEpoch)?;
+    Ok(u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
+}
+
+const fn non_regressing(last: u64, candidate: u64) -> u64 {
+    if candidate < last { last } else { candidate }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

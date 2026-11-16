@@ -1,0 +1,65 @@
+# ADR: Private-local production identity and time inputs
+
+Status: accepted; single-principal inputs implemented, durable process factory open
+
+Date: 2026-11-16
+
+## Context
+
+Agora's local daemon already owns a hardened mode-0600 Unix socket beneath a
+mode-0700 parent, pins the endpoint and lifetime record, and explicitly trusts
+the private parent plus same-UID processes. Its Host still requires an
+`AegisContextV1` for every connection and non-regressing trusted time for every
+authorization and admission. Qualification previously supplied test-only
+implementations, leaving the smallest production deployment underspecified.
+
+Workbench must not invent participant identity, verified subjects, Aegis
+sessions or grants, clock semantics, initial conversation state, or durable
+recovery policy. Those are Agora/deployment inputs even when Workbench owns the
+process lifecycle.
+
+## Decision
+
+The first production profile is deliberately single-principal and private
+local. `PrivateEndpointAuthenticatorV1` binds every connection admitted through
+the already qualified private endpoint to one deployment-selected
+`AegisContextV1`. The context contains the exact participant, opaque verified
+subject, public Aegis service session, and session-local grant. The
+authenticator issues none of those values and performs no policy lookup.
+
+The endpoint protection is the credential mechanism for this profile. The
+authenticator does not claim kernel account discovery, multiple mutually
+untrusted same-UID clients, user switching, external identity, remote peers, or
+credential renewal. A multi-user profile requires a separately qualified peer
+credential adapter and does not weaken or reinterpret this one.
+
+`SystemHostClockV1` starts from Unix-epoch milliseconds and clamps later reads
+to a non-regressing process-local sequence. Startup before the Unix epoch
+refuses. Later wall-clock rollback or read failure retains the last value. The
+clock supplies authorization/admission time only; it does not schedule work,
+establish timestamp accuracy, or provide a durable cross-restart monotonicity
+claim.
+
+## Composition law
+
+An Agora-owned or deployment-owned process factory may combine these inputs
+with the public Aegis Unix client, an explicitly selected grant/resource,
+`DurableHostV2`, the directory checkpoint store, and one local daemon profile.
+Workbench may start and stop that factory and retain its public client, but may
+not construct the context, grant, initial engine state, or recovery choice.
+
+The same factory and public client must remain usable without Workbench. A
+single endpoint selects one exact handshake profile; ordinary participant and
+trusted scheduled-composition profiles are not silently multiplexed.
+
+## Remaining work
+
+- define bounded create-time participant/room bootstrap or an independently
+  authorized administrative bootstrap path;
+- connect the public Aegis Unix client and bind its returned session to one
+  explicitly selected Agora grant/resource;
+- select create/open durable-store and endpoint-residue recovery behavior;
+- add signal/drain and process receipts in an Agora-owned standalone shell;
+- qualify that exact shell standalone and under Workbench lifecycle.
+
+These items are required before claiming a production durable owner factory.

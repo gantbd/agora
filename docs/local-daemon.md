@@ -164,6 +164,16 @@ session, grant, participant, and opaque host subject; this crate does not define
 that credential mechanism. The clock is trusted and the Aegis service port must
 provide its own availability and context provenance.
 
+The implemented private-local production inputs select the narrowest honest
+interpretation of that trust boundary. `PrivateEndpointAuthenticatorV1` binds
+every connection admitted by the hardened endpoint to one deployment-supplied
+`AegisContextV1`; it issues no identity, session, or grant and does not claim
+multi-user authentication. `SystemHostClockV1` supplies Unix-epoch milliseconds
+and clamps rollback to a non-regressing process-local sequence. Its initial
+wall-clock read remains trusted, and it makes no durable cross-restart clock
+claim. The complete create/open durable process factory is still governed by
+`adr-private-local-production-inputs.md` and remains open.
+
 The handshake selects one exact protocol profile; it is not version-range or
 feature negotiation. Its configured incarnation is not authenticated; the
 lifetime record binds that value to one exclusive live endpoint but does not
