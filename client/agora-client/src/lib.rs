@@ -2,6 +2,7 @@
 
 use agora_protocol::{ClientIdV1, CommandV1, ReplyV1, RequestIdV1, RequestV1};
 
+pub mod message_command;
 pub mod room_command;
 pub mod scheduled;
 pub mod search;
