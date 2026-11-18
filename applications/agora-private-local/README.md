@@ -24,9 +24,26 @@ grant_profile=conversation|scheduled
 host_scope=32-lowercase-hex-digits
 ```
 
-`create` additionally requires `server_incarnation`, `display_name`,
+Schema 1 `create` additionally requires `server_incarnation`, `display_name`,
 `participant_kind=human|agent`, `room_id`, `room_name`, and
-`admission=open|invite-only`. `open` requires only `server_incarnation`.
+`admission=open|invite-only`. Schema 2 replaces the single display/kind pair
+with an exact bounded cohort:
+
+```text
+participant_count=2
+participant_0_id=alice
+participant_0_display_name=Alice
+participant_0_kind=human
+participant_1_id=local-agent
+participant_1_display_name=Local Agent
+participant_1_kind=agent
+```
+
+The count is canonical decimal in `1..=16`, indices are contiguous from zero,
+IDs are unique, and the authenticated `participant` must occur in the cohort.
+The complete cohort is validated and applied before the owner is published; it
+is not a runtime participant-registration authority. `open` requires only
+`server_incarnation`.
 `recover` instead requires `previous_incarnation` and `next_incarnation`.
 Every incarnation is exactly 32 lowercase hexadecimal digits. Unknown,
 duplicate, missing, over-ceiling, non-UTF-8, and noncanonical fields refuse.
@@ -38,6 +55,6 @@ use, `scripts/run-with-signals.sh CONFIG` maps SIGINT and SIGTERM to the same
 stdin request without adding a second lifecycle implementation. Set
 `AGORA_PRIVATE_LOCAL_DAEMON` only to select the built binary path.
 
-Create is deliberately the first single-principal, one-room production
-profile. Richer bootstrap policy belongs in a separately versioned application
-profile rather than implicit CLI behavior.
+Schema 1 remains the single-principal, one-room production profile. Schema 2 is
+the explicit bounded-cohort bootstrap profile; neither profile grants runtime
+participant lifecycle authority.
