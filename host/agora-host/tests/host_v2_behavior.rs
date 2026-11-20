@@ -1,3 +1,8 @@
+use agora_actor_publication_port::{
+    ActorPublicationIdV1, ActorPublicationIntentV1, ActorPublicationObservationRefusalV1,
+    ActorPublicationProvenanceObservationV1, ActorPublicationProvenanceV1,
+    ActorPublicationRequestV1,
+};
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
 };
@@ -411,6 +416,55 @@ fn scheduled_publication_binds_revalidated_session_actor_and_current_host_time()
     );
     assert_eq!(host.service().active_client_count(), 0);
     assert_eq!(calls.get(), 8);
+}
+
+#[test]
+fn actor_publication_provenance_is_host_derived_and_actor_scoped() {
+    let mut engine = engine();
+    engine
+        .apply(EngineCommand::CreateRoom {
+            room_id: "room".into(),
+            name: "Room".to_owned(),
+            owner: "alice".into(),
+            admission: AdmissionPolicy::Open,
+        })
+        .unwrap();
+    engine
+        .apply(EngineCommand::Join {
+            room_id: "room".into(),
+            participant: "bot".into(),
+        })
+        .unwrap();
+    let mut host = HostV2::new(
+        ServiceV2::new(engine, ServiceLimitsV2::default()),
+        Verifier {
+            calls: Rc::new(Cell::new(0)),
+        },
+        limits(4),
+    );
+    let (bot_session, _, bot_context) = open(&mut host, "bot", 2);
+    let request = ActorPublicationRequestV1 {
+        id: ActorPublicationIdV1::new([14; 16]).unwrap(),
+        intent: ActorPublicationIntentV1::new("room", 4, 9, "result", vec!["alice".into()]),
+    };
+    let accepted = host
+        .publish_actor(bot_session, request.clone(), &bot_context, HostTimeV1(2))
+        .unwrap();
+    assert_eq!(
+        host.observe_actor_provenance(bot_session, request.clone(), &bot_context, HostTimeV1(3),),
+        Ok(ActorPublicationProvenanceObservationV1::Accepted(
+            ActorPublicationProvenanceV1 {
+                accepted,
+                actor: "bot".into(),
+            }
+        ))
+    );
+
+    let (alice_session, _, alice_context) = open(&mut host, "alice", 1);
+    assert_eq!(
+        host.observe_actor_provenance(alice_session, request, &alice_context, HostTimeV1(3),),
+        Err(ActorPublicationObservationRefusalV1::Conflict)
+    );
 }
 
 #[test]

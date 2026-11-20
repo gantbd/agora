@@ -46,6 +46,7 @@ fn scheduled_requests_are_closed_bounded_and_content_safe() {
         ScheduledWireRequestV1::ProjectDelivery(DeliverySourceV1 { event_sequence: 41 }),
         ScheduledWireRequestV1::PublishActor(actor_request()),
         ScheduledWireRequestV1::ObserveActor(actor_request()),
+        ScheduledWireRequestV1::ObserveActorProvenance(actor_request()),
     ] {
         let bytes = encode_scheduled_request_v1(&request, limits()).unwrap();
         assert_eq!(decode_scheduled_request_v1(&bytes, limits()), Ok(request));
@@ -109,6 +110,22 @@ fn scheduled_replies_round_trip_every_semantic_class() {
         ))),
         ScheduledWireReplyV1::ActorObserved(Ok(ActorPublicationObservationV1::Absent)),
         ScheduledWireReplyV1::ActorObserved(Err(ActorPublicationObservationRefusalV1::Conflict)),
+        ScheduledWireReplyV1::ActorProvenanceObserved(Ok(
+            ActorPublicationProvenanceObservationV1::Accepted(ActorPublicationProvenanceV1 {
+                accepted: ActorPublicationAcceptedV1 {
+                    revision: 12,
+                    message_id: [9; 16],
+                    message_sequence: 4,
+                },
+                actor: "agent".into(),
+            }),
+        )),
+        ScheduledWireReplyV1::ActorProvenanceObserved(Ok(
+            ActorPublicationProvenanceObservationV1::Absent,
+        )),
+        ScheduledWireReplyV1::ActorProvenanceObserved(Err(
+            ActorPublicationObservationRefusalV1::Conflict,
+        )),
     ];
     for reply in replies {
         let bytes = encode_scheduled_reply_v1(&reply, limits()).unwrap();
@@ -117,8 +134,9 @@ fn scheduled_replies_round_trip_every_semantic_class() {
 }
 use agora_actor_publication_port::{
     ActorPublicationAcceptedV1, ActorPublicationIdV1, ActorPublicationIntentV1,
-    ActorPublicationObservationRefusalV1, ActorPublicationObservationV1, ActorPublicationRefusalV1,
-    ActorPublicationRequestV1,
+    ActorPublicationObservationRefusalV1, ActorPublicationObservationV1,
+    ActorPublicationProvenanceObservationV1, ActorPublicationProvenanceV1,
+    ActorPublicationRefusalV1, ActorPublicationRequestV1,
 };
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1, WakeClassV1,

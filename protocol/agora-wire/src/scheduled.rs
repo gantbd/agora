@@ -9,8 +9,9 @@ use super::{
 };
 use agora_actor_publication_port::{
     ActorPublicationAcceptedV1, ActorPublicationIdV1, ActorPublicationIntentV1,
-    ActorPublicationObservationRefusalV1, ActorPublicationObservationV1, ActorPublicationRefusalV1,
-    ActorPublicationRequestV1,
+    ActorPublicationObservationRefusalV1, ActorPublicationObservationV1,
+    ActorPublicationProvenanceObservationV1, ActorPublicationProvenanceV1,
+    ActorPublicationRefusalV1, ActorPublicationRequestV1,
 };
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1, WakeClassV1,
@@ -28,11 +29,13 @@ const OBSERVE: u8 = 2;
 const PROJECT_DELIVERY: u8 = 3;
 const PUBLISH_ACTOR: u8 = 4;
 const OBSERVE_ACTOR: u8 = 5;
+const OBSERVE_ACTOR_PROVENANCE: u8 = 6;
 const PUBLISHED: u8 = 0x81;
 const OBSERVED: u8 = 0x82;
 const DELIVERY_PROJECTED: u8 = 0x83;
 const ACTOR_PUBLISHED: u8 = 0x84;
 const ACTOR_OBSERVED: u8 = 0x85;
+const ACTOR_PROVENANCE_OBSERVED: u8 = 0x86;
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum ScheduledWireRequestV1 {
@@ -41,6 +44,7 @@ pub enum ScheduledWireRequestV1 {
     ProjectDelivery(DeliverySourceV1),
     PublishActor(ActorPublicationRequestV1),
     ObserveActor(ActorPublicationRequestV1),
+    ObserveActorProvenance(ActorPublicationRequestV1),
 }
 
 impl std::fmt::Debug for ScheduledWireRequestV1 {
@@ -60,6 +64,10 @@ impl std::fmt::Debug for ScheduledWireRequestV1 {
                 .debug_tuple("ObserveActor")
                 .field(request)
                 .finish(),
+            Self::ObserveActorProvenance(request) => formatter
+                .debug_tuple("ObserveActorProvenance")
+                .field(request)
+                .finish(),
         }
     }
 }
@@ -71,6 +79,9 @@ pub enum ScheduledWireReplyV1 {
     DeliveryProjected(Result<DeliveryProjectionV1, DeliveryProjectionRefusalV1>),
     ActorPublished(Result<ActorPublicationAcceptedV1, ActorPublicationRefusalV1>),
     ActorObserved(Result<ActorPublicationObservationV1, ActorPublicationObservationRefusalV1>),
+    ActorProvenanceObserved(
+        Result<ActorPublicationProvenanceObservationV1, ActorPublicationObservationRefusalV1>,
+    ),
 }
 
 pub fn encode_scheduled_request_v1(
@@ -100,6 +111,10 @@ pub fn encode_scheduled_request_v1(
                 sink.u8(OBSERVE_ACTOR)?;
                 encode_actor_request(sink, request)
             }
+            ScheduledWireRequestV1::ObserveActorProvenance(request) => {
+                sink.u8(OBSERVE_ACTOR_PROVENANCE)?;
+                encode_actor_request(sink, request)
+            }
         }
     })
 }
@@ -122,6 +137,9 @@ pub fn decode_scheduled_request_v1(
         OBSERVE_ACTOR => {
             ScheduledWireRequestV1::ObserveActor(decode_actor_request(&mut decoder, limits)?)
         }
+        OBSERVE_ACTOR_PROVENANCE => ScheduledWireRequestV1::ObserveActorProvenance(
+            decode_actor_request(&mut decoder, limits)?,
+        ),
         _ => return Err(WireDecodeError::UnknownTag),
     };
     finish_decode(&decoder)?;
@@ -155,6 +173,10 @@ pub fn encode_scheduled_reply_v1(
                 sink.u8(ACTOR_OBSERVED)?;
                 encode_actor_observation_result(sink, *result)
             }
+            ScheduledWireReplyV1::ActorProvenanceObserved(result) => {
+                sink.u8(ACTOR_PROVENANCE_OBSERVED)?;
+                encode_actor_provenance_observation_result(sink, result)
+            }
         }
     })
 }
@@ -177,6 +199,9 @@ pub fn decode_scheduled_reply_v1(
         ACTOR_OBSERVED => {
             ScheduledWireReplyV1::ActorObserved(decode_actor_observation_result(&mut decoder)?)
         }
+        ACTOR_PROVENANCE_OBSERVED => ScheduledWireReplyV1::ActorProvenanceObserved(
+            decode_actor_provenance_observation_result(&mut decoder)?,
+        ),
         _ => return Err(WireDecodeError::UnknownTag),
     };
     finish_decode(&decoder)?;
@@ -508,6 +533,46 @@ fn decode_actor_observation_result(
             decode_actor_accepted(decoder)?,
         )),
         2 => Ok(ActorPublicationObservationV1::Absent),
+        3 => Err(ActorPublicationObservationRefusalV1::InvalidInput),
+        4 => Err(ActorPublicationObservationRefusalV1::NotAuthorized),
+        5 => Err(ActorPublicationObservationRefusalV1::Conflict),
+        6 => Err(ActorPublicationObservationRefusalV1::Unavailable),
+        _ => return Err(WireDecodeError::UnknownTag),
+    })
+}
+
+fn encode_actor_provenance_observation_result(
+    sink: &mut dyn super::Sink,
+    result: &Result<ActorPublicationProvenanceObservationV1, ActorPublicationObservationRefusalV1>,
+) -> Result<(), WireEncodeError> {
+    match result {
+        Ok(ActorPublicationProvenanceObservationV1::Accepted(provenance)) => {
+            sink.u8(1)?;
+            encode_actor_accepted(sink, provenance.accepted)?;
+            sink.text(&provenance.actor)
+        }
+        Ok(ActorPublicationProvenanceObservationV1::Absent) => sink.u8(2),
+        Err(ActorPublicationObservationRefusalV1::InvalidInput) => sink.u8(3),
+        Err(ActorPublicationObservationRefusalV1::NotAuthorized) => sink.u8(4),
+        Err(ActorPublicationObservationRefusalV1::Conflict) => sink.u8(5),
+        Err(ActorPublicationObservationRefusalV1::Unavailable) => sink.u8(6),
+    }
+}
+
+fn decode_actor_provenance_observation_result(
+    decoder: &mut keystone_codec::Decoder<'_>,
+) -> Result<
+    Result<ActorPublicationProvenanceObservationV1, ActorPublicationObservationRefusalV1>,
+    WireDecodeError,
+> {
+    Ok(match read_u8(decoder)? {
+        1 => Ok(ActorPublicationProvenanceObservationV1::Accepted(
+            ActorPublicationProvenanceV1 {
+                accepted: decode_actor_accepted(decoder)?,
+                actor: read_text(decoder)?,
+            },
+        )),
+        2 => Ok(ActorPublicationProvenanceObservationV1::Absent),
         3 => Err(ActorPublicationObservationRefusalV1::InvalidInput),
         4 => Err(ActorPublicationObservationRefusalV1::NotAuthorized),
         5 => Err(ActorPublicationObservationRefusalV1::Conflict),

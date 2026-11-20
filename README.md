@@ -65,6 +65,10 @@ Execute and Observe authority respectively. Exact accepted evidence survives
 client disconnect and daemon recovery; a changed offer conflicts. This profile
 does not reconnect an ordinary participant client identity or grant workflow,
 retry, scheduling, Vellum, or distributed-transaction authority to Agora.
+An additive provenance observation over the same exact request returns the
+accepted receipt together with the Host-derived authenticated actor. It is
+separately typed so existing acceptance frames and client traits remain stable;
+a different actor conflicts rather than acquiring authorship by observation.
 
 An opt-in standalone fuzz profile drives all public wire decoders and the three
 semantic checkpoint layers under pinned cargo-fuzz, nightly, libFuzzer, corpus,

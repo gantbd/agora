@@ -7,7 +7,9 @@ use aegis_protocol::{
 };
 use agora_actor_publication_port::{
     ActorPublicationIdV1, ActorPublicationIntentV1, ActorPublicationObservationV1,
-    ActorPublicationRequestV1, ActorPublicationWireClientV1,
+    ActorPublicationProvenanceObservationV1, ActorPublicationProvenanceV1,
+    ActorPublicationProvenanceWireClientV1, ActorPublicationRequestV1,
+    ActorPublicationWireClientV1,
 };
 use agora_aegis_verifier::{
     AegisContextV1, AegisOperatorRestoreAuthorityV1, AegisOperatorRestoreContextV1, AegisVerifierV1,
@@ -1619,7 +1621,8 @@ fn public_composition_client_publishes_observes_and_projects_through_durable_dae
         let third = daemon.serve_next();
         let fourth = daemon.serve_next();
         let fifth = daemon.serve_next();
-        (first, second, third, fourth, fifth, daemon)
+        let sixth = daemon.serve_next();
+        (first, second, third, fourth, fifth, sixth, daemon)
     });
 
     let mut client =
@@ -1660,19 +1663,29 @@ fn public_composition_client_publishes_observes_and_projects_through_durable_dae
     assert_eq!(actor_accepted.revision, 4);
     assert_eq!(actor_accepted.message_sequence, 1);
     assert_eq!(
-        client.observe_actor_wire(actor_request).unwrap(),
+        client.observe_actor_wire(actor_request.clone()).unwrap(),
         Ok(ActorPublicationObservationV1::Accepted(actor_accepted))
     );
+    assert_eq!(
+        client.observe_actor_provenance_wire(actor_request).unwrap(),
+        Ok(ActorPublicationProvenanceObservationV1::Accepted(
+            ActorPublicationProvenanceV1 {
+                accepted: actor_accepted,
+                actor: "alice".into(),
+            }
+        ))
+    );
 
-    let (first, second, third, fourth, fifth, daemon) = server.join().unwrap();
+    let (first, second, third, fourth, fifth, sixth, daemon) = server.join().unwrap();
     first.unwrap();
     second.unwrap();
     third.unwrap();
     fourth.unwrap();
     fifth.unwrap();
+    sixth.unwrap();
     let observation = daemon.observation();
     assert_eq!(
-        observation.durability.committed, 15,
+        observation.durability.committed, 18,
         "all authenticated session lifecycles and publish/observe/project are durable"
     );
     let actions: Vec<ActionV1> = authority_calls
@@ -1698,6 +1711,9 @@ fn public_composition_client_publishes_observes_and_projects_through_durable_dae
             ActionV1::Submit,
             ActionV1::Submit,
             ActionV1::Execute,
+            ActionV1::Submit,
+            ActionV1::Submit,
+            ActionV1::Observe,
             ActionV1::Submit,
             ActionV1::Submit,
             ActionV1::Observe,

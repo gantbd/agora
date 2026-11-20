@@ -132,6 +132,31 @@ pub enum ActorPublicationObservationV1 {
     Absent,
 }
 
+/// Host-issued proof that one exact retained publication belongs to the
+/// authenticated actor observing it. The actor is derived from the Host
+/// session; it is never accepted as publication request input.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ActorPublicationProvenanceV1 {
+    pub accepted: ActorPublicationAcceptedV1,
+    pub actor: String,
+}
+
+impl fmt::Debug for ActorPublicationProvenanceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ActorPublicationProvenanceV1")
+            .field("accepted", &self.accepted)
+            .field("actor_bytes", &self.actor.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ActorPublicationProvenanceObservationV1 {
+    Accepted(ActorPublicationProvenanceV1),
+    Absent,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ActorPublicationObservationRefusalV1 {
     InvalidInput,
@@ -154,6 +179,13 @@ pub trait ActorPublicationObservationPortV1 {
     ) -> Result<ActorPublicationObservationV1, ActorPublicationObservationRefusalV1>;
 }
 
+pub trait ActorPublicationProvenanceObservationPortV1 {
+    fn observe_actor_provenance(
+        &mut self,
+        request: ActorPublicationRequestV1,
+    ) -> Result<ActorPublicationProvenanceObservationV1, ActorPublicationObservationRefusalV1>;
+}
+
 /// Transport-bearing client seam. The outer error preserves delivery-phase
 /// truth; the inner result is Agora's semantic reply.
 pub trait ActorPublicationWireClientV1 {
@@ -169,6 +201,20 @@ pub trait ActorPublicationWireClientV1 {
         request: ActorPublicationRequestV1,
     ) -> Result<
         Result<ActorPublicationObservationV1, ActorPublicationObservationRefusalV1>,
+        Self::Error,
+    >;
+}
+
+/// Separate additive client seam so existing publication clients do not gain a
+/// new mandatory method merely because an integration needs actor provenance.
+pub trait ActorPublicationProvenanceWireClientV1 {
+    type Error;
+
+    fn observe_actor_provenance_wire(
+        &mut self,
+        request: ActorPublicationRequestV1,
+    ) -> Result<
+        Result<ActorPublicationProvenanceObservationV1, ActorPublicationObservationRefusalV1>,
         Self::Error,
     >;
 }
@@ -194,5 +240,17 @@ mod tests {
             assert!(!debug.contains(secret));
         }
         assert!(debug.contains("addressed_count"));
+
+        let provenance = ActorPublicationProvenanceV1 {
+            accepted: ActorPublicationAcceptedV1 {
+                revision: 13,
+                message_id: [8; 16],
+                message_sequence: 3,
+            },
+            actor: "secret-actor".into(),
+        };
+        let debug = format!("{provenance:?}");
+        assert!(!debug.contains("secret-actor"));
+        assert!(debug.contains("actor_bytes"));
     }
 }

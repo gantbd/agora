@@ -7,7 +7,8 @@
 
 use agora_actor_publication_port::{
     ActorPublicationAcceptedV1, ActorPublicationObservationRefusalV1,
-    ActorPublicationObservationV1, ActorPublicationRefusalV1, ActorPublicationRequestV1,
+    ActorPublicationObservationV1, ActorPublicationProvenanceObservationV1,
+    ActorPublicationRefusalV1, ActorPublicationRequestV1,
 };
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
@@ -1353,6 +1354,26 @@ impl<V: PrincipalVerifier, S: CheckpointStore> DurableHostV2<V, S> {
         V: agora_host::ActorPrincipalVerifier,
     {
         let publication = self.publish(|host| host.observe_actor(session, request, context, now));
+        self.counters.record(&publication);
+        publication
+    }
+
+    /// Commit-gates Host revalidation while returning exact actor provenance
+    /// for one retained publication.
+    pub fn observe_actor_provenance(
+        &mut self,
+        session: HostSessionIdV2,
+        request: ActorPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> DurableHostPublicationV2<
+        Result<ActorPublicationProvenanceObservationV1, ActorPublicationObservationRefusalV1>,
+    >
+    where
+        V: agora_host::ActorPrincipalVerifier,
+    {
+        let publication =
+            self.publish(|host| host.observe_actor_provenance(session, request, context, now));
         self.counters.record(&publication);
         publication
     }

@@ -7,7 +7,8 @@ use super::{
 };
 use agora_actor_publication_port::{
     ActorPublicationAcceptedV1, ActorPublicationObservationRefusalV1,
-    ActorPublicationObservationV1, ActorPublicationRefusalV1, ActorPublicationRequestV1,
+    ActorPublicationObservationV1, ActorPublicationProvenanceObservationV1,
+    ActorPublicationProvenanceV1, ActorPublicationRefusalV1, ActorPublicationRequestV1,
 };
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
@@ -418,6 +419,49 @@ impl<V: PrincipalVerifier> HostV2<V> {
             return Err(ActorPublicationObservationRefusalV1::NotAuthorized);
         }
         self.service.observe_actor(session.client, request)
+    }
+
+    /// Observes one exact retained operation and returns the Host-derived actor
+    /// with its acceptance. A different authenticated actor conflicts through
+    /// the same actor-scoped replay lookup; no caller author is accepted.
+    pub fn observe_actor_provenance(
+        &mut self,
+        session_id: HostSessionIdV2,
+        request: ActorPublicationRequestV1,
+        context: &V::Context,
+        now: HostTimeV1,
+    ) -> Result<ActorPublicationProvenanceObservationV1, ActorPublicationObservationRefusalV1>
+    where
+        V: ActorPrincipalVerifier,
+    {
+        let session = self
+            .authorize_session(session_id, context, now)
+            .map_err(|_| ActorPublicationObservationRefusalV1::NotAuthorized)?;
+        if self
+            .verifier
+            .authorize_actor(
+                session.subject,
+                &session.participant,
+                context,
+                now,
+                ActorHostActionV1::Observe,
+            )
+            .is_err()
+        {
+            self.retire(session_id);
+            return Err(ActorPublicationObservationRefusalV1::NotAuthorized);
+        }
+        match self.service.observe_actor(session.client, request)? {
+            ActorPublicationObservationV1::Accepted(accepted) => Ok(
+                ActorPublicationProvenanceObservationV1::Accepted(ActorPublicationProvenanceV1 {
+                    accepted,
+                    actor: session.participant,
+                }),
+            ),
+            ActorPublicationObservationV1::Absent => {
+                Ok(ActorPublicationProvenanceObservationV1::Absent)
+            }
+        }
     }
 
     /// Trusted transport-neutral publication path for a configured federation

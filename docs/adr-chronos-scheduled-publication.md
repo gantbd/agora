@@ -232,6 +232,16 @@ outcome, closed profile/route decoding, exact operation authority, transport
 certainty, and real durable Unix publish-then-observe composition through the
 public client.
 
+The composition profile now also provides an additive exact actor-provenance
+observation. It reuses the identical actor-scoped publication request and fresh
+`Observe` authority, then returns the retained acceptance with the Host-derived
+participant. The existing compact acceptance and observation bytes are
+unchanged. Focused Host evidence proves that the publishing actor receives its
+identity binding while another authenticated actor receives `Conflict`; the
+durable Unix journey proves reconnect, pre-reply durability and public-client
+round trip. This receipt proves Agora authorship only, not workflow identity,
+task linkage, delivery, acceptance or completion.
+
 The separate adapter now has a canonical bounded six-state journal, exact-next
 durable receipt gating, original-allocation conversion, cancellation-cut and
 persistence-fault evidence, an Agora transport-certainty wrapper, exact replay
