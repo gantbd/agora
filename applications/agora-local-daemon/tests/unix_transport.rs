@@ -2,14 +2,15 @@
 
 use aegis_client::ServicePort;
 use aegis_protocol::{
-    ActionV1, CommandV1, DecisionHandleV1, DecisionSummaryV1, EngineNamespaceV1, OutcomeV1,
-    ReplyV1, SessionHandleV1,
+    ActionV1, CommandV1, CurrentPrincipalV1, DecisionHandleV1, DecisionSummaryV1,
+    EngineNamespaceV1, OutcomeV1, ReplyV1, SessionHandleV1,
 };
 use agora_actor_publication_port::{
     ActorPublicationIdV1, ActorPublicationIntentV1, ActorPublicationObservationV1,
     ActorPublicationProvenanceObservationV1, ActorPublicationProvenanceV1,
     ActorPublicationProvenanceWireClientV1, ActorPublicationRequestV1,
-    ActorPublicationWireClientV1,
+    ActorPublicationSubjectProvenanceObservationV1, ActorPublicationSubjectProvenanceV1,
+    ActorPublicationSubjectProvenanceWireClientV1, ActorPublicationWireClientV1,
 };
 use agora_aegis_verifier::{
     AegisContextV1, AegisOperatorRestoreAuthorityV1, AegisOperatorRestoreContextV1, AegisVerifierV1,
@@ -105,11 +106,19 @@ impl ServicePort for Port {
         session: SessionHandleV1,
         command: CommandV1,
     ) -> Result<ReplyV1, Self::Error> {
-        let action = match &command {
-            CommandV1::Authorize { action, .. } => *action,
+        self.calls.lock().unwrap().push((session, command));
+        if matches!(
+            self.calls.lock().unwrap().last(),
+            Some((_, CommandV1::CurrentPrincipal))
+        ) {
+            return Ok(ReplyV1::Accepted(OutcomeV1::CurrentPrincipal(
+                CurrentPrincipalV1 { principal: [7; 16] },
+            )));
+        }
+        let action = match self.calls.lock().unwrap().last() {
+            Some((_, CommandV1::Authorize { action, .. })) => *action,
             _ => return Err(()),
         };
-        self.calls.lock().unwrap().push((session, command));
         Ok(ReplyV1::Accepted(OutcomeV1::Authorized(
             DecisionSummaryV1 {
                 handle: DecisionHandleV1(1),
@@ -1622,7 +1631,8 @@ fn public_composition_client_publishes_observes_and_projects_through_durable_dae
         let fourth = daemon.serve_next();
         let fifth = daemon.serve_next();
         let sixth = daemon.serve_next();
-        (first, second, third, fourth, fifth, sixth, daemon)
+        let seventh = daemon.serve_next();
+        (first, second, third, fourth, fifth, sixth, seventh, daemon)
     });
 
     let mut client =
@@ -1667,7 +1677,9 @@ fn public_composition_client_publishes_observes_and_projects_through_durable_dae
         Ok(ActorPublicationObservationV1::Accepted(actor_accepted))
     );
     assert_eq!(
-        client.observe_actor_provenance_wire(actor_request).unwrap(),
+        client
+            .observe_actor_provenance_wire(actor_request.clone())
+            .unwrap(),
         Ok(ActorPublicationProvenanceObservationV1::Accepted(
             ActorPublicationProvenanceV1 {
                 accepted: actor_accepted,
@@ -1675,25 +1687,39 @@ fn public_composition_client_publishes_observes_and_projects_through_durable_dae
             }
         ))
     );
+    assert_eq!(
+        client
+            .observe_actor_subject_provenance_wire(actor_request)
+            .unwrap(),
+        Ok(ActorPublicationSubjectProvenanceObservationV1::Accepted(
+            ActorPublicationSubjectProvenanceV1 {
+                accepted: actor_accepted,
+                actor: "alice".into(),
+                subject: [7; 16],
+            }
+        ))
+    );
 
-    let (first, second, third, fourth, fifth, sixth, daemon) = server.join().unwrap();
+    let (first, second, third, fourth, fifth, sixth, seventh, daemon) = server.join().unwrap();
     first.unwrap();
     second.unwrap();
     third.unwrap();
     fourth.unwrap();
     fifth.unwrap();
     sixth.unwrap();
+    seventh.unwrap();
     let observation = daemon.observation();
     assert_eq!(
-        observation.durability.committed, 18,
+        observation.durability.committed, 21,
         "all authenticated session lifecycles and publish/observe/project are durable"
     );
     let actions: Vec<ActionV1> = authority_calls
         .lock()
         .unwrap()
         .iter()
-        .map(|(_, command)| match command {
-            CommandV1::Authorize { action, .. } => *action,
+        .filter_map(|(_, command)| match command {
+            CommandV1::Authorize { action, .. } => Some(*action),
+            CommandV1::CurrentPrincipal => None,
             _ => unreachable!(),
         })
         .collect();
@@ -1711,6 +1737,9 @@ fn public_composition_client_publishes_observes_and_projects_through_durable_dae
             ActionV1::Submit,
             ActionV1::Submit,
             ActionV1::Execute,
+            ActionV1::Submit,
+            ActionV1::Submit,
+            ActionV1::Observe,
             ActionV1::Submit,
             ActionV1::Submit,
             ActionV1::Observe,

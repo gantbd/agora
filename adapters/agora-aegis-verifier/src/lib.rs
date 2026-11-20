@@ -117,6 +117,27 @@ impl<P> std::fmt::Debug for AegisVerifierV1<P> {
 }
 
 impl<P: ServicePort> AegisVerifierV1<P> {
+    fn current_subject(
+        &mut self,
+        context: &AegisContextV1,
+    ) -> Result<VerifiedSubjectV1, AegisVerifierErrorV1> {
+        let reply = self
+            .port
+            .execute(context.session, CommandV1::CurrentPrincipal)
+            .map_err(|_| AegisVerifierErrorV1::Unavailable)?;
+        let ReplyV1::Accepted(OutcomeV1::CurrentPrincipal(binding)) = reply else {
+            return Err(AegisVerifierErrorV1::Unavailable);
+        };
+        if binding.principal == [0; 16] {
+            return Err(AegisVerifierErrorV1::Unavailable);
+        }
+        let subject = VerifiedSubjectV1::from_verifier(binding.principal);
+        if subject != context.subject {
+            return Err(AegisVerifierErrorV1::Unavailable);
+        }
+        Ok(subject)
+    }
+
     fn authorize_action(
         &mut self,
         context: &AegisContextV1,
@@ -162,8 +183,9 @@ impl<P: ServicePort> PrincipalVerifier for AegisVerifierV1<P> {
         if claimed_participant != context.participant_id {
             return Err(AegisVerifierErrorV1::Unavailable);
         }
+        let subject = self.current_subject(context)?;
         self.authorize_action(context, now, ActionV1::Submit)?;
-        Ok(context.subject)
+        Ok(subject)
     }
 
     fn revalidate(
@@ -173,7 +195,7 @@ impl<P: ServicePort> PrincipalVerifier for AegisVerifierV1<P> {
         context: &Self::Context,
         now: HostTimeV1,
     ) -> Result<(), Self::Error> {
-        if subject != context.subject || participant != context.participant_id {
+        if participant != context.participant_id || subject != self.current_subject(context)? {
             return Err(AegisVerifierErrorV1::Unavailable);
         }
         self.authorize_action(context, now, ActionV1::Submit)
@@ -189,7 +211,7 @@ impl<P: ServicePort> ScheduledPrincipalVerifier for AegisVerifierV1<P> {
         now: HostTimeV1,
         action: ScheduledHostActionV1,
     ) -> Result<(), Self::Error> {
-        if subject != context.subject || participant != context.participant_id {
+        if participant != context.participant_id || subject != self.current_subject(context)? {
             return Err(AegisVerifierErrorV1::Unavailable);
         }
         self.authorize_action(

@@ -47,6 +47,7 @@ fn scheduled_requests_are_closed_bounded_and_content_safe() {
         ScheduledWireRequestV1::PublishActor(actor_request()),
         ScheduledWireRequestV1::ObserveActor(actor_request()),
         ScheduledWireRequestV1::ObserveActorProvenance(actor_request()),
+        ScheduledWireRequestV1::ObserveActorSubjectProvenance(actor_request()),
     ] {
         let bytes = encode_scheduled_request_v1(&request, limits()).unwrap();
         assert_eq!(decode_scheduled_request_v1(&bytes, limits()), Ok(request));
@@ -126,6 +127,25 @@ fn scheduled_replies_round_trip_every_semantic_class() {
         ScheduledWireReplyV1::ActorProvenanceObserved(Err(
             ActorPublicationObservationRefusalV1::Conflict,
         )),
+        ScheduledWireReplyV1::ActorSubjectProvenanceObserved(Ok(
+            ActorPublicationSubjectProvenanceObservationV1::Accepted(
+                ActorPublicationSubjectProvenanceV1 {
+                    accepted: ActorPublicationAcceptedV1 {
+                        revision: 12,
+                        message_id: [9; 16],
+                        message_sequence: 4,
+                    },
+                    actor: "agent".into(),
+                    subject: [7; 16],
+                },
+            ),
+        )),
+        ScheduledWireReplyV1::ActorSubjectProvenanceObserved(Ok(
+            ActorPublicationSubjectProvenanceObservationV1::Absent,
+        )),
+        ScheduledWireReplyV1::ActorSubjectProvenanceObserved(Err(
+            ActorPublicationObservationRefusalV1::Conflict,
+        )),
     ];
     for reply in replies {
         let bytes = encode_scheduled_reply_v1(&reply, limits()).unwrap();
@@ -137,6 +157,7 @@ use agora_actor_publication_port::{
     ActorPublicationObservationRefusalV1, ActorPublicationObservationV1,
     ActorPublicationProvenanceObservationV1, ActorPublicationProvenanceV1,
     ActorPublicationRefusalV1, ActorPublicationRequestV1,
+    ActorPublicationSubjectProvenanceObservationV1, ActorPublicationSubjectProvenanceV1,
 };
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1, WakeClassV1,

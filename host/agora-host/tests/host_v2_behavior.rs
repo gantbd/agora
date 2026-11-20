@@ -1,7 +1,8 @@
 use agora_actor_publication_port::{
     ActorPublicationIdV1, ActorPublicationIntentV1, ActorPublicationObservationRefusalV1,
     ActorPublicationProvenanceObservationV1, ActorPublicationProvenanceV1,
-    ActorPublicationRequestV1,
+    ActorPublicationRequestV1, ActorPublicationSubjectProvenanceObservationV1,
+    ActorPublicationSubjectProvenanceV1,
 };
 use agora_delivery_projection_port::{
     DeliveryProjectionRefusalV1, DeliveryProjectionV1, DeliverySourceV1,
@@ -456,6 +457,21 @@ fn actor_publication_provenance_is_host_derived_and_actor_scoped() {
             ActorPublicationProvenanceV1 {
                 accepted,
                 actor: "bot".into(),
+            }
+        ))
+    );
+    assert_eq!(
+        host.observe_actor_subject_provenance(
+            bot_session,
+            request.clone(),
+            &bot_context,
+            HostTimeV1(3),
+        ),
+        Ok(ActorPublicationSubjectProvenanceObservationV1::Accepted(
+            ActorPublicationSubjectProvenanceV1 {
+                accepted,
+                actor: "bot".into(),
+                subject: [2; 16],
             }
         ))
     );

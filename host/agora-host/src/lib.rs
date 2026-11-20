@@ -35,6 +35,12 @@ impl VerifiedSubjectV1 {
         Self(value)
     }
 
+    /// Projects verifier-owned attribution for a separately typed owner
+    /// observation. This value is not a credential or authority token.
+    pub const fn attribution_bytes(self) -> [u8; 16] {
+        self.0
+    }
+
     pub(crate) fn administrative_principal_binding(
         self,
     ) -> agora_retention_authority_port::AdministrativePrincipalBindingV1 {

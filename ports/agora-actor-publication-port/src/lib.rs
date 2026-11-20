@@ -157,6 +157,33 @@ pub enum ActorPublicationProvenanceObservationV1 {
     Absent,
 }
 
+/// Additive Host-issued proof retaining the verified session subject beside
+/// the actor and exact publication. The subject is attribution, never a
+/// credential or authority token, and is not accepted as request input.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ActorPublicationSubjectProvenanceV1 {
+    pub accepted: ActorPublicationAcceptedV1,
+    pub actor: String,
+    pub subject: [u8; 16],
+}
+
+impl fmt::Debug for ActorPublicationSubjectProvenanceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ActorPublicationSubjectProvenanceV1")
+            .field("accepted", &self.accepted)
+            .field("actor_bytes", &self.actor.len())
+            .field("subject", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ActorPublicationSubjectProvenanceObservationV1 {
+    Accepted(ActorPublicationSubjectProvenanceV1),
+    Absent,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ActorPublicationObservationRefusalV1 {
     InvalidInput,
@@ -184,6 +211,13 @@ pub trait ActorPublicationProvenanceObservationPortV1 {
         &mut self,
         request: ActorPublicationRequestV1,
     ) -> Result<ActorPublicationProvenanceObservationV1, ActorPublicationObservationRefusalV1>;
+}
+
+pub trait ActorPublicationSubjectProvenanceObservationPortV1 {
+    fn observe_actor_subject_provenance(
+        &mut self,
+        request: ActorPublicationRequestV1,
+    ) -> Result<ActorPublicationSubjectProvenanceObservationV1, ActorPublicationObservationRefusalV1>;
 }
 
 /// Transport-bearing client seam. The outer error preserves delivery-phase
@@ -215,6 +249,22 @@ pub trait ActorPublicationProvenanceWireClientV1 {
         request: ActorPublicationRequestV1,
     ) -> Result<
         Result<ActorPublicationProvenanceObservationV1, ActorPublicationObservationRefusalV1>,
+        Self::Error,
+    >;
+}
+
+/// Separate additive seam preserving the actor-only V1 provenance contract.
+pub trait ActorPublicationSubjectProvenanceWireClientV1 {
+    type Error;
+
+    fn observe_actor_subject_provenance_wire(
+        &mut self,
+        request: ActorPublicationRequestV1,
+    ) -> Result<
+        Result<
+            ActorPublicationSubjectProvenanceObservationV1,
+            ActorPublicationObservationRefusalV1,
+        >,
         Self::Error,
     >;
 }
@@ -252,5 +302,14 @@ mod tests {
         let debug = format!("{provenance:?}");
         assert!(!debug.contains("secret-actor"));
         assert!(debug.contains("actor_bytes"));
+
+        let provenance = ActorPublicationSubjectProvenanceV1 {
+            accepted: provenance.accepted,
+            actor: "secret-actor".into(),
+            subject: [9; 16],
+        };
+        let debug = format!("{provenance:?}");
+        assert!(!debug.contains("secret-actor"));
+        assert!(!debug.contains("9, 9"));
     }
 }

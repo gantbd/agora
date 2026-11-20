@@ -481,6 +481,11 @@ where
                     self.observe_actor_provenance(session, request, context, now),
                 )?)
             }
+            ScheduledWireRequestV1::ObserveActorSubjectProvenance(request) => {
+                ScheduledWireReplyV1::ActorSubjectProvenanceObserved(durable_value(
+                    self.observe_actor_subject_provenance(session, request, context, now),
+                )?)
+            }
         };
         let limits = self
             .host()
@@ -524,6 +529,11 @@ where
         ScheduledWireRequestV1::ObserveActorProvenance(request) => {
             ScheduledWireReplyV1::ActorProvenanceObserved(
                 host.observe_actor_provenance(session, request, context, now),
+            )
+        }
+        ScheduledWireRequestV1::ObserveActorSubjectProvenance(request) => {
+            ScheduledWireReplyV1::ActorSubjectProvenanceObserved(
+                host.observe_actor_subject_provenance(session, request, context, now),
             )
         }
     };

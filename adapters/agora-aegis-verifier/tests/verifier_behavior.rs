@@ -1,7 +1,7 @@
 use aegis_client::ServicePort;
 use aegis_protocol::{
-    ActionV1, CommandV1, DecisionHandleV1, DecisionSummaryV1, EngineNamespaceV1, GrantHandleV1,
-    OutcomeV1, RefusalV1, ReplyV1, SessionHandleV1,
+    ActionV1, CommandV1, CurrentPrincipalV1, DecisionHandleV1, DecisionSummaryV1,
+    EngineNamespaceV1, GrantHandleV1, OutcomeV1, RefusalV1, ReplyV1, SessionHandleV1,
 };
 use agora_aegis_verifier::{
     AegisContextV1, AegisOperatorRestoreAuthorityV1, AegisOperatorRestoreContextV1, AegisVerifierV1,
@@ -21,10 +21,20 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-#[derive(Default)]
 struct PortState {
     commands: Vec<(SessionHandleV1, CommandV1)>,
     replies: VecDeque<Result<ReplyV1, ()>>,
+    principal: [u8; 16],
+}
+
+impl Default for PortState {
+    fn default() -> Self {
+        Self {
+            commands: Vec::new(),
+            replies: VecDeque::new(),
+            principal: [1; 16],
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -40,6 +50,16 @@ impl ServicePort for Port {
     ) -> Result<ReplyV1, Self::Error> {
         let mut state = self.0.borrow_mut();
         state.commands.push((session, command));
+        if matches!(
+            state.commands.last(),
+            Some((_, CommandV1::CurrentPrincipal))
+        ) {
+            return Ok(ReplyV1::Accepted(OutcomeV1::CurrentPrincipal(
+                CurrentPrincipalV1 {
+                    principal: state.principal,
+                },
+            )));
+        }
         state.replies.pop_front().unwrap_or(Err(()))
     }
 }
@@ -110,8 +130,9 @@ fn scheduled_owner_authority_maps_publish_and_observe_to_distinct_actions() {
         .borrow()
         .commands
         .iter()
-        .map(|(_, command)| match command {
-            CommandV1::Authorize { action, .. } => *action,
+        .filter_map(|(_, command)| match command {
+            CommandV1::Authorize { action, .. } => Some(*action),
+            CommandV1::CurrentPrincipal => None,
             _ => unreachable!(),
         })
         .collect();
@@ -172,6 +193,15 @@ fn host(
     (host, port)
 }
 
+fn host_as(
+    subject: u8,
+    replies: impl IntoIterator<Item = Result<ReplyV1, ()>>,
+) -> (HostV2<AegisVerifierV1<Port>>, Port) {
+    let (host, port) = host(replies);
+    port.0.borrow_mut().principal = [subject; 16];
+    (host, port)
+}
+
 fn connect(participant: &str) -> Vec<u8> {
     encode_request_v2(
         &WireRequestV2::Connect {
@@ -197,10 +227,11 @@ fn authorization_maps_exact_session_grant_time_namespace_resource_and_action() {
     assert!(host.close(session));
 
     let state = port.0.borrow();
-    assert_eq!(state.commands.len(), 1);
+    assert_eq!(state.commands.len(), 2);
     assert_eq!(state.commands[0].0, SessionHandleV1(7));
+    assert_eq!(state.commands[0].1, CommandV1::CurrentPrincipal);
     assert_eq!(
-        state.commands[0].1,
+        state.commands[1].1,
         CommandV1::Authorize {
             grant: GrantHandleV1(11),
             now: 2,
@@ -239,11 +270,14 @@ fn participant_mismatch_refusal_expiry_and_port_failure_are_non_enumerating() {
 
 #[test]
 fn revalidation_refusal_retires_the_session_and_service_client() {
-    let (mut host, _) = host([
-        Ok(authorized(10)),
-        Ok(ReplyV1::Refused(RefusalV1::Revoked)),
-        Ok(authorized(10)),
-    ]);
+    let (mut host, _) = host_as(
+        2,
+        [
+            Ok(authorized(10)),
+            Ok(ReplyV1::Refused(RefusalV1::Revoked)),
+            Ok(authorized(10)),
+        ],
+    );
     let context = context("bot", 2);
     let opened = host.open(&connect("bot"), &context, HostTimeV1(1)).unwrap();
     let session = opened.session().expect("connection expected");
@@ -262,6 +296,19 @@ fn revalidation_refusal_retires_the_session_and_service_client() {
             .unwrap()
             .session()
             .is_some()
+    );
+}
+
+#[test]
+fn configured_subject_cannot_substitute_for_the_aegis_session_owner() {
+    let (mut host, port) = host_as(9, [Ok(authorized(10))]);
+    let opened = host
+        .open(&connect("alice"), &context("alice", 1), HostTimeV1(2))
+        .unwrap();
+    assert!(opened.session().is_none());
+    assert_eq!(
+        port.0.borrow().commands.as_slice(),
+        &[(SessionHandleV1(7), CommandV1::CurrentPrincipal)]
     );
 }
 
